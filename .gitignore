@@ -32,6 +32,8 @@ dist/
 # Jupyter
 .ipynb_checkpoints
 
+.DS_Store
+
 # IDEs
 .vscode/
 .idea/
