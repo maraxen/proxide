@@ -9,12 +9,12 @@ from collections.abc import Generator, Sequence
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import jax.numpy as jnp
+import numpy as np
 from flax.struct import dataclass
 
 from priox.chem.residues import atom_order
 
 if TYPE_CHECKING:
-  import numpy as np
   from jaxtyping import Int
 
   from priox.core.types import (
@@ -156,6 +156,21 @@ def none_or_jnp(array: np.ndarray | None) -> jnp.ndarray | None:
   return jnp.asarray(array)
 
 
+def none_or_numpy(array: np.ndarray | None) -> np.ndarray | None:
+  """Convert to numpy array, or return None if input is None.
+
+  Args:
+      array (np.ndarray | None): Input array or None.
+
+  Returns:
+      np.ndarray | None: Converted numpy array or None.
+
+  """
+  if array is None:
+    return None
+  return np.asarray(array)
+
+
 @dataclass(frozen=True)
 class Protein:
   """Protein structure or ensemble representation.
@@ -281,6 +296,76 @@ class Protein:
       md_angle_params=none_or_jnp(protein_tuple.md_angle_params),
       md_backbone_indices=none_or_jnp(protein_tuple.md_backbone_indices),
       md_exclusion_mask=none_or_jnp(protein_tuple.md_exclusion_mask),
+    )
+
+  @classmethod
+  def from_tuple_numpy(
+    cls,
+    protein_tuple: ProteinTuple,
+    *,
+    include_extras: Sequence[
+      Literal["dihedrals", "mapping", "full_coordinates", "full_atom_mask", "all"]
+    ]
+    | None = None,
+  ) -> Protein:
+    """Create a Protein instance from a ProteinTuple using NumPy arrays.
+
+    Args:
+        protein_tuple (ProteinTuple): The input protein tuple.
+        include_extras:
+            Optional list of extra fields to include from the tuple.
+            If 'all' is included, all optional fields will be included.
+            If None, no optional fields will be included.
+
+    Returns:
+        Protein: The output protein dataclass with NumPy arrays.
+
+    """
+    return cls(
+      coordinates=np.asarray(protein_tuple.coordinates, dtype=np.float32),
+      aatype=np.asarray(protein_tuple.aatype, dtype=np.int8),
+      one_hot_sequence=np.eye(21)[protein_tuple.aatype],
+      mask=np.asarray(protein_tuple.atom_mask[:, atom_order["CA"]], dtype=np.float32),
+      residue_index=np.asarray(protein_tuple.residue_index, dtype=np.int32),
+      chain_index=np.asarray(protein_tuple.chain_index, dtype=np.int32),
+      dihedrals=(
+        None
+        if protein_tuple.dihedrals is None or not include_feature("dihedrals", include_extras)
+        else none_or_numpy(protein_tuple.dihedrals)
+      ),
+      mapping=(
+        none_or_numpy(protein_tuple.mapping)
+        if protein_tuple.mapping is not None
+        and include_extras is not None
+        and ("mapping" in include_extras or "all" in include_extras)
+        else None
+      ),
+      full_coordinates=(
+        None
+        if protein_tuple.full_coordinates is None
+        or not include_feature("full_coordinates", include_extras)
+        else none_or_numpy(protein_tuple.full_coordinates)
+      ),
+      full_atom_mask=(
+        None
+        if protein_tuple.full_coordinates is None
+        or not include_feature("full_atom_mask", include_extras)
+        else none_or_numpy(protein_tuple.atom_mask)
+      ),
+      charges=none_or_numpy(protein_tuple.charges),
+      radii=none_or_numpy(protein_tuple.radii),
+      sigmas=none_or_numpy(protein_tuple.sigmas),
+      epsilons=none_or_numpy(protein_tuple.epsilons),
+      estat_backbone_mask=none_or_numpy(protein_tuple.estat_backbone_mask),
+      estat_resid=none_or_numpy(protein_tuple.estat_resid),
+      estat_chain_index=none_or_numpy(protein_tuple.estat_chain_index),
+      physics_features=none_or_numpy(protein_tuple.physics_features),
+      md_bonds=none_or_numpy(protein_tuple.md_bonds),
+      md_bond_params=none_or_numpy(protein_tuple.md_bond_params),
+      md_angles=none_or_numpy(protein_tuple.md_angles),
+      md_angle_params=none_or_numpy(protein_tuple.md_angle_params),
+      md_backbone_indices=none_or_numpy(protein_tuple.md_backbone_indices),
+      md_exclusion_mask=none_or_numpy(protein_tuple.md_exclusion_mask),
     )
 
 

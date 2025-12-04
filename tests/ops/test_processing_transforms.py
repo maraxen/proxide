@@ -48,8 +48,9 @@ class TestPadAndCollate:
         assert batch.chain_index.shape == (2, 15)
 
         # Check that the first protein is padded correctly
-        assert jnp.all(batch.coordinates[0, 10:] == 0)
-        assert jnp.all(batch.aatype[0, 10:] == 0)
+        assert isinstance(batch.coordinates, np.ndarray)
+        assert np.all(batch.coordinates[0, 10:] == 0)
+        assert np.all(batch.aatype[0, 10:] == 0)
 
     def test_collate_empty_list_raises_error(self) -> None:
         """Test that collating an empty list raises a ValueError."""
