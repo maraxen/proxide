@@ -3,7 +3,7 @@
 import logging
 import pathlib
 from collections.abc import Iterator, Sequence
-from typing import IO
+from typing import IO, Any
 
 import hydride
 import mdtraj as md
@@ -14,8 +14,10 @@ from biotite.structure import AtomArray, AtomArrayStack, filter_solvent
 from priox.chem.residues import (
   atom_order,
 )
-from priox.core.containers import TrajectoryStaticFeatures
+from priox.core.containers import ProteinStream, TrajectoryStaticFeatures
+from priox.io.parsing.registry import ParsingError, register_parser
 from priox.io.parsing.structures import ProcessedStructure
+from priox.io.parsing.utils import processed_structure_to_protein_tuples
 
 from .mappings import atom_names_to_index, residue_names_to_aatype
 
@@ -352,3 +354,48 @@ def parse_mdtraj_to_processed_structure(  # noqa: C901
     msg = f"Failed to parse HDF5 structure from source: {source}. {type(e).__name__}: {e}"
     logger.exception(msg)
     raise RuntimeError(msg) from e
+
+
+@register_parser(["mdtraj", "dcd", "xtc", "h5", "hdf5"])
+def load_mdtraj(
+  file_path: str | IO[str] | pathlib.Path,
+  chain_id: Sequence[str] | str | None,
+  *,
+  extract_dihedrals: bool = False,
+  populate_physics: bool = False,
+  force_field_name: str = "ff14SB",
+  topology: str | pathlib.Path | None = None,
+  add_hydrogens: bool = True,
+  **kwargs: Any,  # noqa: ANN401
+) -> ProteinStream:
+  """Load MDTraj trajectory."""
+  try:
+    iterator = parse_mdtraj_to_processed_structure(
+      file_path,
+      chain_id=chain_id,
+      extract_dihedrals=extract_dihedrals,
+      topology=topology,
+      add_hydrogens=add_hydrogens,
+    )
+
+    path = None
+    if isinstance(file_path, str):
+      path = pathlib.Path(file_path)
+    elif isinstance(file_path, pathlib.Path):
+      path = file_path
+
+    for processed in iterator:
+        yield from processed_structure_to_protein_tuples(
+            processed,
+            source_name=str(path or "mdtraj"),
+            extract_dihedrals=extract_dihedrals,
+            populate_physics=populate_physics,
+            force_field_name=force_field_name,
+        )
+  except Exception as e:
+      # If parsing fails (e.g. malformed file), we yield nothing or raise
+      # dispatch.py previously caught RuntimeError and yielded nothing in generator.
+      # But also raised RuntimeError for unsupported formats.
+      # Let's standardize to ParsingError.
+      msg = f"Failed to parse MDTraj structure from source: {file_path}. {e}"
+      raise ParsingError(msg) from e
