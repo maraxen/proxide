@@ -23,16 +23,21 @@ dependencies = [
     "foldcomp",
     "msgpack",
     "msgpack-numpy",
-    "huggingface_hub",
     "equinox",
     "jaxtyping",
-    "optax",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"priox" = ["chem/alphafold/common/stereo_chemical_props.txt"]
+
 [project.optional-dependencies]
+ml = [
+    "huggingface_hub",
+    "optax",
+]
 dev = [
     "ruff",
     "pytest",
