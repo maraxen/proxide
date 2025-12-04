@@ -157,14 +157,14 @@ class TestBiotiteExtended(unittest.TestCase):
     def test_biotite_to_jax_md_system(self):
         """Test conversion to JAX MD system."""
         # Mock jax_md_bridge
-        with mock.patch("priox.md.jax_md_bridge") as mock_bridge:
-            mock_bridge.parameterize_system.return_value = {"test": "params"}
+        with mock.patch("priox.md.jax_md_bridge.parameterize_system") as mock_param:
+            mock_param.return_value = {"test": "params"}
             
             params, coords = biotite.biotite_to_jax_md_system(self.atom_array, force_field="ff")
             
             self.assertEqual(params["test"], "params")
             self.assertEqual(coords.shape, (3, 3))
-            mock_bridge.parameterize_system.assert_called_once()
+            mock_param.assert_called_once()
 
     def test_parse_biotite_generator(self):
         """Test generator output."""
