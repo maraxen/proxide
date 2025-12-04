@@ -411,9 +411,6 @@ def compute_lj_forces_at_backbone(
   backbone_epsilons: jax.Array,
   all_atom_sigmas: jax.Array,
   all_atom_epsilons: jax.Array,
-  *,
-  noise_scale: float | jax.Array = 0.0,
-  key: jax.Array | None = None,
 ) -> jax.Array:
   """Compute Lennard-Jones forces at all five backbone atoms.
 
@@ -433,8 +430,6 @@ def compute_lj_forces_at_backbone(
           shape (n_atoms,).
       all_atom_epsilons (jax.Array): LJ epsilon parameters for all atoms,
           shape (n_atoms,).
-      noise_scale: Scale of Gaussian noise to add to forces.
-      key: PRNG key for noise generation.
 
   Returns:
       jax.Array: Force vectors at backbone atoms, shape (n_residues, 5, 3).
@@ -474,14 +469,55 @@ def compute_lj_forces_at_backbone(
     all_atom_epsilons,
   )
 
-  if noise_scale > 0.0:
-    if key is None:
-      msg = "Must provide key when noise_scale > 0"
-      raise ValueError(msg)
-    noise = jax.random.normal(key, forces_flat.shape)
-    forces_flat = forces_flat + noise * noise_scale
-
   return forces_flat.reshape(n_residues, 5, 3)
+
+
+def compute_noised_lj_forces_at_backbone(
+  backbone_positions: jax.Array,
+  all_atom_positions: jax.Array,
+  backbone_sigmas: jax.Array,
+  backbone_epsilons: jax.Array,
+  all_atom_sigmas: jax.Array,
+  all_atom_epsilons: jax.Array,
+  noise_scale: float | jax.Array,
+  key: jax.Array,
+) -> jax.Array:
+  """Compute Lennard-Jones forces at all five backbone atoms with Gaussian noise.
+
+  Same as `compute_lj_forces_at_backbone` but adds Gaussian noise to the forces.
+
+  Args:
+      backbone_positions (jax.Array): Backbone atom positions [N, CA, C, O, CB]
+          per residue, shape (n_residues, 5, 3).
+      all_atom_positions (jax.Array): All atom positions (including sidechains),
+          shape (n_atoms, 3).
+      backbone_sigmas (jax.Array): LJ sigma parameters for backbone atoms,
+          shape (n_residues, 5).
+      backbone_epsilons (jax.Array): LJ epsilon parameters for backbone atoms,
+          shape (n_residues, 5).
+      all_atom_sigmas (jax.Array): LJ sigma parameters for all atoms,
+          shape (n_atoms,).
+      all_atom_epsilons (jax.Array): LJ epsilon parameters for all atoms,
+          shape (n_atoms,).
+      noise_scale: Scale of Gaussian noise to add to forces.
+      key: PRNG key for noise generation (required).
+
+  Returns:
+      jax.Array: Force vectors at backbone atoms, shape (n_residues, 5, 3).
+      Forces are in units of epsilon/distance (e.g., kcal/mol/Å).
+
+  """
+  forces = compute_lj_forces_at_backbone(
+    backbone_positions,
+    all_atom_positions,
+    backbone_sigmas,
+    backbone_epsilons,
+    all_atom_sigmas,
+    all_atom_epsilons,
+  )
+
+  noise = jax.random.normal(key, forces.shape)
+  return forces + noise * noise_scale
 
 
 def compute_lj_energy_at_backbone(

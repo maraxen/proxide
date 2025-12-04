@@ -12,7 +12,10 @@ import numpy as np
 from biotite.structure import AtomArray
 
 from priox.chem.residues import van_der_waals_epsilon
+from priox.core.containers import ProteinStream
+from priox.io.parsing.registry import ParsingError, register_parser
 from priox.io.parsing.structures import ProcessedStructure
+from priox.io.parsing.utils import processed_structure_to_protein_tuples
 
 logger = logging.getLogger(__name__)
 
@@ -149,4 +152,36 @@ def parse_pqr_to_processed_structure(
     charges=np.array(charges, dtype=np.float32),
     radii=np.array(radii, dtype=np.float32),
     epsilons=np.array(epsilons, dtype=np.float32),
+  )
+
+
+@register_parser(["pqr"])
+def load_pqr(
+  file_path: str | pathlib.Path | IO[str],
+  chain_id: str | Sequence[str] | None = None,
+  *,
+  extract_dihedrals: bool = False,
+  populate_physics: bool = False,
+  force_field_name: str = "ff14SB",
+  **kwargs: Any,  # noqa: ANN401
+) -> ProteinStream:
+  """Load a PQR file."""
+  try:
+    processed = parse_pqr_to_processed_structure(file_path, chain_id=chain_id)
+  except Exception as e:
+    msg = f"Failed to parse PQR from source: {file_path}. {e}"
+    raise ParsingError(msg) from e
+
+  path = None
+  if isinstance(file_path, str):
+    path = pathlib.Path(file_path)
+  elif isinstance(file_path, pathlib.Path):
+    path = file_path
+
+  return processed_structure_to_protein_tuples(
+      processed,
+      source_name=str(path or "pqr"),
+      extract_dihedrals=extract_dihedrals,
+      populate_physics=populate_physics,
+      force_field_name=force_field_name,
   )
