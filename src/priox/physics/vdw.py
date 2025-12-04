@@ -322,7 +322,7 @@ def compute_lj_forces(
   Example:
       >>> # Two atoms with LJ interaction
       >>> positions = jnp.array([[0., 0., 0.], [3.5, 0., 0.]])
-      >>> from prxteinmpnn.physics.electrostatics import (
+      >>> from priox.physics.electrostatics import (
       ...     compute_pairwise_displacements
       ... )
       >>> displacements, distances = compute_pairwise_displacements(

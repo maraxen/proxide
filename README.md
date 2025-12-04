@@ -13,22 +13,26 @@
 
 ## Installation
 
-First, ensure you have [uv](https://github.com/astral-sh/uv) installed:
+### From GitHub (Recommended)
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+pip install git+https://github.com/maraxen/priox.git@main
 ```
 
-Then, to install Priox, simply run:
+### From Source
+
+To install Priox from source, clone the repository and run:
 
 ```bash
-uv pip install .
+git clone https://github.com/maraxen/priox.git
+cd priox
+pip install .
 ```
 
 For development installation with test dependencies:
 
 ```bash
-uv pip install -e ".[dev]"
+pip install -e ".[dev]"
 ```
 
 ## Usage

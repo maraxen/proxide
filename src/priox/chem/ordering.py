@@ -19,7 +19,7 @@ When working with coordinates from the parser, use PDB_ORDER_INDICES.
 When working with atom37 standard ordering, use atom_order from residue_constants.
 
 Example:
-    >>> from prxteinmpnn.utils.atom_ordering import PDB_ORDER_INDICES
+    >>> from priox.chem.ordering import PDB_ORDER_INDICES
     >>> # Extract backbone atoms from parser output
     >>> nitrogen = coords[:, PDB_ORDER_INDICES['N'], :]
     >>> oxygen = coords[:, PDB_ORDER_INDICES['O'], :]  # Index 3, not 4!

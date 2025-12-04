@@ -9,7 +9,7 @@ import numpy as np
 from priox.chem import residues as residue_constants
 
 if TYPE_CHECKING:
-  from priox.assets.forcefields import FullForceField
+  from priox.physics.force_fields import FullForceField
 
 
 class SystemParams(TypedDict):
