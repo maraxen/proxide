@@ -9,7 +9,7 @@ import logging
 import numpy as np
 from biotite.structure import AtomArray
 
-from priox.assets.forcefields.loader import FullForceField, load_force_field_from_hub
+from priox.physics.force_fields.loader import FullForceField, load_force_field_from_hub
 from priox.physics.constants import DEFAULT_EPSILON, DEFAULT_SIGMA
 
 logger = logging.getLogger(__name__)

@@ -11,7 +11,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from priox.assets.forcefields import loader as force_fields
+from priox.physics.force_fields import loader as force_fields
 from priox.chem import residues as residue_constants
 from priox.core.containers import Protein, ProteinTuple
 from priox.md import jax_md_bridge
