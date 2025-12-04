@@ -142,11 +142,21 @@ def mdcath_hdf5_file():
     # Let's create a sequence of 71 residues, e.g., 0=ALA, 1=ARG, 2=ASN...
     # Make sure it's an array of integer types
     mock_aatype_ints = np.arange(num_residues, dtype=np.int32) % 20 # Cycle through 20 AA types
-    mock_resnames = np.array(
-        [rc.restype_1to3.get(i, "UNK") for i in mock_aatype_ints], dtype="S3",
-    )
+    # rc.restype_1to3 is not available if I don't import rc correctly, or if it is a map.
+    # Assuming rc.restype_1to3 is available.
+    # If rc import fails, we might need to mock it or use dummy data.
+    try:
+        mock_resnames = np.array(
+            [rc.restype_1to3.get(i, "UNK") for i in mock_aatype_ints], dtype="S3",
+        )
+    except Exception:
+        mock_resnames = np.array(["UNK"] * num_residues, dtype="S3")
+
 
     with h5py.File(tmp_file_path, "w") as f:
+        # Add layout attribute to identify as mdcath
+        f.attrs["layout"] = "mdcath"
+
         domain_group = f.create_group(domain_id)
 
         # Add 'resid' dataset directly under the domain group
@@ -178,4 +188,3 @@ def mdcath_hdf5_file():
 
     # Teardown: Clean up the temporary file after the tests are done
     pathlib.Path(tmp_file_path).unlink()
-

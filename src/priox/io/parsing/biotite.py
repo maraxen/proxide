@@ -3,7 +3,6 @@
 import logging
 import pathlib
 from collections.abc import Sequence
-from collections.abc import Sequence
 from typing import IO, Any
 
 import hydride
@@ -17,6 +16,7 @@ from priox.core.containers import (
   EstatInfo,
   ProteinStream,
 )
+from priox.io.parsing.registry import ParsingError, register_parser
 from priox.io.parsing.structures import ProcessedStructure
 from priox.io.parsing.utils import (
   _process_chain_id,
@@ -348,8 +348,13 @@ def load_structure_with_hydride(
   elif not isinstance(source, (str, pathlib.Path)):
       # File-like object, assume PDB
       from biotite.structure.io.pdb import PDBFile  # noqa: PLC0415
-      file = PDBFile.read(source)
-      atom_array = file.get_structure(**kwargs)
+      try:
+          file = PDBFile.read(source)
+          atom_array = file.get_structure(**kwargs)
+      except Exception as e:
+           # Biotite raises Exception/ValueError on empty file or bad format
+           msg = f"Failed to parse PDB structure from file-like object: {e}"
+           raise ParsingError(msg) from e
   else:
     atom_array = structure_io.load_structure(
       source,
@@ -386,6 +391,54 @@ def load_structure_with_hydride(
   return atom_array
 
 
+@register_parser(["pdb", "cif", "mmcif"])
+def load_biotite(
+  file_path: str | pathlib.Path | IO[str],
+  chain_id: str | Sequence[str] | None = None,
+  *,
+  extract_dihedrals: bool = False,
+  populate_physics: bool = False,
+  force_field_name: str = "ff14SB",
+  **kwargs: Any,  # noqa: ANN401
+) -> ProteinStream:
+  """Load a protein structure using Biotite."""
+  try:
+    atom_array = load_structure_with_hydride(file_path, chain_id=chain_id, **kwargs)
+  except Exception as e:
+    msg = f"Failed to parse structure from source: {file_path}. {e}"
+    raise ParsingError(msg) from e
+
+  # Create ProcessedStructure
+  r_indices = atom_array.res_id
+
+  # Map chain_id strings to integers
+  if hasattr(atom_array, "chain_id"):
+      unique_chains = sorted(set(atom_array.chain_id))
+      chain_map = {cid: i for i, cid in enumerate(unique_chains)}
+      chain_ids = np.array([chain_map[cid] for cid in atom_array.chain_id], dtype=np.int32)
+  else:
+      # If no chain_id, assume all 0
+      chain_ids = np.zeros(atom_array.array_length(), dtype=np.int32)
+
+  processed = ProcessedStructure(
+      atom_array=atom_array,
+      r_indices=r_indices,
+      chain_ids=chain_ids,
+  )
+
+  path = None
+  if isinstance(file_path, str):
+    path = pathlib.Path(file_path)
+  elif isinstance(file_path, pathlib.Path):
+    path = file_path
+
+  return processed_structure_to_protein_tuples(
+      processed,
+      source_name=str(path or "biotite"),
+      extract_dihedrals=extract_dihedrals,
+      populate_physics=populate_physics,
+      force_field_name=force_field_name,
+  )
 
 def _parse_biotite(
   source: str | pathlib.Path,

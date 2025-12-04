@@ -10,6 +10,7 @@ from priox.physics.electrostatics import (
     compute_coulomb_forces,
     compute_coulomb_forces_at_backbone,
     compute_pairwise_displacements,
+    compute_noised_coulomb_forces_at_backbone,
 )
 from priox.core.containers import ProteinTuple
 
@@ -158,6 +159,34 @@ def test_coulomb_forces_at_backbone_shape(
     )
 
     chex.assert_shape(forces, (1, 5, 3))  # 1 residue, 5 atoms (N,CA,C,O,CB), 3D
+    chex.assert_tree_all_finite(forces)
+
+
+@pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])
+def test_noised_coulomb_forces_at_backbone(
+    backbone_positions_single_residue,
+    simple_positions,
+    simple_charges,
+    jit_compile,
+):
+    """Test that noised backbone forces work and have correct shape."""
+    fn = compute_noised_coulomb_forces_at_backbone
+    if jit_compile:
+        fn = jax.jit(fn)
+    # Create backbone charges (5 atoms per residue)
+    backbone_charges = jnp.ones((1, 5)) * 0.5  # 1 residue, 5 atoms
+    key = jax.random.PRNGKey(0)
+
+    forces = fn(
+        backbone_positions_single_residue,
+        simple_positions,
+        backbone_charges,
+        simple_charges,
+        noise_scale=0.1,
+        key=key,
+    )
+
+    chex.assert_shape(forces, (1, 5, 3))
     chex.assert_tree_all_finite(forces)
 
 

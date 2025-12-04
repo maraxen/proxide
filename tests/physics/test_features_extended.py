@@ -68,7 +68,7 @@ class TestFeaturesExtended(unittest.TestCase):
 
     def test_compute_vdw_node_features_noise(self):
         """Test vdW features with noise."""
-        with mock.patch("priox.physics.features.compute_lj_forces_at_backbone") as mock_forces:
+        with mock.patch("priox.physics.features.compute_noised_lj_forces_at_backbone") as mock_forces:
             mock_forces.return_value = jnp.zeros((2, 5, 3))
             
             key = jax.random.key(0)
