@@ -47,6 +47,8 @@ class FullForceField(eqx.Module):
   charges_by_id: jnp.ndarray  # (n_atoms,) partial charges
   sigmas_by_id: jnp.ndarray  # (n_atoms,) LJ sigma (Angstroms)
   epsilons_by_id: jnp.ndarray  # (n_atoms,) LJ epsilon (kcal/mol)
+  radii_by_id: jnp.ndarray  # (n_atoms,) GBSA radius (Angstroms)
+  scales_by_id: jnp.ndarray  # (n_atoms,) GBSA scale factor
   cmap_energy_grids: jnp.ndarray  # (n_maps, grid_size, grid_size)
 
   # Static metadata (immutable)
@@ -94,6 +96,22 @@ class FullForceField(eqx.Module):
       return DEFAULT_SIGMA, DEFAULT_EPSILON
     return float(self.sigmas_by_id[atom_id]), float(self.epsilons_by_id[atom_id])
 
+  def get_gbsa_params(self, residue: str, atom: str) -> tuple[float, float]:
+    """Get GBSA parameters for a specific atom.
+
+    Args:
+        residue: Residue name
+        atom: Atom name
+
+    Returns:
+        Tuple of (radius, scale) in (Angstroms, dimensionless)
+
+    """
+    atom_id = self.atom_key_to_id.get((residue, atom))
+    if atom_id is None:
+      return 0.0, 0.0
+    return float(self.radii_by_id[atom_id]), float(self.scales_by_id[atom_id])
+
 
 def _make_ff_skeleton(hyperparams: dict[str, Any]) -> FullForceField:
   """Create an empty FullForceField from hyperparameters.
@@ -129,6 +147,8 @@ def _make_ff_skeleton(hyperparams: dict[str, Any]) -> FullForceField:
     charges_by_id=jnp.zeros(num_atoms, dtype=jnp.float32),
     sigmas_by_id=jnp.zeros(num_atoms, dtype=jnp.float32),
     epsilons_by_id=jnp.zeros(num_atoms, dtype=jnp.float32),
+    radii_by_id=jnp.zeros(num_atoms, dtype=jnp.float32),
+    scales_by_id=jnp.zeros(num_atoms, dtype=jnp.float32),
     cmap_energy_grids=jnp.zeros((num_maps, grid_size, grid_size), dtype=jnp.float32),
     **hyperparams,
   )
