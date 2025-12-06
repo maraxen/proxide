@@ -695,7 +695,7 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
   gb_radii_val = jnp.array(assign_mbondi2_radii(atom_names, residues, bonds_list))
   # OpenMM defines 'sr' as (radius - offset) * scale_factor
   # We use 0.09 as the offset (standard for OBC2)
-  offset = 0.09
+  offset = 0.009
   scaled_radii_val = (gb_radii_val - offset) * jnp.array(assign_obc2_scaling_factors(atom_names))
 
   # Convert to JAX arrays

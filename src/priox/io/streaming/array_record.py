@@ -75,9 +75,6 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
     self.reader = ArrayRecordReader(str(self.array_record_path))
     self._length = self.reader.num_records()
 
-    # Load index
-    # If index_path doesn't exist, we might be in a special "inference" or "all" mode
-    # where the index is implicitly all records in the array_record file.
     if not self.index_path.exists():
       if split in ["inference", "all"]:
         logger.info(
@@ -86,7 +83,6 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
           self.index_path,
           split,
         )
-        # Create a dummy full_index where all records belong to this split
         full_index = {f"record_{i}": {"idx": [i], "set": split} for i in range(self._length)}
       else:
         msg = f"Index file not found: {self.index_path}"
@@ -107,12 +103,10 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
           pass
         self.index[pid] = entry
 
-    # Create a linear mapping from 0..N to file record indices
     self._record_indices = []
     for entry in self.index.values():
       self._record_indices.extend(entry["idx"])
 
-    # Fallback for inference/all split if no records found in index
     if len(self._record_indices) == 0 and split in ["inference", "all"]:
       logger.info(
         "No records found for split '%s' in index, but split is '%s'. "
@@ -129,11 +123,9 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       self.index_path,
     )
 
-    # Initialize reader
     self.reader = ArrayRecordReader(str(self.array_record_path))
     self._length = self.reader.num_records()
 
-    # Validate index
     if len(self._record_indices) == 0:
       logger.warning("No records found for split '%s'", split)
 
