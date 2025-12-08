@@ -13,12 +13,18 @@ from priox.md.bridge.utils import assign_masses
 if TYPE_CHECKING:
   from priox.physics.force_fields import FullForceField
 
+from priox.md.bridge import water
+from priox.md.bridge.water import get_water_params
+
+# Removed TIP3P_DEFS constant (now in water.py)
 
 def parameterize_system(  # noqa: C901, PLR0912, PLR0915
   force_field: "FullForceField",
   residues: list[str],
   atom_names: list[str],
   atom_counts: list[int] | None = None,
+  water_model: str = "TIP3P",
+  rigid_water: bool = True,
 ) -> SystemParams:
   """Convert a protein structure and force field into JAX MD compatible arrays.
 
@@ -67,6 +73,9 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
 
   # Map: global_idx -> (res_name, atom_name)
   atom_info_map = {}
+  
+  # Track water atoms to exclude from auto-angle generation
+  water_atom_indices = set()
 
   # Helper: Get atom class
   def get_class(idx: int) -> str:
@@ -117,9 +126,81 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
     else:
         # Legacy/Strict mode: Assume full residue
         expected_atoms = residue_constants.residue_atoms.get(res_name, [])
+        if res_name == "HOH":
+             expected_atoms = ["O", "H1", "H2"]
         res_atom_names = expected_atoms
 
     # --- Residue Mapping Logic ---
+    # 0. Explicit Water Handling
+    if res_name in ["HOH", "WAT", "SOL"]:
+        # Retrieve water model params (rigid=True zeros bond/angle k)
+        w_params = get_water_params(water_model, rigid=rigid_water)
+        
+        local_map = {}
+        bb_indices = [-1, -1, -1, -1]
+        
+        res_atom_indices = {} # Name -> Global Idx
+
+        for i, name in enumerate(res_atom_names):
+            global_idx = current_atom_idx + i
+            local_map[name] = global_idx
+            atom_info_map[global_idx] = (res_name, name)
+            res_atom_indices[name] = global_idx
+            water_atom_indices.add(global_idx)
+            
+            # Params from WaterModelParams
+            q = w_params.charges.get(name, 0.0)
+            sig = w_params.sigmas.get(name, 1.0)
+            eps = w_params.epsilons.get(name, 0.0)
+            
+            charges_list.append(q)
+            sigmas_list.append(sig) 
+            epsilons_list.append(eps)
+            radii_list.append(1.5) # Dummy GB radius
+            scales_list.append(0.8) # Dummy scale
+        
+        # Topology from WaterModelParams
+        # 1. Bonds
+        for a1, a2, length, k in w_params.bonds:
+            if a1 in res_atom_indices and a2 in res_atom_indices:
+                idx1 = res_atom_indices[a1]
+                idx2 = res_atom_indices[a2]
+                bonds_list.append([idx1, idx2])
+                bond_params_list.append([length, k])
+        
+        # 2. Angles
+        for a1, a2, a3, theta, k in w_params.angles:
+            if a1 in res_atom_indices and a2 in res_atom_indices and a3 in res_atom_indices:
+                idx1 = res_atom_indices[a1]
+                idx2 = res_atom_indices[a2]
+                idx3 = res_atom_indices[a3]
+                angles_list.append([idx1, idx2, idx3])
+                angle_params_list.append([theta, k])
+                
+        # 3. Constraints
+        # Prolix core.py automatically constrains bonds involving H.
+        # But we need to ensure the constraint pair is IN bonds_list with k=0 if it's not a real bond.
+        # Check constraints
+        for a1, a2, length in w_params.constraints:
+            if a1 in res_atom_indices and a2 in res_atom_indices:
+                # Check if already added as bond
+                is_bonded = False
+                for b_a1, b_a2, _, _ in w_params.bonds:
+                    if (b_a1==a1 and b_a2==a2) or (b_a1==a2 and b_a2==a1):
+                         is_bonded = True
+                         break
+                
+                if not is_bonded:
+                    # Add as k=0 bond to trigger constraint logic
+                    idx1 = res_atom_indices[a1]
+                    idx2 = res_atom_indices[a2]
+                    bonds_list.append([idx1, idx2])
+                    bond_params_list.append([length, 0.0])
+            
+        backbone_indices_list.append(bb_indices)
+        current_atom_idx += len(res_atom_names)
+        continue
+
     # 1. Terminal Mapping
     mapped_res_name = res_name
     is_n_term = (r_i == 0)
@@ -291,6 +372,8 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
       # 3. Infer hydrogen bonds from naming conventions (if no template)
       # Hydrogens are named with pattern: H{parent}N (e.g., HA, HB, HG, HD)
       # or numbered: H1, H2, H3 (terminal amino), HA2, HA3, HB2, HB3, etc.
+      
+      # Generic mapping (fallback)
       hydrogen_map = {
           # H attached to N (backbone/terminal amino)
           'H': 'N', 'HN': 'N', 'H1': 'N', 'H2': 'N', 'H3': 'N',
@@ -317,13 +400,41 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
           '1HZ': 'NZ', '2HZ': 'NZ', '3HZ': 'NZ',
           # HH attached to NH/OH
           'HH': 'OH', 'HH2': 'NH2', 'HH11': 'NH1', 'HH12': 'NH1', 'HH21': 'NH2', 'HH22': 'NH2',
-          # Terminal OXT
-          'HXT': 'OXT',
       }
+      
+      # Residue-specific overrides
+      residue_h_map = {
+          'TYR': {'HE1': 'CE1', 'HE2': 'CE2', 'HD1': 'CD1', 'HD2': 'CD2', 'HH': 'OH'},
+          'PHE': {'HE1': 'CE1', 'HE2': 'CE2', 'HD1': 'CD1', 'HD2': 'CD2', 'HZ': 'CZ'},
+          'TRP': {'HE1': 'NE1', 'HE3': 'CE3', 'HZ2': 'CZ2', 'HZ3': 'CZ3', 'HH2': 'CH2', 'HD1': 'CD1'},
+          'PRO': {'HD2': 'CD', 'HD3': 'CD', 'HG2': 'CG', 'HG3': 'CG', 'HB2': 'CB', 'HB3': 'CB'},
+          'HIS': {'HE1': 'CE1', 'HE2': 'NE2', 'HD1': 'ND1', 'HD2': 'CD2'}, # Depends on protonation?
+          # Assuming standard naming:
+          # HIE: HE1->CE1, HD2->CD2 (No HE2, No HD1)
+          # HID: HE1->CE1, HD2->CD2, HD1->ND1? (No HE2?)
+          # HIP: HE1->CE1, HE2->NE2, HD1->ND1, HD2->CD2
+          # Our base_res_name might be HIS or HIE/HID/HIP if already mapped?
+          # parameterize_system resets res_name to mapped_res_name.
+          # But base_res_name is stripped of N/C prefix.
+      }
+      
+      # Also add specific mappings for HIE/HID/HIP if needed
+      residue_h_map['HIE'] = residue_h_map['HIS']
+      residue_h_map['HID'] = residue_h_map['HIS']
+      residue_h_map['HIP'] = residue_h_map['HIS']
       
       for h_name in res_atom_names:
           if h_name.startswith('H') and h_name in local_map:
-              parent = hydrogen_map.get(h_name)
+              parent = None
+              
+              # 1. Check Residue Specific Map
+              if base_res_name in residue_h_map and h_name in residue_h_map[base_res_name]:
+                  parent = residue_h_map[base_res_name][h_name]
+              
+              # 2. Check Generic Map
+              if not parent:
+                  parent = hydrogen_map.get(h_name)
+                  
               if parent and parent in local_map:
                   h_idx = local_map[h_name]
                   parent_idx = local_map[parent]
@@ -340,6 +451,23 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
                   else:
                       # Default H bond: 1.0 Å, k=340 kcal/mol/Å^2
                       bond_params_list.append([1.0, 340.0])
+
+      # 4. Handle Terminal OXT (if not handled by templates)
+      if "OXT" in local_map and "C" in local_map:
+           oxt_idx = local_map["OXT"]
+           c_idx = local_map["C"]
+           bonds_list.append([oxt_idx, c_idx])
+           
+           # Lookup OXT-C
+           c1 = get_class(oxt_idx)
+           c2 = get_class(c_idx)
+           key = tuple(sorted((c1, c2)))
+           if key in bond_lookup:
+               l_a, k_kcal_a2 = bond_lookup[key]
+               bond_params_list.append([l_a, k_kcal_a2])
+           else:
+               # Generic C-O bond
+               bond_params_list.append([1.25, 450.0])
 
     # Internal Angles - Generate from Bonds
     # Build local adjacency for this residue's atoms
@@ -389,11 +517,24 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
       adj_angles[b[0]].append(b[1])
       adj_angles[b[1]].append(b[0])
 
-  angles_list = []
-  angle_params_list = []
+  # NOTE: Do NOT reinitialize angles_list and angle_params_list!
+  # Water angles (with k=0 for rigid water) were already added during 
+  # per-residue processing. We only add NEW angles here.
   seen_angles = set()
+  # Mark existing angles as seen to avoid duplicates
+  # Format: angles_list contains [i, j, k] where j is the central atom
+  for ang in angles_list:
+      i_idx, j, k_idx = ang[0], ang[1], ang[2]
+      # Normalize: sort the side atoms (i and k), keep central j 
+      if i_idx > k_idx:
+          i_idx, k_idx = k_idx, i_idx
+      seen_angles.add((i_idx, j, k_idx))
 
   for j in range(n_atoms):
+      # Skip if central atom is water (already handled in per-residue)
+      if j in water_atom_indices:
+          continue
+
       neighbors = adj_angles[j]
       if len(neighbors) < 2:  # noqa: PLR2004
           continue
