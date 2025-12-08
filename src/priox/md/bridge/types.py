@@ -28,3 +28,7 @@ class SystemParams(TypedDict):
   cmap_indices: jnp.ndarray # (N_torsions,) map index for each torsion
   cmap_torsions: jnp.ndarray # (N_torsions, 5) [i, j, k, l, map_idx]
   cmap_coeffs: jnp.ndarray # (N_maps, Grid, Grid, 4) [f, fx, fy, fxy]
+  urey_bradley_bonds: jnp.ndarray # (N_ub, 2) [atom1, atom2] (1-3 interaction)
+  urey_bradley_params: jnp.ndarray # (N_ub, 2) [d, k]
+  virtual_site_def: jnp.ndarray # (N_vs, 4) [vs_idx, parent1, parent2, parent3]
+  virtual_site_params: jnp.ndarray # (N_vs, 12) [p1, p2, p3, wo1, wo2, wo3, wx1, wx2, wx3, wy1, wy2, wy3]

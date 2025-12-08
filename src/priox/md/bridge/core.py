@@ -51,6 +51,12 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
   angles_list = []
   angle_params_list = []
 
+  urey_bradley_list = []
+  urey_bradley_params_list = []
+
+  virtual_site_def_list = []
+  virtual_site_params_list = []
+
   backbone_indices_list = []
 
   # Load standard topology templates (fallback)
@@ -92,6 +98,14 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
       c1, c2, c3, theta, k = a
       angle_lookup[(c1, c2, c3)] = (theta, k)
       angle_lookup[(c3, c2, c1)] = (theta, k)
+
+  # Pre-process UB lookup
+  ub_lookup = {}
+  if hasattr(force_field, "urey_bradley_bonds"):
+      for ub in force_field.urey_bradley_bonds:
+          # ub is (class1, class2, length, k) (1-3 pair)
+          c1, c2, length, k = ub
+          ub_lookup[tuple(sorted((c1, c2)))] = (length, k)
 
   # Pre-calculate available residues in FF
   ff_residues = {r for r, a in force_field.atom_key_to_id}
@@ -145,6 +159,15 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
             mapped_res_name = "HIE" # Default fallback
 
     # Apply mapping
+    mapped_res_name = res_name if res_name == mapped_res_name else mapped_res_name
+    # Compute base_res_name by stripping terminal N/C prefix for topology fallback
+    # e.g. NGLY -> GLY, CALA -> ALA
+    if res_name.startswith('N') and len(res_name) > 1 and res_name[1:] in residue_constants.residue_atoms:
+        base_res_name = res_name[1:]
+    elif res_name.startswith('C') and len(res_name) > 1 and res_name[1:] in residue_constants.residue_atoms:
+        base_res_name = res_name[1:]
+    else:
+        base_res_name = res_name
     res_name = mapped_res_name  # noqa: PLW2901
     # -----------------------------
 
@@ -180,6 +203,32 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
           bb_indices[3] = global_idx
 
     backbone_indices_list.append(bb_indices)
+
+    # -----------------------------
+    # Virtual Sites
+    # -----------------------------
+    if hasattr(force_field, "virtual_sites") and res_name in force_field.virtual_sites:
+        for vs_def in force_field.virtual_sites[res_name]:
+            # vs_def: type, siteName, atoms=[n1,n2,n3], p=[..], wo=[..], wx=[..], wy=[..]
+            s_name = vs_def["siteName"]
+            if s_name in local_map:
+                vs_idx = local_map[s_name]
+                
+                # Parents
+                p_atoms = vs_def["atoms"]
+                # Verify all parents exist in local_map (assumption: VS purely local)
+                if all(pa in local_map for pa in p_atoms):
+                    p_indices = [local_map[pa] for pa in p_atoms]
+                    
+                    # Store Def: [vs_idx, p1, p2, p3]
+                    virtual_site_def_list.append([vs_idx, p_indices[0], p_indices[1], p_indices[2]])
+                    
+                    # Store Params: [p1,p2,p3, wo.., wx.., wy..]
+                    # Flatten the arrays
+                    params = vs_def["p"] + vs_def["wo"] + vs_def["wx"] + vs_def["wy"]
+                    virtual_site_params_list.append(params)
+                else:
+                    print(f"Warning: Virtual Site parents missed for {s_name} in {res_name}")
 
     # Internal Bonds
     # Priority: FF Templates > residue_constants
@@ -217,8 +266,9 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
                     bond_params_list.append([1.33, 300.0])
     
     # 2. Fallback to residue_constants (only if no template found)
-    if not bonds_found and res_name in std_bonds:
-      for bond in std_bonds[res_name]:
+    # Use base_res_name (e.g. GLY) instead of res_name (e.g. NGLY) for lookup
+    if not bonds_found and base_res_name in std_bonds:
+      for bond in std_bonds[base_res_name]:
         if bond.atom1_name in local_map and bond.atom2_name in local_map:
           idx1 = local_map[bond.atom1_name]
           idx2 = local_map[bond.atom2_name]
@@ -237,6 +287,59 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
               bond_params_list.append([length, k])
           else:
               bond_params_list.append([bond.length, 300.0])
+      
+      # 3. Infer hydrogen bonds from naming conventions (if no template)
+      # Hydrogens are named with pattern: H{parent}N (e.g., HA, HB, HG, HD)
+      # or numbered: H1, H2, H3 (terminal amino), HA2, HA3, HB2, HB3, etc.
+      hydrogen_map = {
+          # H attached to N (backbone/terminal amino)
+          'H': 'N', 'HN': 'N', 'H1': 'N', 'H2': 'N', 'H3': 'N',
+          # HA attached to CA
+          'HA': 'CA', 'HA2': 'CA', 'HA3': 'CA', '1HA': 'CA', '2HA': 'CA',
+          # HB attached to CB
+          'HB': 'CB', 'HB2': 'CB', 'HB3': 'CB', '1HB': 'CB', '2HB': 'CB', '3HB': 'CB',
+          # HG attached to CG
+          'HG': 'CG', 'HG2': 'CG', 'HG3': 'CG', 'HG1': 'OG1', # THR special case
+          'HG21': 'CG2', 'HG22': 'CG2', 'HG23': 'CG2',
+          '1HG': 'CG', '2HG': 'CG', '1HG1': 'CG1', '2HG1': 'CG1',
+          '1HG2': 'CG2', '2HG2': 'CG2', '3HG2': 'CG2',
+          # HD attached to CD
+          'HD': 'CD', 'HD2': 'CD2', 'HD3': 'CD', 'HD1': 'CD1', 'HD11': 'CD1', 'HD12': 'CD1', 'HD13': 'CD1',
+          'HD21': 'CD2', 'HD22': 'CD2', 'HD23': 'ND2',
+          '1HD': 'CD', '2HD': 'CD', '1HD1': 'CD1', '2HD1': 'CD1', '3HD1': 'CD1',
+          '1HD2': 'CD2', '2HD2': 'CD2', '3HD2': 'CD2',
+          # HE attached to CE/NE
+          'HE': 'NE', 'HE1': 'NE1', 'HE2': 'NE2', 'HE3': 'CE3',
+          'HE21': 'NE2', 'HE22': 'NE2',
+          '1HE': 'CE', '2HE': 'CE', '3HE': 'CE',
+          # HZ attached to CZ/NZ
+          'HZ': 'CZ', 'HZ2': 'CZ2', 'HZ3': 'CZ3', 'HZ1': 'NZ',
+          '1HZ': 'NZ', '2HZ': 'NZ', '3HZ': 'NZ',
+          # HH attached to NH/OH
+          'HH': 'OH', 'HH2': 'NH2', 'HH11': 'NH1', 'HH12': 'NH1', 'HH21': 'NH2', 'HH22': 'NH2',
+          # Terminal OXT
+          'HXT': 'OXT',
+      }
+      
+      for h_name in res_atom_names:
+          if h_name.startswith('H') and h_name in local_map:
+              parent = hydrogen_map.get(h_name)
+              if parent and parent in local_map:
+                  h_idx = local_map[h_name]
+                  parent_idx = local_map[parent]
+                  bonds_list.append([h_idx, parent_idx])
+                  
+                  # Lookup bond params
+                  c1 = get_class(h_idx)
+                  c2 = get_class(parent_idx)
+                  key = tuple(sorted((c1, c2)))
+                  
+                  if key in bond_lookup:
+                      l_a, k_kcal_a2 = bond_lookup[key]
+                      bond_params_list.append([l_a, k_kcal_a2])
+                  else:
+                      # Default H bond: 1.0 Å, k=340 kcal/mol/Å^2
+                      bond_params_list.append([1.0, 340.0])
 
     # Internal Angles - Generate from Bonds
     # Build local adjacency for this residue's atoms
@@ -329,6 +432,14 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
           else:
               # Fallback: 109.5 degrees (1.91 rad), k=100.0 (50 kcal/mol/rad^2)
               angle_params_list.append([1.91, 100.0])
+
+          # Validation: Urey-Bradley (1-3 interaction)
+          # Check if (c1, c3) has UB term
+          ub_key = tuple(sorted((c1, c3)))
+          if ub_key in ub_lookup:
+              ub_d, ub_k = ub_lookup[ub_key]
+              urey_bradley_list.append([i_idx, k_idx]) # 1-3 pair
+              urey_bradley_params_list.append([ub_d, ub_k])
 
   # -----------------------------------------------------------------------
   # Scaling Matrices (1-2, 1-3, 1-4)
@@ -723,4 +834,24 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
           else jnp.zeros((0, 5), dtype=jnp.int32)
       ),
       "cmap_coeffs": cmap_coeffs,
+      "urey_bradley_bonds": (
+          jnp.array(urey_bradley_list, dtype=jnp.int32)
+          if urey_bradley_list
+          else jnp.zeros((0, 2), dtype=jnp.int32)
+      ),
+      "urey_bradley_params": (
+          jnp.array(urey_bradley_params_list, dtype=jnp.float32)
+          if urey_bradley_params_list
+          else jnp.zeros((0, 2), dtype=jnp.float32)
+      ),
+      "virtual_site_def": (
+          jnp.array(virtual_site_def_list, dtype=jnp.int32)
+          if virtual_site_def_list
+          else jnp.zeros((0, 4), dtype=jnp.int32)
+      ),
+      "virtual_site_params": (
+          jnp.array(virtual_site_params_list, dtype=jnp.float32)
+          if virtual_site_params_list
+          else jnp.zeros((0, 12), dtype=jnp.float32)
+      ),
   }
