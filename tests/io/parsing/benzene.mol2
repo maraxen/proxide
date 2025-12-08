@@ -1,0 +1,23 @@
+@<TRIPOS>MOLECULE
+benzene
+ 6 6 0 0 0
+SMALL
+bcc
+
+
+@<TRIPOS>ATOM
+      1 C1          1.2124    0.7000    0.0000 ca        1 LIG     -0.115000
+      2 C2          1.2124   -0.7000    0.0000 ca        1 LIG     -0.115000
+      3 C3          0.0000   -1.4000    0.0000 ca        1 LIG     -0.115000
+      4 C4         -1.2124   -0.7000    0.0000 ca        1 LIG     -0.115000
+      5 C5         -1.2124    0.7000    0.0000 ca        1 LIG     -0.115000
+      6 C6          0.0000    1.4000    0.0000 ca        1 LIG     -0.115000
+@<TRIPOS>BOND
+     1     1     2 ar
+     2     2     3 ar
+     3     3     4 ar
+     4     4     5 ar
+     5     5     6 ar
+     6     6     1 ar
+@<TRIPOS>SUBSTRUCTURE
+     1 LIG         1 TEMP              0 ****  ****    0 ROOT
