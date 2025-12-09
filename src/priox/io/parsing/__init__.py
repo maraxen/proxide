@@ -1,6 +1,7 @@
 """Parsing utilities for various protein structure formats."""
 
 from priox.io.parsing.dispatch import load_structure, parse_input
+from priox.io.parsing.molecule import Molecule
 from priox.io.parsing.registry import (
     FormatNotSupportedError,
     ParsingError,
@@ -10,6 +11,7 @@ from priox.io.parsing.registry import (
 
 __all__ = [
     "FormatNotSupportedError",
+    "Molecule",
     "ParsingError",
     "PrioxError",
     "load_structure",
