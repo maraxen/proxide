@@ -13,7 +13,7 @@ import numpy as np
 
 from priox.physics.force_fields import loader as force_fields
 from priox.chem import residues as residue_constants
-from priox.core.containers import Protein, ProteinTuple
+from priox.core.containers import Protein
 from priox.md import jax_md_bridge
 from priox.physics.features import compute_electrostatic_node_features
 
@@ -21,19 +21,19 @@ _MAX_TRIES = 5
 
 
 def truncate_protein(
-  protein: ProteinTuple,
+  protein: Protein,
   max_length: int | None,
   strategy: str = "none",
-) -> ProteinTuple:
+) -> Protein:
   """Truncate a protein to a maximum length.
 
   Args:
-    protein: The protein tuple to truncate.
+    protein: The protein to truncate.
     max_length: The maximum length. If None, no truncation is performed.
     strategy: The truncation strategy ("random_crop", "center_crop", "none").
 
   Returns:
-    The truncated protein tuple.
+    The truncated protein.
 
   """
   if max_length is None or strategy == "none":
@@ -61,7 +61,7 @@ def truncate_protein(
       return arr[start:end]
     return arr
 
-  return protein._replace(
+  return protein.replace(
     coordinates=slice_array(protein.coordinates),
     aatype=slice_array(protein.aatype),
     atom_mask=slice_array(protein.atom_mask),
@@ -74,14 +74,17 @@ def truncate_protein(
     radii=slice_array(protein.radii),
     sigmas=slice_array(protein.sigmas),
     epsilons=slice_array(protein.epsilons),
-    estat_backbone_mask=slice_array(protein.estat_backbone_mask),
-    estat_resid=slice_array(protein.estat_resid),
-    estat_chain_index=slice_array(protein.estat_chain_index),
     physics_features=slice_array(protein.physics_features),
+    # AtomicSystem fields (previously MD fields)
+    bonds=slice_array(protein.bonds),
+    bond_params=slice_array(protein.bond_params),
+    angles=slice_array(protein.angles),
+    angle_params=slice_array(protein.angle_params),
+    exclusion_mask=slice_array(protein.exclusion_mask),
   )
 
 
-def concatenate_proteins_for_inter_mode(elements: Sequence[ProteinTuple]) -> Protein:
+def concatenate_proteins_for_inter_mode(elements: Sequence[Protein]) -> Protein:
   """Concatenate proteins for inter-chain mode (pass_mode='inter').
 
   Instead of padding and stacking, concatenate all structures along the residue dimension
@@ -116,7 +119,7 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[ProteinTuple]) -> Pro
     raise ValueError(msg)
 
   tries = 0
-  while not all(isinstance(p, ProteinTuple) for p in elements):
+  while not all(isinstance(p, Protein) for p in elements):
     if any(isinstance(p, Sequence) for p in elements):
       elements = [p[0] if isinstance(p, Sequence) else p for p in elements]  # type: ignore[invalid-assignment]
       tries += 1
@@ -125,7 +128,7 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[ProteinTuple]) -> Pro
       warnings.warn(msg, stacklevel=2)
       raise ValueError(msg)
 
-  proteins = [Protein.from_tuple_numpy(p) for p in elements]
+  proteins = list(elements)
 
   structure_indices = []
   for i, protein in enumerate(proteins):
@@ -149,15 +152,15 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[ProteinTuple]) -> Pro
 
 
 def _validate_and_flatten_elements(
-  elements: Sequence[ProteinTuple],
-) -> list[ProteinTuple]:
-  """Ensure all elements are ProteinTuple and flatten nested sequences.
+  elements: Sequence[Protein],
+) -> list[Protein]:
+  """Ensure all elements are Protein and flatten nested sequences.
 
   Args:
-    elements (Sequence[ProteinTuple]): List of protein tuples to validate.
+    elements (Sequence[Protein]): List of proteins to validate.
 
   Returns:
-    list[ProteinTuple]: Validated and flattened list of ProteinTuple.
+    list[Protein]: Validated and flattened list of Protein.
 
   Raises:
     ValueError: If the input list is empty or too deeply nested.
@@ -169,7 +172,7 @@ def _validate_and_flatten_elements(
     raise ValueError(msg)
 
   tries = 0
-  while not all(isinstance(p, ProteinTuple) for p in elements):
+  while not all(isinstance(p, Protein) for p in elements):
     if any(isinstance(p, Sequence) for p in elements):
       elements = [p[0] if isinstance(p, Sequence) else p for p in elements]  # type: ignore[invalid-assignment]
       tries += 1
@@ -181,22 +184,22 @@ def _validate_and_flatten_elements(
 
 
 def _apply_electrostatics_if_needed(
-  elements: list[ProteinTuple],
+  elements: list[Protein],
   *,
   use_electrostatics: bool,
   estat_noise: Sequence[float] | float | None = None,
   estat_noise_mode: str = "direct",
-) -> list[ProteinTuple]:
+) -> list[Protein]:
   """Apply electrostatic features if requested.
 
   Args:
-    elements (list[ProteinTuple]): List of protein tuples.
+    elements (list[Protein]): List of proteins.
     use_electrostatics (bool): Whether to compute and add electrostatic features.
     estat_noise: Noise level(s) for electrostatics.
     estat_noise_mode: Mode for electrostatic noise ("direct" or "thermal").
 
   Returns:
-    list[ProteinTuple]: Updated list with electrostatic features if requested.
+    list[Protein]: Updated list with electrostatic features if requested.
 
   """
   if not use_electrostatics:
@@ -216,18 +219,20 @@ def _apply_electrostatics_if_needed(
   phys_feats = []
   for p in elements:
     feat = compute_electrostatic_node_features(
-      p, noise_scale=noise_val, noise_mode=estat_noise_mode,
+      p,
+      noise_scale=noise_val,
+      noise_mode=estat_noise_mode,
     )
     phys_feats.append(np.array(feat))
 
-  return [p._replace(physics_features=feat) for p, feat in zip(elements, phys_feats, strict=False)]
+  return [p.replace(physics_features=feat) for p, feat in zip(elements, phys_feats, strict=False)]
 
 
 def _apply_md_parameterization(
-  elements: list[ProteinTuple],
+  elements: list[Protein],
   *,
   use_md: bool,
-) -> list[ProteinTuple]:
+) -> list[Protein]:
   """Parameterize proteins for MD simulation.
 
   Args:
@@ -265,20 +270,19 @@ def _apply_md_parameterization(
     # Construct atom_names list
     atom_names = []
     for res_name in res_names:
-        atoms = residue_constants.residue_atoms.get(res_name, [])
-        atom_names.extend(atoms)
+      atoms = residue_constants.residue_atoms.get(res_name, [])
+      atom_names.extend(atoms)
 
     params = jax_md_bridge.parameterize_system(ff, res_names, atom_names)
 
     # Convert JAX arrays to numpy and populate ProteinTuple
-    p_new = p._replace(
-      md_bonds=np.array(params["bonds"]),
-      md_bond_params=np.array(params["bond_params"]),
-      md_angles=np.array(params["angles"]),
-      md_angle_params=np.array(params["angle_params"]),
-      md_backbone_indices=np.array(params["backbone_indices"]),
-      md_exclusion_mask=np.array(params["exclusion_mask"]),
-
+    p_new = p.replace(
+      bonds=np.array(params["bonds"]),
+      bond_params=np.array(params["bond_params"]),
+      angles=np.array(params["angles"]),
+      angle_params=np.array(params["angle_params"]),
+      backbone_indices=np.array(params["backbone_indices"]),
+      exclusion_mask=np.array(params["exclusion_mask"]),
       charges=np.array(params["charges"]),
       sigmas=np.array(params["sigmas"]),
       epsilons=np.array(params["epsilons"]),
@@ -313,11 +317,12 @@ def _pad_protein(  # noqa: C901
 
   # MD padding lengths
   md_pads = {}
+  md_pads = {}
   if md_dims:
-    if protein.md_bonds is not None:
-      md_pads["bonds"] = md_dims["max_bonds"] - protein.md_bonds.shape[0]
-    if protein.md_angles is not None:
-      md_pads["angles"] = md_dims["max_angles"] - protein.md_angles.shape[0]
+    if protein.bonds is not None:
+      md_pads["bonds"] = md_dims["max_bonds"] - protein.bonds.shape[0]
+    if protein.angles is not None:
+      md_pads["angles"] = md_dims["max_angles"] - protein.angles.shape[0]
     if protein.charges is not None:
       md_pads["atoms"] = md_dims["max_atoms"] - protein.charges.shape[0]
 
@@ -375,39 +380,46 @@ def _pad_protein(  # noqa: C901
   # Manually pad MD fields if present
   # Manually pad MD fields if present
   if md_dims:
+
     def pad_array(arr: np.ndarray | None, pad_amt: int) -> np.ndarray | None:
       if arr is None:
-          return None
+        return None
       pads = [(0, pad_amt)] + [(0, 0)] * (arr.ndim - 1)
       return np.pad(arr, pads)
 
     # Bonds
-    if padded_protein.md_bonds is not None:
-      p_bonds = pad_array(padded_protein.md_bonds, md_pads.get("bonds", 0))
-      p_params = pad_array(padded_protein.md_bond_params, md_pads.get("bonds", 0))
-      padded_protein = padded_protein.replace(md_bonds=p_bonds, md_bond_params=p_params)
+    if padded_protein.bonds is not None:
+      p_bonds = pad_array(padded_protein.bonds, md_pads.get("bonds", 0))
+      p_params = pad_array(padded_protein.bond_params, md_pads.get("bonds", 0))
+      padded_protein = padded_protein.replace(bonds=p_bonds, bond_params=p_params)
 
     # Angles
-    if padded_protein.md_angles is not None:
-      p_angles = pad_array(padded_protein.md_angles, md_pads.get("angles", 0))
-      p_params = pad_array(padded_protein.md_angle_params, md_pads.get("angles", 0))
-      padded_protein = padded_protein.replace(md_angles=p_angles, md_angle_params=p_params)
-
-
+    if padded_protein.angles is not None:
+      p_angles = pad_array(padded_protein.angles, md_pads.get("angles", 0))
+      p_params = pad_array(padded_protein.angle_params, md_pads.get("angles", 0))
+      padded_protein = padded_protein.replace(angles=p_angles, angle_params=p_params)
 
     # Exclusion mask (N_atoms, N_atoms)
-    if padded_protein.md_exclusion_mask is not None:
+    if padded_protein.exclusion_mask is not None:
       # Pad both dims
-      curr = padded_protein.md_exclusion_mask.shape[0]
+      curr = padded_protein.exclusion_mask.shape[0]
       target = md_dims["max_atoms"]
       amt = target - curr
       if amt > 0:
         mask = np.pad(
-            padded_protein.md_exclusion_mask,
-            ((0, amt), (0, amt)),
-            constant_values=False,
+          padded_protein.exclusion_mask,
+          ((0, amt), (0, amt)),
+          constant_values=False,
         )
-        padded_protein = padded_protein.replace(md_exclusion_mask=mask)
+        padded_protein = padded_protein.replace(exclusion_mask=mask)
+
+    # Backbone indices (N_res, 4) ? or (N_atoms)?
+    # Assuming standard padding along first dim
+    if padded_protein.backbone_indices is not None and protein_len is not None:
+      # It's explicitly sliced/padded like others if it matches protein_len
+      # But in pad_fn we handle generic fields.
+      # Is backbone_indices handled by tree_map? Yes if it's in the dataclass.
+      pass
 
   return padded_protein
 
@@ -441,7 +453,7 @@ def _stack_padded_proteins(
 
 
 def pad_and_collate_proteins(
-  elements: Sequence[ProteinTuple],
+  elements: Sequence[Protein],
   *,
   use_electrostatics: bool = False,
   use_vdw: bool = False,  # noqa: ARG001
@@ -452,13 +464,13 @@ def pad_and_collate_proteins(
   backbone_noise_mode: str = "direct",
   max_length: int | None = None,
 ) -> Protein:
-  """Batch and pad a list of ProteinTuples into a ProteinBatch.
+  """Batch and pad a list of Proteins into a ProteinBatch.
 
-  Take a list of individual `ProteinTuple`s and batch them together into a
-  single `ProteinBatch`, padding them to a fixed length.
+  Take a list of individual `Protein`s and batch them together into a
+  single `Protein` batch, padding them to a fixed length.
 
   Args:
-    elements (list[ProteinTuple]): List of protein tuples to collate.
+    elements (list[Protein]): List of proteins to collate.
     use_electrostatics (bool): Whether to compute and add electrostatic features.
     use_vdw (bool): Placeholder for van der Waals features (not implemented).
     estat_noise: Noise level(s) for electrostatics.
@@ -476,7 +488,7 @@ def pad_and_collate_proteins(
     ValueError: If the input list is empty.
 
   Example:
-    >>> ensemble = pad_and_collate_proteins([protein_tuple1, protein_tuple2],
+    >>> ensemble = pad_and_collate_proteins([protein1, protein2],
     use_electrostatics=True, max_length=512)
 
   """
@@ -509,11 +521,11 @@ def pad_and_collate_proteins(
   # Let's add `backbone_noise_mode` to arguments.
 
   elements = _apply_md_parameterization(
-      elements,
-      use_md=(backbone_noise_mode == "md"),
+    elements,
+    use_md=(backbone_noise_mode == "md"),
   )
 
-  proteins = [Protein.from_tuple_numpy(p) for p in elements]
+  proteins = list(elements)
 
   # Use fixed max_length if provided, otherwise use max in batch
   pad_len = max_length if max_length is not None else max(p.coordinates.shape[0] for p in proteins)
@@ -521,17 +533,17 @@ def pad_and_collate_proteins(
   # Calculate MD dims
   md_dims = {}
   if backbone_noise_mode == "md":
-      max_bonds = 0
-      max_angles = 0
-      max_atoms = 0
-      for p in proteins:
-          if p.md_bonds is not None:
-              max_bonds = max(max_bonds, p.md_bonds.shape[0])
-          if p.md_angles is not None:
-              max_angles = max(max_angles, p.md_angles.shape[0])
-          if p.charges is not None:
-              max_atoms = max(max_atoms, p.charges.shape[0])
-      md_dims = {"max_bonds": max_bonds, "max_angles": max_angles, "max_atoms": max_atoms}
+    max_bonds = 0
+    max_angles = 0
+    max_atoms = 0
+    for p in proteins:
+      if p.bonds is not None:
+        max_bonds = max(max_bonds, p.bonds.shape[0])
+      if p.angles is not None:
+        max_angles = max(max_angles, p.angles.shape[0])
+      if p.charges is not None:
+        max_atoms = max(max_atoms, p.charges.shape[0])
+    md_dims = {"max_bonds": max_bonds, "max_angles": max_angles, "max_atoms": max_atoms}
 
   padded_proteins = [_pad_protein(p, pad_len, md_dims) for p in proteins]
   return _stack_padded_proteins(padded_proteins)

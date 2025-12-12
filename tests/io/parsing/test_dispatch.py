@@ -31,7 +31,7 @@ from priox.io.parsing.registry import FormatNotSupportedError, ParsingError
 from priox.io.parsing.structures import (
     ProcessedStructure,
 )
-from priox.core.containers import ProteinTuple
+from priox.core.containers import Protein
 
 
 def test_determine_h5_structure_mdcath(mdcath_hdf5_file):
@@ -86,7 +86,7 @@ class TestParseInput:
         protein_list = list(protein_stream)
         assert len(protein_list) == 1
         protein = protein_list[0]
-        assert isinstance(protein, ProteinTuple)
+        assert isinstance(protein, Protein)
         assert protein.aatype.shape == (2,)
         assert protein.atom_mask.shape == (2, 37)
         assert protein.coordinates.shape == (2, 37, 3)
@@ -100,14 +100,14 @@ class TestParseInput:
         protein_stream = parse_input(pdb_file)
         protein_list = list(protein_stream)
         assert len(protein_list) == 4
-        assert isinstance(protein_list[0], ProteinTuple)
+        assert isinstance(protein_list[0], Protein)
 
     def test_parse_cif_file(self, cif_file):
         """Test parsing a CIF file from a file path."""
         protein_stream = parse_input(cif_file)
         protein_list = list(protein_stream)
         assert len(protein_list) == 1
-        assert isinstance(protein_list[0], ProteinTuple)
+        assert isinstance(protein_list[0], Protein)
         assert protein_list[0].aatype.shape == (1,)
 
     def test_parse_with_chain_id(self, pdb_file):
@@ -182,7 +182,7 @@ class TestParseInput:
         protein_stream = parse_input(filepath)
         protein_list = list(protein_stream)
         assert len(protein_list) == 4
-        assert isinstance(protein_list[0], ProteinTuple)
+        assert isinstance(protein_list[0], Protein)
         pathlib.Path(filepath).unlink()
 
     def test_parse_atom_array_stack(self):
@@ -204,7 +204,7 @@ class TestParseInput:
         protein_stream = parse_input(filepath)
         protein_list = list(protein_stream)
         assert len(protein_list) == 1
-        assert isinstance(protein_list[0], ProteinTuple)
+        assert isinstance(protein_list[0], Protein)
         pathlib.Path(filepath).unlink()
 
     def test_parse_atom_array(self):
@@ -226,7 +226,7 @@ class TestParseInput:
         protein_stream = parse_input(filepath)
         protein_list = list(protein_stream)
         assert len(protein_list) == 1
-        assert isinstance(protein_list[0], ProteinTuple)
+        assert isinstance(protein_list[0], Protein)
         pathlib.Path(filepath).unlink()
 
     def test_parse_with_dihedrals(self):
@@ -243,7 +243,7 @@ class TestParseInput:
         protein_list = list(protein_stream)
         assert len(protein_list) == 4
         protein = protein_list[0]
-        assert isinstance(protein, ProteinTuple)
+        assert isinstance(protein, Protein)
         assert protein.aatype.shape == (2,)
         assert protein.atom_mask.shape == (2, 37)
         assert protein.coordinates.shape == (2, 37, 3)

@@ -4,13 +4,18 @@ This module provides utilities to populate missing physics parameters
 (charges, sigmas, epsilons) using the existing FullForceField infrastructure.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 import numpy as np
 from biotite.structure import AtomArray
 
-from priox.physics.force_fields.loader import FullForceField, load_force_field_from_hub
 from priox.physics.constants import DEFAULT_EPSILON, DEFAULT_SIGMA
+
+if TYPE_CHECKING:
+  from priox.physics.force_fields.loader import FullForceField
 
 logger = logging.getLogger(__name__)
 
@@ -18,13 +23,13 @@ logger = logging.getLogger(__name__)
 def populate_physics_parameters(
   atom_array: AtomArray,
   force_field: FullForceField | None = None,
-  force_field_name: str = "ff14SB",
+  force_field_name: str = "protein.ff19SB",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
   """Populate physics parameters from force field for atoms without explicit values.
 
   Args:
       atom_array: Biotite AtomArray with atom information
-      force_field: Optional pre-loaded FullForceField. If None, loads from hub.
+      force_field: Optional pre-loaded FullForceField. If None, loads from assets.
       force_field_name: Name of force field to load if force_field is None
 
   Returns:
@@ -33,8 +38,11 @@ def populate_physics_parameters(
   """
   if force_field is None:
     try:
+      # Lazy import to avoid circular dependency
+      from priox.physics.force_fields.loader import load_force_field
+
       logger.info("Loading force field: %s", force_field_name)
-      force_field = load_force_field_from_hub(force_field_name)
+      force_field = load_force_field(force_field_name)
     except Exception as e:  # noqa: BLE001
       logger.warning("Failed to load force field %s: %s. Using defaults.", force_field_name, e)
       return _get_default_parameters(atom_array)

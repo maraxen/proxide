@@ -6,7 +6,7 @@ prxteinmpnn.utils.data_structures
 from __future__ import annotations
 
 from collections.abc import Generator, Sequence
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, Literal
 
 import jax.numpy as jnp
 import numpy as np
@@ -18,88 +18,17 @@ if TYPE_CHECKING:
   from jaxtyping import Int
 
   from priox.core.types import (
-    BIC,
     AlphaCarbonMask,
     AtomMask,
     BackboneDihedrals,
     ChainIndex,
-    ComponentCounts,
-    Converged,
-    Covariances,
-    EnsembleData,
-    LogLikelihood,
-    Means,
     OneHotProteinSequence,
     ProteinSequence,
     ResidueIndex,
-    Responsibilities,
     StructureAtomicCoordinates,
-    Weights,
   )
 
-from dataclasses import dataclass as dc
-
-
-class ProteinTuple(NamedTuple):
-  """Tuple-based protein structure representation.
-
-  Attributes:
-    coordinates (StructureAtomicCoordinates): Atom positions in the structure, represented as a
-      3D array. Cartesian coordinates of atoms in angstroms.
-      The atom types correspond to residue_constants.atom_types, i.e. the first three are N, CA, CB.
-      Shape is (num_res, num_atom_type, 3), where num_res is the number of residues,
-      num_atom_type is the number of atom types (e.g., N, CA, CB, C, O), and 3 is the spatial
-      dimension (x, y, z).
-    aatype (ProteinSequence): Amino-acid type for each residue represented as an integer between 0
-    and 20,
-      where 20 is 'X'. Shape is [num_res].
-    atom_mask (AtomMask): Binary float mask to indicate presence of a particular atom.
-      1.0 if an atom is present and 0.0 if not. This should be used for loss masking.
-      Shape is [num_res, num_atom_type].
-    residue_index (ResidueIndex): Residue index as used in PDB. It is not necessarily
-      continuous or 0-indexed. Shape is [num_res].
-    chain_index (ChainIndex): Chain index for each residue. Shape is [num_res].
-    dihedrals (BackboneDihedrals | None): Dihedral angles for backbone atoms (phi, psi, omega).
-      Shape is [num_res, 3]. If not provided, defaults to None.
-
-  """
-
-  coordinates: np.ndarray
-  aatype: np.ndarray
-  atom_mask: np.ndarray
-  residue_index: np.ndarray
-  chain_index: np.ndarray
-  full_coordinates: np.ndarray | None = None
-  dihedrals: np.ndarray | None = None
-  source: str | None = None
-  mapping: np.ndarray | None = None
-  charges: np.ndarray | None = None
-  radii: np.ndarray | None = None
-  sigmas: np.ndarray | None = None
-  epsilons: np.ndarray | None = None
-  estat_backbone_mask: np.ndarray | None = None
-  estat_resid: np.ndarray | None = None
-  estat_chain_index: np.ndarray | None = None
-  physics_features: np.ndarray | None = None
-  md_bonds: np.ndarray | None = None
-  md_bond_params: np.ndarray | None = None
-  md_angles: np.ndarray | None = None
-  md_angle_params: np.ndarray | None = None
-  md_backbone_indices: np.ndarray | None = None
-  md_exclusion_mask: np.ndarray | None = None
-
-
-@dc
-class TrajectoryStaticFeatures:
-  """A container for pre-computed, frame-invariant protein features."""
-
-  aatype: np.ndarray
-  static_atom_mask_37: np.ndarray
-  residue_indices: np.ndarray
-  chain_index: np.ndarray
-  valid_atom_mask: np.ndarray
-  nitrogen_mask: np.ndarray
-  num_residues: int
+from priox.core.atomic_system import AtomicSystem
 
 
 def include_feature(feature_name: str, include_features: Sequence[str] | None) -> bool:
@@ -117,28 +46,6 @@ def include_feature(feature_name: str, include_features: Sequence[str] | None) -
   if include_features is None:
     return False
   return feature_name in include_features or "all" in include_features
-
-
-@dataclass
-class EstatInfo:
-  """Electrostatics information extracted from a PQR file.
-
-  Attributes:
-    charges: Numpy array of atomic charges.
-    radii: Numpy array of atomic radii.
-    epsilons: Numpy array of atomic epsilons.
-    estat_backbone_mask: Boolean numpy array indicating backbone atoms.
-    estat_resid: Integer numpy array of residue numbers.
-    estat_chain_index: Integer numpy array of chain indices (ord value).
-
-  """
-
-  charges: np.ndarray
-  radii: np.ndarray
-  epsilons: np.ndarray
-  estat_backbone_mask: np.ndarray
-  estat_resid: np.ndarray
-  estat_chain_index: np.ndarray
 
 
 def none_or_jnp(array: np.ndarray | None) -> jnp.ndarray | None:
@@ -171,8 +78,8 @@ def none_or_numpy(array: np.ndarray | None) -> np.ndarray | None:
   return np.asarray(array)
 
 
-@dataclass(frozen=True)
-class Protein:
+@dataclass(frozen=True, kw_only=True)
+class Protein(AtomicSystem):
   """Protein structure or ensemble representation.
 
   Attributes:
@@ -213,221 +120,140 @@ class Protein:
   mapping: Int | None = None
   full_coordinates: StructureAtomicCoordinates | None = None
   full_atom_mask: AtomMask | None = None
-  charges: jnp.ndarray | None = None
-  radii: jnp.ndarray | None = None
-  sigmas: jnp.ndarray | None = None
-  epsilons: jnp.ndarray | None = None
-  estat_backbone_mask: jnp.ndarray | None = None
-  estat_resid: jnp.ndarray | None = None
-  estat_chain_index: jnp.ndarray | None = None
+
+  # Derived features
   physics_features: jnp.ndarray | None = None
-  md_bonds: jnp.ndarray | None = None
-  md_bond_params: jnp.ndarray | None = None
-  md_angles: jnp.ndarray | None = None
-  md_angle_params: jnp.ndarray | None = None
-  md_backbone_indices: jnp.ndarray | None = None
-  md_exclusion_mask: jnp.ndarray | None = None
+  backbone_indices: jnp.ndarray | None = None
 
   @classmethod
-  def from_tuple(
+  def from_rust_dict(
     cls,
-    protein_tuple: ProteinTuple,
-    *,
-    include_extras: Sequence[
-      Literal["dihedrals", "mapping", "full_coordinates", "full_atom_mask", "all"]
-    ]
-    | None = None,
+    rust_dict: dict,
+    source: str | None = None,
+    use_jax: bool = True,
   ) -> Protein:
-    """Create a Protein instance from a ProteinTuple.
+    """Create a Protein instance directly from Rust parser output dictionary.
+
+    This is the preferred method when using the Rust parser, as it avoids
+    creating an intermediate ProteinTuple.
 
     Args:
-        protein_tuple (ProteinTuple): The input protein tuple.
-        include_extras:
-            Optional list of extra fields to include from the tuple.
-            If 'all' is included, all optional fields will be included.
-            If None, no optional fields will be included.
+        rust_dict: Dictionary returned by priox_rs.parse_structure()
+        source: Optional source file path for metadata
+        use_jax: If True, convert arrays to JAX arrays. If False, use NumPy.
 
     Returns:
-        Protein: The output protein dataclass.
+        Protein: The protein dataclass instance.
 
     """
-    return cls(
-      coordinates=jnp.asarray(protein_tuple.coordinates, dtype=jnp.float32),
-      aatype=jnp.asarray(protein_tuple.aatype, dtype=jnp.int8),
-      one_hot_sequence=jnp.eye(21)[protein_tuple.aatype],
-      mask=jnp.asarray(protein_tuple.atom_mask[:, atom_order["CA"]], dtype=jnp.float32),
-      residue_index=jnp.asarray(protein_tuple.residue_index, dtype=jnp.int32),
-      chain_index=jnp.asarray(protein_tuple.chain_index, dtype=jnp.int32),
-      dihedrals=(
-        None
-        if protein_tuple.dihedrals is None or not include_feature("dihedrals", include_extras)
-        else none_or_jnp(protein_tuple.dihedrals)
-      ),
-      mapping=(
-        none_or_jnp(protein_tuple.mapping)
-        if protein_tuple.mapping is not None
-        and include_extras is not None
-        and ("mapping" in include_extras or "all" in include_extras)
-        else None
-      ),
-      full_coordinates=(
-        None
-        if protein_tuple.full_coordinates is None
-        or not include_feature("full_coordinates", include_extras)
-        else none_or_jnp(protein_tuple.full_coordinates)
-      ),
-      full_atom_mask=(
-        None
-        if protein_tuple.full_coordinates is None
-        or not include_feature("full_atom_mask", include_extras)
-        else none_or_jnp(protein_tuple.atom_mask)
-      ),
-      charges=none_or_jnp(protein_tuple.charges),
-      radii=none_or_jnp(protein_tuple.radii),
-      sigmas=none_or_jnp(protein_tuple.sigmas),
-      epsilons=none_or_jnp(protein_tuple.epsilons),
-      estat_backbone_mask=none_or_jnp(protein_tuple.estat_backbone_mask),
-      estat_resid=none_or_jnp(protein_tuple.estat_resid),
-      estat_chain_index=none_or_jnp(protein_tuple.estat_chain_index),
-      physics_features=none_or_jnp(protein_tuple.physics_features),
-      md_bonds=none_or_jnp(protein_tuple.md_bonds),
-      md_bond_params=none_or_jnp(protein_tuple.md_bond_params),
-      md_angles=none_or_jnp(protein_tuple.md_angles),
-      md_angle_params=none_or_jnp(protein_tuple.md_angle_params),
-      md_backbone_indices=none_or_jnp(protein_tuple.md_backbone_indices),
-      md_exclusion_mask=none_or_jnp(protein_tuple.md_exclusion_mask),
-    )
+    num_residues = len(rust_dict["aatype"])
+    
+    raw_coords = rust_dict["coordinates"]
+    raw_mask = rust_dict["atom_mask"]
+    
+    # Check if we can/should reshape to Atom37 (N, 37, 3)
+    # or if we have a flat structure (N_atoms, 3)
+    is_atom37 = (raw_coords.ndim == 3 and raw_coords.shape[1] == 37) or \
+                (raw_coords.ndim == 2 and raw_coords.size == num_residues * 37 * 3)
+                
+    if use_jax:
+      convert = jnp.asarray
+    else:
+      convert = np.asarray
 
-  @classmethod
-  def from_tuple_numpy(
-    cls,
-    protein_tuple: ProteinTuple,
-    *,
-    include_extras: Sequence[
-      Literal["dihedrals", "mapping", "full_coordinates", "full_atom_mask", "all"]
-    ]
-    | None = None,
-  ) -> Protein:
-    """Create a Protein instance from a ProteinTuple using NumPy arrays.
-
-    Args:
-        protein_tuple (ProteinTuple): The input protein tuple.
-        include_extras:
-            Optional list of extra fields to include from the tuple.
-            If 'all' is included, all optional fields will be included.
-            If None, no optional fields will be included.
-
-    Returns:
-        Protein: The output protein dataclass with NumPy arrays.
-
-    """
-    return cls(
-      coordinates=np.asarray(protein_tuple.coordinates, dtype=np.float32),
-      aatype=np.asarray(protein_tuple.aatype, dtype=np.int8),
-      one_hot_sequence=np.eye(21)[protein_tuple.aatype],
-      mask=np.asarray(protein_tuple.atom_mask[:, atom_order["CA"]], dtype=np.float32),
-      residue_index=np.asarray(protein_tuple.residue_index, dtype=np.int32),
-      chain_index=np.asarray(protein_tuple.chain_index, dtype=np.int32),
-      dihedrals=(
-        None
-        if protein_tuple.dihedrals is None or not include_feature("dihedrals", include_extras)
-        else none_or_numpy(protein_tuple.dihedrals)
-      ),
-      mapping=(
-        none_or_numpy(protein_tuple.mapping)
-        if protein_tuple.mapping is not None
-        and include_extras is not None
-        and ("mapping" in include_extras or "all" in include_extras)
-        else None
-      ),
-      full_coordinates=(
-        None
-        if protein_tuple.full_coordinates is None
-        or not include_feature("full_coordinates", include_extras)
-        else none_or_numpy(protein_tuple.full_coordinates)
-      ),
-      full_atom_mask=(
-        None
-        if protein_tuple.full_coordinates is None
-        or not include_feature("full_atom_mask", include_extras)
-        else none_or_numpy(protein_tuple.atom_mask)
-      ),
-      charges=none_or_numpy(protein_tuple.charges),
-      radii=none_or_numpy(protein_tuple.radii),
-      sigmas=none_or_numpy(protein_tuple.sigmas),
-      epsilons=none_or_numpy(protein_tuple.epsilons),
-      estat_backbone_mask=none_or_numpy(protein_tuple.estat_backbone_mask),
-      estat_resid=none_or_numpy(protein_tuple.estat_resid),
-      estat_chain_index=none_or_numpy(protein_tuple.estat_chain_index),
-      physics_features=none_or_numpy(protein_tuple.physics_features),
-      md_bonds=none_or_numpy(protein_tuple.md_bonds),
-      md_bond_params=none_or_numpy(protein_tuple.md_bond_params),
-      md_angles=none_or_numpy(protein_tuple.md_angles),
-      md_angle_params=none_or_numpy(protein_tuple.md_angle_params),
-      md_backbone_indices=none_or_numpy(protein_tuple.md_backbone_indices),
-      md_exclusion_mask=none_or_numpy(protein_tuple.md_exclusion_mask),
-    )
+    if is_atom37:
+      # Reshape coordinates and atom_mask to (N, 37, ...)
+      coordinates = raw_coords.reshape(num_residues, 37, 3)
+      atom_mask_2d = raw_mask.reshape(num_residues, 37)
+      
+      # For Protein dataclass (AF2 style), mask is CA mask from the 37 grid
+      # But we also need full atom_mask for AtomicSystem
+      mask_ca = atom_mask_2d[:, atom_order["CA"]]
+      
+      return cls(
+        coordinates=convert(coordinates, dtype=np.float32),
+        aatype=convert(rust_dict["aatype"], dtype=np.int8),
+        one_hot_sequence=convert(np.eye(21)[rust_dict["aatype"]]),
+        mask=convert(mask_ca, dtype=np.float32),
+        residue_index=convert(rust_dict["residue_index"], dtype=np.int32),
+        chain_index=convert(rust_dict["chain_index"], dtype=np.int32),
+        # AtomicSystem required fields
+        atom_mask=convert(atom_mask_2d, dtype=np.float32),
+        elements=None,
+        atom_names=None,
+        # Optional fields from Rust
+        charges=convert(rust_dict["charges"]) if rust_dict.get("charges") is not None else None,
+        radii=convert(rust_dict["radii"]) if rust_dict.get("radii") is not None else None,
+        sigmas=convert(rust_dict["sigmas"]) if rust_dict.get("sigmas") is not None else None,
+        epsilons=convert(rust_dict["epsilons"]) if rust_dict.get("epsilons") is not None else None,
+        molecule_type=convert(rust_dict["molecule_type"])
+        if rust_dict.get("molecule_type") is not None
+        else None,
+        # Topology / GAFF
+        atom_types=rust_dict.get("atom_types"),
+        bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
+        angles=convert(rust_dict["angles"]) if rust_dict.get("angles") is not None else None,
+        proper_dihedrals=convert(rust_dict["dihedrals"])
+        if rust_dict.get("dihedrals") is not None
+        else None,
+        impropers=convert(rust_dict["impropers"]) if rust_dict.get("impropers") is not None else None,
+      )
+    else:
+      # Flat format (Full)
+      # In this case, Protein fields like 'mask' (CA mask) need to be derived differently 
+      # or populated with dummies if we are treating this as a general AtomicSystem
+      
+      # We attempt to treat it as "Full Coordinates" stored in the main coordinates field
+      # This technically violates the (N, 37, 3) type hint of Protein, but matches AtomicSystem
+      
+      # For CA mask: we don't have CA info easily unless we assume input is CA-only (unlikely)
+      # or check atom names if provided.
+      # For now, we set mask to ones (all residues present)
+      mask_dummy = np.ones((num_residues, 37), dtype=np.float32) # Dummy
+      
+      # Full format elements/atom_names handling
+      atom_names = rust_dict.get("atom_names")
+      elements = rust_dict.get("elements")
+      
+      if elements is None and atom_names is not None:
+          # Infer elements from atom names if missing
+          elements = [name[0].upper() if name else "C" for name in atom_names]
+      
+      return cls(
+        coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3), # (N_padded, 3)
+        aatype=convert(rust_dict["aatype"], dtype=np.int8),
+        one_hot_sequence=convert(np.eye(21)[rust_dict["aatype"]]),
+        mask=convert(np.ones(num_residues), dtype=np.float32), # Residue mask
+        residue_index=convert(rust_dict["residue_index"], dtype=np.int32),
+        chain_index=convert(rust_dict["chain_index"], dtype=np.int32),
+        # AtomicSystem
+        atom_mask=convert(raw_mask, dtype=np.float32), # Flat mask
+        
+        elements=elements,
+        atom_names=atom_names,
+        
+        charges=convert(rust_dict["charges"]) if rust_dict.get("charges") is not None else None,
+        radii=convert(rust_dict["radii"]) if rust_dict.get("radii") is not None else None,
+        sigmas=convert(rust_dict["sigmas"]) if rust_dict.get("sigmas") is not None else None,
+        epsilons=convert(rust_dict["epsilons"]) if rust_dict.get("epsilons") is not None else None,
+        molecule_type=convert(rust_dict["molecule_type"])
+        if rust_dict.get("molecule_type") is not None
+        else None,
+        
+        atom_types=rust_dict.get("atom_types"),
+        bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
+        angles=convert(rust_dict["angles"]) if rust_dict.get("angles") is not None else None,
+        proper_dihedrals=convert(rust_dict["dihedrals"])
+        if rust_dict.get("dihedrals") is not None
+        else None,
+        impropers=convert(rust_dict["impropers"]) if rust_dict.get("impropers") is not None else None,
+      )
 
 
-ProteinStream = Generator[ProteinTuple, None]
+ProteinStream = Generator[Protein, None]
+"""Generator yielding Protein instances."""
+
 ProteinBatch = Sequence[Protein]
-
-
-@dataclass
-class _EStepState:
-  """State for accumulating statistics during the E-step."""
-
-  component_counts: ComponentCounts
-  weighted_data: EnsembleData
-  weighted_squared_data: EnsembleData
-  log_likelihood_total: LogLikelihood
-
-
-@dataclass
-class GMM:
-  """Dataclass to hold GMM parameters."""
-
-  means: Means
-  covariances: Covariances
-  weights: Weights
-  responsibilities: Responsibilities
-  n_components: int
-  n_features: int
-
-
-class EMLoopState(NamedTuple):
-  """State for the in-memory EM loop."""
-
-  gmm: GMM
-  n_iter: Int
-  log_likelihood: LogLikelihood
-  log_likelihood_diff: LogLikelihood
-
-
-@dataclass
-class EMFitterResult:
-  """Result of the Expectation-Maximization fitting process.
-
-  Attributes
-  ----------
-  gmm : GMM
-      The final fitted Gaussian mixture model.
-  n_iter : jax.Array
-      The total number of iterations performed.
-  log_likelihood : jax.Array
-      The log-likelihood of the data under the final model.
-  converged : jax.Array
-      A boolean indicating if the algorithm converged within the max iterations.
-
-  """
-
-  gmm: GMM
-  n_iter: Int
-  log_likelihood: LogLikelihood
-  log_likelihood_diff: LogLikelihood
-  converged: Converged
-  features: EnsembleData | None = None
-  bic: BIC | None = None
-
+"""Sequence of Protein instances."""
 
 OligomerType = Literal["monomer", "heteromer", "homooligomer", "tied_homooligomer"]

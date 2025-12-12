@@ -20,9 +20,9 @@ from priox.chem.residues import (
 )
 from priox.core.containers import (
   ProteinStream,
-  ProteinTuple,
-  TrajectoryStaticFeatures,
+  Protein,
 )
+from priox.io.parsing.types import TrajectoryStaticFeatures
 from priox.io.parsing.coords import process_coordinates
 from priox.io.parsing.mappings import atom_names_to_index, residue_names_to_aatype
 from priox.io.parsing.physics_utils import (
@@ -273,7 +273,7 @@ def processed_structure_to_protein_tuples(
   populate_physics: bool = False,
   force_field_name: str = "ff14SB",
 ) -> ProteinStream:
-  """Convert a ProcessedStructure into a stream of ProteinTuples.
+  """Convert a ProcessedStructure into a stream of Protein instances.
 
   Args:
       processed_structure: The ProcessedStructure to convert
@@ -294,7 +294,7 @@ def processed_structure_to_protein_tuples(
   num_frames = atom_array.stack_depth() if isinstance(atom_array, AtomArrayStack) else 1
   frame_count = 0
 
-  def _yield_protein_tuple(frame: AtomArray) -> ProteinTuple:
+  def _yield_protein(frame: AtomArray) -> Protein:
     dihedrals = None
     if extract_dihedrals:
       dihedrals = atom_array_dihedrals(frame)
@@ -306,35 +306,33 @@ def processed_structure_to_protein_tuples(
       static_features.static_atom_mask_37,
       static_features.valid_atom_mask,
     )
-    estat_backbone_mask = np.isin(frame.atom_name, ["N", "CA", "C", "O"])
-    estat_resid = frame.res_id.astype(np.int32)
-    estat_chain_index = _get_chain_index(frame)
+    atom_mask_2d = static_features.static_atom_mask_37.astype(np.float32)
 
-    return ProteinTuple(
+    return Protein(
       coordinates=coords_37,
       aatype=static_features.aatype,
-      atom_mask=static_features.static_atom_mask_37,
+      atom_mask=atom_mask_2d,
+      mask=atom_mask_2d[:, atom_order["CA"]],
+      one_hot_sequence=np.eye(21)[static_features.aatype],
       residue_index=static_features.residue_indices,
       chain_index=static_features.chain_index,
       dihedrals=dihedrals,
-      source=str(source_name),
       full_coordinates=coords,
       charges=charges,
       radii=radii,
       epsilons=epsilons,
       sigmas=sigmas,
-      estat_backbone_mask=estat_backbone_mask,
-      estat_resid=estat_resid,
-      estat_chain_index=estat_chain_index,
+      elements=None,
+      atom_names=None,
     )
 
   if isinstance(atom_array, AtomArrayStack):
     for frame in atom_array:
       frame_count += 1
       logger.debug("Yielding frame %d of %d from Biotite stack.", frame_count, num_frames)
-      yield _yield_protein_tuple(frame)
+      yield _yield_protein(frame)
 
   elif isinstance(atom_array, AtomArray):
     frame_count += 1
     logger.debug("Yielding single frame from Biotite AtomArray.")
-    yield _yield_protein_tuple(atom_array)
+    yield _yield_protein(atom_array)

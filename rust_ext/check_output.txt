@@ -1,0 +1,157 @@
+    Checking priox_rs v0.1.0 (/Users/mar/MIT Dropbox/Marielle Russo/2025_workspace/priox/rust_ext)
+error[E0425]: cannot find value `stereo` in this scope
+   --> src/geometry/hydrogens.rs:146:13
+    |
+146 |             stereo,
+    |             ^^^^^^ not found in this scope
+
+warning: unused import: `std::collections::HashMap`
+  --> src/chem/bonds.rs:12:5
+   |
+12 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unnecessary parentheses around `if` condition
+  --> src/chem/bonds.rs:33:8
+   |
+33 |     if (a == "C" && b == "O") {
+   |        ^                    ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+33 -     if (a == "C" && b == "O") {
+33 +     if a == "C" && b == "O" {
+   |
+
+warning: unnecessary parentheses around `if` condition
+  --> src/chem/bonds.rs:51:16
+   |
+51 |             if (a == "CG" && (b == "OD1" || b == "OD2")) {
+   |                ^                                       ^
+   |
+help: remove these parentheses
+   |
+51 -             if (a == "CG" && (b == "OD1" || b == "OD2")) {
+51 +             if a == "CG" && (b == "OD1" || b == "OD2") {
+   |
+
+warning: unnecessary parentheses around `if` condition
+  --> src/chem/bonds.rs:57:16
+   |
+57 |             if (a == "CD" && (b == "OE1" || b == "OE2")) {
+   |                ^                                       ^
+   |
+help: remove these parentheses
+   |
+57 -             if (a == "CD" && (b == "OE1" || b == "OE2")) {
+57 +             if a == "CD" && (b == "OE1" || b == "OE2") {
+   |
+
+warning: unnecessary parentheses around `if` condition
+  --> src/chem/bonds.rs:63:16
+   |
+63 |             if (a == "CG" && b == "OD1") {
+   |                ^                       ^
+   |
+help: remove these parentheses
+   |
+63 -             if (a == "CG" && b == "OD1") {
+63 +             if a == "CG" && b == "OD1" {
+   |
+
+warning: unnecessary parentheses around `if` condition
+  --> src/chem/bonds.rs:69:16
+   |
+69 |             if (a == "CD" && b == "OE1") {
+   |                ^                       ^
+   |
+help: remove these parentheses
+   |
+69 -             if (a == "CD" && b == "OE1") {
+69 +             if a == "CD" && b == "OE1" {
+   |
+
+warning: unused import: `bonds::*`
+ --> src/chem/mod.rs:6:9
+  |
+6 | pub use bonds::*;
+  |         ^^^^^^^^
+
+warning: unused imports: `cache_size` and `clear_cache`
+  --> src/formatters/mod.rs:16:17
+   |
+16 | pub use cache::{cache_size, clear_cache, get_cached, insert_cached, CacheKey, CachedStructure};
+   |                 ^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `custom::CustomFormatter`
+  --> src/formatters/mod.rs:17:9
+   |
+17 | pub use custom::CustomFormatter;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HashSet`
+  --> src/geometry/hydrogens.rs:13:33
+   |
+13 | use std::collections::{HashMap, HashSet};
+   |                                 ^^^^^^^
+
+warning: unused imports: `PyArray1` and `PyArray2`
+ --> src/structure/systems.rs:4:13
+  |
+4 | use numpy::{PyArray1, PyArray2};
+  |             ^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `systems::*`
+  --> src/structure/mod.rs:14:9
+   |
+14 | pub use systems::*;
+   |         ^^^^^^^^^^
+
+warning: unused variable: `e`
+   --> src/geometry/alignment.rs:205:5
+    |
+205 |     e: &[Vec<i32>],
+    |     ^ help: if this is intentional, prefix it with an underscore: `_e`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `gap_open`
+   --> src/geometry/alignment.rs:211:5
+    |
+211 |     gap_open: i32,
+    |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_gap_open`
+
+warning: unused variable: `gap_extend`
+   --> src/geometry/alignment.rs:212:5
+    |
+212 |     gap_extend: i32,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_gap_extend`
+
+warning: variable does not need to be mutable
+   --> src/geometry/relax.rs:426:13
+    |
+426 |         let mut is_free = true;
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `path`
+   --> src/lib.rs:586:14
+    |
+586 | fn parse_xtc(path: String) -> PyResult<PyObject> {
+    |              ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+
+warning: unused variable: `py`
+   --> src/lib.rs:587:23
+    |
+587 |     Python::with_gil(|py| {
+    |                       ^^ help: if this is intentional, prefix it with an underscore: `_py`
+
+For more information about this error, try `rustc --explain E0425`.
+warning: `priox_rs` (lib) generated 18 warnings
+error: could not compile `priox_rs` (lib) due to 1 previous error; 18 warnings emitted

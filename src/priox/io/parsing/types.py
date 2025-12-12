@@ -1,0 +1,40 @@
+"""Type definitions for parsing and IO operations."""
+
+from dataclasses import dataclass
+
+import numpy as np
+
+
+@dataclass
+class TrajectoryStaticFeatures:
+  """A container for pre-computed, frame-invariant protein features."""
+
+  aatype: np.ndarray
+  static_atom_mask_37: np.ndarray
+  residue_indices: np.ndarray
+  chain_index: np.ndarray
+  valid_atom_mask: np.ndarray
+  nitrogen_mask: np.ndarray
+  num_residues: int
+
+
+@dataclass
+class EstatInfo:
+  """Electrostatics information extracted from a PQR file.
+
+  Attributes:
+    charges: Numpy array of atomic charges.
+    radii: Numpy array of atomic radii.
+    epsilons: Numpy array of atomic epsilons.
+    estat_backbone_mask: Boolean numpy array indicating backbone atoms.
+    estat_resid: Integer numpy array of residue numbers.
+    estat_chain_index: Integer numpy array of chain indices (ord value).
+
+  """
+
+  charges: np.ndarray
+  radii: np.ndarray
+  epsilons: np.ndarray
+  estat_backbone_mask: np.ndarray
+  estat_resid: np.ndarray
+  estat_chain_index: np.ndarray

@@ -14,7 +14,8 @@ from biotite.structure import AtomArray, AtomArrayStack, filter_solvent
 from priox.chem.residues import (
   atom_order,
 )
-from priox.core.containers import ProteinStream, TrajectoryStaticFeatures
+from priox.core.containers import ProteinStream
+from priox.io.parsing.types import TrajectoryStaticFeatures
 from priox.io.parsing.registry import ParsingError, register_parser
 from priox.io.parsing.structures import ProcessedStructure
 from priox.io.parsing.utils import processed_structure_to_protein_tuples
@@ -46,7 +47,7 @@ def mdtraj_dihedrals(
 
   # Helper to get residue indices from atom indices
   def get_res_indices(atom_indices: Sequence[int] | np.ndarray) -> np.ndarray:
-      return np.array([traj.topology.atom(i).residue.index for i in atom_indices])
+    return np.array([traj.topology.atom(i).residue.index for i in atom_indices])
 
   if phi_indices.size > 0:
     res_idx = get_res_indices(phi_indices[:, 1])
@@ -301,24 +302,25 @@ def parse_mdtraj_to_processed_structure(  # noqa: C901
     import warnings  # noqa: PLC0415
 
     import h5py  # noqa: PLC0415
-    if isinstance(source, (str, pathlib.Path)) and str(source).endswith((".h5", ".hdf5")):
-        try:
-            with h5py.File(source, "r") as f:
-                is_mdcath = False
-                if "layout" in f.attrs and f.attrs["layout"] == "mdcath":
-                    is_mdcath = True
-                elif "topology" not in f and "coordinates" not in f:
-                    # Heuristic: if no mdtraj/h5md standard keys, assume mdcath (or invalid)
-                    is_mdcath = True
 
-                if is_mdcath and chain_id is not None:
-                    warnings.warn(
-                        "Chain selection is not supported for mdCATH files",
-                        UserWarning,
-                        stacklevel=2,
-                    )
-        except Exception:  # noqa: S110, BLE001
-            pass
+    if isinstance(source, (str, pathlib.Path)) and str(source).endswith((".h5", ".hdf5")):
+      try:
+        with h5py.File(source, "r") as f:
+          is_mdcath = False
+          if "layout" in f.attrs and f.attrs["layout"] == "mdcath":
+            is_mdcath = True
+          elif "topology" not in f and "coordinates" not in f:
+            # Heuristic: if no mdtraj/h5md standard keys, assume mdcath (or invalid)
+            is_mdcath = True
+
+          if is_mdcath and chain_id is not None:
+            warnings.warn(
+              "Chain selection is not supported for mdCATH files",
+              UserWarning,
+              stacklevel=2,
+            )
+      except Exception:  # noqa: S110, BLE001
+        pass
 
     if not topology:
       first_frame = md.load_frame(str(source), 0)
@@ -385,17 +387,17 @@ def load_mdtraj(
       path = file_path
 
     for processed in iterator:
-        yield from processed_structure_to_protein_tuples(
-            processed,
-            source_name=str(path or "mdtraj"),
-            extract_dihedrals=extract_dihedrals,
-            populate_physics=populate_physics,
-            force_field_name=force_field_name,
-        )
+      yield from processed_structure_to_protein_tuples(
+        processed,
+        source_name=str(path or "mdtraj"),
+        extract_dihedrals=extract_dihedrals,
+        populate_physics=populate_physics,
+        force_field_name=force_field_name,
+      )
   except Exception as e:
-      # If parsing fails (e.g. malformed file), we yield nothing or raise
-      # dispatch.py previously caught RuntimeError and yielded nothing in generator.
-      # But also raised RuntimeError for unsupported formats.
-      # Let's standardize to ParsingError.
-      msg = f"Failed to parse MDTraj structure from source: {file_path}. {e}"
-      raise ParsingError(msg) from e
+    # If parsing fails (e.g. malformed file), we yield nothing or raise
+    # dispatch.py previously caught RuntimeError and yielded nothing in generator.
+    # But also raised RuntimeError for unsupported formats.
+    # Let's standardize to ParsingError.
+    msg = f"Failed to parse MDTraj structure from source: {file_path}. {e}"
+    raise ParsingError(msg) from e

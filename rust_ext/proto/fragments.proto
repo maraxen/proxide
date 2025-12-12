@@ -1,0 +1,75 @@
+// Fragment Library Schema for Hydrogen Addition
+// 
+// This schema defines the data structure for storing hydrogen placement
+// information derived from the RCSB Chemical Component Dictionary.
+//
+// Reference: Hydride library (biotite-dev/hydride)
+// Algorithm: Kabsch superimposition for hydrogen coordinate estimation
+
+syntax = "proto3";
+
+package priox.hydride;
+
+// A single fragment represents the local chemical environment around
+// a heavy atom and the positions of its bonded hydrogen atoms.
+message Fragment {
+    // Debug/provenance information
+    string residue_name = 1;  // e.g., "ALA", "GLY"
+    string atom_name = 2;     // e.g., "CA", "CB"
+    
+    // Reference heavy atom coordinates (3 atoms, centered at origin)
+    // These are used for Kabsch superimposition
+    // Shape: 3 atoms × 3 coordinates = 9 floats
+    repeated float heavy_coords = 3;  // [x1,y1,z1, x2,y2,z2, x3,y3,z3]
+    
+    // Hydrogen atom coordinates relative to the central atom
+    // Shape: variable (0-4 hydrogens × 3 coordinates)
+    repeated float hydrogen_coords = 4;  // [x1,y1,z1, ...]
+    
+    // Number of hydrogen atoms (for clarity, since hydrogen_coords.len() / 3)
+    uint32 num_hydrogens = 5;
+}
+
+// Fragment key identifying the chemical environment
+message FragmentKey {
+    // Central atom element (uppercase)
+    string element = 1;       // "C", "N", "O", "S", etc.
+    
+    // Formal charge on the central atom
+    int32 charge = 2;         // -2 to +2 typically
+    
+    // Stereochemistry indicator (-1, 0, +1)
+    // Based on cross-product sign of bonded atoms
+    int32 stereo = 3;
+    
+    // Bond types to heavy atoms (sorted for consistency)
+    // Values follow biotite.structure.BondType:
+    //   1 = single, 2 = double, 3 = triple, 5 = aromatic
+    //   7 = partial double (special N handling)
+    repeated uint32 bond_types = 4;
+}
+
+// A single entry in the fragment library
+message FragmentEntry {
+    FragmentKey key = 1;
+    Fragment fragment = 2;
+}
+
+// The complete fragment library
+message FragmentLibrary {
+    // Version for compatibility checking
+    string version = 1;
+    
+    // Source information
+    string source = 2;  // e.g., "RCSB CCD 2024-01"
+    
+    // Generation timestamp (ISO 8601)
+    string generated_at = 3;
+    
+    // All fragment entries
+    repeated FragmentEntry entries = 4;
+    
+    // Statistics
+    uint32 num_entries = 5;
+    uint32 num_unique_elements = 6;
+}

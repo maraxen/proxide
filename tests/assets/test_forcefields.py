@@ -1,187 +1,151 @@
-"""Tests for force field loading and saving."""
+"""Tests for force field loading and component access."""
 
-import chex
 import jax.numpy as jnp
 import pytest
 
-from priox.assets.forcefields import loader
-from priox.chem import residues as rc
-from priox.assets.forcefields.loader import (
+from priox.physics.force_fields import (
     FullForceField,
     load_force_field,
-    save_force_field,
+    list_available_force_fields,
+)
+from priox.physics.force_fields.components import (
+    AtomTypeParams,
+    BondPotentialParams,
+    AnglePotentialParams,
+    DihedralPotentialParams,
+    CMAPParams,
+    UreyBradleyParams,
+    VirtualSiteParams,
+    NonbondedGlobalParams,
 )
 
 
-@pytest.fixture
-def temp_ff_dir(tmp_path):
-    """Fixture to provide a temporary directory for force field files."""
-    d = tmp_path / "forcefields"
-    d.mkdir()
-    return d
-
-
-def test_force_field_creation():
-    """Test creating a FullForceField object."""
-    ff = FullForceField(
-        charges_by_id=jnp.array([0.0, -0.5, 0.5]),
-        sigmas_by_id=jnp.array([3.5, 3.0, 3.2]),
-        epsilons_by_id=jnp.array([0.1, 0.15, 0.12]),
+def create_minimal_force_field() -> FullForceField:
+    """Create a minimal FullForceField for testing."""
+    atom_params = AtomTypeParams(
+        charges=jnp.array([0.0, -0.5, 0.5], dtype=jnp.float32),
+        sigmas=jnp.array([3.5, 3.0, 3.2], dtype=jnp.float32),
+        epsilons=jnp.array([0.1, 0.15, 0.12], dtype=jnp.float32),
+        radii=jnp.zeros(3, dtype=jnp.float32),
+        scales=jnp.zeros(3, dtype=jnp.float32),
         atom_key_to_id={("ALA", "N"): 0, ("ALA", "CA"): 1, ("ALA", "C"): 2},
         id_to_atom_key=[("ALA", "N"), ("ALA", "CA"), ("ALA", "C")],
         atom_class_map={"ALA_N": "N", "ALA_CA": "CT1", "ALA_C": "C"},
-        bonds=[],
-        angles=[],
-        propers=[],
-        impropers=[],
+        atom_type_map={},
+    )
+
+    return FullForceField(
+        atom_params=atom_params,
+        bond_params=BondPotentialParams(params=[]),
+        angle_params=AnglePotentialParams(params=[]),
+        dihedral_params=DihedralPotentialParams(propers=[], impropers=[]),
+        cmap_params=CMAPParams(energy_grids=jnp.zeros((0, 24, 24)), torsions=[]),
+        urey_bradley_params=UreyBradleyParams(params=[]),
+        virtual_site_params=VirtualSiteParams(definitions={}),
+        global_params=NonbondedGlobalParams(),
         source_files=["test.xml"],
-        cmap_energy_grids=jnp.zeros((0, 24, 24)),
-        atom_type_map={},
-        cmap_torsions=[],
         residue_templates={},
     )
 
-    assert len(ff.charges_by_id) == 3
-    assert len(ff.id_to_atom_key) == 3
+
+class TestForceFieldComponents:
+    """Tests for force field component structure."""
+
+    def test_force_field_creation(self) -> None:
+        """Test creating a FullForceField object with the new modular structure."""
+        ff = create_minimal_force_field()
+
+        assert len(ff.charges_by_id) == 3
+        assert len(ff.atom_params.id_to_atom_key) == 3
+
+    def test_force_field_get_charge(self) -> None:
+        """Test getting charge for specific atom."""
+        ff = create_minimal_force_field()
+
+        charge = ff.get_charge("ALA", "CA")
+        assert charge == -0.5
+
+    def test_force_field_get_charge_unknown_atom(self) -> None:
+        """Test that unknown atom returns zero charge."""
+        ff = create_minimal_force_field()
+
+        charge = ff.get_charge("GLY", "CA")  # Not in force field
+        assert charge == 0.0
+
+    def test_force_field_get_lj_params(self) -> None:
+        """Test getting LJ parameters for specific atom."""
+        ff = create_minimal_force_field()
+
+        sigma, epsilon = ff.get_lj_params("ALA", "N")
+        assert sigma == pytest.approx(3.5, rel=1e-5)
+        assert epsilon == pytest.approx(0.1, rel=1e-5)
+
+    def test_backward_compatibility_properties(self) -> None:
+        """Test that backward-compatibility properties work."""
+        ff = create_minimal_force_field()
+
+        # These should delegate to atom_params
+        assert len(ff.charges_by_id) == 3
+        assert len(ff.sigmas_by_id) == 3
+        assert len(ff.epsilons_by_id) == 3
+        assert len(ff.radii_by_id) == 3
+        assert len(ff.scales_by_id) == 3
+        assert ff.atom_key_to_id == ff.atom_params.atom_key_to_id
 
 
-def test_force_field_get_charge():
-    """Test getting charge for specific atom."""
-    ff = FullForceField(
-        charges_by_id=jnp.array([0.0, -0.5, 0.5]),
-        sigmas_by_id=jnp.array([3.5, 3.0, 3.2]),
-        epsilons_by_id=jnp.array([0.1, 0.15, 0.12]),
-        atom_key_to_id={("ALA", "N"): 0, ("ALA", "CA"): 1, ("ALA", "C"): 2},
-        id_to_atom_key=[("ALA", "N"), ("ALA", "CA"), ("ALA", "C")],
-        atom_class_map={},
-        bonds=[],
-        angles=[],
-        propers=[],
-        impropers=[],
-        source_files=[],
-        cmap_energy_grids=jnp.zeros((0, 24, 24)),
-        atom_type_map={},
-        cmap_torsions=[],
-        residue_templates={},
-    )
+class TestForceFieldLoading:
+    """Tests for loading force fields from assets."""
 
-    charge = ff.get_charge("ALA", "CA")
-    assert charge == -0.5
+    def test_list_available_force_fields(self) -> None:
+        """Test that we can list available force fields."""
+        available = list_available_force_fields()
 
+        assert isinstance(available, list)
+        assert len(available) >= 2  # ff14SB and ff19SB
+        assert "protein.ff14SB" in available
+        assert "protein.ff19SB" in available
 
-def test_force_field_get_charge_unknown_atom():
-    """Test that unknown atom returns zero charge."""
-    ff = FullForceField(
-        charges_by_id=jnp.array([0.0]),
-        sigmas_by_id=jnp.array([3.5]),
-        epsilons_by_id=jnp.array([0.1]),
-        atom_key_to_id={("ALA", "N"): 0},
-        id_to_atom_key=[("ALA", "N")],
-        atom_class_map={},
-        bonds=[],
-        angles=[],
-        propers=[],
-        impropers=[],
-        source_files=[],
-        cmap_energy_grids=jnp.zeros((0, 24, 24)),
-        atom_type_map={},
-        cmap_torsions=[],
-        residue_templates={},
-    )
+    def test_load_ff14sb(self) -> None:
+        """Test loading ff14SB force field."""
+        ff = load_force_field("protein.ff14SB")
 
-    charge = ff.get_charge("GLY", "CA")  # Not in force field
-    assert charge == 0.0
+        # Should have loaded atom types
+        assert len(ff.atom_params.id_to_atom_key) > 0
 
+        # Should have bonds, angles, dihedrals
+        assert len(ff.bonds) > 0
+        assert len(ff.angles) > 0
+        assert len(ff.propers) > 0
 
-def test_force_field_get_lj_params():
-    """Test getting LJ parameters for specific atom."""
-    ff = FullForceField(
-        charges_by_id=jnp.array([0.0]),
-        sigmas_by_id=jnp.array([3.5]),
-        epsilons_by_id=jnp.array([0.1]),
-        atom_key_to_id={("ALA", "CA"): 0},
-        id_to_atom_key=[("ALA", "CA")],
-        atom_class_map={},
-        bonds=[],
-        angles=[],
-        propers=[],
-        impropers=[],
-        source_files=[],
-        cmap_energy_grids=jnp.zeros((0, 24, 24)),
-        atom_type_map={},
-        cmap_torsions=[],
-        residue_templates={},
-    )
+    def test_load_ff19sb(self) -> None:
+        """Test loading ff19SB force field."""
+        ff = load_force_field("protein.ff19SB")
 
-    sigma, epsilon = ff.get_lj_params("ALA", "CA")
-    assert sigma == pytest.approx(3.5, rel=1e-5)
-    assert epsilon == pytest.approx(0.1, rel=1e-5)
+        assert len(ff.atom_params.id_to_atom_key) > 0
+        assert len(ff.bonds) > 0
 
+    def test_load_with_extension(self) -> None:
+        """Test loading with explicit .xml extension."""
+        ff = load_force_field("protein.ff14SB.xml")
+        assert len(ff.atom_params.id_to_atom_key) > 0
 
-def test_force_field_save_and_load(temp_ff_dir):
-    """Test saving and loading force field."""
-    ff_original = FullForceField(
-        charges_by_id=jnp.array([0.0, -0.5, 0.5]),
-        sigmas_by_id=jnp.array([3.5, 3.0, 3.2]),
-        epsilons_by_id=jnp.array([0.1, 0.15, 0.12]),
-        atom_key_to_id={("ALA", "N"): 0, ("ALA", "CA"): 1, ("ALA", "C"): 2},
-        id_to_atom_key=[("ALA", "N"), ("ALA", "CA"), ("ALA", "C")],
-        atom_class_map={"ALA_N": "N", "ALA_CA": "CT1", "ALA_C": "C"},
-        bonds=[("N", "CT1", 1.45, 300.0)],
-        angles=[],
-        propers=[],
-        impropers=[],
-        source_files=["test.xml"],
-        cmap_energy_grids=jnp.zeros((0, 24, 24)),
-        atom_type_map={},
-        cmap_torsions=[],
-        residue_templates={},
-    )
+    def test_load_nonexistent_raises(self) -> None:
+        """Test that loading nonexistent force field raises."""
+        with pytest.raises(ValueError, match="not found"):
+            load_force_field("nonexistent_forcefield")
 
-    # Save
-    filepath = temp_ff_dir / "test_ff.eqx"
-    save_force_field(filepath, ff_original)
+    def test_proper_torsion_structure(self) -> None:
+        """Test that proper torsions have the expected structure."""
+        ff = load_force_field("protein.ff14SB")
 
-    # Load
-    ff_loaded = load_force_field(filepath)
+        assert len(ff.propers) > 0
+        proper = ff.propers[0]
 
-    chex.assert_trees_all_close(ff_loaded.charges_by_id, ff_original.charges_by_id)
-    chex.assert_trees_all_close(ff_loaded.sigmas_by_id, ff_original.sigmas_by_id)
-    chex.assert_trees_all_close(ff_loaded.epsilons_by_id, ff_original.epsilons_by_id)
+        # Should have class atoms and terms
+        assert "terms" in proper
+        assert len(proper["terms"]) > 0
 
-    # Check static fields match
-    assert ff_loaded.atom_key_to_id == ff_original.atom_key_to_id
-    assert ff_loaded.id_to_atom_key == ff_original.id_to_atom_key
-    # Note: bonds may be converted to lists due to JSON serialization
-    assert len(ff_loaded.bonds) == len(ff_original.bonds)
-
-
-def test_force_field_save_load_preserves_tuple_keys(temp_ff_dir):
-    """Test that tuple keys are preserved through save/load."""
-    ff = FullForceField(
-        charges_by_id=jnp.array([0.0, 0.1]),
-        sigmas_by_id=jnp.array([3.5, 3.2]),
-        epsilons_by_id=jnp.array([0.1, 0.15]),
-        atom_key_to_id={("ALA", "CA"): 0, ("GLY", "CA"): 1},
-        id_to_atom_key=[("ALA", "CA"), ("GLY", "CA")],
-        atom_class_map={},
-        bonds=[],
-        angles=[],
-        propers=[],
-        impropers=[],
-        source_files=[],
-        cmap_energy_grids=jnp.zeros((0, 24, 24)),
-        atom_type_map={},
-        cmap_torsions=[],
-        residue_templates={},
-    )
-
-    filepath = temp_ff_dir / "test_keys.eqx"
-    save_force_field(filepath, ff)
-    ff_loaded = load_force_field(filepath)
-
-    # Keys should still be tuples
-    assert isinstance(list(ff_loaded.atom_key_to_id.keys())[0], tuple)
-    assert ("ALA", "CA") in ff_loaded.atom_key_to_id
-    # id_to_atom_key should also preserve tuples
-    assert isinstance(ff_loaded.id_to_atom_key[0], tuple)
+        term = proper["terms"][0]
+        assert "periodicity" in term
+        assert "phase" in term
+        assert "k" in term

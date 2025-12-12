@@ -6,7 +6,7 @@ from unittest import mock
 import numpy as np
 import pytest
 from priox.io.streaming import mdcath
-from priox.core.containers import TrajectoryStaticFeatures
+from priox.io.parsing.types import TrajectoryStaticFeatures
 from biotite.structure import AtomArray
 
 class TestMDCATHExtended(unittest.TestCase):

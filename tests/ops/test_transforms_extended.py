@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from absl.testing import parameterized
 
-from priox.core.containers import Protein, ProteinTuple
+from priox.core.containers import Protein, Protein
 from priox.ops import transforms
 from priox.chem import residues as residue_constants
 
@@ -21,9 +21,11 @@ class TestTransformsExtended(parameterized.TestCase):
         
         # Create a dummy protein tuple
         self.n_res = 10
-        self.protein_tuple = ProteinTuple(
+        self.protein_tuple = Protein(
             coordinates=np.zeros((self.n_res, 5, 3)),
             aatype=np.zeros((self.n_res,), dtype=np.int32),
+            one_hot_sequence=np.eye(21)[np.zeros(self.n_res, dtype=np.int32)],  # Required field
+            mask=np.ones((self.n_res,)),  # Required field
             atom_mask=np.ones((self.n_res, 5)),
             residue_index=np.arange(self.n_res),
             chain_index=np.zeros((self.n_res,), dtype=np.int32),
@@ -34,16 +36,13 @@ class TestTransformsExtended(parameterized.TestCase):
             radii=None,
             sigmas=None,
             epsilons=None,
-            estat_backbone_mask=None,
-            estat_resid=None,
-            estat_chain_index=None,
             physics_features=None,
-            md_bonds=None,
-            md_bond_params=None,
-            md_angles=None,
-            md_angle_params=None,
-            md_backbone_indices=None,
-            md_exclusion_mask=None,
+            bonds=None,
+            bond_params=None,
+            angles=None,
+            angle_params=None,
+            backbone_indices=None,
+            exclusion_mask=None,
         )
 
     def test_truncate_protein_none(self):
@@ -90,19 +89,19 @@ class TestTransformsExtended(parameterized.TestCase):
 
     def test_concatenate_proteins_for_inter_mode(self):
         """Test concatenation of proteins for inter-chain mode."""
-        p1 = self.protein_tuple._replace(
+        p1 = self.protein_tuple.replace(
             coordinates=np.zeros((5, 5, 3)),
             chain_index=np.zeros((5,), dtype=np.int32), # Chain 0
             residue_index=np.arange(5)
         )
-        p2 = self.protein_tuple._replace(
+        p2 = self.protein_tuple.replace(
             coordinates=np.zeros((3, 5, 3)),
             chain_index=np.ones((3,), dtype=np.int32), # Chain 1
             residue_index=np.arange(3)
         )
         
-        # Mock tree_map to handle ProteinTuple -> Protein conversion implicitly done in function
-        # The function converts ProteinTuple to Protein using Protein.from_tuple
+        # Mock tree_map to handle Protein -> Protein conversion implicitly done in function
+        # The function converts Protein to Protein using Protein.from_tuple
         # We need to ensure Protein class works or mock it. 
         # Since we import real Protein, it should work.
         
@@ -135,8 +134,8 @@ class TestTransformsExtended(parameterized.TestCase):
         elements = [self.protein_tuple, [self.protein_tuple]]
         flattened = transforms._validate_and_flatten_elements(elements)
         self.assertEqual(len(flattened), 2)
-        self.assertIsInstance(flattened[0], ProteinTuple)
-        self.assertIsInstance(flattened[1], ProteinTuple)
+        self.assertIsInstance(flattened[0], Protein)
+        self.assertIsInstance(flattened[1], Protein)
 
     @mock.patch("priox.ops.transforms.compute_electrostatic_node_features")
     def test_apply_electrostatics(self, mock_compute):
@@ -183,7 +182,7 @@ class TestTransformsExtended(parameterized.TestCase):
         self.assertEqual(len(updated), 1)
         p = updated[0]
         
-        self.assertIsNotNone(p.md_bonds)
+        self.assertIsNotNone(p.bonds)
         self.assertIsNotNone(p.charges)
         
         # Verify calls
@@ -193,7 +192,7 @@ class TestTransformsExtended(parameterized.TestCase):
     def test_pad_protein(self):
         """Test protein padding."""
         # Create a protein with known length
-        p = Protein.from_tuple(self.protein_tuple) # Length 10
+        p = self.protein_tuple # Length 10
         
         # Pad to 15
         padded = transforms._pad_protein(p, max_len=15)
@@ -210,12 +209,12 @@ class TestTransformsExtended(parameterized.TestCase):
     def test_pad_protein_md_fields(self):
         """Test padding of MD fields."""
         # Create protein with MD fields
-        p = Protein.from_tuple(self.protein_tuple)
+        p = self.protein_tuple
         p = p.replace(
-            md_bonds=np.zeros((5, 2)),
-            md_angles=np.zeros((5, 3)),
+            bonds=np.zeros((5, 2)),
+            angles=np.zeros((5, 3)),
             charges=np.zeros((20,)), # Atoms
-            md_exclusion_mask=np.zeros((20, 20))
+            exclusion_mask=np.zeros((20, 20))
         )
         
         md_dims = {
@@ -226,8 +225,8 @@ class TestTransformsExtended(parameterized.TestCase):
         
         padded = transforms._pad_protein(p, max_len=15, md_dims=md_dims)
         
-        self.assertEqual(padded.md_bonds.shape[0], 10)
-        self.assertEqual(padded.md_angles.shape[0], 10)
+        self.assertEqual(padded.bonds.shape[0], 10)
+        self.assertEqual(padded.angles.shape[0], 10)
         # Charges are not padded in _pad_protein unless full_coordinates match
         # But here charges (20) != protein_len (10) != full_coords_len (10 * 37 = 370)
         # So charges won't be padded by standard pad_fn.
@@ -243,7 +242,7 @@ class TestTransformsExtended(parameterized.TestCase):
         # So charges might NOT be padded if they don't match full_coords_len.
         # However, exclusion mask IS padded.
         
-        self.assertEqual(padded.md_exclusion_mask.shape, (30, 30))
+        self.assertEqual(padded.exclusion_mask.shape, (30, 30))
 
     @mock.patch("priox.ops.transforms._apply_md_parameterization")
     def test_pad_and_collate_proteins(self, mock_md_param):
@@ -251,9 +250,11 @@ class TestTransformsExtended(parameterized.TestCase):
         mock_md_param.side_effect = lambda elements, **kwargs: elements
         
         p1 = self.protein_tuple # Len 10
-        p2 = self.protein_tuple._replace(
+        p2 = self.protein_tuple.replace(
             coordinates=np.zeros((5, 5, 3)),
             aatype=np.zeros((5,), dtype=np.int32),
+            one_hot_sequence=np.eye(21)[np.zeros(5, dtype=np.int32)],
+            mask=np.ones((5,)),
             atom_mask=np.ones((5, 5)),
             residue_index=np.arange(5),
             chain_index=np.zeros((5,), dtype=np.int32),
@@ -267,6 +268,7 @@ class TestTransformsExtended(parameterized.TestCase):
         # p1 (10) -> padded to 12.
         # p2 (5) -> padded to 12.
         
+        self.assertIsNotNone(batch.mask)
         self.assertTrue(np.all(batch.mask[0, :10] == 1))
         self.assertTrue(np.all(batch.mask[0, 10:] == 0))
         

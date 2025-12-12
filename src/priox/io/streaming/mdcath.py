@@ -22,7 +22,7 @@ from biotite import structure
 from biotite.structure import AtomArray, filter_solvent
 
 from priox.chem import residues as rc
-from priox.core.containers import TrajectoryStaticFeatures
+from priox.io.parsing.types import TrajectoryStaticFeatures
 from priox.io.parsing.coords import process_coordinates
 from priox.io.parsing.mappings import residue_names_to_aatype
 from priox.io.parsing.structures import ProcessedStructure

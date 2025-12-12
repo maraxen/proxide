@@ -7,7 +7,7 @@ import pytest
 
 from priox.ops import transforms
 from priox.ops.transforms import pad_and_collate_proteins
-from priox.core.containers import ProteinTuple, Protein
+from priox.core.containers import Protein, Protein
 from priox.chem import residues as rc
 
 
@@ -16,28 +16,30 @@ class TestPadAndCollate:
 
     def test_pad_and_collate(self) -> None:
         """Test correct batching and padding of proteins."""
-        p1_tuple = ProteinTuple(
+        p1_tuple = Protein(
             coordinates=np.ones((10, 37, 3)),
             aatype=np.ones(10, dtype=np.int8),
+            one_hot_sequence=np.eye(21)[np.zeros(10, dtype=np.int32)],
+            mask=np.ones((10,)),
             atom_mask=np.ones((10, 37)),
             residue_index=np.arange(10),
             chain_index=np.zeros(10, dtype=np.int32),
             dihedrals=None,
-            source=None,
             mapping=None,
         )
-        p2_tuple = ProteinTuple(
+        p2_tuple = Protein(
             coordinates=np.ones((15, 37, 3)),
             aatype=np.ones(15, dtype=np.int8),
+            one_hot_sequence=np.eye(21)[np.zeros(15, dtype=np.int32)],
+            mask=np.ones((15,)),
             atom_mask=np.ones((15, 37)),
             residue_index=np.arange(15),
             chain_index=np.zeros(15, dtype=np.int32),
             dihedrals=None,
-            source=None,
             mapping=None,
         )
 
-        elements: list[ProteinTuple] = [p1_tuple, p2_tuple]
+        elements: list[Protein] = [p1_tuple, p2_tuple]
         batch: Protein = pad_and_collate_proteins(elements)
 
         assert isinstance(batch, Protein)
