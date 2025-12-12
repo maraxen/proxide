@@ -1,0 +1,62 @@
+[package]
+name = "priox_rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["PrioX Contributors"]
+description = "High-performance Rust parsing extension for protein structures"
+license = "MIT"
+
+[lib]
+name = "priox_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Python bindings
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
+numpy = "0.22"
+
+# Parsing utilities
+nom = "7.1"
+quick-xml = "0.31"
+
+# Compression and I/O
+flate2 = "1.0"
+memmap2 = "0.9"
+
+# Parallelism
+rayon = "1.10"
+
+# Logging
+log = "0.4"
+pyo3-log = "0.11"
+
+# Error handling
+thiserror = "1.0"
+
+# Lazy initialization for global cache
+lazy_static = "1.4"
+
+# Linear algebra for Kabsch SVD
+nalgebra = "0.33"
+
+# Chemistry file formats (optional, for trajectory support)
+chemfiles = { version = "0.10", optional = true }
+
+# HDF5 support (optional, for mdCATH)
+# Using hdf5-metno fork which supports HDF5 1.14+
+hdf5 = { package = "hdf5-metno", version = "0.11", optional = true }
+
+[features]
+# chemfiles disabled by default due to CMake version requirements
+# Enable with: cargo build --features trajectories
+default = []
+trajectories = ["chemfiles"]
+mdcath = ["hdf5"]
+full = ["trajectories", "mdcath"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
+

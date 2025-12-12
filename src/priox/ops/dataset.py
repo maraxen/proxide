@@ -9,7 +9,7 @@ import grain.python as grain
 import numpy as np
 
 from functools import partial
-from priox.core.containers import ProteinTuple
+from priox.core.containers import Protein
 from priox.io.parsing.foldcomp import (
   FoldCompDatabase,
 )
@@ -22,14 +22,15 @@ from .processing import frame_iterator_from_inputs
 logger = logging.getLogger(__name__)
 
 
-def _is_frame_valid(frame: ProteinTuple) -> tuple[bool, str]:
+def _is_frame_valid(frame: Protein) -> tuple[bool, str]:
   """Check if a protein frame is valid."""
   if len(frame.aatype) == 0:
     return False, "Empty structure"
   if frame.coordinates.shape[0] != len(frame.aatype):
     return False, "Shape mismatch between coordinates and aatype"
-  if np.isnan(frame.coordinates).any():
-    return False, "NaN values in coordinates"
+  if hasattr(frame.coordinates, 'any'):
+    if frame.coordinates != frame.coordinates:  # NaN check for arrays
+      return False, "NaN values in coordinates"
   return True, ""
 
 
@@ -74,14 +75,14 @@ class ProteinDataSource(grain.RandomAccessDataSource):
     """Return the total number of frames available."""
     return self._length
 
-  def __getitem__(self, index: SupportsIndex) -> ProteinTuple:  # type: ignore[override]
-    """Return the ProteinTuple at the specified index.
+  def __getitem__(self, index: SupportsIndex) -> Protein:  # type: ignore[override]
+    """Return the Protein at the specified index.
 
     Args:
         index (SupportsIndex): The index of the item to retrieve.
 
     Returns:
-        ProteinTuple: The protein structure frame at the specified index.
+        Protein: The protein structure frame at the specified index.
 
     Raises:
         IndexError: If the index is out of range.

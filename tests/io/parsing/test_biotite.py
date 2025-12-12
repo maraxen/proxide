@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+import tempfile
 from unittest import mock
 from biotite.structure import Atom, AtomArray, AtomArrayStack
 from priox.io.parsing import biotite

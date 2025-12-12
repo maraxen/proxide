@@ -6,7 +6,7 @@ import msgpack
 import msgpack_numpy as m
 
 from priox.io.streaming.array_record import ArrayRecordDataSource, get_protein_by_id
-from priox.core.containers import ProteinTuple
+from priox.core.containers import Protein
 
 m.patch()
 

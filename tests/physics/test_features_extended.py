@@ -8,16 +8,18 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from priox.physics import features
-from priox.core.containers import ProteinTuple
+from priox.core.containers import Protein
 
 class TestFeaturesExtended(unittest.TestCase):
     
     def setUp(self):
         # Create dummy protein tuple
         n_res = 2
-        self.protein = ProteinTuple(
+        self.protein = Protein(
             coordinates=np.zeros((n_res, 5, 3)),
             aatype=np.zeros((n_res,), dtype=np.int32),
+            one_hot_sequence=np.eye(21)[np.zeros(n_res, dtype=np.int32)],  # Required field
+            mask=np.ones((n_res,)),  # Required field
             atom_mask=np.ones((n_res, 5)),
             residue_index=np.arange(n_res),
             chain_index=np.zeros((n_res,), dtype=np.int32),
@@ -57,12 +59,12 @@ class TestFeaturesExtended(unittest.TestCase):
     def test_compute_vdw_node_features_missing_data(self):
         """Test error handling for missing data."""
         # Missing sigmas
-        p_no_sigma = self.protein._replace(sigmas=None)
+        p_no_sigma = self.protein.replace(sigmas=None)
         with self.assertRaisesRegex(ValueError, "must have sigmas"):
             features.compute_vdw_node_features(p_no_sigma)
             
         # Missing full_coordinates
-        p_no_coords = self.protein._replace(full_coordinates=None)
+        p_no_coords = self.protein.replace(full_coordinates=None)
         with self.assertRaisesRegex(ValueError, "must have full_coordinates"):
             features.compute_vdw_node_features(p_no_coords)
 

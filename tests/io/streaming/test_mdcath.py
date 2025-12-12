@@ -4,7 +4,7 @@ import pytest
 import pathlib
 from priox.io.streaming.mdcath import parse_mdcath_to_processed_structure
 from priox.io.parsing.structures import ProcessedStructure
-from priox.core.containers import TrajectoryStaticFeatures
+from priox.io.parsing.types import TrajectoryStaticFeatures
 
 def create_mock_mdcath_file(path: pathlib.Path, with_chain: bool = False):
     with h5py.File(path, "w") as f:

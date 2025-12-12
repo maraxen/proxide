@@ -13,7 +13,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from priox.chem.conversion import string_to_protein_sequence
-from priox.core.containers import ProteinStream, ProteinTuple
+from priox.core.containers import ProteinStream, Protein
+from priox.chem.residues import atom_order
 
 if TYPE_CHECKING:
   from collections.abc import Sequence
@@ -115,15 +116,19 @@ def get_protein_structures(
         coordinates = np.array(fcz_data["coordinates"], dtype=np.float32)
         sequence = np.array(string_to_protein_sequence(fcz_data["residues"]))
         num_res = len(sequence)
+        atom_mask = np.ones((coordinates.shape[0], 37), dtype=np.float32)
 
-        yield ProteinTuple(
+        yield Protein(
           coordinates=coordinates,
           aatype=sequence,
-          atom_mask=np.ones((coordinates.shape[0], 37), dtype=np.bool_),
-          residue_index=np.arange(num_res),
+          atom_mask=atom_mask,
+          mask=atom_mask[:, atom_order["CA"]],
+          one_hot_sequence=np.eye(21)[sequence],
+          residue_index=np.arange(num_res, dtype=np.int32),
           chain_index=np.zeros(num_res, dtype=np.int32),
           dihedrals=dihedrals,
-          source=str(name),
+          elements=None,
+          atom_names=None,
         )
       except Exception as e:  # noqa: BLE001
         msg = f"Failed to process a FoldComp entry. Error: {e}"

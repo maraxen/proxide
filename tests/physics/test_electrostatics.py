@@ -12,7 +12,7 @@ from priox.physics.electrostatics import (
     compute_pairwise_displacements,
     compute_noised_coulomb_forces_at_backbone,
 )
-from priox.core.containers import ProteinTuple
+from priox.core.containers import Protein
 
 
 @pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])

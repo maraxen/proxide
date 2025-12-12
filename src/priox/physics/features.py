@@ -22,7 +22,7 @@ from priox.physics.vdw import (
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
-  from priox.core.containers import ProteinTuple
+  from priox.core.containers import Protein
 
 
 def _resolve_sigma(
@@ -129,7 +129,7 @@ def _compute_electrostatic_features_raw(
 
 
 def compute_electrostatic_node_features(
-  protein: ProteinTuple,
+  protein: Protein,
   *,
   noise_scale: float | jax.Array | None = None,
   noise_mode: str = "direct",
@@ -140,11 +140,11 @@ def compute_electrostatic_node_features(
   See `_compute_electrostatic_features_raw` for implementation details.
   """
   if protein.charges is None:
-    msg = "ProteinTuple must have charges (PQR data) to compute electrostatic features"
+    msg = "Protein must have charges (PQR data) to compute electrostatic features"
     raise ValueError(msg)
 
   if protein.full_coordinates is None:
-    msg = "ProteinTuple must have full_coordinates to compute electrostatic features"
+    msg = "Protein must have full_coordinates to compute electrostatic features"
     raise ValueError(msg)
 
   backbone_positions = compute_backbone_coordinates(
@@ -237,7 +237,7 @@ def _compute_vdw_features_raw(
 
 
 def compute_vdw_node_features(
-  protein: ProteinTuple,
+  protein: Protein,
   *,
   noise_scale: float | jax.Array | None = None,
   noise_mode: str = "direct",
@@ -248,11 +248,11 @@ def compute_vdw_node_features(
   See `_compute_vdw_features_raw` for implementation details.
   """
   if protein.sigmas is None or protein.epsilons is None:
-    msg = "ProteinTuple must have sigmas and epsilons to compute vdW features"
+    msg = "Protein must have sigmas and epsilons to compute vdW features"
     raise ValueError(msg)
 
   if protein.full_coordinates is None:
-    msg = "ProteinTuple must have full_coordinates to compute vdW features"
+    msg = "Protein must have full_coordinates to compute vdW features"
     raise ValueError(msg)
 
   backbone_positions = compute_backbone_coordinates(
@@ -275,7 +275,7 @@ def compute_vdw_node_features(
 
 
 def compute_electrostatic_features_batch(
-  proteins: Sequence[ProteinTuple],
+  proteins: Sequence[Protein],
   max_length: int | None = None,
   *,
   pad_value: float = 0.0,
@@ -283,7 +283,7 @@ def compute_electrostatic_features_batch(
   """Compute electrostatic features for a batch of proteins with padding.
 
   Args:
-      proteins: List of ProteinTuple instances
+      proteins: List of Protein instances
       max_length: Maximum sequence length for padding. If None, uses the
         longest sequence in the batch.
       pad_value: Value to use for padding (default: 0.0)

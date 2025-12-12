@@ -15,7 +15,8 @@ from array_record.python.array_record_module import (  # type: ignore[unresolved
   ArrayRecordReader,
 )
 
-from priox.core.containers import ProteinTuple
+from priox.core.containers import Protein
+from priox.chem.residues import atom_order
 
 m.patch()
 
@@ -40,7 +41,7 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       ...     "data/preprocessed/train.array_record",
       ...     "data/preprocessed/train.index.json"
       ... )
-      >>> protein = source[0]  # Returns ProteinTuple with physics_features
+      >>> protein = source[0]  # Returns Protein with physics_features
       >>> print(protein.physics_features.shape)  # (n_residues, 5)
 
   """
@@ -139,14 +140,14 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
     """Return the total number of records."""
     return len(self._record_indices)
 
-  def __getitem__(self, index: SupportsIndex) -> ProteinTuple:  # type: ignore[override]
+  def __getitem__(self, index: SupportsIndex) -> Protein:  # type: ignore[override]
     """Load and deserialize a protein structure.
 
     Args:
         index: Integer index of the record to load
 
     Returns:
-        ProteinTuple with all fields including physics_features
+        Protein with all fields including physics_features
 
     Raises:
         IndexError: If index is out of range
@@ -166,39 +167,36 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       # Deserialize
       record_data = msgpack.unpackb(record_bytes, raw=False)
 
-      # Convert to ProteinTuple
-      return self._record_to_protein_tuple(record_data)
+      # Convert to Protein
+      return self._record_to_protein(record_data)
 
     except Exception as e:
       msg = f"Failed to load record at index {idx}"
       logger.exception(msg)
       raise RuntimeError(msg) from e
 
-  def _record_to_protein_tuple(self, record: dict[str, Any]) -> ProteinTuple:
-    """Convert deserialized record to ProteinTuple.
+  def _record_to_protein(self, record: dict[str, Any]) -> Protein:
+    """Convert deserialized record to Protein.
 
     Args:
         record: Dictionary with protein data
 
     Returns:
-        ProteinTuple instance
+        Protein instance
 
     """
-    # Extract all fields, converting to appropriate types
     # Extract all fields, converting to appropriate types
     # Use .get() for optional fields to ensure robustness
 
     # Basic structure
     coordinates = np.array(record["coordinates"], dtype=np.float32)
     n_residues = coordinates.shape[0]
+    aatype = np.array(record["aatype"], dtype=np.int8)
 
     # Defaults for physics features if missing
     default_physics = np.zeros((n_residues, 5), dtype=np.float32)
 
     # Defaults for full atomic data if missing
-    # Note: We don't know n_atoms easily without full_coordinates,
-    # but if full_coordinates is missing, we probably don't need charges/radii either.
-    # We'll return empty arrays if full_coordinates is missing.
     full_coords = record.get("full_coordinates")
     if full_coords is not None:
       full_coords = np.array(full_coords, dtype=np.float32)
@@ -210,13 +208,17 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       default_charges = np.zeros((0,), dtype=np.float32)
       default_radii = np.zeros((0,), dtype=np.float32)
 
-    return ProteinTuple(
+    atom_mask_2d = np.array(
+      record.get("atom_mask", np.ones((n_residues, 37), dtype=np.float32)),
+      dtype=np.float32,
+    )
+
+    return Protein(
       coordinates=coordinates,
-      aatype=np.array(record["aatype"], dtype=np.int8),
-      atom_mask=np.array(
-        record.get("atom_mask", np.ones((n_residues, 37), dtype=bool)),
-        dtype=bool,
-      ),
+      aatype=aatype,
+      atom_mask=atom_mask_2d,
+      mask=atom_mask_2d[:, atom_order["CA"]],
+      one_hot_sequence=np.eye(21)[aatype],
       residue_index=np.array(
         record.get("residue_index", np.arange(n_residues)),
         dtype=np.int32,
@@ -226,29 +228,14 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
         dtype=np.int32,
       ),
       dihedrals=None,
-      source=record.get("source_file", "unknown"),
       # Full atomic data
       full_coordinates=full_coords,
       charges=np.array(record.get("charges", default_charges), dtype=np.float32),
       radii=np.array(record.get("radii", default_radii), dtype=np.float32),
-      # Estat metadata
-      estat_backbone_mask=np.array(
-        record.get(
-          "estat_backbone_mask",
-          record.get("atom_mask", np.zeros(n_residues, dtype=bool)),
-        ),
-        dtype=bool,
-      ),
-      estat_resid=np.array(
-        record.get("estat_resid", record.get("residue_index", np.zeros(n_residues))),
-        dtype=np.int32,
-      ),
-      estat_chain_index=np.array(
-        record.get("estat_chain_index", record.get("chain_index", np.zeros(n_residues))),
-        dtype=np.int32,
-      ),
       # Physics features
       physics_features=np.array(record.get("physics_features", default_physics), dtype=np.float32),
+      elements=None,
+      atom_names=None,
     )
 
   def close(self) -> None:
@@ -264,7 +251,7 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
 def get_protein_by_id(
   source: ArrayRecordDataSource,
   protein_id: str,
-) -> ProteinTuple | None:
+) -> Protein | None:
   """Retrieve a protein by its ID.
 
   Args:
@@ -272,7 +259,7 @@ def get_protein_by_id(
       protein_id: Protein identifier
 
   Returns:
-      ProteinTuple if found, None otherwise
+      Protein if found, None otherwise
 
   Example:
       >>> source = ArrayRecordDataSource("train.array_record", "train.index.json")

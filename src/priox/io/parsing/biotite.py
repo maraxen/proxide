@@ -13,9 +13,9 @@ from biotite.structure import AtomArray, AtomArrayStack
 from biotite.structure import io as structure_io
 
 from priox.core.containers import (
-  EstatInfo,
   ProteinStream,
 )
+from priox.io.parsing.types import EstatInfo
 from priox.io.parsing.registry import ParsingError, register_parser
 from priox.io.parsing.structures import ProcessedStructure
 from priox.io.parsing.utils import (
@@ -85,39 +85,39 @@ def _add_hydrogens_to_structure(
 
     # Heuristic: Set N-terminal Nitrogen charge to +1 to get NH3+
     if atom_array.array_length() > 0:
-        res_ids = atom_array.res_id
-        res_names = atom_array.res_name
-        atom_names = atom_array.atom_name
+      res_ids = atom_array.res_id
+      res_names = atom_array.res_name
+      atom_names = atom_array.atom_name
 
-        # 1. N-term
-        if len(res_ids) > 0:
-            first_res_id = res_ids[0]
-            mask_n = (res_ids == first_res_id) & (atom_names == "N")
-            charges[mask_n] = 1
+      # 1. N-term
+      if len(res_ids) > 0:
+        first_res_id = res_ids[0]
+        mask_n = (res_ids == first_res_id) & (atom_names == "N")
+        charges[mask_n] = 1
 
-            # C-term
-            last_res_id = res_ids[-1]
-            # Check for OXT
-            mask_oxt = (res_ids == last_res_id) & (atom_names == "OXT")
-            if np.any(mask_oxt):
-                charges[mask_oxt] = -1
+        # C-term
+        last_res_id = res_ids[-1]
+        # Check for OXT
+        mask_oxt = (res_ids == last_res_id) & (atom_names == "OXT")
+        if np.any(mask_oxt):
+          charges[mask_oxt] = -1
 
-        # 2. Standard Ionizable Residues (pH 7)
-        # LYS: NZ +1  # noqa: ERA001
-        mask_lys = (res_names == "LYS") & (atom_names == "NZ")
-        charges[mask_lys] = 1
+      # 2. Standard Ionizable Residues (pH 7)
+      # LYS: NZ +1  # noqa: ERA001
+      mask_lys = (res_names == "LYS") & (atom_names == "NZ")
+      charges[mask_lys] = 1
 
-        # ARG: CZ +1 failed. NH1 +1 caused asymmetry.
-        # We will handle ARG protonation manually after Hydride.
-        # So do NOT set charge here.
+      # ARG: CZ +1 failed. NH1 +1 caused asymmetry.
+      # We will handle ARG protonation manually after Hydride.
+      # So do NOT set charge here.
 
-        # ASP: OD2 -1 (Arbitrary choice between OD1/OD2)
-        mask_asp = (res_names == "ASP") & (atom_names == "OD2")
-        charges[mask_asp] = -1
+      # ASP: OD2 -1 (Arbitrary choice between OD1/OD2)
+      mask_asp = (res_names == "ASP") & (atom_names == "OD2")
+      charges[mask_asp] = -1
 
-        # GLU: OE2 -1  # noqa: ERA001
-        mask_glu = (res_names == "GLU") & (atom_names == "OE2")
-        charges[mask_glu] = -1
+      # GLU: OE2 -1  # noqa: ERA001
+      mask_glu = (res_names == "GLU") & (atom_names == "OE2")
+      charges[mask_glu] = -1
 
     atom_array.set_annotation("charge", charges)
 
@@ -132,170 +132,168 @@ def _add_hydrogens_to_structure(
 
 
 def _fix_arg_protonation(atom_array: AtomArray) -> AtomArray:  # noqa: C901, PLR0915
-    """Ensure Arginine residues have correct protonation (HE, HH11, HH12, HH21, HH22)."""
-    # Iterate ARGs
-    # This is slow but safe.
-    # We need to rebuild the AtomArray if we add atoms.
-    # Biotite AtomArray is not easily resizeable in place?
-    # We can append.
+  """Ensure Arginine residues have correct protonation (HE, HH11, HH12, HH21, HH22)."""
+  # Iterate ARGs
+  # This is slow but safe.
+  # We need to rebuild the AtomArray if we add atoms.
+  # Biotite AtomArray is not easily resizeable in place?
+  # We can append.
 
-    # Identify ARGs
-    arg_mask = atom_array.res_name == "ARG"
-    if not np.any(arg_mask):
-        return atom_array
-
-    res_ids = atom_array.res_id
-    arg_res_ids = np.unique(res_ids[arg_mask])
-
-    atoms_to_add = [] # List of atoms to append
-
-    for rid in arg_res_ids:
-        # Get atoms for this residue
-        mask = res_ids == rid
-        res_atoms = atom_array[mask]
-
-        # Check for HE
-        _has_he = np.any(res_atoms.atom_name == "HE")
-
-        # Check NH1 hydrogens
-        nh1_h = [name for name in res_atoms.atom_name if name.startswith("HH1")]
-        # Check NH2 hydrogens
-        nh2_h = [name for name in res_atoms.atom_name if name.startswith("HH2")]
-
-        # We expect HE, HH11, HH12, HH21, HH22
-        # If Hydride produced neutral, we might have HE, HH11, HH21, HH22 (missing HH12)
-        # or HE, HH11, HH12, HH21 (missing HH22)
-        # or HE, HH11, HH21 (missing one on each?)
-
-        # Standardize names if needed? Hydride might use H, H2...
-        # But let's assume we need to ADD missing ones.
-
-        # Find parent atoms
-        try:
-            nh1_idx = np.where(res_atoms.atom_name == "NH1")[0][0]
-            nh2_idx = np.where(res_atoms.atom_name == "NH2")[0][0]
-            cz_idx = np.where(res_atoms.atom_name == "CZ")[0][0]
-
-            nh1_coord = res_atoms.coord[nh1_idx]
-            nh2_coord = res_atoms.coord[nh2_idx]
-            cz_coord = res_atoms.coord[cz_idx]
-        except IndexError:
-            continue # Missing heavy atoms?
-
-        # Helper to get geometry
-        def get_geometry(
-            parent_coord: np.ndarray, grand_parent_coord: np.ndarray,
-        ) -> tuple[np.ndarray, np.ndarray]:
-            v_bond = parent_coord - grand_parent_coord
-            norm_v_bond = np.linalg.norm(v_bond)
-            v_bond = np.array([1.0, 0.0, 0.0]) if norm_v_bond < 1e-06 else v_bond / norm_v_bond  # noqa: PLR2004
-
-            ne_indices = np.where(res_atoms.atom_name == "NE")[0]  # noqa: B023
-            if len(ne_indices) > 0:
-                ne_coord = res_atoms.coord[ne_indices[0]]  # noqa: B023
-                v_ne_cz = grand_parent_coord - ne_coord
-                normal = np.cross(v_ne_cz, v_bond)
-            else:
-                normal = np.cross(v_bond, np.array([1.0, 0.0, 0.0]))
-
-            if np.linalg.norm(normal) < 1e-3:  # noqa: PLR2004
-                normal = np.cross(v_bond, np.array([0.0, 1.0, 0.0]))
-            normal = normal / np.linalg.norm(normal)
-            return v_bond, normal
-
-        # Helper to add H
-        def add_h(
-            parent_name: str,  # noqa: ARG001
-            h_name: str,
-            parent_coord: np.ndarray,
-            grand_parent_coord: np.ndarray,
-            angle_sign: int = 1,
-        ) -> None:
-            v_bond, normal = get_geometry(parent_coord, grand_parent_coord)
-
-            # Rotate v_bond by +/- 60 degrees
-            theta = np.radians(60.0 * angle_sign)
-            c = np.cos(theta)
-            s = np.sin(theta)
-
-            v_h_dir = v_bond * c + np.cross(normal, v_bond) * s
-            new_pos = parent_coord + v_h_dir * 1.01
-
-            new_atom = structure.Atom(
-                coord=new_pos,
-                chain_id=res_atoms.chain_id[0],  # noqa: B023
-                res_id=rid,  # noqa: B023
-                res_name="ARG",
-                atom_name=h_name,
-                element="H",
-            )
-            atoms_to_add.append(new_atom)
-
-        # Helper to check existing sign
-        def get_existing_sign(
-            h_name: str, parent_coord: np.ndarray, grand_parent_coord: np.ndarray,
-        ) -> int:
-            try:
-                h_idx = np.where(res_atoms.atom_name == h_name)[0][0]  # noqa: B023
-                h_coord = res_atoms.coord[h_idx]  # noqa: B023
-                v_bond, normal = get_geometry(parent_coord, grand_parent_coord)
-
-                # Project H-Parent vector onto cross(normal, v_bond)
-                v_h = h_coord - parent_coord
-                cross_vec = np.cross(normal, v_bond)
-                proj = np.dot(v_h, cross_vec)
-            except IndexError:
-                return 0
-            return 1 if proj > 0 else -1
-
-        # Check NH1
-        if len(nh1_h) < 2:  # noqa: PLR2004
-            existing = [name for name in res_atoms.atom_name if name.startswith("HH1")]
-            occupied_signs = [
-                get_existing_sign(h, nh1_coord, cz_coord) for h in existing
-            ]
-
-            if "HH11" not in existing:
-                # Prefer +1, unless occupied
-                sign = 1 if 1 not in occupied_signs else -1
-                add_h("NH1", "HH11", nh1_coord, cz_coord, angle_sign=sign)
-                occupied_signs.append(sign)
-
-            if "HH12" not in existing:
-                sign = -1 if -1 not in occupied_signs else 1
-                add_h("NH1", "HH12", nh1_coord, cz_coord, angle_sign=sign)
-
-        # Check NH2
-        if len(nh2_h) < 2:  # noqa: PLR2004
-            existing = [name for name in res_atoms.atom_name if name.startswith("HH2")]
-            occupied_signs = []
-            for h in existing:
-                occupied_signs.append(get_existing_sign(h, nh2_coord, cz_coord))
-
-            if "HH21" not in existing:
-                sign = 1 if 1 not in occupied_signs else -1
-                add_h("NH2", "HH21", nh2_coord, cz_coord, angle_sign=sign)
-                occupied_signs.append(sign)
-
-            if "HH22" not in existing:
-                sign = -1 if -1 not in occupied_signs else 1
-                add_h("NH2", "HH22", nh2_coord, cz_coord, angle_sign=sign)
-
-
-
-    if atoms_to_add:
-        # Append atoms using concatenation
-        added_array = structure.array(atoms_to_add)
-        combined = atom_array + added_array
-
-        # Sort by res_id to keep residues together
-        # Note: stable sort is preferred to keep atom order within residue,
-        # but new atoms will be at end of residue block if we sort by res_id.
-        indices = np.argsort(combined.res_id, kind="stable")
-        return combined[indices]
-
-
+  # Identify ARGs
+  arg_mask = atom_array.res_name == "ARG"
+  if not np.any(arg_mask):
     return atom_array
+
+  res_ids = atom_array.res_id
+  arg_res_ids = np.unique(res_ids[arg_mask])
+
+  atoms_to_add = []  # List of atoms to append
+
+  for rid in arg_res_ids:
+    # Get atoms for this residue
+    mask = res_ids == rid
+    res_atoms = atom_array[mask]
+
+    # Check for HE
+    _has_he = np.any(res_atoms.atom_name == "HE")
+
+    # Check NH1 hydrogens
+    nh1_h = [name for name in res_atoms.atom_name if name.startswith("HH1")]
+    # Check NH2 hydrogens
+    nh2_h = [name for name in res_atoms.atom_name if name.startswith("HH2")]
+
+    # We expect HE, HH11, HH12, HH21, HH22
+    # If Hydride produced neutral, we might have HE, HH11, HH21, HH22 (missing HH12)
+    # or HE, HH11, HH12, HH21 (missing HH22)
+    # or HE, HH11, HH21 (missing one on each?)
+
+    # Standardize names if needed? Hydride might use H, H2...
+    # But let's assume we need to ADD missing ones.
+
+    # Find parent atoms
+    try:
+      nh1_idx = np.where(res_atoms.atom_name == "NH1")[0][0]
+      nh2_idx = np.where(res_atoms.atom_name == "NH2")[0][0]
+      cz_idx = np.where(res_atoms.atom_name == "CZ")[0][0]
+
+      nh1_coord = res_atoms.coord[nh1_idx]
+      nh2_coord = res_atoms.coord[nh2_idx]
+      cz_coord = res_atoms.coord[cz_idx]
+    except IndexError:
+      continue  # Missing heavy atoms?
+
+    # Helper to get geometry
+    def get_geometry(
+      parent_coord: np.ndarray,
+      grand_parent_coord: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+      v_bond = parent_coord - grand_parent_coord
+      norm_v_bond = np.linalg.norm(v_bond)
+      v_bond = np.array([1.0, 0.0, 0.0]) if norm_v_bond < 1e-06 else v_bond / norm_v_bond  # noqa: PLR2004
+
+      ne_indices = np.where(res_atoms.atom_name == "NE")[0]  # noqa: B023
+      if len(ne_indices) > 0:
+        ne_coord = res_atoms.coord[ne_indices[0]]  # noqa: B023
+        v_ne_cz = grand_parent_coord - ne_coord
+        normal = np.cross(v_ne_cz, v_bond)
+      else:
+        normal = np.cross(v_bond, np.array([1.0, 0.0, 0.0]))
+
+      if np.linalg.norm(normal) < 1e-3:  # noqa: PLR2004
+        normal = np.cross(v_bond, np.array([0.0, 1.0, 0.0]))
+      normal = normal / np.linalg.norm(normal)
+      return v_bond, normal
+
+    # Helper to add H
+    def add_h(
+      parent_name: str,  # noqa: ARG001
+      h_name: str,
+      parent_coord: np.ndarray,
+      grand_parent_coord: np.ndarray,
+      angle_sign: int = 1,
+    ) -> None:
+      v_bond, normal = get_geometry(parent_coord, grand_parent_coord)
+
+      # Rotate v_bond by +/- 60 degrees
+      theta = np.radians(60.0 * angle_sign)
+      c = np.cos(theta)
+      s = np.sin(theta)
+
+      v_h_dir = v_bond * c + np.cross(normal, v_bond) * s
+      new_pos = parent_coord + v_h_dir * 1.01
+
+      new_atom = structure.Atom(
+        coord=new_pos,
+        chain_id=res_atoms.chain_id[0],  # noqa: B023
+        res_id=rid,  # noqa: B023
+        res_name="ARG",
+        atom_name=h_name,
+        element="H",
+      )
+      atoms_to_add.append(new_atom)
+
+    # Helper to check existing sign
+    def get_existing_sign(
+      h_name: str,
+      parent_coord: np.ndarray,
+      grand_parent_coord: np.ndarray,
+    ) -> int:
+      try:
+        h_idx = np.where(res_atoms.atom_name == h_name)[0][0]  # noqa: B023
+        h_coord = res_atoms.coord[h_idx]  # noqa: B023
+        v_bond, normal = get_geometry(parent_coord, grand_parent_coord)
+
+        # Project H-Parent vector onto cross(normal, v_bond)
+        v_h = h_coord - parent_coord
+        cross_vec = np.cross(normal, v_bond)
+        proj = np.dot(v_h, cross_vec)
+      except IndexError:
+        return 0
+      return 1 if proj > 0 else -1
+
+    # Check NH1
+    if len(nh1_h) < 2:  # noqa: PLR2004
+      existing = [name for name in res_atoms.atom_name if name.startswith("HH1")]
+      occupied_signs = [get_existing_sign(h, nh1_coord, cz_coord) for h in existing]
+
+      if "HH11" not in existing:
+        # Prefer +1, unless occupied
+        sign = 1 if 1 not in occupied_signs else -1
+        add_h("NH1", "HH11", nh1_coord, cz_coord, angle_sign=sign)
+        occupied_signs.append(sign)
+
+      if "HH12" not in existing:
+        sign = -1 if -1 not in occupied_signs else 1
+        add_h("NH1", "HH12", nh1_coord, cz_coord, angle_sign=sign)
+
+    # Check NH2
+    if len(nh2_h) < 2:  # noqa: PLR2004
+      existing = [name for name in res_atoms.atom_name if name.startswith("HH2")]
+      occupied_signs = []
+      for h in existing:
+        occupied_signs.append(get_existing_sign(h, nh2_coord, cz_coord))
+
+      if "HH21" not in existing:
+        sign = 1 if 1 not in occupied_signs else -1
+        add_h("NH2", "HH21", nh2_coord, cz_coord, angle_sign=sign)
+        occupied_signs.append(sign)
+
+      if "HH22" not in existing:
+        sign = -1 if -1 not in occupied_signs else 1
+        add_h("NH2", "HH22", nh2_coord, cz_coord, angle_sign=sign)
+
+  if atoms_to_add:
+    # Append atoms using concatenation
+    added_array = structure.array(atoms_to_add)
+    combined = atom_array + added_array
+
+    # Sort by res_id to keep residues together
+    # Note: stable sort is preferred to keep atom order within residue,
+    # but new atoms will be at end of residue block if we sort by res_id.
+    indices = np.argsort(combined.res_id, kind="stable")
+    return combined[indices]
+
+  return atom_array
 
 
 def load_structure_with_hydride(
@@ -333,11 +331,11 @@ def load_structure_with_hydride(
 
   is_xtc = False
   if isinstance(source, (str, pathlib.Path)):
-      try:
-          if pathlib.Path(source).suffix.lower() in [".xtc"]:
-              is_xtc = True
-      except Exception:  # noqa: S110, BLE001
-          pass
+    try:
+      if pathlib.Path(source).suffix.lower() in [".xtc"]:
+        is_xtc = True
+    except Exception:  # noqa: S110, BLE001
+      pass
 
   if is_xtc:
     atom_array = structure_io.load_structure(
@@ -346,15 +344,16 @@ def load_structure_with_hydride(
       **kwargs,
     )
   elif not isinstance(source, (str, pathlib.Path)):
-      # File-like object, assume PDB
-      from biotite.structure.io.pdb import PDBFile  # noqa: PLC0415
-      try:
-          file = PDBFile.read(source)
-          atom_array = file.get_structure(**kwargs)
-      except Exception as e:
-           # Biotite raises Exception/ValueError on empty file or bad format
-           msg = f"Failed to parse PDB structure from file-like object: {e}"
-           raise ParsingError(msg) from e
+    # File-like object, assume PDB
+    from biotite.structure.io.pdb import PDBFile  # noqa: PLC0415
+
+    try:
+      file = PDBFile.read(source)
+      atom_array = file.get_structure(**kwargs)
+    except Exception as e:
+      # Biotite raises Exception/ValueError on empty file or bad format
+      msg = f"Failed to parse PDB structure from file-like object: {e}"
+      raise ParsingError(msg) from e
   else:
     atom_array = structure_io.load_structure(
       source,
@@ -376,7 +375,7 @@ def load_structure_with_hydride(
     atom_array = _remove_solvent_from_structure(atom_array)
 
   if chain_id is not None:
-      atom_array, _ = _process_chain_id(atom_array, chain_id)
+    atom_array, _ = _process_chain_id(atom_array, chain_id)
 
   if add_hydrogens:
     atom_array = _add_hydrogens_to_structure(atom_array)
@@ -413,17 +412,17 @@ def load_biotite(
 
   # Map chain_id strings to integers
   if hasattr(atom_array, "chain_id"):
-      unique_chains = sorted(set(atom_array.chain_id))
-      chain_map = {cid: i for i, cid in enumerate(unique_chains)}
-      chain_ids = np.array([chain_map[cid] for cid in atom_array.chain_id], dtype=np.int32)
+    unique_chains = sorted(set(atom_array.chain_id))
+    chain_map = {cid: i for i, cid in enumerate(unique_chains)}
+    chain_ids = np.array([chain_map[cid] for cid in atom_array.chain_id], dtype=np.int32)
   else:
-      # If no chain_id, assume all 0
-      chain_ids = np.zeros(atom_array.array_length(), dtype=np.int32)
+    # If no chain_id, assume all 0
+    chain_ids = np.zeros(atom_array.array_length(), dtype=np.int32)
 
   processed = ProcessedStructure(
-      atom_array=atom_array,
-      r_indices=r_indices,
-      chain_ids=chain_ids,
+    atom_array=atom_array,
+    r_indices=r_indices,
+    chain_ids=chain_ids,
   )
 
   path = None
@@ -433,12 +432,13 @@ def load_biotite(
     path = file_path
 
   return processed_structure_to_protein_tuples(
-      processed,
-      source_name=str(path or "biotite"),
-      extract_dihedrals=extract_dihedrals,
-      populate_physics=populate_physics,
-      force_field_name=force_field_name,
+    processed,
+    source_name=str(path or "biotite"),
+    extract_dihedrals=extract_dihedrals,
+    populate_physics=populate_physics,
+    force_field_name=force_field_name,
   )
+
 
 def _parse_biotite(
   source: str | pathlib.Path,

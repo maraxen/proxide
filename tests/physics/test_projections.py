@@ -9,7 +9,7 @@ from priox.physics.projections import (
     project_forces_onto_backbone,
     project_forces_onto_backbone_per_atom,
 )
-from priox.core.containers import ProteinTuple
+from priox.core.containers import Protein
 
 
 @pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])

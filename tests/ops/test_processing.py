@@ -5,7 +5,7 @@ import pathlib
 from io import StringIO
 from unittest.mock import Mock, patch
 from priox.ops import processing
-from priox.core.containers import ProteinTuple
+from priox.core.containers import Protein
 from priox.io.parsing.structures import ProcessedStructure
 from unittest.mock import mock_open as mock_file_open
 
@@ -494,7 +494,7 @@ class TestFrameIteratorFromInputs:
 
     """
     # This is a placeholder test - actual implementation would depend on
-    # parse_input behavior and ProteinTuple structure
+    # parse_input behavior and Protein structure
     test_file = tmp_path / "test.pdb"
     test_file.write_text("ATOM   1  CA  ALA A   1      10.000  20.000  30.000")
 

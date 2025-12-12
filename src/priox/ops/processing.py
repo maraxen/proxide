@@ -11,7 +11,7 @@ from typing import IO, Any
 
 import requests
 
-from priox.core.containers import ProteinTuple
+from priox.core.containers import Protein
 from priox.io.parsing.dispatch import load_structure as parse_input
 from priox.io.parsing.foldcomp import FoldCompDatabase, get_protein_structures
 
@@ -134,7 +134,7 @@ def _fetch_md_cath(md_cath_id: str) -> pathlib.Path:
 def _resolve_inputs(  # noqa: C901
   inputs: Sequence[str | IO[str] | pathlib.Path],
   foldcomp_database: FoldCompDatabase | None = None,
-) -> Generator[str | pathlib.Path | IO[str] | ProteinTuple, None, None]:
+) -> Generator[str | pathlib.Path | IO[str] | Protein, None, None]:
   """Resolve a heterogeneous list of inputs into parseable sources.
 
   This generator categorizes each input and yields a source that `parse_input`
@@ -225,8 +225,8 @@ def frame_iterator_from_inputs(
   inputs: Sequence[str | pathlib.Path | IO[str]],
   parse_kwargs: dict[str, Any] | None = None,
   foldcomp_database: FoldCompDatabase | None = None,
-) -> Iterator[ProteinTuple]:
-  """Create a generator that yields ProteinTuple frames from mixed inputs.
+) -> Iterator[Protein]:
+  """Create a generator that yields Protein frames from mixed inputs.
 
   Supports flexible chain_id assignment:
   - None/str: Applies to all inputs.
@@ -243,7 +243,7 @@ def frame_iterator_from_inputs(
     resolved_sources = _resolve_inputs([input_item], foldcomp_database)
 
     for source in resolved_sources:
-      if isinstance(source, ProteinTuple):
+      if isinstance(source, Protein):
         yield source
       else:
         yield from parse_input(

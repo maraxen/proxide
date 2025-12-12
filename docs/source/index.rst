@@ -14,6 +14,7 @@ Priox Documentation
   :caption: Contents:
 
   api/modules
+  gaff_integration
 
 Key Features
 ------------
