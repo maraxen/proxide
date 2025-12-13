@@ -8,7 +8,7 @@ from grain._src.python import options as grain_options
 from grain._src.python.dataset import dataset
 from grain._src.python.dataset.transformations import prefetch
 
-from priox.ops import prefetch as priox_prefetch
+from proxide.ops import prefetch as priox_prefetch
 
 
 class MockIterDataset(dataset.IterDataset):

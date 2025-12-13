@@ -9,7 +9,7 @@ import numpy as np
 from pathlib import Path
 
 try:
-    from priox.io.parsing.rust_wrapper import (
+    from proxide.io.parsing.rust_wrapper import (
         parse_mdtraj_h5_metadata,
         parse_mdtraj_h5_frame,
         parse_mdcath_metadata,

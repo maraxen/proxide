@@ -1,12 +1,24 @@
 # Technical Debt Tracker
 
-**Last Updated:** 2025-12-12
+**Last Updated:** 2025-12-13
 
 This document tracks known technical debt, incomplete features, and deferred work items.
 
 ---
 
 ## ✅ Recently Completed (Dec 2025)
+
+### Phase 5: Python/Biotite Migration ✅ COMPLETE
+
+**Status:** Fully implemented (2025-12-13)
+
+- [x] PQR parsing ported to Rust (`parse_pqr` PyO3 function)
+- [x] PQR insertion codes fixed (52A, 52B handling)
+- [x] `physics_utils.py` deleted (100 lines removed)
+- [x] `assign_masses` ported to Rust (`chem/masses.rs`)
+- [x] Default physics parameters inlined in `utils.py`
+- [x] `structures.py` updated for Rust dict compatibility
+- [x] Biotite dependency reduced to MDTraj/mdCATH only (3 files)
 
 ### OpenMM Export ✅ COMPLETE
 

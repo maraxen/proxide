@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "priox"
+name = "proxide"
 version = "0.1.0"
 description = "Protein I/O for JAX"
 readme = "README.md"
@@ -32,7 +32,7 @@ dependencies = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-"priox" = ["chem/alphafold/common/stereo_chemical_props.txt"]
+"proxide" = ["chem/alphafold/common/stereo_chemical_props.txt"]
 
 [project.optional-dependencies]
 ml = [

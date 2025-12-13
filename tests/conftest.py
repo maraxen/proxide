@@ -7,8 +7,8 @@ import jax.numpy as jnp
 import pytest
 from jax import random
 
-from priox.io.parsing.dispatch import load_structure as parse_input
-from priox.core.containers import Protein
+from proxide.io.parsing.dispatch import load_structure as parse_input
+from proxide.core.containers import Protein
 
 
 @pytest.fixture(scope="session")

@@ -24,7 +24,7 @@ except ImportError:
     HAS_OPENMMFORCEFIELDS = False
 
 try:
-    import priox_rs
+    import proxide_rs
 
     HAS_PRIOX_RS = True
 except ImportError:

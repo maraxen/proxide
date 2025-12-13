@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import pytest
 import numpy as np
 
-from priox.core.atomic_system import AtomicSystem
+from proxide.core.atomic_system import AtomicSystem
 
 try:
     from openmm import NonbondedForce

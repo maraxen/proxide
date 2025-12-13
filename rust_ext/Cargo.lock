@@ -582,6 +582,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "oxidize"
+version = "0.1.0"
+dependencies = [
+ "chemfiles",
+ "flate2",
+ "hdf5-metno",
+ "lazy_static",
+ "log",
+ "memmap2",
+ "molly",
+ "nalgebra",
+ "nom",
+ "numpy",
+ "pyo3",
+ "pyo3-log",
+ "quick-xml",
+ "rayon",
+ "thiserror",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -629,27 +650,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8a2f0d8d040d7848a709caf78912debcc3f33ee4b3cac47d73d1e1069e83507"
 dependencies = [
  "portable-atomic",
-]
-
-[[package]]
-name = "priox_rs"
-version = "0.1.0"
-dependencies = [
- "chemfiles",
- "flate2",
- "hdf5-metno",
- "lazy_static",
- "log",
- "memmap2",
- "molly",
- "nalgebra",
- "nom",
- "numpy",
- "pyo3",
- "pyo3-log",
- "quick-xml",
- "rayon",
- "thiserror",
 ]
 
 [[package]]

@@ -4,9 +4,9 @@ import chex
 import jax.numpy as jnp
 import pytest
 
-from priox.geometry import alignment
-from priox.core.types import ProteinSequence
-from priox.geometry.alignment import (
+from proxide.geometry import alignment
+from proxide.core.types import ProteinSequence
+from proxide.geometry.alignment import (
     align_sequences,
     needleman_wunsch_alignment,
     smith_waterman,

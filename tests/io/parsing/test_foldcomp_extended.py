@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 import numpy as np
 import pytest
-from priox.io.parsing import foldcomp
+from proxide.io.parsing import foldcomp
 
 class TestFoldCompExtended(unittest.TestCase):
     

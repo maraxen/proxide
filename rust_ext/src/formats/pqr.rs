@@ -39,7 +39,22 @@ fn parse_pqr_line(line: &str) -> Option<AtomRecord> {
     let atom_name = parts[2].to_string();
     let res_name = parts[3].to_string();
     let chain_id = parts[4].to_string();
-    let res_seq = parts[5].parse::<i32>().ok()?;
+
+    // Handle insertion codes like "52A", "52B" - extract numeric part
+    let res_seq_str = parts[5];
+    let res_seq: i32 = res_seq_str
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-')
+        .collect::<String>()
+        .parse()
+        .unwrap_or(0);
+
+    // Extract insertion code if present
+    let i_code: char = res_seq_str
+        .chars()
+        .find(|c| c.is_ascii_alphabetic())
+        .unwrap_or(' ');
+
     let x = parts[6].parse::<f32>().ok()?;
     let y = parts[7].parse::<f32>().ok()?;
     let z = parts[8].parse::<f32>().ok()?;
@@ -60,7 +75,7 @@ fn parse_pqr_line(line: &str) -> Option<AtomRecord> {
         res_name,
         chain_id,
         res_seq,
-        i_code: ' ',
+        i_code,
         x,
         y,
         z,
@@ -123,5 +138,16 @@ mod tests {
         let atom = atom.unwrap();
         assert!(atom.is_hetatm);
         assert_eq!(atom.res_name, "HOH");
+    }
+
+    #[test]
+    fn test_parse_insertion_code() {
+        let line = "ATOM      5  N   ALA A  52A     14.000  24.000  34.000  -0.500   1.850";
+        let atom = parse_pqr_line(line);
+
+        assert!(atom.is_some());
+        let atom = atom.unwrap();
+        assert_eq!(atom.res_seq, 52);
+        assert_eq!(atom.i_code, 'A');
     }
 }

@@ -6,11 +6,11 @@ import numpy as np
 import pytest
 from dataclasses import fields
 
-from priox.physics.features import (
+from proxide.physics.features import (
     compute_electrostatic_features_batch,
     compute_electrostatic_node_features,
 )
-from priox.core.containers import Protein
+from proxide.core.containers import Protein
 
 
 def protein_to_dict(protein: Protein) -> dict:
@@ -173,7 +173,7 @@ def test_compute_electrostatic_node_features_thermal_mode(
     # Mode: thermal
     # Calculate T such that sigma is roughly 1.0
     # sigma = sqrt(0.5 * R * T) => sigma^2 = 0.5 * R * T => T = sigma^2 / (0.5 * R)
-    from priox.physics.constants import BOLTZMANN_KCAL
+    from proxide.physics.constants import BOLTZMANN_KCAL
 
     t = 1.0 / (0.5 * BOLTZMANN_KCAL)
 

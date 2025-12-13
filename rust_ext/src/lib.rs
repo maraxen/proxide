@@ -43,26 +43,24 @@ use numpy::{PyArray1, PyArrayMethods};
 /// Parse a structure file and return formatted coordinates
 #[pyfunction]
 #[pyo3(signature = (path, spec=None))]
+/// Parse a structure file (PDB/mmCIF) into a format suitable for the Protein class.
 fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         let spec = spec.unwrap_or_default();
 
-        // Check if we can use the cache
-        // We only cache if:
-        // 1. Caching is enabled
-        // 2. No dynamic physics/geometry features are requested (as they depend on RawAtomData)
-        // 3. No extra processing flags that might change output beyond format (e.g. bonds)
+        // Check cache (only if features are simple)
         let should_cache = spec.enable_caching
             && !spec.compute_rbf
             && !spec.compute_electrostatics
             && !spec.compute_vdw
             && !spec.parameterize_md
-            && !spec.infer_bonds;
+            && !spec.infer_bonds
+            && !spec.add_hydrogens;
 
         if should_cache {
             let key = formatters::CacheKey::new(
                 &path,
-                spec.coord_format,
+                spec.coord_format.clone(),
                 spec.remove_solvent,
                 spec.include_hetatm,
             );
@@ -72,114 +70,172 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
             }
         }
 
-        // 1. Parse PDB to RawAtomData (all models)
-        let (raw_data_all, model_ids) = parse_pdb_file(&path).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("PDB parsing failed: {}", e))
-        })?;
-
-        // Filter by requested models (default: first model only)
-        let raw_data = if let Some(ref models) = spec.models {
-            processing::filter_models(&raw_data_all, &model_ids, models)
+        // 1. Parse PDB or mmCIF
+        let (raw_data_all, model_ids) = if path.ends_with(".cif") || path.ends_with(".mmcif") {
+            formats::mmcif::parse_mmcif_file(&path).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("mmCIF parsing failed: {}", e))
+            })?
         } else {
-            // Default: first model only
-            let first_model = model_ids.first().copied().unwrap_or(1);
-            processing::filter_models(&raw_data_all, &model_ids, &[first_model])
+            formats::pdb::parse_pdb_file(&path).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("PDB parsing failed: {}", e))
+            })?
         };
 
-        // 2. Process into residues
-        let mut processed = ProcessedStructure::from_raw(raw_data).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Structure processing failed: {}", e))
-        })?;
+        // 2. Identify and Filter Models
+        let split_data = processing::models::split_by_model(&raw_data_all, &model_ids);
 
-        // 2b. Add Hydrogens if requested
-        if spec.add_hydrogens {
-            log::debug!("Adding hydrogens...");
-            // We need bonds to determine where to place hydrogens
-            // Infer them temporarily even if not requested for output
-            let all_coords = processed.extract_all_coords();
-            let all_elements = &processed.raw_atoms.elements;
-            let mut bonds = geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
-
-            let (added, relax_iters, relax_energy) = geometry::hydrogens::add_hydrogens_with_relax(
-                &mut processed,
-                &mut bonds,
-                spec.relax_hydrogens,
-                spec.relax_max_iterations,
-            )
-            .map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Hydrogen addition failed: {}", e))
-            })?;
-
-            if added > 0 {
-                // Rebuild topology to ensure correct atom ordering (contiguous residues)
-                let (new_processed, new_bonds) =
-                    processing::residues::rebuild_topology(processed, bonds).map_err(|e| {
-                        pyo3::exceptions::PyValueError::new_err(format!(
-                            "Topology rebuild failed: {}",
-                            e
-                        ))
-                    })?;
-                processed = new_processed;
-                bonds = new_bonds;
-            }
-
-            if spec.infer_bonds {
-                // If we want to return bonds, we use the ones we have (potentially relaxed/reordered)
-                // Convert bonds to python format
-                // We need to return them in the dict?
-                // Protocol: If infer_bonds is True, we usually return a bond list or adjacency?
-                // Current OutputSpec implementation in Python might handle it,
-                // but here we just return the Dict.
-                // Wait, ProcessedStructure doesn't hold bonds.
-                // And we don't put bonds in the output dict explicitly unless requested?
-                // The return value of parse_structure is a dict.
-                // Does the user expect 'bonds' key?
-                // Let's check `formats::mmcif` usage or similar.
-                // Currently `processed` doesn't include bonds in `to_py_dict`.
-                // If we want to export bonds, we should add them.
-                // But for now, fixing H count is primary.
-            }
-
-            if added > 0 {
-                if spec.relax_hydrogens {
-                    log::info!(
-                        "Added {} hydrogen atoms, relaxed in {} iterations (energy: {:.2})",
-                        added,
-                        relax_iters,
-                        relax_energy
-                    );
-                } else {
-                    log::info!("Added {} hydrogen atoms", added);
-                }
-                // Re-process the structure to fix residue sorting and indexing
-                // The raw atoms now contain the new hydrogens at the end
-                // from_raw will sort them into their residues
-                let modified_raw = processed.raw_atoms;
-                processed = ProcessedStructure::from_raw(modified_raw).map_err(|e| {
-                    pyo3::exceptions::PyValueError::new_err(format!(
-                        "Reprocessing failed after adding hydrogens: {}",
-                        e
-                    ))
-                })?;
+        let mut unique_models = Vec::new();
+        for &m in &model_ids {
+            if !unique_models.contains(&m) {
+                unique_models.push(m);
             }
         }
 
-        // 3. Format based on spec.coord_format
-        let (formatted_dict, cached_structure) = match spec.coord_format {
+        let mut models_to_process = Vec::new();
+        if let Some(ref req) = spec.models {
+            for (i, &m_id) in unique_models.iter().enumerate() {
+                if req.contains(&m_id) && i < split_data.len() {
+                    models_to_process.push(&split_data[i]);
+                }
+            }
+        } else {
+            // Default: ALL models
+            for data in &split_data {
+                models_to_process.push(data);
+            }
+        }
+
+        if models_to_process.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "No models found matching request",
+            ));
+        }
+
+        // 3. Process Reference Model (First)
+        let ref_raw = models_to_process[0];
+        let mut processed = ProcessedStructure::from_raw(ref_raw.clone()).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Structure processing failed: {}", e))
+        })?;
+
+        // 4. Add Hydrogens / Infer Bonds on Reference
+        let mut bonds_for_h = Vec::new();
+        if spec.add_hydrogens {
+            log::debug!("Adding hydrogens to reference model...");
+            let all_coords = processed.extract_all_coords();
+            let all_elements = &processed.raw_atoms.elements;
+
+            // Infer bonds if not provided
+            bonds_for_h = geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
+
+            let num_h_added = geometry::hydrogens::add_hydrogens(&mut processed, &mut bonds_for_h)
+                .map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Hydrogen addition failed: {}",
+                        e
+                    ))
+                })?;
+
+            log::debug!("Added {} hydrogens to reference model", num_h_added);
+
+            // Note: ProcessedStructure was updated in-place, no need to reassign
+            let _ = processed; // Keep processed in scope (no-op, updated in place)
+        } else if spec.infer_bonds {
+            let all_coords = processed.extract_all_coords();
+            let all_elements = &processed.raw_atoms.elements;
+            bonds_for_h = geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
+        }
+
+        // 5. Format and Stack
+        let (mut dict, cached_structure) = match spec.coord_format {
             CoordFormat::Atom37 => {
-                let formatted =
-                    formatters::Atom37Formatter::format(&processed, &spec).map_err(|e| {
+                let formatter = formatters::Atom37Formatter;
+                let ref_formatted = formatters::Atom37Formatter::format(&processed, &spec)
+                    .map_err(|e| {
                         pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
                     })?;
 
+                let mut dict = ref_formatted.to_py_dict(py)?;
+
+                // --- Multi-Model Stacking for Atom37 ---
+                if models_to_process.len() > 1 {
+                    let n_res = ref_formatted.coordinates.len() / (37 * 3);
+                    let n_models = models_to_process.len();
+
+                    let mut all_coords = Vec::with_capacity(n_models * n_res * 37 * 3);
+                    all_coords.extend_from_slice(&ref_formatted.coordinates);
+
+                    for i in 1..n_models {
+                        let m_raw = models_to_process[i];
+                        // We must process each model to map atoms correctly
+                        let mut m_processed =
+                            ProcessedStructure::from_raw(m_raw.clone()).map_err(|e| {
+                                pyo3::exceptions::PyValueError::new_err(format!(
+                                    "Processing model {} failed: {}",
+                                    i + 1,
+                                    e
+                                ))
+                            })?;
+
+                        if spec.add_hydrogens {
+                            // Re-infer for consistent H addition
+                            let all_coords = m_processed.extract_all_coords();
+                            let all_elements = &m_processed.raw_atoms.elements;
+                            let mut m_bonds =
+                                geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
+                            geometry::hydrogens::add_hydrogens(&mut m_processed, &mut m_bonds)
+                                .map_err(|e| {
+                                    pyo3::exceptions::PyValueError::new_err(format!(
+                                        "H-add model {}: {}",
+                                        i + 1,
+                                        e
+                                    ))
+                                })?;
+                            // m_processed is updated in-place, no reassignment needed
+                        }
+
+                        let m_formatted = formatters::Atom37Formatter::format(&m_processed, &spec)
+                            .map_err(|e| {
+                                pyo3::exceptions::PyValueError::new_err(format!(
+                                    "Format model {}: {}",
+                                    i + 1,
+                                    e
+                                ))
+                            })?;
+
+                        // Strict check on size
+                        if m_formatted.coordinates.len() != ref_formatted.coordinates.len() {
+                            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                                "Model {} size mismatch ({} vs {})",
+                                i + 1,
+                                m_formatted.coordinates.len(),
+                                ref_formatted.coordinates.len()
+                            )));
+                        }
+                        all_coords.extend_from_slice(&m_formatted.coordinates);
+                    }
+
+                    // Reshape to (N_models, N_res, 37, 3)
+                    let flat_array = PyArray1::from_slice_bound(py, &all_coords);
+                    let shaped = flat_array.reshape((n_models, n_res, 37, 3)).map_err(|e| {
+                        pyo3::exceptions::PyValueError::new_err(format!("Reshape failed: {}", e))
+                    })?;
+                    let dict_bound = dict.downcast_bound::<PyDict>(py).unwrap();
+                    dict_bound.set_item("coordinates", shaped)?;
+
+                    // We also need to update "aatype", "atom_mask" etc?
+                    // Usually topology is constant. Atom37Formatter ensures consistent sizing.
+                    // Accessing dict as bound reference
+                    // (dict is PyObject, we need to manipulate it)
+                }
+
                 let cached = if should_cache {
                     Some(formatters::CachedStructure {
-                        coordinates: formatted.coordinates.clone(),
-                        atom_mask: formatted.atom_mask.clone(),
-                        aatype: formatted.aatype.clone(),
-                        residue_index: formatted.residue_index.clone(),
-                        chain_index: formatted.chain_index.clone(),
-                        num_residues: formatted.aatype.len(),
+                        coordinates: ref_formatted.coordinates.clone(),
+                        atom_mask: ref_formatted.atom_mask.clone(),
+                        aatype: ref_formatted.aatype.clone(),
+                        residue_index: ref_formatted.residue_index.clone(),
+                        chain_index: ref_formatted.chain_index.clone(),
+                        num_residues: ref_formatted.aatype.len(),
                         atom_names: None,
                         coord_shape: None,
                     })
@@ -187,53 +243,24 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                     None
                 };
 
-                (formatted.to_py_dict(py)?, cached)
+                (dict, cached)
             }
             CoordFormat::Atom14 => {
                 let formatted =
                     formatters::Atom14Formatter::format(&processed, &spec).map_err(|e| {
                         pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
                     })?;
-
-                let cached = if should_cache {
-                    Some(formatters::CachedStructure {
-                        coordinates: formatted.coordinates.clone(),
-                        atom_mask: formatted.atom_mask.clone(),
-                        aatype: formatted.aatype.clone(),
-                        residue_index: formatted.residue_index.clone(),
-                        chain_index: formatted.chain_index.clone(),
-                        num_residues: formatted.aatype.len(),
-                        atom_names: None,
-                        coord_shape: None,
-                    })
-                } else {
-                    None
-                };
-
-                (formatted.to_py_dict(py)?, cached)
+                let dict = formatted.to_py_dict(py)?;
+                // No multi-model stacking implemented for Atom14 yet
+                (dict, None)
             }
             CoordFormat::BackboneOnly => {
                 let formatted =
                     formatters::BackboneFormatter::format(&processed, &spec).map_err(|e| {
                         pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
                     })?;
-
-                let cached = if should_cache {
-                    Some(formatters::CachedStructure {
-                        coordinates: formatted.coordinates.clone(),
-                        atom_mask: formatted.atom_mask.clone(),
-                        aatype: formatted.aatype.clone(),
-                        residue_index: formatted.residue_index.clone(),
-                        chain_index: formatted.chain_index.clone(),
-                        num_residues: formatted.aatype.len(),
-                        atom_names: None,
-                        coord_shape: None,
-                    })
-                } else {
-                    None
-                };
-
-                (formatted.to_py_dict(py)?, cached)
+                let dict = formatted.to_py_dict(py)?;
+                (dict, None)
             }
             CoordFormat::Full => {
                 let formatted =
@@ -272,7 +299,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
         }
 
         // Downcast to PyDict to add more fields
-        let dict = formatted_dict.downcast_bound::<PyDict>(py).map_err(|e| {
+        let dict_bound = dict.downcast_bound::<PyDict>(py).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Failed to downcast to dict: {}", e))
         })?;
 
@@ -302,7 +329,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                 ))
             })?;
 
-            dict.set_item("rbf_features", rbf_array)?;
+            dict_bound.set_item("rbf_features", rbf_array)?;
         }
 
         // --- Topology (Bonds, Angles, Dihedrals, Impropers) ---
@@ -331,11 +358,11 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                                 e
                             ))
                         })?;
-                dict.set_item("bonds", bonds_reshaped)?;
+                dict_bound.set_item("bonds", bonds_reshaped)?;
             } else {
                 let empty: &[usize] = &[];
                 let arr = PyArray1::from_slice_bound(py, empty);
-                dict.set_item("bonds", arr.reshape((0, 2)).unwrap())?;
+                dict_bound.set_item("bonds", arr.reshape((0, 2)).unwrap())?;
             }
 
             // Angles (N_angles, 3)
@@ -356,11 +383,11 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                                 e
                             ))
                         })?;
-                dict.set_item("angles", angles_reshaped)?;
+                dict_bound.set_item("angles", angles_reshaped)?;
             } else {
                 let empty: &[usize] = &[];
                 let arr = PyArray1::from_slice_bound(py, empty);
-                dict.set_item("angles", arr.reshape((0, 3)).unwrap())?;
+                dict_bound.set_item("angles", arr.reshape((0, 3)).unwrap())?;
             }
 
             // Proper Dihedrals (N_dihedrals, 4)
@@ -381,11 +408,11 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                             e
                         ))
                     })?;
-                dict.set_item("dihedrals", dih_reshaped)?;
+                dict_bound.set_item("dihedrals", dih_reshaped)?;
             } else {
                 let empty: &[usize] = &[];
                 let arr = PyArray1::from_slice_bound(py, empty);
-                dict.set_item("dihedrals", arr.reshape((0, 4)).unwrap())?;
+                dict_bound.set_item("dihedrals", arr.reshape((0, 4)).unwrap())?;
             }
 
             // Improper Dihedrals (N_impropers, 4)
@@ -406,18 +433,18 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                             e
                         ))
                     })?;
-                dict.set_item("impropers", imp_reshaped)?;
+                dict_bound.set_item("impropers", imp_reshaped)?;
             } else {
                 let empty: &[usize] = &[];
                 let arr = PyArray1::from_slice_bound(py, empty);
-                dict.set_item("impropers", arr.reshape((0, 4)).unwrap())?;
+                dict_bound.set_item("impropers", arr.reshape((0, 4)).unwrap())?;
             }
         }
 
         // --- Molecule Type ---
         // 0=Protein, 1=Ligand, 2=Solvent, 3=Ion
         let mol_type_array = PyArray1::from_slice_bound(py, &processed.molecule_type);
-        dict.set_item("molecule_type", mol_type_array)?;
+        dict_bound.set_item("molecule_type", mol_type_array)?;
         if spec.compute_electrostatics {
             if let Some(ref charges) = processed.raw_atoms.charges {
                 // Ensure charges match atoms
@@ -441,7 +468,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         ))
                     })?;
 
-                    dict.set_item("electrostatic_features", array)?;
+                    dict_bound.set_item("electrostatic_features", array)?;
                 } else {
                     log::warn!("Charge count mismatch, skipping electrostatics");
                 }
@@ -486,7 +513,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                 ))
             })?;
 
-            dict.set_item("vdw_features", array)?;
+            dict_bound.set_item("vdw_features", array)?;
         }
 
         // --- MD Parameterization ---
@@ -530,18 +557,19 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         })?;
 
                 // Add to output
-                dict.set_item("charges", PyArray1::from_slice_bound(py, &params.charges))?;
-                dict.set_item("sigmas", PyArray1::from_slice_bound(py, &params.sigmas))?;
-                dict.set_item("epsilons", PyArray1::from_slice_bound(py, &params.epsilons))?;
+                dict_bound.set_item("charges", PyArray1::from_slice_bound(py, &params.charges))?;
+                dict_bound.set_item("sigmas", PyArray1::from_slice_bound(py, &params.sigmas))?;
+                dict_bound
+                    .set_item("epsilons", PyArray1::from_slice_bound(py, &params.epsilons))?;
 
                 if let Some(ref radii) = params.radii {
-                    dict.set_item(
+                    dict_bound.set_item(
                         "gbsa_radii",
                         PyArray1::from_slice_bound(py, radii.as_slice()),
                     )?;
                 }
                 if let Some(ref scales) = params.scales {
-                    dict.set_item(
+                    dict_bound.set_item(
                         "gbsa_scales",
                         PyArray1::from_slice_bound(py, scales.as_slice()),
                     )?;
@@ -554,7 +582,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         bonds_flat.extend_from_slice(b);
                     }
                     let arr = PyArray1::from_slice_bound(py, &bonds_flat);
-                    dict.set_item("bonds", arr.reshape((params.bonds.len(), 2)).unwrap())?;
+                    dict_bound.set_item("bonds", arr.reshape((params.bonds.len(), 2)).unwrap())?;
                 }
 
                 // Bond Params (N, 2)
@@ -564,7 +592,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         params_flat.extend_from_slice(p);
                     }
                     let arr = PyArray1::from_slice_bound(py, &params_flat);
-                    dict.set_item(
+                    dict_bound.set_item(
                         "bond_params",
                         arr.reshape((params.bond_params.len(), 2)).unwrap(),
                     )?;
@@ -577,7 +605,8 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         flat.extend_from_slice(a);
                     }
                     let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict.set_item("angles", arr.reshape((params.angles.len(), 3)).unwrap())?;
+                    dict_bound
+                        .set_item("angles", arr.reshape((params.angles.len(), 3)).unwrap())?;
                 }
 
                 // Angle Params (N, 2)
@@ -587,7 +616,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         flat.extend_from_slice(p);
                     }
                     let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict.set_item(
+                    dict_bound.set_item(
                         "angle_params",
                         arr.reshape((params.angle_params.len(), 2)).unwrap(),
                     )?;
@@ -600,7 +629,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         flat.extend_from_slice(d);
                     }
                     let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict.set_item(
+                    dict_bound.set_item(
                         "dihedrals",
                         arr.reshape((params.dihedrals.len(), 4)).unwrap(),
                     )?;
@@ -613,7 +642,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         flat.extend_from_slice(p);
                     }
                     let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict.set_item(
+                    dict_bound.set_item(
                         "dihedral_params",
                         arr.reshape((params.dihedral_params.len(), 3)).unwrap(),
                     )?;
@@ -626,7 +655,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         flat.extend_from_slice(i);
                     }
                     let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict.set_item(
+                    dict_bound.set_item(
                         "impropers",
                         arr.reshape((params.impropers.len(), 4)).unwrap(),
                     )?;
@@ -639,7 +668,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         flat.extend_from_slice(p);
                     }
                     let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict.set_item(
+                    dict_bound.set_item(
                         "improper_params",
                         arr.reshape((params.improper_params.len(), 3)).unwrap(),
                     )?;
@@ -652,15 +681,16 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                         flat.extend_from_slice(p);
                     }
                     let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict.set_item("pairs_14", arr.reshape((params.pairs_14.len(), 2)).unwrap())?;
+                    dict_bound
+                        .set_item("pairs_14", arr.reshape((params.pairs_14.len(), 2)).unwrap())?;
                 }
 
                 // Atom types as list
                 let atom_types: Vec<&str> = params.atom_types.iter().map(|s| s.as_str()).collect();
-                dict.set_item("atom_types", atom_types)?;
+                dict_bound.set_item("atom_types", atom_types)?;
 
-                dict.set_item("num_parameterized", params.num_parameterized)?;
-                dict.set_item("num_skipped", params.num_skipped)?;
+                dict_bound.set_item("num_parameterized", params.num_parameterized)?;
+                dict_bound.set_item("num_skipped", params.num_skipped)?;
 
                 log::info!(
                     "Parameterized {}/{} atoms",
@@ -683,7 +713,7 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                     forcefield::topology::Topology::from_coords(&all_coords, all_elements, 1.3);
                 let gaff = forcefield::gaff::GaffParameters::new();
                 let types = forcefield::gaff::assign_gaff_types(all_elements, &topology, &gaff);
-                dict.set_item("atom_types", types)?;
+                dict_bound.set_item("atom_types", types)?;
             }
         }
 
@@ -971,8 +1001,23 @@ fn parse_xtc(path: String) -> PyResult<PyObject> {
 #[pyfunction]
 fn parse_mmcif(path: String) -> PyResult<PyObject> {
     Python::with_gil(|py| {
-        let raw_data = formats::mmcif::parse_mmcif_file(&path).map_err(|e| {
+        let (raw_data, _model_ids) = formats::mmcif::parse_mmcif_file(&path).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("mmCIF parsing failed: {}", e))
+        })?;
+
+        raw_data.to_py_dict(py).map(|dict| dict.into_py(py))
+    })
+}
+
+/// Parse a PQR file and return raw atom data with charges and radii
+///
+/// PQR format is similar to PDB but includes partial charges and radii.
+/// Useful for electrostatics calculations (Poisson-Boltzmann, etc).
+#[pyfunction]
+fn parse_pqr(path: String) -> PyResult<PyObject> {
+    Python::with_gil(|py| {
+        let raw_data = formats::pqr::parse_pqr_file(&path).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("PQR parsing failed: {}", e))
         })?;
 
         raw_data.to_py_dict(py).map(|dict| dict.into_py(py))
@@ -1304,10 +1349,11 @@ fn parse_mdcath_frame(
 
 /// Python module
 #[pymodule]
-fn priox_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn oxidize(m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init();
     m.add_function(wrap_pyfunction!(parse_pdb, m)?)?;
     m.add_function(wrap_pyfunction!(parse_mmcif, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_pqr, m)?)?;
     m.add_function(wrap_pyfunction!(parse_structure, m)?)?;
     m.add_function(wrap_pyfunction!(load_forcefield, m)?)?;
     m.add_function(wrap_pyfunction!(assign_gaff_atom_types, m)?)?;
@@ -1329,6 +1375,9 @@ fn priox_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Atomic System Architecture
     m.add_class::<AtomicSystem>()?;
+
+    // Chemistry utilities
+    m.add_function(wrap_pyfunction!(assign_masses, m)?)?;
 
     // New physics functions (Phase 4)
     m.add_function(wrap_pyfunction!(assign_mbondi2_radii, m)?)?;
@@ -1395,6 +1444,25 @@ fn extract_coords(py: Python<'_>, obj: &PyObject) -> PyResult<Vec<[f32; 3]>> {
     Err(pyo3::exceptions::PyTypeError::new_err(
         "Expected list of lists or numpy array for coordinates",
     ))
+}
+
+// =============================================================================
+// Chemistry Utilities (Phase 5)
+// =============================================================================
+
+/// Assign atomic masses based on atom names
+///
+/// Infers the element from the first character(s) of the atom name
+/// and returns masses in atomic mass units (amu).
+///
+/// Args:
+///     atom_names: List of atom names (e.g., ["N", "CA", "C", "O", "H"])
+///
+/// Returns:
+///     List of masses in amu
+#[pyfunction]
+fn assign_masses(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
+    Ok(chem::masses::assign_masses(&atom_names))
 }
 
 // =============================================================================
