@@ -2,9 +2,9 @@ import h5py
 import numpy as np
 import pytest
 import pathlib
-from priox.io.streaming.mdcath import parse_mdcath_to_processed_structure
-from priox.io.parsing.structures import ProcessedStructure
-from priox.io.parsing.types import TrajectoryStaticFeatures
+from proxide.io.streaming.mdcath import parse_mdcath_to_processed_structure
+from proxide.io.parsing.structures import ProcessedStructure
+from proxide.io.parsing.types import TrajectoryStaticFeatures
 
 def create_mock_mdcath_file(path: pathlib.Path, with_chain: bool = False):
     with h5py.File(path, "w") as f:

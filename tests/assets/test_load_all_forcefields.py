@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-import priox_rs
+import proxide_rs
 
 
 # Get the assets directory

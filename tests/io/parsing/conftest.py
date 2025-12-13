@@ -7,7 +7,7 @@ import mdtraj as md
 import numpy as np
 import pytest
 
-from priox.chem import residues as rc
+from proxide.chem import residues as rc
 
 PDB_1UBQ_STRING = """
 HEADER    CHROMOSOMAL PROTEIN                     02-JAN-87   1UBQ

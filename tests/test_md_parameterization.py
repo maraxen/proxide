@@ -7,7 +7,7 @@ from pathlib import Path
 # Skip if Rust extension not available
 pytest.importorskip("priox_rs")
 
-from priox.io.parsing.rust_wrapper import (
+from proxide.io.parsing.rust_wrapper import (
     parse_structure,
     OutputSpec,
     MissingResidueMode,
@@ -54,7 +54,7 @@ END
         )
         
         # Parse with parameterization
-        import priox_rs
+        import proxide_rs
         result = priox_rs.parse_structure(str(simple_pdb), spec)
         
         # Check that charges were assigned
@@ -84,7 +84,7 @@ END
             force_field=str(FF_XML_PATH),
         )
         
-        import priox_rs
+        import proxide_rs
         result = priox_rs.parse_structure(str(simple_pdb), spec)
         
         charges = result["charges"]
@@ -99,7 +99,7 @@ END
 
     def test_no_parameterization_by_default(self, simple_pdb):
         """Test that parameterization is disabled by default."""
-        import priox_rs
+        import proxide_rs
         result = priox_rs.parse_structure(str(simple_pdb))
         
         # Should not have MD params when not requested
@@ -115,7 +115,7 @@ END
             # force_field not set
         )
         
-        import priox_rs
+        import proxide_rs
         result = priox_rs.parse_structure(str(simple_pdb), spec)
         
         # Should complete without error, but no charges assigned

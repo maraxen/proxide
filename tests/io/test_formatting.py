@@ -4,10 +4,10 @@ import tempfile
 import os
 
 try:
-    from priox import priox_rs
+    from priox import proxide_rs
 except ImportError:
     # If not found (e.g. not installed in path), try direct import
-    import priox_rs
+    import proxide_rs
 
 PDB_CONTENT = """ATOM      1  N   ALA A   1      -0.525   1.362   0.000  1.00  0.00           N
 ATOM      2  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00           C

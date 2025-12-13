@@ -4,12 +4,12 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from priox.physics.projections import (
+from proxide.physics.projections import (
     compute_backbone_frame,
     project_forces_onto_backbone,
     project_forces_onto_backbone_per_atom,
 )
-from priox.core.containers import Protein
+from proxide.core.containers import Protein
 
 
 @pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])

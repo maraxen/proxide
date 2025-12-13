@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 from pathlib import Path
 import os
-import priox_rs
+import proxide_rs
 
 try:
     import openmm
@@ -15,7 +15,7 @@ try:
 except ImportError:
     OPENMM_AVAILABLE = False
 
-from priox.io.parsing.rust_wrapper import parse_structure, OutputSpec, CoordFormat, ErrorMode
+from proxide.io.parsing.rust_wrapper import parse_structure, OutputSpec, CoordFormat, ErrorMode
 
 TEST_DATA_DIR = Path("tests/data")
 

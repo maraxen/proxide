@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from priox.core.containers import Protein
+from proxide.core.containers import Protein
 
 
 def test_protein_structure_frozen():

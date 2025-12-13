@@ -4,7 +4,7 @@
 import unittest
 import numpy as np
 import jax.numpy as jnp
-from priox.md import jax_md_bridge
+from proxide.md import jax_md_bridge
 
 class TestJaxMDBridgeExtended(unittest.TestCase):
     

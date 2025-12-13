@@ -9,9 +9,9 @@ import numpy as np
 import pytest
 from absl.testing import parameterized
 
-from priox.core.containers import Protein, Protein
-from priox.ops import transforms
-from priox.chem import residues as residue_constants
+from proxide.core.containers import Protein, Protein
+from proxide.ops import transforms
+from proxide.chem import residues as residue_constants
 
 class TestTransformsExtended(parameterized.TestCase):
     

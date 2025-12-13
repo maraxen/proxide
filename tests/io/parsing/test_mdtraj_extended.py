@@ -6,7 +6,7 @@ from unittest import mock
 import numpy as np
 import pytest
 import mdtraj as md
-from priox.io.parsing import mdtraj
+from proxide.io.parsing import mdtraj
 
 class TestMDTrajExtended(unittest.TestCase):
     

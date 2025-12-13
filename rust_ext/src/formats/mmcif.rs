@@ -11,18 +11,18 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-/// Parse mmCIF file and return raw atom data
+/// Parse mmCIF file and return raw atom data with model IDs
 pub fn parse_mmcif_file<P: AsRef<Path>>(
     path: P,
-) -> Result<RawAtomData, Box<dyn std::error::Error>> {
+) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
     let mut raw_data = RawAtomData::new();
+    let mut model_ids: Vec<usize> = Vec::new();
     let mut in_atom_site_loop = false;
     let mut column_names: Vec<String> = Vec::new();
     let mut column_map: HashMap<String, usize> = HashMap::new();
-    let first_model_only = true;
     let mut current_model = 1;
 
     for line in reader.lines() {
@@ -76,21 +76,17 @@ pub fn parse_mmcif_file<P: AsRef<Path>>(
                 continue; // Skip malformed lines
             }
 
-            // Check if this is the first model only
-            if first_model_only {
-                if let Some(&model_idx) = column_map.get("pdbx_PDB_model_num") {
-                    if let Ok(model_num) = values[model_idx].parse::<i32>() {
-                        if current_model == 1 && model_num > 1 {
-                            break; // Stop at second model
-                        }
-                        current_model = model_num;
-                    }
+            // Get model number if available
+            if let Some(&model_idx) = column_map.get("pdbx_PDB_model_num") {
+                if let Ok(model_num) = values[model_idx].parse::<usize>() {
+                    current_model = model_num;
                 }
             }
 
             // Extract atom record
             if let Some(atom) = extract_atom_record(&values, &column_map) {
                 raw_data.add_atom(atom);
+                model_ids.push(current_model);
             }
         }
     }
@@ -99,7 +95,7 @@ pub fn parse_mmcif_file<P: AsRef<Path>>(
         return Err("No atoms found in mmCIF file".into());
     }
 
-    Ok(raw_data)
+    Ok((raw_data, model_ids))
 }
 
 /// Parse a CIF data line into values, handling quoted strings

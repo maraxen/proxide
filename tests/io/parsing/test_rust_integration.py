@@ -14,7 +14,7 @@ import tempfile
 import warnings
 
 try:
-    from priox.io.parsing.rust_wrapper import (
+    from proxide.io.parsing.rust_wrapper import (
         parse_pdb_rust,
         parse_pdb_to_protein,
         parse_pdb_raw_rust,
@@ -299,7 +299,7 @@ END
         protein = parse_pdb_rust(pdb_file)
         
         # Should be Protein (deprecated)
-        from priox.core.containers import Protein
+        from proxide.core.containers import Protein
         assert isinstance(protein, Protein)
         
         # Check shapes
@@ -323,7 +323,7 @@ END
         protein = parse_pdb_to_protein(pdb_file)
         
         # Should be Protein (not Protein)
-        from priox.core.containers import Protein
+        from proxide.core.containers import Protein
         assert isinstance(protein, Protein)
         
         # Check shapes
@@ -343,7 +343,7 @@ END
         protein = parse_pdb_rust(pdb_file)
         
         # CA is index 1 in atom37
-        from priox.chem.residues import atom_order
+        from proxide.chem.residues import atom_order
         ca_idx = atom_order["CA"]
         
         np.testing.assert_array_almost_equal(

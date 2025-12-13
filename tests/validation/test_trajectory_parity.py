@@ -45,7 +45,7 @@ HDF5_FILE = TRAJ_DATA_DIR / "test.h5"
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 def test_xtc_frame_coordinates_vs_mdtraj():
     """Compare XTC frame coordinates against MDTraj using pure-Rust molly parser."""
-    import priox_rs
+    import proxide_rs
 
     # Use MDTraj test files from /tmp (downloaded from GitHub)
     xtc_file = Path("/tmp/frame0.xtc")

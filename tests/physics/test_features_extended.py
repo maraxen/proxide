@@ -7,8 +7,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from priox.physics import features
-from priox.core.containers import Protein
+from proxide.physics import features
+from proxide.core.containers import Protein
 
 class TestFeaturesExtended(unittest.TestCase):
     

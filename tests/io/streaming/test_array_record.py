@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 import msgpack
 import msgpack_numpy as m
 
-from priox.io.streaming.array_record import ArrayRecordDataSource, get_protein_by_id
-from priox.core.containers import Protein
+from proxide.io.streaming.array_record import ArrayRecordDataSource, get_protein_by_id
+from proxide.core.containers import Protein
 
 m.patch()
 

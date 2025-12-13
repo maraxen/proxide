@@ -3,12 +3,12 @@
 import jax.numpy as jnp
 import pytest
 
-from priox.physics.force_fields import (
+from proxide.physics.force_fields import (
     FullForceField,
     load_force_field,
     list_available_force_fields,
 )
-from priox.physics.force_fields.components import (
+from proxide.physics.force_fields.components import (
     AtomTypeParams,
     BondPotentialParams,
     AnglePotentialParams,

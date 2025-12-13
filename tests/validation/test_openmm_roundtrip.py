@@ -32,7 +32,7 @@ class TestOpenMMRoundTrip:
 
     def test_small_system_energy_minimization(self) -> None:
         """Test creating an OpenMM system from a small molecule and running minimization."""
-        from priox.core.atomic_system import AtomicSystem
+        from proxide.core.atomic_system import AtomicSystem
 
         # Create a simple 3-atom water-like system
         # H-O-H with ~104.5° angle
@@ -123,7 +123,7 @@ class TestOpenMMRoundTrip:
 
     def test_with_torsions(self) -> None:
         """Test system with proper dihedrals (torsions)."""
-        from priox.core.atomic_system import AtomicSystem
+        from proxide.core.atomic_system import AtomicSystem
 
         # Create a simple 4-atom chain: C-C-C-C (butane-like)
         # Atom positions in a trans conformation
@@ -196,7 +196,7 @@ class TestOpenMMRoundTrip:
 
     def test_topology_with_bonds(self) -> None:
         """Test that topology correctly represents bonds."""
-        from priox.core.atomic_system import AtomicSystem
+        from proxide.core.atomic_system import AtomicSystem
 
         coords = jnp.array(
             [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [3.0, 0.0, 0.0]], dtype=jnp.float32
@@ -225,7 +225,7 @@ class TestForceFieldParameters:
 
     def test_load_ff14sb_and_check_parameters(self) -> None:
         """Load ff14SB and verify it has expected structure."""
-        from priox.physics.force_fields import load_force_field
+        from proxide.physics.force_fields import load_force_field
 
         ff = load_force_field("protein.ff14SB")
 

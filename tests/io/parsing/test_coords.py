@@ -3,7 +3,7 @@
 import numpy as np
 from chex import assert_trees_all_close
 
-from priox.io.parsing.coords import (
+from proxide.io.parsing.coords import (
     compute_cb_precise,
     extend_coordinate,
 )

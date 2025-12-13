@@ -4,8 +4,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from priox.md import jax_md_bridge
-from priox.chem import residues as residue_constants
+from proxide.md import jax_md_bridge
+from proxide.chem import residues as residue_constants
 
 # Mock FullForceField
 class MockFullForceField:

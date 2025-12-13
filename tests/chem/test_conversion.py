@@ -3,9 +3,9 @@
 import pytest
 import jax.numpy as jnp
 import numpy as np
-from priox.chem import conversion as aa_convert
-from priox.chem import residues as rc
-from priox.core.types import ProteinSequence
+from proxide.chem import conversion as aa_convert
+from proxide.chem import residues as rc
+from proxide.core.types import ProteinSequence
 
 
 @pytest.mark.smoke

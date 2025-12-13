@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 
 try:
-    from priox.io.parsing.rust_wrapper import parse_pdb_rust, is_rust_parser_available
+    from proxide.io.parsing.rust_wrapper import parse_pdb_rust, is_rust_parser_available
     RUST_AVAILABLE = is_rust_parser_available()
 except ImportError:
     RUST_AVAILABLE = False
@@ -54,7 +54,7 @@ END
     assert np.all((protein.atom_mask == 0) | (protein.atom_mask == 1)), "Atom mask should be binary"
     
     # Check expected atoms are present (N, CA, C, O, CB for ALA)
-    from priox.chem.residues import atom_order
+    from proxide.chem.residues import atom_order
     assert protein.atom_mask[0, atom_order["N"]] == 1.0, "N should be present"
     assert protein.atom_mask[0, atom_order["CA"]] == 1.0, "CA should be present" 
     assert protein.atom_mask[0, atom_order["C"]] == 1.0, "C should be present"
@@ -93,7 +93,7 @@ END
     assert protein.aatype[1] == 7  # GLY
     
     # GLY should not have CB
-    from priox.chem.residues import atom_order
+    from proxide.chem.residues import atom_order
     assert protein.atom_mask[1, atom_order["CB"]] == 0.0, "GLY should not have CB"
 
 

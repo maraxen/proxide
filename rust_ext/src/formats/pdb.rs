@@ -111,22 +111,6 @@ pub fn parse_pdb_file<P: AsRef<Path>>(
     Ok((raw_data, model_ids))
 }
 
-/// Parse PDB file returning only the first model (legacy compatibility).
-pub fn parse_pdb_file_first_model<P: AsRef<Path>>(
-    path: P,
-) -> Result<RawAtomData, Box<dyn std::error::Error>> {
-    let (raw_data, model_ids) = parse_pdb_file(path)?;
-
-    // Filter to first model only
-    if model_ids.is_empty() {
-        return Ok(raw_data);
-    }
-
-    let first_model = model_ids[0];
-    let filtered = crate::processing::filter_models(&raw_data, &model_ids, &[first_model]);
-    Ok(filtered)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

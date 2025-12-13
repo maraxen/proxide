@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 import tempfile
 import os
-from priox.io.parsing.rust_wrapper import parse_structure, OutputSpec, CoordFormat
+from proxide.io.parsing.rust_wrapper import parse_structure, OutputSpec, CoordFormat
 
 # Create a minimal PDB file for testing
 PDB_CONTENT = """

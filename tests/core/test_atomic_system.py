@@ -1,8 +1,8 @@
 """Tests for atomic system definitions."""
 
 import jax.numpy as jnp
-from priox.core.atomic_system import AtomicSystem, Molecule
-from priox.core.containers import Protein
+from proxide.core.atomic_system import AtomicSystem, Molecule
+from proxide.core.containers import Protein
 import pytest
 
 def test_atomic_system_initialization():

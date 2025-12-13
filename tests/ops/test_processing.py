@@ -4,15 +4,15 @@
 import pathlib
 from io import StringIO
 from unittest.mock import Mock, patch
-from priox.ops import processing
-from priox.core.containers import Protein
-from priox.io.parsing.structures import ProcessedStructure
+from proxide.ops import processing
+from proxide.core.containers import Protein
+from proxide.io.parsing.structures import ProcessedStructure
 from unittest.mock import mock_open as mock_file_open
 
 import pytest
 import requests
 
-from priox.ops.processing import (
+from proxide.ops.processing import (
   _fetch_md_cath,
   _fetch_pdb,
   _fetch_with_retry,

@@ -4,9 +4,9 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from priox.geometry import transforms
-from priox.chem import residues as rc
-from priox.geometry.transforms import (
+from proxide.geometry import transforms
+from proxide.chem import residues as rc
+from proxide.geometry.transforms import (
     apply_noise_to_coordinates,
     compute_backbone_coordinates,
     compute_backbone_distance,

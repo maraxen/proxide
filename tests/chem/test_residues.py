@@ -5,7 +5,7 @@ from unittest.mock import mock_open, patch
 
 import numpy as np
 
-from priox.chem import residues as rc
+from proxide.chem import residues as rc
 
 MOCK_STEREO_CHEMICAL_PROPS = """bonds header
 N-CA ALA 1.458 0.019
