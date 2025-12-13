@@ -9,8 +9,6 @@
 //! 3 = Triple
 //! 4 = Aromatic (PyMOL/ChemFiles convention often uses 4, or treated as 1.5)
 
-use std::collections::HashMap;
-
 /// Get bond order for a bond between two atoms in a residue.
 ///
 /// # Arguments

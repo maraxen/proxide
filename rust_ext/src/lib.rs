@@ -1330,6 +1330,13 @@ fn priox_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Atomic System Architecture
     m.add_class::<AtomicSystem>()?;
 
+    // New physics functions (Phase 4)
+    m.add_function(wrap_pyfunction!(assign_mbondi2_radii, m)?)?;
+    m.add_function(wrap_pyfunction!(assign_obc2_scaling_factors, m)?)?;
+    m.add_function(wrap_pyfunction!(get_water_model, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_bicubic_params, m)?)?;
+    m.add_function(wrap_pyfunction!(parameterize_molecule, m)?)?;
+
     Ok(())
 }
 
@@ -1388,4 +1395,207 @@ fn extract_coords(py: Python<'_>, obj: &PyObject) -> PyResult<Vec<[f32; 3]>> {
     Err(pyo3::exceptions::PyTypeError::new_err(
         "Expected list of lists or numpy array for coordinates",
     ))
+}
+
+// =============================================================================
+// GBSA, Water Model, CMAP Functions (Phase 4)
+// =============================================================================
+
+/// Assign intrinsic radii using the MBondi2 scheme
+///
+/// Args:
+///     atom_names: List of atom names (e.g., ["N", "CA", "C", "O", "H"])
+///     bonds: List of bond pairs as [atom_idx1, atom_idx2]
+///
+/// Returns:
+///     List of radii in Angstroms
+#[pyfunction]
+fn assign_mbondi2_radii(atom_names: Vec<String>, bonds: Vec<[usize; 2]>) -> PyResult<Vec<f32>> {
+    let radii = physics::gbsa::assign_mbondi2_radii(&atom_names, &bonds);
+    Ok(radii)
+}
+
+/// Assign scaling factors for OBC2 GBSA calculation
+///
+/// Args:
+///     atom_names: List of atom names
+///
+/// Returns:
+///     List of scaling factors
+#[pyfunction]
+fn assign_obc2_scaling_factors(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
+    let factors = physics::gbsa::assign_obc2_scaling_factors(&atom_names);
+    Ok(factors)
+}
+
+/// Get water model parameters
+///
+/// Args:
+///     name: Water model name ("TIP3P", "SPCE", "TIP4PEW")
+///     rigid: If True, set force constants to 0 for constraints
+///
+/// Returns:
+///     Dictionary with model parameters (atoms, charges, sigmas, etc.)
+#[pyfunction]
+fn get_water_model(name: String, rigid: bool) -> PyResult<PyObject> {
+    Python::with_gil(|py| {
+        let model = physics::water::get_water_model(&name, rigid)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+
+        let dict = PyDict::new_bound(py);
+        dict.set_item("name", &model.name)?;
+        dict.set_item("atoms", &model.atoms)?;
+        dict.set_item("has_virtual_sites", model.has_virtual_sites)?;
+
+        // Charges dict
+        let charges_dict = PyDict::new_bound(py);
+        for (k, v) in &model.charges {
+            charges_dict.set_item(k, *v)?;
+        }
+        dict.set_item("charges", charges_dict)?;
+
+        // Sigmas dict
+        let sigmas_dict = PyDict::new_bound(py);
+        for (k, v) in &model.sigmas {
+            sigmas_dict.set_item(k, *v)?;
+        }
+        dict.set_item("sigmas", sigmas_dict)?;
+
+        // Epsilons dict
+        let epsilons_dict = PyDict::new_bound(py);
+        for (k, v) in &model.epsilons {
+            epsilons_dict.set_item(k, *v)?;
+        }
+        dict.set_item("epsilons", epsilons_dict)?;
+
+        // Bonds: list of (atom1, atom2, length, k)
+        let bonds: Vec<(&str, &str, f32, f32)> = model
+            .bonds
+            .iter()
+            .map(|(a, b, l, k)| (a.as_str(), b.as_str(), *l, *k))
+            .collect();
+        dict.set_item("bonds", bonds)?;
+
+        // Angles: list of (a1, a2, a3, theta, k)
+        let angles: Vec<(&str, &str, &str, f32, f32)> = model
+            .angles
+            .iter()
+            .map(|(a, b, c, t, k)| (a.as_str(), b.as_str(), c.as_str(), *t, *k))
+            .collect();
+        dict.set_item("angles", angles)?;
+
+        // Constraints
+        let constraints: Vec<(&str, &str, f32)> = model
+            .constraints
+            .iter()
+            .map(|(a, b, d)| (a.as_str(), b.as_str(), *d))
+            .collect();
+        dict.set_item("constraints", constraints)?;
+
+        Ok(dict.into_py(py))
+    })
+}
+
+/// Compute bicubic interpolation parameters for CMAP
+///
+/// Args:
+///     grid: 2D list of energy values (N x N)
+///
+/// Returns:
+///     2D list of [f, fx, fy, fxy] parameters at each grid point
+#[pyfunction]
+fn compute_bicubic_params(grid: Vec<Vec<f64>>) -> PyResult<Vec<Vec<[f64; 4]>>> {
+    let params = physics::cmap::compute_bicubic_params(&grid);
+    Ok(params)
+}
+
+/// Parameterize a molecule using GAFF for ligands and small molecules
+///
+/// Args:
+///     coordinates: List of [x, y, z] coordinates or Nx3 numpy array
+///     elements: List of element symbols
+///     bond_tolerance: Tolerance multiplier for bond detection (default 1.3)
+///
+/// Returns:
+///     Dictionary with MD parameters (atom_types, sigmas, epsilons, bonds, etc.)
+#[pyfunction]
+#[pyo3(signature = (coordinates, elements, bond_tolerance=1.3))]
+fn parameterize_molecule(
+    py: Python<'_>,
+    coordinates: PyObject,
+    elements: Vec<String>,
+    bond_tolerance: f32,
+) -> PyResult<PyObject> {
+    let coords = extract_coords(py, &coordinates)?;
+
+    let params = physics::md_params::parameterize_molecule(&coords, &elements, bond_tolerance)
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Parameterization failed: {}", e))
+        })?;
+
+    let dict = PyDict::new_bound(py);
+
+    // Basic info
+    dict.set_item("num_parameterized", params.num_parameterized)?;
+    dict.set_item("num_skipped", params.num_skipped)?;
+
+    // Atom types
+    let atom_types: Vec<&str> = params.atom_types.iter().map(|s| s.as_str()).collect();
+    dict.set_item("atom_types", atom_types)?;
+
+    // LJ parameters
+    let charges = PyArray1::from_slice_bound(py, &params.charges);
+    let sigmas = PyArray1::from_slice_bound(py, &params.sigmas);
+    let epsilons = PyArray1::from_slice_bound(py, &params.epsilons);
+    dict.set_item("charges", charges)?;
+    dict.set_item("sigmas", sigmas)?;
+    dict.set_item("epsilons", epsilons)?;
+
+    // Bonds (N, 2)
+    if !params.bonds.is_empty() {
+        let mut flat = Vec::with_capacity(params.bonds.len() * 2);
+        for b in &params.bonds {
+            flat.extend_from_slice(b);
+        }
+        let arr = PyArray1::from_slice_bound(py, &flat);
+        dict.set_item("bonds", arr.reshape((params.bonds.len(), 2)).unwrap())?;
+    }
+
+    // Bond params (N, 2)
+    if !params.bond_params.is_empty() {
+        let mut flat = Vec::with_capacity(params.bond_params.len() * 2);
+        for p in &params.bond_params {
+            flat.extend_from_slice(p);
+        }
+        let arr = PyArray1::from_slice_bound(py, &flat);
+        dict.set_item(
+            "bond_params",
+            arr.reshape((params.bond_params.len(), 2)).unwrap(),
+        )?;
+    }
+
+    // Angles (N, 3)
+    if !params.angles.is_empty() {
+        let mut flat = Vec::with_capacity(params.angles.len() * 3);
+        for a in &params.angles {
+            flat.extend_from_slice(a);
+        }
+        let arr = PyArray1::from_slice_bound(py, &flat);
+        dict.set_item("angles", arr.reshape((params.angles.len(), 3)).unwrap())?;
+    }
+
+    // Dihedrals (N, 4)
+    if !params.dihedrals.is_empty() {
+        let mut flat = Vec::with_capacity(params.dihedrals.len() * 4);
+        for d in &params.dihedrals {
+            flat.extend_from_slice(d);
+        }
+        let arr = PyArray1::from_slice_bound(py, &flat);
+        dict.set_item(
+            "dihedrals",
+            arr.reshape((params.dihedrals.len(), 4)).unwrap(),
+        )?;
+    }
+
+    Ok(dict.into_py(py))
 }

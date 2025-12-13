@@ -141,11 +141,14 @@ This document tracks known technical debt, incomplete features, and deferred wor
 - ✅ 1-4 pairs from dihedrals
 - ✅ `coulomb14scale` and `lj14scale` read from force field XML
 
-### CMAPForce Support
+### CMAPForce Support ✅ COMPLETE
 
-**Status:** Not implemented
+**Status:** Implemented (Dec 2025)
 
-**Note:** CMAP is important for accurate backbone sampling in protein force fields (ff14SB, ff19SB)
+- [x] `cmap_indices` and `cmap_grid` fields on AtomicSystem
+- [x] `CMAPTorsionForce` integration in `to_openmm_system()`
+- [x] `compute_bicubic_params()` Rust function for spline coefficients
+- [x] CMAP handling in `merge_with()` method
 
 ### Pure-Rust TRR and DCD Trajectory Readers
 
@@ -165,12 +168,35 @@ XTC was fixed by using the pure-Rust `molly` crate.
 
 1. No pure-Rust DCD crate found
 2. Implement custom parser - DCD is a simple binary format (CHARMM/NAMD origin)
+3. Estimated ~200 lines of Rust code
 
 **Tasks:**
 
 - [ ] Research `groan_rs` TrrReader low-level API
 - [ ] Evaluate implementing minimal DCD parser
 - [ ] Add `trr-pure` and `dcd-pure` feature flags when ready
+
+### Ligand Charge Assignment
+
+**Status:** Deferred (parameterize_molecule returns zero charges)
+
+**Background:**
+
+GAFF provides LJ parameters and atom types but NOT partial charges.
+`parameterize_molecule()` currently returns zero charges for all atoms.
+
+**Options:**
+
+1. Integrate with AM1-BCC via antechamber (external tool call)
+2. Accept user-provided charges as parameter
+3. Use Gasteiger charges (less accurate but pure-computation)
+4. Add charge derivation from OpenMM ForceField templates
+
+**Tasks:**
+
+- [ ] Add `charges` optional parameter to `parameterize_molecule()`
+- [ ] Document charge assignment workflow for ligands
+- [ ] Consider AM1-BCC subprocess wrapper
 
 ---
 

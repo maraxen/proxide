@@ -1,7 +1,6 @@
 //! Atomic System Architecture
 //! Matches Python's atomic_system.py structure
 
-use numpy::{PyArray1, PyArray2};
 use pyo3::prelude::*;
 
 /// Base class for any atomic system

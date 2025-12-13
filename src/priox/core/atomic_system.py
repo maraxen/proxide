@@ -52,6 +52,11 @@ class AtomicSystem:
   angle_params: jnp.ndarray | None = None
   dihedral_params: jnp.ndarray | None = None  # (N_dihedrals, 3) - [periodicity, phase, k]
   improper_params: jnp.ndarray | None = None  # (N_impropers, 3) - [periodicity, phase, k]
+
+  # CMAP parameters for backbone correction
+  cmap_indices: jnp.ndarray | None = None  # (N_cmap, 5) - C-N-CA-C-N atom indices for phi-psi
+  cmap_grid: jnp.ndarray | None = None  # (grid_size, grid_size) raw energy grid in kJ/mol
+
   exclusion_mask: jnp.ndarray | None = None
 
   # Optional MD parameters common to all systems
@@ -456,6 +461,40 @@ class AtomicSystem:
 
       system.addForce(improper_force)
 
+    # CMAP Torsion Force (backbone corrections)
+    if self.cmap_indices is not None and self.cmap_grid is not None:
+      try:
+        from openmm import CMAPTorsionForce
+      except ImportError:
+        CMAPTorsionForce = None
+
+      if CMAPTorsionForce is not None:
+        cmap_force = CMAPTorsionForce()
+        cmap_indices = np.asarray(self.cmap_indices)
+        cmap_grid = np.asarray(self.cmap_grid)
+
+        # Add the CMAP (energy grid)
+        grid_size = cmap_grid.shape[0]
+        # Flatten grid for OpenMM (row-major)
+        # Grid is in kJ/mol, OpenMM expects kJ/mol
+        flat_grid = cmap_grid.flatten().tolist()
+        cmap_idx = cmap_force.addMap(grid_size, flat_grid)
+
+        # Add torsions that use this CMAP
+        for t_idx in range(len(cmap_indices)):
+          # cmap_indices: [C_prev, N, CA, C, N_next] for phi-psi pair
+          atoms = [int(cmap_indices[t_idx, i]) for i in range(5)]
+          if all(a < n_atoms for a in atoms):
+            # Phi: C(i-1)-N(i)-CA(i)-C(i) -> atoms[0:4]
+            # Psi: N(i)-CA(i)-C(i)-N(i+1) -> atoms[1:5]
+            cmap_force.addTorsion(
+              cmap_idx,
+              atoms[0], atoms[1], atoms[2], atoms[3],  # phi atoms
+              atoms[1], atoms[2], atoms[3], atoms[4],  # psi atoms
+            )
+
+        system.addForce(cmap_force)
+
     # Collect exclusions to avoid double counting
     # Set of sets/tuples of indices
     excluded_pairs = set()
@@ -513,6 +552,122 @@ class AtomicSystem:
             excluded_pairs.add(pair)
 
     return system
+
+  def merge_with(self, other: AtomicSystem) -> AtomicSystem:
+    """Merge this system with another AtomicSystem.
+
+    Combines two systems (e.g., protein + ligand) into a single AtomicSystem.
+    All topology indices (bonds, angles, dihedrals) from the second system
+    are offset by the number of atoms in the first system.
+
+    Args:
+        other: Another AtomicSystem to merge with this one.
+
+    Returns:
+        A new AtomicSystem containing atoms from both systems.
+
+    Example:
+        >>> complex_system = protein.merge_with(ligand)
+    """
+    import numpy as np
+
+    # Concatenate coordinates
+    n_atoms_self = len(self.atom_mask)
+    n_atoms_other = len(other.atom_mask)
+
+    new_coords = jnp.concatenate([self.coordinates, other.coordinates], axis=0)
+    new_mask = jnp.concatenate([self.atom_mask, other.atom_mask], axis=0)
+
+    # Merge elements and atom_names (as lists)
+    def merge_sequences(seq1, seq2):
+      if seq1 is None and seq2 is None:
+        return None
+      s1 = list(seq1) if seq1 else ["X"] * n_atoms_self
+      s2 = list(seq2) if seq2 else ["X"] * n_atoms_other
+      return s1 + s2
+
+    new_elements = merge_sequences(self.elements, other.elements)
+    new_atom_names = merge_sequences(self.atom_names, other.atom_names)
+    new_atom_types = merge_sequences(self.atom_types, other.atom_types)
+
+    # Merge molecule_type (preserve from both)
+    if self.molecule_type is not None or other.molecule_type is not None:
+      mt1 = self.molecule_type if self.molecule_type is not None else jnp.zeros(n_atoms_self, dtype=jnp.int32)
+      mt2 = other.molecule_type if other.molecule_type is not None else jnp.ones(n_atoms_other, dtype=jnp.int32)
+      new_molecule_type = jnp.concatenate([mt1, mt2], axis=0)
+    else:
+      new_molecule_type = None
+
+    # Helper to offset and merge topology arrays
+    def merge_topology(arr1, arr2, offset: int):
+      if arr1 is None and arr2 is None:
+        return None
+      parts = []
+      if arr1 is not None and len(arr1) > 0:
+        parts.append(np.asarray(arr1))
+      if arr2 is not None and len(arr2) > 0:
+        parts.append(np.asarray(arr2) + offset)
+      if not parts:
+        return None
+      return jnp.array(np.concatenate(parts, axis=0))
+
+    # Merge bonds, angles, dihedrals, impropers
+    new_bonds = merge_topology(self.bonds, other.bonds, n_atoms_self)
+    new_angles = merge_topology(self.angles, other.angles, n_atoms_self)
+    new_dihedrals = merge_topology(self.proper_dihedrals, other.proper_dihedrals, n_atoms_self)
+    new_impropers = merge_topology(self.impropers, other.impropers, n_atoms_self)
+
+    # Merge parameter arrays (just concatenate, no offset)
+    def merge_params(arr1, arr2):
+      if arr1 is None and arr2 is None:
+        return None
+      parts = []
+      if arr1 is not None and len(arr1) > 0:
+        parts.append(np.asarray(arr1))
+      if arr2 is not None and len(arr2) > 0:
+        parts.append(np.asarray(arr2))
+      if not parts:
+        return None
+      return jnp.array(np.concatenate(parts, axis=0))
+
+    new_bond_params = merge_params(self.bond_params, other.bond_params)
+    new_angle_params = merge_params(self.angle_params, other.angle_params)
+    new_dihedral_params = merge_params(self.dihedral_params, other.dihedral_params)
+    new_improper_params = merge_params(self.improper_params, other.improper_params)
+
+    # Merge MD parameters
+    new_charges = merge_params(self.charges, other.charges)
+    new_sigmas = merge_params(self.sigmas, other.sigmas)
+    new_epsilons = merge_params(self.epsilons, other.epsilons)
+    new_radii = merge_params(self.radii, other.radii)
+
+    # Merge CMAP (offset indices, keep grids separate - typically same grid)
+    new_cmap_indices = merge_topology(self.cmap_indices, other.cmap_indices, n_atoms_self)
+    # For cmap_grid, we use self's grid if available (ligands typically don't have CMAP)
+    new_cmap_grid = self.cmap_grid if self.cmap_grid is not None else other.cmap_grid
+
+    return AtomicSystem(
+      coordinates=new_coords,
+      atom_mask=new_mask,
+      elements=new_elements,
+      atom_names=new_atom_names,
+      atom_types=new_atom_types,
+      molecule_type=new_molecule_type,
+      bonds=new_bonds,
+      angles=new_angles,
+      proper_dihedrals=new_dihedrals,
+      impropers=new_impropers,
+      bond_params=new_bond_params,
+      angle_params=new_angle_params,
+      dihedral_params=new_dihedral_params,
+      improper_params=new_improper_params,
+      cmap_indices=new_cmap_indices,
+      cmap_grid=new_cmap_grid,
+      charges=new_charges,
+      sigmas=new_sigmas,
+      epsilons=new_epsilons,
+      radii=new_radii,
+    )
 
 
 @dataclass(kw_only=True)

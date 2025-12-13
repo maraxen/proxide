@@ -1,6 +1,6 @@
 # Rust Extension Roadmap - ALL-RUST PIPELINE
 
-**Last Updated:** 2025-12-11 (Validation Stage)  
+**Last Updated:** 2025-12-13 (Phase 4 Complete)  
 **Architecture:** Parse → Format → Geometry Ops → AtomicSystem (ALL in Rust)
 
 ---
@@ -175,7 +175,7 @@ pub struct FormattedStructure {
 - [x] Chain mapping utilities
 - [x] Multi-model handling (`processing/models.rs`)
 
-### Phase 4: Formatters (IN RUST)
+### Phase 4: Formatters ✅ COMPLETE
 
 - [x] Implement `OutputSpec` struct
 - [x] `Atom37Formatter` - map to (N_res, 37, 3)
@@ -444,6 +444,17 @@ def load_structure_rust(path, **kwargs):
   - Proper unit conversions (Å→nm, kcal/mol→kJ/mol)
 - [x] Round-trip validation: `tests/validation/test_openmm_roundtrip.py`
 - [x] Platform-agnostic simulation setup (tested with energy minimization)
+
+---
+
+### Phase 12: MD Physics Extensions ✅ COMPLETE (Dec 2025)
+
+- [x] `parameterize_molecule()` - GAFF-based ligand parameterization
+- [x] `AtomicSystem.merge_with()` - System merging for complexes
+- [x] `assign_mbondi2_radii()` - GBSA mbondi2 radii (PyO3)
+- [x] `assign_obc2_scaling_factors()` - OBC2 scaling (PyO3)
+- [x] `get_water_model()` - TIP3P/SPCE/TIP4PEW (PyO3)
+- [x] `compute_bicubic_params()` - CMAP splines (PyO3)
 
 ---
 

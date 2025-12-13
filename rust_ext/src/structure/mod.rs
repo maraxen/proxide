@@ -11,7 +11,8 @@ use numpy::PyArray1;
 use pyo3::prelude::*;
 
 pub mod systems;
-pub use systems::*;
+// Note: systems module is available but not re-exported to avoid unused import warnings
+// Use structure::systems::* directly if needed
 
 /// Raw atom data from PDB/mmCIF parsing
 /// Matches biotite's AtomArray - variable-length, ALL atoms

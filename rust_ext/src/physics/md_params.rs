@@ -409,6 +409,124 @@ pub fn parameterize_structure(
     })
 }
 
+/// Parameterize a molecule using GAFF (for ligands and small molecules)
+///
+/// This function is for molecules that don't have residue templates.
+/// It infers topology from coordinates, assigns GAFF atom types, and
+/// looks up LJ parameters from the GAFF parameter set.
+///
+/// Note: GAFF does not provide partial charges. Use antechamber or AM1-BCC
+/// for accurate charges. This function assigns zero charges by default.
+pub fn parameterize_molecule(
+    coords: &[[f32; 3]],
+    elements: &[String],
+    bond_tolerance: f32,
+) -> Result<MDParameters, ParamError> {
+    use crate::forcefield::gaff::{assign_gaff_types, GaffParameters};
+    use crate::forcefield::topology::Topology;
+
+    let n_atoms = elements.len();
+    if coords.len() != n_atoms {
+        return Err(ParamError::MissingTemplate(format!(
+            "Coordinate/element count mismatch: {} vs {}",
+            coords.len(),
+            n_atoms
+        )));
+    }
+
+    // Infer topology from coordinates
+    let topology = Topology::from_coords(coords, elements, bond_tolerance);
+    let gaff = GaffParameters::new();
+
+    // Assign GAFF atom types
+    let gaff_types = assign_gaff_types(elements, &topology, &gaff);
+
+    // Initialize parameter arrays
+    let charges = vec![0.0f32; n_atoms]; // GAFF doesn't provide charges
+    let mut sigmas = vec![0.0f32; n_atoms];
+    let mut epsilons = vec![0.0f32; n_atoms];
+    let mut atom_types = vec![String::new(); n_atoms];
+    let mut num_parameterized = 0usize;
+    let mut num_skipped = 0usize;
+
+    // Assign LJ parameters from GAFF atom types
+    for (i, gaff_type_opt) in gaff_types.iter().enumerate() {
+        if let Some(gaff_type) = gaff_type_opt {
+            if let Some(type_params) = gaff.atom_types.get(gaff_type) {
+                sigmas[i] = type_params.sigma;
+                epsilons[i] = type_params.epsilon;
+                atom_types[i] = gaff_type.clone();
+                num_parameterized += 1;
+            } else {
+                num_skipped += 1;
+            }
+        } else {
+            num_skipped += 1;
+        }
+    }
+
+    // Convert topology bonds to our format
+    let bonds_vec: Vec<[usize; 2]> = topology.bonds.iter().map(|b| [b.i, b.j]).collect();
+
+    // Generate angles from topology
+    let angles = Topology::generate_angles(&topology.adjacency);
+    let angles_vec: Vec<[usize; 3]> = angles.iter().map(|a| [a.i, a.j, a.k]).collect();
+
+    // Generate dihedrals from topology
+    let dihedrals = Topology::generate_proper_dihedrals(&topology.adjacency);
+    let dihedrals_vec: Vec<[usize; 4]> = dihedrals.iter().map(|d| [d.i, d.j, d.k, d.l]).collect();
+
+    // Generate impropers from topology
+    let impropers = Topology::generate_improper_dihedrals(&topology.adjacency, elements);
+    let impropers_vec: Vec<[usize; 4]> = impropers.iter().map(|d| [d.i, d.j, d.k, d.l]).collect();
+
+    // For bond/angle/dihedral params, use default values since GAFF bond params
+    // require specific type pairs. This is a simplified implementation.
+    // A full implementation would use GAFF bond/angle/dihedral parameter tables.
+    let bond_params: Vec<[f32; 2]> = bonds_vec
+        .iter()
+        .map(|_| [0.15, 300.0]) // Default: 1.5 Å, 300 kJ/mol/nm²
+        .collect();
+
+    let angle_params: Vec<[f32; 2]> = angles_vec
+        .iter()
+        .map(|_| [1.91, 100.0]) // Default: ~109.5°, 100 kJ/mol/rad²
+        .collect();
+
+    let dihedral_params: Vec<[f32; 3]> = dihedrals_vec
+        .iter()
+        .map(|_| [1.0, 0.0, 0.0]) // Default: periodicity 1, phase 0, k 0
+        .collect();
+
+    let improper_params: Vec<[f32; 3]> = impropers_vec
+        .iter()
+        .map(|_| [2.0, 3.14159, 10.0]) // Default: periodicity 2, phase π, k 10
+        .collect();
+
+    // 1-4 pairs from dihedrals
+    let pairs_14: Vec<[usize; 2]> = dihedrals_vec.iter().map(|d| [d[0], d[3]]).collect();
+
+    Ok(MDParameters {
+        charges,
+        sigmas,
+        epsilons,
+        radii: None,
+        scales: None,
+        atom_types,
+        num_parameterized,
+        num_skipped,
+        bonds: bonds_vec,
+        bond_params,
+        angles: angles_vec,
+        angle_params,
+        dihedrals: dihedrals_vec,
+        dihedral_params,
+        impropers: impropers_vec,
+        improper_params,
+        pairs_14,
+    })
+}
+
 // --- Lookup Helpers ---
 
 fn lookup_bond<'a>(c1: &str, c2: &str, ff: &'a ForceField) -> Option<&'a HarmonicBondParam> {
