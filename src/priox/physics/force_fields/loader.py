@@ -22,7 +22,7 @@ from priox.physics.force_fields.components import (
 
 
 from flax.struct import dataclass, field
-from priox.io.parsing import rust_wrapper as rw
+from priox.io.parsing import rust as rw
 
 
 @dataclass(frozen=True)
@@ -151,6 +151,15 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
   atom_class_map = {}
   atom_type_map = {}
 
+  # Build type -> class map
+  type_to_class = {}
+  for at in ff_data.atom_types:
+      t_name = at.get("name")
+      t_class = at.get("class")
+      if t_name:
+          type_to_class[t_name] = t_class if t_class else t_name
+
+
   # Pre-process nonbonded params for fast lookup by type/class
   # Note: Using class if available, else type. In XML, often type or class is used.
   # We map type -> (sigma, epsilon)
@@ -190,6 +199,12 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
       atom_key_to_id[key] = idx
       id_to_atom_key.append(key)
       atom_type_map[f"{res_name}|{atom_name}"] = atom_type
+      
+      # Populate atom_class_map for core.py dihedral matching
+      # Key format: "{res_name}_{atom_name}" (e.g. "ALA_CA", "NALA_N")
+      class_name = type_to_class.get(atom_type, atom_type)
+      atom_class_map[f"{res_name}_{atom_name}"] = class_name
+
 
       # Look up params
       # Charge: atom.charge (from residue def) usually takes precedence
@@ -291,7 +306,10 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
   res_templates_meta = {}
   for res in sorted_templates:
     res_name = res["name"]
-    res_templates_meta[res_name] = [(a["name"], a["type"]) for a in res["atoms"]]
+    # core.py expects residue_templates to be a list of bond pairs (atom1, atom2)
+    # Rust extraction returns "bonds" as list of strings (a1, a2)
+    res_templates_meta[res_name] = res.get("bonds", [])
+
 
   return FullForceField(
     atom_params=atom_params,
@@ -321,21 +339,40 @@ def load_force_field(
     # Assets in src/priox/assets
     # Relative: ../../assets
     asset_dir = Path(__file__).parent.parent.parent / "assets"
+    
+    # Try direct match in root
     potential_path = asset_dir / path.name
     if potential_path.exists():
       path = potential_path
     elif (asset_dir / f"{path.name}.xml").exists():
       path = asset_dir / f"{path.name}.xml"
     else:
-      raise ValueError(f"Force field file not found: {name_or_path} (checked {asset_dir})")
+      # Search recursively in subdirectories
+      found = list(asset_dir.rglob(f"{path.name}"))
+      if not found:
+        found = list(asset_dir.rglob(f"{path.name}.xml"))
+      if found:
+        path = found[0]
+      else:
+        raise ValueError(f"Force field file not found: {name_or_path} (checked {asset_dir})")
 
   ff_data = rw.load_forcefield_rust(path)
   return _convert_rust_ff_to_full(ff_data, str(path))
 
 
 def list_available_force_fields() -> list[str]:
-  """List available force fields in assets."""
+  """List available force fields in assets (recursively)."""
   asset_dir = Path(__file__).parent.parent.parent / "assets"
   if not asset_dir.exists():
     return []
-  return sorted([f.stem for f in asset_dir.glob("*.xml")])
+  # Get all XML files recursively, return relative paths without .xml extension
+  result = []
+  for xml_file in asset_dir.rglob("*.xml"):
+    # Get path relative to assets directory
+    rel_path = xml_file.relative_to(asset_dir)
+    # Return stem (filename without .xml) with parent path if in subdir
+    if rel_path.parent != Path("."):
+      result.append(str(rel_path.parent / rel_path.stem))
+    else:
+      result.append(rel_path.stem)
+  return sorted(result)

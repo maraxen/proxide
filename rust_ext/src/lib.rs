@@ -535,10 +535,124 @@ fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject>
                 dict.set_item("epsilons", PyArray1::from_slice_bound(py, &params.epsilons))?;
 
                 if let Some(ref radii) = params.radii {
-                    dict.set_item("gbsa_radii", PyArray1::from_slice_bound(py, radii))?;
+                    dict.set_item(
+                        "gbsa_radii",
+                        PyArray1::from_slice_bound(py, radii.as_slice()),
+                    )?;
                 }
                 if let Some(ref scales) = params.scales {
-                    dict.set_item("gbsa_scales", PyArray1::from_slice_bound(py, scales))?;
+                    dict.set_item(
+                        "gbsa_scales",
+                        PyArray1::from_slice_bound(py, scales.as_slice()),
+                    )?;
+                }
+
+                // Bonds (N, 2)
+                if !params.bonds.is_empty() {
+                    let mut bonds_flat = Vec::with_capacity(params.bonds.len() * 2);
+                    for b in &params.bonds {
+                        bonds_flat.extend_from_slice(b);
+                    }
+                    let arr = PyArray1::from_slice_bound(py, &bonds_flat);
+                    dict.set_item("bonds", arr.reshape((params.bonds.len(), 2)).unwrap())?;
+                }
+
+                // Bond Params (N, 2)
+                if !params.bond_params.is_empty() {
+                    let mut params_flat = Vec::with_capacity(params.bond_params.len() * 2);
+                    for p in &params.bond_params {
+                        params_flat.extend_from_slice(p);
+                    }
+                    let arr = PyArray1::from_slice_bound(py, &params_flat);
+                    dict.set_item(
+                        "bond_params",
+                        arr.reshape((params.bond_params.len(), 2)).unwrap(),
+                    )?;
+                }
+
+                // Angles (N, 3)
+                if !params.angles.is_empty() {
+                    let mut flat = Vec::with_capacity(params.angles.len() * 3);
+                    for a in &params.angles {
+                        flat.extend_from_slice(a);
+                    }
+                    let arr = PyArray1::from_slice_bound(py, &flat);
+                    dict.set_item("angles", arr.reshape((params.angles.len(), 3)).unwrap())?;
+                }
+
+                // Angle Params (N, 2)
+                if !params.angle_params.is_empty() {
+                    let mut flat = Vec::with_capacity(params.angle_params.len() * 2);
+                    for p in &params.angle_params {
+                        flat.extend_from_slice(p);
+                    }
+                    let arr = PyArray1::from_slice_bound(py, &flat);
+                    dict.set_item(
+                        "angle_params",
+                        arr.reshape((params.angle_params.len(), 2)).unwrap(),
+                    )?;
+                }
+
+                // Proper Dihedrals (N, 4)
+                if !params.dihedrals.is_empty() {
+                    let mut flat = Vec::with_capacity(params.dihedrals.len() * 4);
+                    for d in &params.dihedrals {
+                        flat.extend_from_slice(d);
+                    }
+                    let arr = PyArray1::from_slice_bound(py, &flat);
+                    dict.set_item(
+                        "dihedrals",
+                        arr.reshape((params.dihedrals.len(), 4)).unwrap(),
+                    )?;
+                }
+
+                // Proper Dihedral Params (N, 3)
+                if !params.dihedral_params.is_empty() {
+                    let mut flat = Vec::with_capacity(params.dihedral_params.len() * 3);
+                    for p in &params.dihedral_params {
+                        flat.extend_from_slice(p);
+                    }
+                    let arr = PyArray1::from_slice_bound(py, &flat);
+                    dict.set_item(
+                        "dihedral_params",
+                        arr.reshape((params.dihedral_params.len(), 3)).unwrap(),
+                    )?;
+                }
+
+                // Improper Dihedrals (N, 4)
+                if !params.impropers.is_empty() {
+                    let mut flat = Vec::with_capacity(params.impropers.len() * 4);
+                    for i in &params.impropers {
+                        flat.extend_from_slice(i);
+                    }
+                    let arr = PyArray1::from_slice_bound(py, &flat);
+                    dict.set_item(
+                        "impropers",
+                        arr.reshape((params.impropers.len(), 4)).unwrap(),
+                    )?;
+                }
+
+                // Improper Params (N, 3)
+                if !params.improper_params.is_empty() {
+                    let mut flat = Vec::with_capacity(params.improper_params.len() * 3);
+                    for p in &params.improper_params {
+                        flat.extend_from_slice(p);
+                    }
+                    let arr = PyArray1::from_slice_bound(py, &flat);
+                    dict.set_item(
+                        "improper_params",
+                        arr.reshape((params.improper_params.len(), 3)).unwrap(),
+                    )?;
+                }
+
+                // 1-4 Pairs (N, 2)
+                if !params.pairs_14.is_empty() {
+                    let mut flat = Vec::with_capacity(params.pairs_14.len() * 2);
+                    for p in &params.pairs_14 {
+                        flat.extend_from_slice(p);
+                    }
+                    let arr = PyArray1::from_slice_bound(py, &flat);
+                    dict.set_item("pairs_14", arr.reshape((params.pairs_14.len(), 2)).unwrap())?;
                 }
 
                 // Atom types as list
@@ -610,199 +724,162 @@ fn load_forcefield(path: String) -> PyResult<PyObject> {
         dict.set_item("has_cmap", ff.cmap_data.is_some())?;
 
         // Atom types as list of dicts
-        let atom_types: Vec<_> = ff
-            .atom_types
-            .iter()
-            .map(|at| {
-                let d = PyDict::new_bound(py);
-                d.set_item("name", &at.name).ok();
-                d.set_item("class", &at.class).ok();
-                d.set_item("element", &at.element).ok();
-                d.set_item("mass", at.mass).ok();
-                d
-            })
-            .collect();
+        // Atom types
+        let mut atom_types = Vec::with_capacity(ff.atom_types.len());
+        for at in &ff.atom_types {
+            let d = PyDict::new_bound(py);
+            d.set_item("name", &at.name).ok();
+            d.set_item("class", &at.class).ok();
+            d.set_item("element", &at.element).ok();
+            d.set_item("mass", at.mass).ok();
+            atom_types.push(d.into_py(py));
+        }
         dict.set_item("atom_types", atom_types)?;
 
         // Residue templates
-        let residue_templates: Vec<_> = ff
-            .residue_templates
-            .iter()
-            .map(|rt| {
-                let d = PyDict::new_bound(py);
-                d.set_item("name", &rt.name).ok();
-                d.set_item("num_atoms", rt.atoms.len()).ok();
-                d.set_item("num_bonds", rt.bonds.len()).ok();
+        // Residue templates
+        let mut residue_templates = Vec::with_capacity(ff.residue_templates.len());
+        for rt in &ff.residue_templates {
+            let d = PyDict::new_bound(py);
+            d.set_item("name", &rt.name).ok();
+            d.set_item("num_atoms", rt.atoms.len()).ok();
+            d.set_item("num_bonds", rt.bonds.len()).ok();
 
-                let atoms: Vec<_> = rt
-                    .atoms
-                    .iter()
-                    .map(|a| {
-                        let ad = PyDict::new_bound(py);
-                        ad.set_item("name", &a.name).ok();
-                        ad.set_item("type", &a.atom_type).ok();
-                        ad.set_item("charge", a.charge).ok();
-                        ad
-                    })
-                    .collect();
-                d.set_item("atoms", atoms).ok();
+            let mut atoms = Vec::with_capacity(rt.atoms.len());
+            for a in &rt.atoms {
+                let ad = PyDict::new_bound(py);
+                ad.set_item("name", &a.name).ok();
+                ad.set_item("type", &a.atom_type).ok();
+                ad.set_item("charge", a.charge).ok();
+                atoms.push(ad.into_py(py));
+            }
+            d.set_item("atoms", atoms).ok();
 
-                let bonds: Vec<_> = rt
-                    .bonds
-                    .iter()
-                    .map(|(a1, a2)| (a1.clone(), a2.clone()))
-                    .collect();
-                d.set_item("bonds", bonds).ok();
+            let mut bonds = Vec::with_capacity(rt.bonds.len());
+            for (a1, a2) in &rt.bonds {
+                bonds.push((a1.clone(), a2.clone()));
+            }
+            d.set_item("bonds", bonds).ok();
 
-                d
-            })
-            .collect();
+            residue_templates.push(d.into_py(py));
+        }
         dict.set_item("residue_templates", residue_templates)?;
 
         // Harmonic bonds
-        let bonds: Vec<_> = ff
-            .harmonic_bonds
-            .iter()
-            .map(|b| {
-                let d = PyDict::new_bound(py);
-                d.set_item("class1", &b.class1).ok();
-                d.set_item("class2", &b.class2).ok();
-                d.set_item("k", b.k).ok();
-                d.set_item("length", b.length).ok();
-                d
-            })
-            .collect();
+        let mut bonds = Vec::with_capacity(ff.harmonic_bonds.len());
+        for b in &ff.harmonic_bonds {
+            let d = PyDict::new_bound(py);
+            d.set_item("class1", &b.class1).ok();
+            d.set_item("class2", &b.class2).ok();
+            d.set_item("k", b.k).ok();
+            d.set_item("length", b.length).ok();
+            bonds.push(d.into_py(py));
+        }
         dict.set_item("harmonic_bonds", bonds)?;
 
         // Harmonic angles
-        let angles: Vec<_> = ff
-            .harmonic_angles
-            .iter()
-            .map(|a| {
-                let d = PyDict::new_bound(py);
-                d.set_item("class1", &a.class1).ok();
-                d.set_item("class2", &a.class2).ok();
-                d.set_item("class3", &a.class3).ok();
-                d.set_item("k", a.k).ok();
-                d.set_item("angle", a.angle).ok();
-                d
-            })
-            .collect();
+        let mut angles = Vec::with_capacity(ff.harmonic_angles.len());
+        for a in &ff.harmonic_angles {
+            let d = PyDict::new_bound(py);
+            d.set_item("class1", &a.class1).ok();
+            d.set_item("class2", &a.class2).ok();
+            d.set_item("class3", &a.class3).ok();
+            d.set_item("k", a.k).ok();
+            d.set_item("angle", a.angle).ok();
+            angles.push(d.into_py(py));
+        }
         dict.set_item("harmonic_angles", angles)?;
 
         // Proper Torsions
-        let proper_torsions: Vec<_> = ff
-            .proper_torsions
-            .iter()
-            .map(|t| {
-                let d = PyDict::new_bound(py);
-                d.set_item("class1", &t.class1).ok();
-                d.set_item("class2", &t.class2).ok();
-                d.set_item("class3", &t.class3).ok();
-                d.set_item("class4", &t.class4).ok();
+        let mut proper_torsions = Vec::with_capacity(ff.proper_torsions.len());
+        for t in &ff.proper_torsions {
+            let d = PyDict::new_bound(py);
+            d.set_item("class1", &t.class1).ok();
+            d.set_item("class2", &t.class2).ok();
+            d.set_item("class3", &t.class3).ok();
+            d.set_item("class4", &t.class4).ok();
 
-                let terms: Vec<_> = t
-                    .terms
-                    .iter()
-                    .map(|term| {
-                        let td = PyDict::new_bound(py);
-                        td.set_item("periodicity", term.periodicity).ok();
-                        td.set_item("phase", term.phase).ok();
-                        td.set_item("k", term.k).ok();
-                        td
-                    })
-                    .collect();
-                d.set_item("terms", terms).ok();
-                d
-            })
-            .collect();
+            let mut terms = Vec::with_capacity(t.terms.len());
+            for term in &t.terms {
+                let td = PyDict::new_bound(py);
+                td.set_item("periodicity", term.periodicity).ok();
+                td.set_item("phase", term.phase).ok();
+                td.set_item("k", term.k).ok();
+                terms.push(td.into_py(py));
+            }
+            d.set_item("terms", terms).ok();
+            proper_torsions.push(d.into_py(py));
+        }
         dict.set_item("proper_torsions", proper_torsions)?;
 
         // Improper Torsions
-        let improper_torsions: Vec<_> = ff
-            .improper_torsions
-            .iter()
-            .map(|t| {
-                let d = PyDict::new_bound(py);
-                d.set_item("class1", &t.class1).ok();
-                d.set_item("class2", &t.class2).ok();
-                d.set_item("class3", &t.class3).ok();
-                d.set_item("class4", &t.class4).ok();
+        let mut improper_torsions = Vec::with_capacity(ff.improper_torsions.len());
+        for t in &ff.improper_torsions {
+            let d = PyDict::new_bound(py);
+            d.set_item("class1", &t.class1).ok();
+            d.set_item("class2", &t.class2).ok();
+            d.set_item("class3", &t.class3).ok();
+            d.set_item("class4", &t.class4).ok();
 
-                let terms: Vec<_> = t
-                    .terms
-                    .iter()
-                    .map(|term| {
-                        let td = PyDict::new_bound(py);
-                        td.set_item("periodicity", term.periodicity).ok();
-                        td.set_item("phase", term.phase).ok();
-                        td.set_item("k", term.k).ok();
-                        td
-                    })
-                    .collect();
-                d.set_item("terms", terms).ok();
-                d
-            })
-            .collect();
+            let mut terms = Vec::with_capacity(t.terms.len());
+            for term in &t.terms {
+                let td = PyDict::new_bound(py);
+                td.set_item("periodicity", term.periodicity).ok();
+                td.set_item("phase", term.phase).ok();
+                td.set_item("k", term.k).ok();
+                terms.push(td.into_py(py));
+            }
+            d.set_item("terms", terms).ok();
+            improper_torsions.push(d.into_py(py));
+        }
         dict.set_item("improper_torsions", improper_torsions)?;
 
         // Nonbonded Params
-        let nonbonded: Vec<_> = ff
-            .nonbonded_params
-            .iter()
-            .map(|nb| {
-                let d = PyDict::new_bound(py);
-                d.set_item("atom_type", &nb.atom_type).ok();
-                d.set_item("charge", nb.charge).ok();
-                d.set_item("sigma", nb.sigma).ok();
-                d.set_item("epsilon", nb.epsilon).ok();
-                d
-            })
-            .collect();
+        let mut nonbonded = Vec::with_capacity(ff.nonbonded_params.len());
+        for nb in &ff.nonbonded_params {
+            let d = PyDict::new_bound(py);
+            d.set_item("atom_type", &nb.atom_type).ok();
+            d.set_item("charge", nb.charge).ok();
+            d.set_item("sigma", nb.sigma).ok();
+            d.set_item("epsilon", nb.epsilon).ok();
+            nonbonded.push(d.into_py(py));
+        }
         dict.set_item("nonbonded_params", nonbonded)?;
 
         // GBSA-OBC Params
-        let gbsa: Vec<_> = ff
-            .gbsa_obc_params
-            .iter()
-            .map(|g| {
-                let d = PyDict::new_bound(py);
-                d.set_item("atom_type", &g.atom_type).ok();
-                d.set_item("radius", g.radius).ok();
-                d.set_item("scale", g.scale).ok();
-                d
-            })
-            .collect();
+        let mut gbsa = Vec::with_capacity(ff.gbsa_obc_params.len());
+        for g in &ff.gbsa_obc_params {
+            let d = PyDict::new_bound(py);
+            d.set_item("atom_type", &g.atom_type).ok();
+            d.set_item("radius", g.radius).ok();
+            d.set_item("scale", g.scale).ok();
+            gbsa.push(d.into_py(py));
+        }
         dict.set_item("gbsa_obc_params", gbsa)?;
 
         // CMAP Data
+        // CMAP Data
         if let Some(ref cmap) = ff.cmap_data {
-            let maps: Vec<_> = cmap
-                .maps
-                .iter()
-                .map(|m| {
-                    let d = PyDict::new_bound(py);
-                    d.set_item("size", m.size).ok();
-                    d.set_item("energies", m.energies.clone()).ok();
-                    d
-                })
-                .collect();
+            let mut maps = Vec::with_capacity(cmap.maps.len());
+            for m in &cmap.maps {
+                let d = PyDict::new_bound(py);
+                d.set_item("size", m.size).ok();
+                d.set_item("energies", m.energies.clone()).ok();
+                maps.push(d.into_py(py));
+            }
             dict.set_item("cmap_maps", maps)?;
 
-            let torsions: Vec<_> = cmap
-                .torsions
-                .iter()
-                .map(|t| {
-                    let d = PyDict::new_bound(py);
-                    d.set_item("class1", &t.class1).ok();
-                    d.set_item("type2", &t.type2).ok();
-                    d.set_item("type3", &t.type3).ok();
-                    d.set_item("type4", &t.type4).ok();
-                    d.set_item("class5", &t.class5).ok();
-                    d.set_item("map_index", t.map_index).ok();
-                    d
-                })
-                .collect();
+            let mut torsions = Vec::with_capacity(cmap.torsions.len());
+            for t in &cmap.torsions {
+                let d = PyDict::new_bound(py);
+                d.set_item("class1", &t.class1).ok();
+                d.set_item("type2", &t.type2).ok();
+                d.set_item("type3", &t.type3).ok();
+                d.set_item("type4", &t.type4).ok();
+                d.set_item("class5", &t.class5).ok();
+                d.set_item("map_index", t.map_index).ok();
+                torsions.push(d.into_py(py));
+            }
             dict.set_item("cmap_torsions", torsions)?;
         }
 
@@ -811,10 +888,46 @@ fn load_forcefield(path: String) -> PyResult<PyObject> {
 }
 
 /// Parse an XTC trajectory file
+///
+/// When compiled with 'xtc-pure' feature, uses the molly pure-Rust implementation.
+/// When compiled with 'trajectories' feature, uses chemfiles (may crash on some systems).
 #[pyfunction]
 fn parse_xtc(path: String) -> PyResult<PyObject> {
     Python::with_gil(|py| {
-        #[cfg(feature = "trajectories")]
+        // Prefer pure-Rust molly implementation (xtc-pure feature)
+        #[cfg(feature = "xtc-pure")]
+        {
+            use formats::xtc::molly_impl::read_xtc_molly;
+            let traj = read_xtc_molly(&path).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("XTC parsing failed: {}", e))
+            })?;
+
+            let dict = PyDict::new_bound(py);
+            dict.set_item("num_frames", traj.num_frames)?;
+            dict.set_item("num_atoms", traj.num_atoms)?;
+
+            // Convert to NumPy arrays
+            let times = PyArray1::from_slice_bound(py, &traj.times);
+            dict.set_item("times", times)?;
+
+            // Combine all coords into (N_frames, N_atoms, 3)
+            let mut flat_coords = Vec::with_capacity(traj.num_frames * traj.num_atoms * 3);
+            for frame_coords in &traj.coords {
+                flat_coords.extend_from_slice(frame_coords);
+            }
+            let coords_array = PyArray1::from_slice_bound(py, &flat_coords);
+            let shape = (traj.num_frames, traj.num_atoms, 3);
+            let coords_reshaped = coords_array.reshape(shape).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Failed to reshape coords: {}", e))
+            })?;
+
+            dict.set_item("coordinates", coords_reshaped)?;
+
+            return Ok(dict.into_py(py));
+        }
+
+        // Fallback to chemfiles (trajectories feature) - may crash with SIGFPE
+        #[cfg(all(feature = "trajectories", not(feature = "xtc-pure")))]
         {
             use formats::xtc::chemfiles_impl::read_xtc_chemfiles;
             let traj = read_xtc_chemfiles(&path).map_err(|e| {
@@ -842,13 +955,13 @@ fn parse_xtc(path: String) -> PyResult<PyObject> {
 
             dict.set_item("coordinates", coords_reshaped)?;
 
-            Ok(dict.into_py(py))
+            return Ok(dict.into_py(py));
         }
 
-        #[cfg(not(feature = "trajectories"))]
+        #[cfg(not(any(feature = "trajectories", feature = "xtc-pure")))]
         {
             Err(pyo3::exceptions::PyImportError::new_err(
-                "XTC support requires compiling with 'trajectories' feature (chemfiles).",
+                "XTC support requires compiling with 'xtc-pure' (recommended) or 'trajectories' feature.",
             ))
         }
     })

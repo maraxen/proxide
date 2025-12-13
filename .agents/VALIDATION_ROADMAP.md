@@ -170,26 +170,43 @@
 
 ### XTC Format
 
+> **Implementation Status:** ✅ FIXED (2024-12-12)
+>
+> - Migrated from `chemfiles` (crashed with SIGFPE) to pure-Rust `molly` crate
+> - Enabled via `xtc-pure` feature flag (default in `full` feature)
+> - Exact coordinate parity with MDTraj verified
+> - No C++ dependencies, no crashes
+
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
-| Frame coordinates | `parse_xtc_file()` | MDTraj `load_xtc()` | 1e-3 Å | ⬜ |
-| Frame count | num_frames | MDTraj | Exact | ⬜ |
+| Frame coordinates | `parse_xtc()` via molly | MDTraj `load_xtc()` | 1e-3 Å | ✅ |
+| Frame count | num_frames | MDTraj | Exact | ✅ |
 | Unitcell/box | box_vectors | MDTraj | 1e-4 nm | ⬜ |
 
 ### DCD Format
 
+> **Status:** ⚠️ DEFERRED - Blocked by chemfiles SIGFPE crash
+>
+> - No pure-Rust DCD crate available
+> - Custom implementation planned (DCD is a simple binary format)
+
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
-| Frame coordinates | `parse_dcd_file()` | MDTraj `load_dcd()` | 1e-3 Å | ⬜ |
-| Header parsing | DcdHeader | MDTraj | Exact | ⬜ |
+| Frame coordinates | `parse_dcd_file()` | MDTraj `load_dcd()` | 1e-3 Å | ⏳ |
+| Header parsing | DcdHeader | MDTraj | Exact | ⏳ |
 
 ### TRR Format
 
+> **Status:** ⚠️ DEFERRED - Blocked by chemfiles SIGFPE crash
+>
+> - `groan_rs` crate has TRR support (pure Rust) but complex API
+> - May implement using groan_rs or custom XDR parser
+
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
-| Frame coordinates | `parse_trr_file()` | MDTraj `load_trr()` | 1e-3 Å | ⬜ |
-| Velocities | velocities field | MDTraj | 1e-4 | ⬜ |
-| Forces | forces field | MDTraj (if present) | 1e-4 | ⬜ |
+| Frame coordinates | `parse_trr_file()` | MDTraj `load_trr()` | 1e-3 Å | ⏳ |
+| Velocities | velocities field | MDTraj | 1e-4 | ⏳ |
+| Forces | forces field | MDTraj (if present) | 1e-4 | ⏳ |
 
 ---
 
@@ -375,7 +392,8 @@ Track which parity tests are passing in CI:
 - [x] Physics Parity (Dihedrals, RBF, Electrostatics)
 - [x] Trajectory Support
   - HDF5: ✅ Verified
-  - XTC/DCD/TRR: ⚠️ Blocked by upstream `chemfiles` crash (SIGFPE)
+  - XTC: ✅ Fixed using pure-Rust `molly` crate (no chemfiles)
+  - DCD/TRR: ⚠️ Still blocked by upstream `chemfiles` crash (SIGFPE)
 
 ### Phase 4: Optimization & Polish (Next)
 

@@ -20,12 +20,18 @@ class MockFullForceField:
         self.cmap_torsions = []
         self.cmap_energy_grids = []
         self.residue_templates = {}
+        self.urey_bradley_bonds = []
+        self.virtual_sites = []
 
     def get_charge(self, res, atom):
         return 0.0
 
     def get_lj_params(self, res, atom):
         return 1.0, 0.1
+
+    def get_gbsa_params(self, res, atom):
+        return 1.5, 0.8
+
 
 @pytest.fixture
 def mock_ff():
@@ -134,8 +140,9 @@ def test_assign_mbondi2_radii():
 def test_parameterize_system_topology(mock_ff):
     # Setup mock FF with specific topology rules
 
-    # Bonds: Class A-B has length 1.0, k 100
-    mock_ff.bonds.append(("A", "B", 0.1, 209.2)) # 0.1 nm = 1.0 A, 209.2 kJ -> k=1.0 kcal
+    # Bonds: Class A-B has length 1.0, k 0.5 (simulating pre-converted units)
+    mock_ff.bonds.append(("A", "B", 1.0, 0.5))
+
 
     # Angles: A-B-C theta 1.57, k 100
     mock_ff.angles.append(("A", "B", "C", 1.57, 418.4))

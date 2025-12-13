@@ -655,7 +655,11 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
               best_terms = []
 
               for proper in force_field.propers:
-                  pc = proper["classes"]
+                  # Handle both old format (classes=[...]) and new format (class1, class2, class3, class4)
+                  if "classes" in proper:
+                      pc = proper["classes"]
+                  else:
+                      pc = [proper.get("class1", ""), proper.get("class2", ""), proper.get("class3", ""), proper.get("class4", "")]
                   score = sum(1 for x in pc if x != "")
 
                   # Forward
@@ -695,10 +699,19 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
                       print(f"  Best Terms: {best_terms}")
 
                   for term in best_terms:
+                      # Handle both old format (tuple: n, phase, k) and new format (dict)
+                      if isinstance(term, dict):
+                          k_val = term.get("k", 0.0)
+                          # Convert dict term to tuple for later usage
+                          term_tuple = (term.get("periodicity", 1), term.get("phase", 0.0), k_val)
+                      else:
+                          k_val = term[2]
+                          term_tuple = term
+                      
                       # Filter out k=0 terms to avoid phantom topology
-                      if abs(term[2]) > 1e-6:  # noqa: PLR2004
+                      if abs(k_val) > 1e-6:  # noqa: PLR2004
                           dihedrals_list.append([i, j, k, l_idx])
-                          dihedral_params_list.append(term)
+                          dihedral_params_list.append(term_tuple)
 
 
   # Apply 1-4 Scaling
@@ -815,7 +828,11 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
           # So we match: class1=k, class2=i, class3=j, class4=l
 
           for improper in force_field.impropers:
-              pc = improper["classes"]
+              # Handle both old format (classes=[...]) and new format (class1, class2, class3, class4)
+              if "classes" in improper:
+                  pc = improper["classes"]
+              else:
+                  pc = [improper.get("class1", ""), improper.get("class2", ""), improper.get("class3", ""), improper.get("class4", "")]
 
               # Match assuming class1 is Center (k)
               # And class2,3,4 are neighbors i,j,l_idx
@@ -853,10 +870,18 @@ def parameterize_system(  # noqa: C901, PLR0912, PLR0915
           # Amber improper geometry is usually i-j-k-l (k is center).
           # So we add [i, j, k, l]
           for term in best_terms:
+              # Handle both old format (tuple: n, phase, k) and new format (dict)
+              if isinstance(term, dict):
+                  k_val = term.get("k", 0.0)
+                  term_tuple = (term.get("periodicity", 1), term.get("phase", 0.0), k_val)
+              else:
+                  k_val = term[2]
+                  term_tuple = term
+              
               # Filter out k=0 terms
-              if abs(term[2]) > 1e-6:  # noqa: PLR2004
+              if abs(k_val) > 1e-6:  # noqa: PLR2004
                   impropers_list.append([i_final, j_final, k_final, l_final])
-                  improper_params_list.append(term)
+                  improper_params_list.append(term_tuple)
 
   # Compute CMAP spline coefficients
   cmap_energy_grids = jnp.array(force_field.cmap_energy_grids)

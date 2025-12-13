@@ -14,7 +14,7 @@ import numpy as np
 from priox.physics.force_fields import loader as force_fields
 from priox.chem import residues as residue_constants
 from priox.core.containers import Protein
-from priox.md import jax_md_bridge
+from priox import md
 from priox.physics.features import compute_electrostatic_node_features
 
 _MAX_TRIES = 5
@@ -273,7 +273,7 @@ def _apply_md_parameterization(
       atoms = residue_constants.residue_atoms.get(res_name, [])
       atom_names.extend(atoms)
 
-    params = jax_md_bridge.parameterize_system(ff, res_names, atom_names)
+    params = md.parameterize_system(ff, res_names, atom_names)
 
     # Convert JAX arrays to numpy and populate ProteinTuple
     p_new = p.replace(

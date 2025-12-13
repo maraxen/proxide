@@ -518,7 +518,7 @@ def biotite_to_jax_md_system(
       Tuple of (SystemParams, coordinates).
 
   """
-  from priox.md import jax_md_bridge  # noqa: PLC0415
+  from priox import md  # noqa: PLC0415
 
   # Ensure single frame
   if isinstance(atom_array, AtomArrayStack):
@@ -534,7 +534,7 @@ def biotite_to_jax_md_system(
     atom_counts.append(len(res_atoms))
     atom_names.extend(atom.atom_name for atom in res_atoms)
 
-  params = jax_md_bridge.parameterize_system(force_field, res_names, atom_names, atom_counts)
+  params = md.parameterize_system(force_field, res_names, atom_names, atom_counts)
   coords = jnp.array(atom_array.coord)
 
   return params, coords
