@@ -1,13 +1,7 @@
-API Reference
-=============
+proxide
+=======
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 4
 
-   priox.core
-   priox.io
-   priox.chem
-   priox.physics
-   priox.md
-   priox.ops
-   priox.assets
+   proxide
