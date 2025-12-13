@@ -13,6 +13,7 @@ pub mod full;
 pub use atom14::Atom14Formatter;
 pub use atom37::Atom37Formatter;
 pub use backbone::BackboneFormatter;
-pub use cache::{cache_size, clear_cache, get_cached, insert_cached, CacheKey, CachedStructure};
-pub use custom::CustomFormatter;
+pub use cache::{get_cached, insert_cached, CacheKey, CachedStructure};
 pub use full::FullFormatter;
+// Note: CustomFormatter and cache_size/clear_cache are available but not re-exported
+// Use formatters::custom::CustomFormatter or formatters::cache::* directly if needed

@@ -1,74 +1,36 @@
 # Rust Porting Plan
 
-This document outlines the plan to refactor `priox` to fully leverage the `priox_rs` Rust extension, replacing slower legacy Python implementations (Biotite, Hydride, pure-Python force field parsing).
+## Status: Phase 4 In Progress
 
-## 1. Objective
+### Completed
 
-Replace performance-critical Python components with their Rust counterparts to improve speed, memory usage, and maintainability.
+- [x] **Phase 1-3**: Structure parsing, MD parameterization, cleanup
+- [x] Removed `biotite.py`, `core.py` (legacy)
+- [x] Removed `gbsa.py`, `water.py`, `cmap.py`, `complex.py`, `ligand.py`
 
-## 2. Scope
+### New Rust Modules
 
-| Component | Current Implementation | Target Implementation | Status |
-|-----------|------------------------|-----------------------|--------|
-| Structure Parsing | `biotite.structure.io` (Python/Cython) | `priox_rs.parse_structure` (Rust) | Ready to integrate |
-| Hydrogen Addition | `hydride` (Python) | `priox_rs` (`geometry::hydrogens`) | Ready to integrate |
-| Force Field Parsing | Python XML parsing / OpenMM | `priox_rs.load_forcefield` (Rust) | Ready to integrate |
-| MD Parameterization | `priox.md.bridge` (Python) | `priox_rs` (`physics::md_params`) | Ready to integrate |
-| Trajectory Reading | `mdtraj` / `biotite` | `priox_rs` (`formats::xtc`, etc.) | Partial (XTC/HDF5 done) |
-| Topology/Bonds | `biotite` bond perception | `priox_rs` (`geometry::topology`) | Ready to integrate |
+| Module | Purpose | Status |
+|--------|---------|--------|
+| `gbsa.rs` | mbondi2 radii, OBC2 scaling | ✅ Complete |
+| `water.rs` | TIP3P/SPCE/TIP4P models | ✅ Complete |
+| `cmap.rs` | Bicubic spline for CMAP | ✅ Complete |
 
-## 3. Implementation Steps
+### Remaining
 
-### Phase 1: Structure Parsing & Preprocessing
+- [ ] Extend `md_params.rs` for ligand/GAFF parameterization
+- [ ] Add `AtomicSystem.merge_with()` for complex building
+- [ ] Expose new Rust functions via PyO3 bindings
 
-**Goal:** Replace `priox.io.parsing.biotite` with a new `priox.io.parsing.rust` module.
+### Migration Guide
 
-1. **Create `priox.io.parsing.rust`:**
-    * Implement `load_structure_rs(path, ...)` wrapping `priox_rs.parse_structure`.
-    * Ensure `OutputSpec` is correctly configured to match requested features (add_hydrogens, etc.).
-    * Convert the returned dictionary into `ProcessedStructure` or directly translate to `Protein`/`AtomicSystem` containers.
+```python
+# Old API (removed)
+from priox.md import parameterize_system  # Raises NotImplementedError
 
-2. **Update `priox.io.parsing.registry`:**
-    * Register the new Rust-based parser.
-    * Deprecate or lower priority of `biotite` parser.
-
-3. **Validate Hydrogen Addition:**
-    * Rust extension has built-in hydrogen addition with relaxation.
-    * Verify it matches or exceeds `hydride` quality (already tested in `test_hydrogen_parity.py`).
-
-### Phase 2: Force Field & MD Parameterization
-
-**Goal:** Move force field loading and system parameterization to Rust.
-
-1. **Update `priox.physics.data.force_fields`:**
-    * Use `priox_rs.load_forcefield` to load XML files.
-    * This returns a dictionary of atom types, bonds, etc.
-    * Update the `FullForceField` Python class (if it exists) to be initialized from this dictionary instead of parsing XML itself.
-
-2. **Integrate Parameterization:**
-    * `priox_rs.parse_structure` can optionally `parameterize_md` if provided a force field path.
-    * Update `AtomicSystem` construction to utilize this. Pass the force field path to the parser and receive `charges`, `sigmas`, `epsilons`, `atom_types` directly.
-    * This eliminates the need for the Python-side `parameterize_system` logic in `priox.md.bridge` (which matches atoms to types via string manipulation). Rust does this faster.
-
-### Phase 3: Trajectory & cleanup
-
-**Goal:** Finalize trajectory support and remove legacy deps.
-
-1. **Trajectory Reader:**
-    * Ensure `priox.io.trajectory.read_trajectory` prefers `priox_rs` for supported formats (XTC, TRR, DCD, HDF5).
-    * Fallback to MDTraj only if necessary (or remove MDTraj dep if Rust coverage is sufficient).
-
-2. **Remove Dependencies:**
-    * Remove `biotite`, `hydride`, `openmm` (if used only for parsing) from `pyproject.toml` dependencies.
-    * Clean up `priox.io.parsing.biotite.py`.
-
-## 4. Workflows & Validation
-
-* **Validation:** Use existing parity tests (e.g. `test_hydrogen_parity.py`, `test_load_all_forcefields.py`) to ensure Rust implementation matches or beats legacy.
-* **Benchmarks:** Measure parse time for large structures (e.g. 1CRN, larger proteins).
-
-## 5. Next Actions
-
-1. Verify `priox_rs` build and import.
-2. Implement `priox.io.parsing.rust` to replace `biotite.py`.
-3. Switch default parser in `priox.io.load_protein`.
+# New API
+from priox.io.parsing.rust import parse_structure, OutputSpec
+spec = OutputSpec()
+spec.parameterize_md = True
+protein = parse_structure("structure.pdb", spec)
+```
