@@ -1,4 +1,4 @@
-"""Sphinx configuration file for Priox documentation."""
+"""Sphinx configuration file for Proxide documentation."""
 
 import sys
 from pathlib import Path
@@ -27,9 +27,9 @@ def _do_not_evaluate_in_jax(
 ForwardRef._evaluate = _do_not_evaluate_in_jax  # type: ignore[attr-access]   # noqa: SLF001
 
 # Project information
-project = "Priox"
-copyright = "2025, Priox Team"  # noqa: A001
-author = "Priox Team"
+project = "Proxide"
+copyright = "2025, Proxide Team"  # noqa: A001
+author = "Proxide Team"
 release = "0.1.0"
 
 # Extensions
@@ -84,7 +84,7 @@ autosummary_generate = True
 
 html_theme_options = {
   "show_toc_level": 2,
-  "repository_url": "https://github.com/maraxen/prxteinmpnn",
+  "repository_url": "https://github.com/maraxen/proxide",
   "use_repository_button": True,
   "navigation_with_keys": False,
 }

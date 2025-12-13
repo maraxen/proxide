@@ -1,6 +1,6 @@
-# Priox
+# Proxide
 
-**Priox** is a specialized library for Protein I/O and Physics bridging in JAX. It provides efficient tools for loading, processing, and converting protein structure data in the JAX ecosystem, as well as bridging with MD engines like JAX MD.
+**Proxide** is a specialized library for Protein I/O and Physics bridging in JAX. It provides efficient tools for loading, processing, and converting protein structure data in the JAX ecosystem, as well as bridging with MD engines like JAX MD.
 
 **NOTE**: This is a work-in-progress library and is not yet ready for production use. It is currently in active development and subject to change.
 
@@ -16,16 +16,16 @@
 ### From GitHub (Recommended)
 
 ```bash
-pip install git+https://github.com/maraxen/priox.git@main
+pip install git+https://github.com/maraxen/proxide.git@main
 ```
 
 ### From Source
 
-To install Priox from source, clone the repository and run:
+To install Proxide from source, clone the repository and run:
 
 ```bash
-git clone https://github.com/maraxen/priox.git
-cd priox
+git clone https://github.com/maraxen/proxide.git
+cd proxide
 pip install .
 ```
 
@@ -40,7 +40,7 @@ pip install -e ".[dev]"
 ### Loading a Structure
 
 ```python
-from priox.io.parsing import biotite as bio
+from proxide.io.parsing import biotite as bio
 
 # Load a PDB file
 structure = bio.load_structure("path/to/file.pdb")
@@ -50,7 +50,7 @@ print(structure)
 ### Sequence Conversion
 
 ```python
-from priox.chem import conversion
+from proxide.chem import conversion
 
 # Convert sequence string to integer encoding
 seq_ints = conversion.string_to_protein_sequence("ACDEF")

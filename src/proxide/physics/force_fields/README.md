@@ -1,32 +1,24 @@
 # Force Fields
 
-This directory contains force field parameters used by PrxteinMPNN.
+This directory contains utilities for loading force field parameters in Proxide.
 
 ## Structure
 
-- `eqx/`: Converted Equinox (`.eqx`) force field files. These are binary PyTrees loaded directly by JAX.
-- `xml/`: Original OpenMM XML force field definitions. These are the source of truth for conversion.
+- `loader.py`: Python wrapper for loading force fields via the Rust backend.
+- `components.py`: JAX dataclasses for storing force field parameters.
 
 ## Usage
 
-To load a force field:
+Force fields are loaded from OpenMM-style XML files located in `proxide/assets/` or from arbitrary file paths. The parsing is handled by the high-performance Rust extension.
 
 ```python
-from priox.physics import force_fields
+from proxide.physics.force_fields import load_force_field
 
-# Load local file
-ff = force_fields.load_force_field("src/prxteinmpnn/physics/force_fields/eqx/ff19SB.eqx")
+# Load by name (searches in assets)
+ff = load_force_field("protein.ff14SB.xml")
 
-# Or from Hub (if uploaded)
-# ff = force_fields.load_force_field_from_hub("ff19SB")
+# Load by path
+ff = load_force_field("/path/to/my_forcefield.xml")
 ```
 
-## Conversion
-
-To convert XML files to `.eqx` format, run:
-
-```bash
-python scripts/convert_all_xmls.py
-```
-
-This script reads from `openmmforcefields` (or `xml/` if configured) and outputs to `eqx/`.
+The returned `FullForceField` object contains JAX arrays ready for computation.
