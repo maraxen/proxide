@@ -17,7 +17,65 @@ except ImportError:
   RUST_AVAILABLE = False
   priox_rs = None
 
-from priox.core.containers import Protein
+from priox.core.containers import Protein, ProteinStream
+from priox.io.parsing.registry import register_parser, ParsingError
+
+
+@register_parser(["pdb", "cif", "mmcif", "rust"])
+def load_rust(
+  file_path: str | Path,
+  chain_id: str | list[str] | None = None,
+  *,
+  extract_dihedrals: bool = False,
+  populate_physics: bool = False,
+  force_field_name: str | None = None,
+  add_hydrogens: bool = True,
+  infer_bonds: bool = False,
+  **kwargs: Any,
+) -> ProteinStream:
+  """Load a protein structure using the Rust extension.
+  
+  Args:
+      file_path: Path to the structure file.
+      chain_id: Unused for now in Rust parser (filtering happens post-parse if needed).
+      extract_dihedrals: Whether to compute dihedrals (happens automatically in Protein).
+      populate_physics: Whether to parameterize MD (requires force_field_name).
+      force_field_name: Name/path of force field if populate_physics is True.
+      add_hydrogens: Whether to add hydrogens.
+      infer_bonds: Whether to infer connectivity.
+      **kwargs: Additional args passed to OutputSpec.
+      
+  Yields:
+      Protein instances.
+  """
+  if not RUST_AVAILABLE:
+     raise ImportError("priox_rs Rust extension not available.")
+     
+  # Construct OutputSpec
+  spec = OutputSpec()
+  spec.add_hydrogens = add_hydrogens
+  spec.infer_bonds = infer_bonds
+  # If populate_physics is requested, we need a force field
+  if populate_physics and force_field_name:
+      spec.parameterize_md = True
+      spec.force_field = force_field_name
+  elif populate_physics:
+      # If physics requested but no FF, we assume we might error or just skip?
+      pass
+      
+  # Handle other kwargs
+  if "remove_solvent" in kwargs:
+      spec.remove_solvent = kwargs["remove_solvent"]
+      
+  try:
+    path_str = str(file_path)
+    result_dict = priox_rs.parse_structure(path_str, spec)
+    protein = Protein.from_rust_dict(result_dict, source=path_str)
+    yield protein
+    
+  except Exception as e:
+    raise ParsingError(f"Rust parsing failed for {file_path}: {e}") from e
+
 
 
 # =============================================================================

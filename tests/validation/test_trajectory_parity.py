@@ -41,24 +41,53 @@ HDF5_FILE = TRAJ_DATA_DIR / "test.h5"
 # XTC Parity Tests
 # =============================================================================
 
-@pytest.mark.skip(reason="XTC support blocked by chemfiles SIGFPE crash on this environment")
+
+@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 def test_xtc_frame_coordinates_vs_mdtraj():
-    """Compare XTC frame coordinates against MDTraj."""
+    """Compare XTC frame coordinates against MDTraj using pure-Rust molly parser."""
+    import priox_rs
+
+    # Use MDTraj test files from /tmp (downloaded from GitHub)
+    xtc_file = Path("/tmp/frame0.xtc")
+    pdb_file = Path("/tmp/frame0.pdb")
+
+    if not xtc_file.exists() or not pdb_file.exists():
+        pytest.skip("MDTraj test files not available in /tmp")
+
+    # Parse with priox_rs (pure-Rust molly)
+    result = priox_rs.parse_xtc(str(xtc_file))
+    priox_coords = result["coordinates"]  # Already in Angstroms
+
+    # Parse with MDTraj
+    traj = mdtraj.load(str(xtc_file), top=str(pdb_file))
+    mdtraj_coords = traj.xyz * 10.0  # nm -> Angstroms
+
+    # Check shapes match
+    assert (
+        priox_coords.shape == mdtraj_coords.shape
+    ), f"Shape mismatch: {priox_coords.shape} vs {mdtraj_coords.shape}"
+
+    # Check coordinate parity
+    diff = np.abs(priox_coords - mdtraj_coords)
     max_diff = np.max(diff)
-    
-    print(f"Max coordinate difference: {max_diff:.6f} (units depend on format)")
+    mean_diff = np.mean(diff)
+
+    print(f"Max coordinate difference: {max_diff:.6f} Å")
+    print(f"Mean coordinate difference: {mean_diff:.6f} Å")
     print(f"Frame count: {result['num_frames']}")
     print(f"Atom count: {result['num_atoms']}")
-    
-    # Tolerance: 1e-3 nm (XTC uses single precision)
-    assert max_diff < 1e-3, f"XTC coordinates differ by {max_diff}"
+
+    # XTC uses single precision - allow small tolerance
+    assert max_diff < 0.01, f"XTC coordinates differ by {max_diff} Å"
 
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
-@pytest.mark.skip(reason="XTC support blocked by chemfiles SIGFPE crash on this environment")
 def test_xtc_import_available():
-    """Check if XTC parser is importable."""
-    pass
+    """Check if XTC parser is importable (now using pure-Rust molly)."""
+    from priox_rs import parse_xtc
+
+    assert callable(parse_xtc)
+
 
 
 # =============================================================================

@@ -6,7 +6,7 @@ import pathlib
 from typing import IO, TYPE_CHECKING, Any
 
 # Register parsers by importing modules
-from priox.io.parsing import biotite, mdtraj, pqr  # noqa: F401
+from priox.io.parsing import biotite, mdtraj, pqr, rust  # noqa: F401
 from priox.io.parsing.registry import FormatNotSupportedError, get_parser
 
 if TYPE_CHECKING:

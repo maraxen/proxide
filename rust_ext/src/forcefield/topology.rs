@@ -182,7 +182,7 @@ impl Topology {
     }
 
     /// Generate all unique angles from adjacency list
-    fn generate_angles(adjacency: &HashMap<usize, Vec<usize>>) -> Vec<Angle> {
+    pub fn generate_angles(adjacency: &HashMap<usize, Vec<usize>>) -> Vec<Angle> {
         let mut angles = HashSet::new();
 
         // For each central atom j
@@ -203,7 +203,7 @@ impl Topology {
     }
 
     /// Generate all unique proper dihedrals from adjacency list
-    fn generate_proper_dihedrals(adjacency: &HashMap<usize, Vec<usize>>) -> Vec<Dihedral> {
+    pub fn generate_proper_dihedrals(adjacency: &HashMap<usize, Vec<usize>>) -> Vec<Dihedral> {
         let mut dihedrals = HashSet::new();
 
         // For each central bond j-k
@@ -237,7 +237,7 @@ impl Topology {
     }
 
     /// Generate improper dihedrals for planar groups (sp2 centers)
-    fn generate_improper_dihedrals(
+    pub fn generate_improper_dihedrals(
         adjacency: &HashMap<usize, Vec<usize>>,
         elements: &[String],
     ) -> Vec<Dihedral> {

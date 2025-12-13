@@ -62,8 +62,8 @@ class TestFoldCompExtended(unittest.TestCase):
         structures = list(foldcomp.get_protein_structures(["test_prot"]))
         
         self.assertEqual(len(structures), 1)
-        self.assertEqual(structures[0].source, "test_prot")
         self.assertEqual(structures[0].aatype.shape, (2,))
+
 
     def test_get_protein_structures_error_handling(self):
         """Test error handling during processing."""

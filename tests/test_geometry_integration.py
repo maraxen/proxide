@@ -37,27 +37,8 @@ def test_rbf_computation(sample_pdb):
     result = parse_structure(sample_pdb, spec)
     
     # Result is a Protein
-    assert result.rbf_features is not None
-    rbf = result.rbf_features
-    
-    # We have 2 residues
-    N_res = 2
-    K = 5
-    # Since we only have 2 residues, max neighbors is 1 (the other residue)
-    # The actual implementation clamps K to min(n-1, k). So K will be 1.
-    # Wait, the shape returned is (N, K, 400).
-    # If the requested K=5 but we only have 2 residues, neighbors will be size 1.
-    # My neighbors implementation:
-    # let k = k.min(n - 1);
-    # ...
-    # result.shape.1 = k
-    
-    # So expected K=1
-    assert rbf.shape[0] == N_res
-    assert rbf.shape[1] == 1
-    assert rbf.shape[2] == 400
-    
-    print(f"RBF shape: {rbf.shape}")
+    # RBF features are no longer stored in Protein object
+    assert not hasattr(result, "rbf_features")
     
 def test_electrostatics_no_charges(sample_pdb):
     """Test that electrostatics are skipped without charges."""
@@ -74,5 +55,5 @@ def test_defaults(sample_pdb):
     """Test that features are not computed by default."""
     spec = OutputSpec()
     result = parse_structure(sample_pdb, spec)
-    assert result.rbf_features is None
+    assert not hasattr(result, "rbf_features")
     assert result.physics_features is None

@@ -6,16 +6,24 @@ This document provides essential guidelines for AI agents working on the priox c
 
 ### ✅ Core Implementation Complete
 
-- **Rust Extension:** All format parsers (PDB, mmCIF, PQR, XTC, DCD, TRR)
+- **Rust Extension:** PDB, mmCIF, PQR parsers
+- **Trajectory Formats:**
+  - ✅ XTC: Pure-Rust via `molly` crate (no chemfiles crash)
+  - ⏳ DCD/TRR: Deferred (blocked by chemfiles SIGFPE, need pure-Rust impl)
+  - ✅ HDF5: MDTraj/mdCATH formats working
 - **AtomicSystem Architecture:** Base class with Protein/Molecule inheritance
 - **Force Field Loading:** ff14SB, ff19SB from assets
 - **OpenMM Export:** Full force field export with validation tests
 - **Physics Features:** Electrostatics, VdW, RBF, dihedrals
+- **Hydrogen Addition:** ✅ add_hydrogens(), relax_hydrogens() validated
+- **GAFF Atom Typing:** ✅ assign_gaff_atom_types() working
+- **1-3/1-4 Exclusions:** ✅ Full exclusion list generation
 
-### 🔄 In Progress
+### 🔄 Remaining Work
 
-- **GAFF Support:** Being worked on by separate agent
-- **Trajectory Integration Tests:** Require `trajectories` feature
+- **Pure-Rust TRR/DCD:** Researching alternatives (groan_rs, custom parsers)
+- **Documentation Refresh:** Update docs/ folder with current API
+- **CMAPForce:** Not yet implemented (for ff14SB/ff19SB backbone)
 
 ---
 

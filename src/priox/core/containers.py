@@ -154,7 +154,8 @@ class Protein(AtomicSystem):
     # Check if we can/should reshape to Atom37 (N, 37, 3)
     # or if we have a flat structure (N_atoms, 3)
     is_atom37 = (raw_coords.ndim == 3 and raw_coords.shape[1] == 37) or \
-                (raw_coords.ndim == 2 and raw_coords.size == num_residues * 37 * 3)
+                (raw_coords.ndim == 2 and raw_coords.size == num_residues * 37 * 3) or \
+                (raw_coords.ndim == 1 and raw_coords.size == num_residues * 37 * 3)
                 
     if use_jax:
       convert = jnp.asarray
