@@ -367,10 +367,10 @@ residue_atoms = {
 # Amber Force Field Terminal Atom Adjustments
 # Used to modify the standard atom list for N/C terminals.
 AMBER_TERMINAL_ATOMS = {
-    "N_TERM_ADD": ["H1", "H2", "H3"],
-    "N_TERM_REMOVE": ["H"],
-    "C_TERM_ADD": ["OXT"],
-    "C_TERM_REMOVE": [],
+  "N_TERM_ADD": ["H1", "H2", "H3"],
+  "N_TERM_REMOVE": ["H"],
+  "C_TERM_ADD": ["OXT"],
+  "C_TERM_REMOVE": [],
 }
 
 

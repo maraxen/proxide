@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
-from flax.struct import dataclass, field
 import jax.numpy as jnp
+from flax.struct import dataclass, field
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@
 //!
 //! # Examples
 //! ```
-//! use priox_rs::formats::pdb::parse_pdb_file;
+//! use oxidize::formats::pdb::parse_pdb_file;
 //! let data = parse_pdb_file("tests/data/1abc.pdb").unwrap();
 //! ```
 

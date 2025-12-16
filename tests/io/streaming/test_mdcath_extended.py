@@ -47,21 +47,21 @@ class TestMDCATHExtended(unittest.TestCase):
             nitrogen_mask=np.ones(n_res, dtype=bool),
             num_residues=n_res,
         )
-        
+    
         # Frame coords (10 atoms)
         coords = np.zeros((10, 3))
         resnames = np.array(["ALA", "HOH"]) # One protein, one solvent
-        
+    
         # Mock process_coordinates
-        with mock.patch("priox.io.streaming.mdcath.process_coordinates"):
-            # Mock filter_solvent
-            with mock.patch("priox.io.streaming.mdcath.filter_solvent") as mock_filter:
+        with mock.patch("proxide.io.streaming.mdcath.process_coordinates"):
+             # Mock the biotite function
+             with mock.patch("proxide.io.streaming.mdcath.filter_solvent") as mock_filter:
                 # 5 atoms kept, 5 removed (solvent)
                 mask = np.array([False]*5 + [True]*5)
                 mock_filter.return_value = mask
                 
                 # Mock add_hydrogens
-                with mock.patch("priox.io.streaming.mdcath._add_hydrogens_mdcath") as mock_add_h:
+                with mock.patch("proxide.io.streaming.mdcath._add_hydrogens_mdcath") as mock_add_h:
                     mock_add_h.side_effect = lambda x: x # Identity
                     
                     processed = mdcath._process_mdcath_frame(

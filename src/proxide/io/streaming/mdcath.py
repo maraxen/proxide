@@ -22,10 +22,10 @@ from biotite import structure
 from biotite.structure import AtomArray, filter_solvent
 
 from proxide.chem import residues as rc
-from proxide.io.parsing.types import TrajectoryStaticFeatures
 from proxide.io.parsing.coords import process_coordinates
 from proxide.io.parsing.mappings import residue_names_to_aatype
 from proxide.io.parsing.structures import ProcessedStructure
+from proxide.io.parsing.types import TrajectoryStaticFeatures
 
 logger = logging.getLogger(__name__)
 

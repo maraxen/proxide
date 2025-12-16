@@ -4,7 +4,7 @@ import numpy as np
 import biotite.structure.io.pdb as pdb
 import biotite.structure as struc
 from pathlib import Path
-from priox_rs import parse_structure, OutputSpec, CoordFormat
+from oxidize import parse_structure, OutputSpec, CoordFormat
 
 def test_coordinate_parity_1crn():
     """Verify that Rust parsed coordinates match Biotite coordinates exactly."""
@@ -147,7 +147,7 @@ def test_atom37_parity():
         assert mask.shape == (n_res, 37), f"Mask shape mismatch: {mask.shape}"
         
         # Where mask is 0, coords should ideally be 0 (or ignored)
-        # Priox usually zeros out missing atoms in dense formats
+        # Proxide usually zeros out missing atoms in dense formats
         invalid_coords = coords[mask == 0]
         # Check if they are all zeros
         if np.any(invalid_coords != 0):

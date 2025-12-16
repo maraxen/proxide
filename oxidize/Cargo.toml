@@ -2,7 +2,7 @@
 name = "oxidize"
 version = "0.1.0"
 edition = "2021"
-authors = ["PrioX Contributors"]
+authors = ["Proxide Contributors"]
 description = "High-performance Rust parsing extension for protein structures"
 license = "MIT"
 

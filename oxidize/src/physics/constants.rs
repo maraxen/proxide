@@ -1,6 +1,6 @@
 //! Physical constants for molecular simulations
 //!
-//! Port of priox/physics/constants.py
+//! Port of proxide/physics/constants.py
 //!
 //! Note: These constants are used internally and will be exposed to Python.
 

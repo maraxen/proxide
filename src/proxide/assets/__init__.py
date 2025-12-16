@@ -1,1 +1,1 @@
-"""Asset management for priox."""
+"""Asset management for proxide."""

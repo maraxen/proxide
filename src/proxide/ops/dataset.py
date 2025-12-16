@@ -3,12 +3,11 @@
 import logging
 import pathlib
 from collections.abc import Sequence
+from functools import partial
 from typing import IO, Any, SupportsIndex
 
 import grain.python as grain
-import numpy as np
 
-from functools import partial
 from proxide.core.containers import Protein
 from proxide.io.parsing.foldcomp import (
   FoldCompDatabase,
@@ -28,7 +27,7 @@ def _is_frame_valid(frame: Protein) -> tuple[bool, str]:
     return False, "Empty structure"
   if frame.coordinates.shape[0] != len(frame.aatype):
     return False, "Shape mismatch between coordinates and aatype"
-  if hasattr(frame.coordinates, 'any'):
+  if hasattr(frame.coordinates, "any"):
     if frame.coordinates != frame.coordinates:  # NaN check for arrays
       return False, "NaN values in coordinates"
   return True, ""

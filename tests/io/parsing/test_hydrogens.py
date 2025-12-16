@@ -3,7 +3,7 @@
 
 import pytest
 from pathlib import Path
-from priox_rs import parse_structure, OutputSpec
+from oxidize import parse_structure, OutputSpec
 
 def test_add_hydrogens_pipeline():
     """Test that add_hydrogens runs without crashing."""

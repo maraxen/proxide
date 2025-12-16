@@ -3,11 +3,7 @@ import numpy as np
 import tempfile
 import os
 
-try:
-    from priox import proxide_rs
-except ImportError:
-    # If not found (e.g. not installed in path), try direct import
-    import proxide_rs
+import oxidize
 
 PDB_CONTENT = """ATOM      1  N   ALA A   1      -0.525   1.362   0.000  1.00  0.00           N
 ATOM      2  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00           C
@@ -28,9 +24,9 @@ def pdb_file():
             os.remove(path)
 
 def test_format_atom37(pdb_file):
-    spec = priox_rs.OutputSpec()
-    spec.coord_format = priox_rs.CoordFormat.Atom37
-    result = priox_rs.parse_structure(pdb_file, spec)
+    spec = oxidize.OutputSpec()
+    spec.coord_format = oxidize.CoordFormat.Atom37
+    result = oxidize.parse_structure(pdb_file, spec)
     
     # Check basic fields
     assert "coordinates" in result
@@ -42,18 +38,18 @@ def test_format_atom37(pdb_file):
     assert result["atom_mask"].shape == (37,)
 
 def test_format_atom14(pdb_file):
-    spec = priox_rs.OutputSpec()
-    spec.coord_format = priox_rs.CoordFormat.Atom14
-    result = priox_rs.parse_structure(pdb_file, spec)
+    spec = oxidize.OutputSpec()
+    spec.coord_format = oxidize.CoordFormat.Atom14
+    result = oxidize.parse_structure(pdb_file, spec)
     
     coords = result["coordinates"]
     # 1 * 14 * 3 = 42
     assert coords.shape == (42,)
 
 def test_format_backbone(pdb_file):
-    spec = priox_rs.OutputSpec()
-    spec.coord_format = priox_rs.CoordFormat.BackboneOnly
-    result = priox_rs.parse_structure(pdb_file, spec)
+    spec = oxidize.OutputSpec()
+    spec.coord_format = oxidize.CoordFormat.BackboneOnly
+    result = oxidize.parse_structure(pdb_file, spec)
     
     coords = result["coordinates"]
     # 1 * 4 * 3 = 12
@@ -65,9 +61,9 @@ def test_format_backbone(pdb_file):
     assert np.all(mask == 1.0)
 
 def test_format_full(pdb_file):
-    spec = priox_rs.OutputSpec()
-    spec.coord_format = priox_rs.CoordFormat.Full
-    result = priox_rs.parse_structure(pdb_file, spec)
+    spec = oxidize.OutputSpec()
+    spec.coord_format = oxidize.CoordFormat.Full
+    result = oxidize.parse_structure(pdb_file, spec)
     
     assert "coord_shape" in result
     shape = result["coord_shape"] # (N_res, max_atoms, 3)
@@ -91,15 +87,15 @@ def test_format_full(pdb_file):
 
 def test_caching(pdb_file):
     # Enable caching
-    spec = priox_rs.OutputSpec()
+    spec = oxidize.OutputSpec()
     spec.enable_caching = True
-    spec.coord_format = priox_rs.CoordFormat.Atom37
+    spec.coord_format = oxidize.CoordFormat.Atom37
     
     # First call
-    res1 = priox_rs.parse_structure(pdb_file, spec)
+    res1 = oxidize.parse_structure(pdb_file, spec)
     
     # Second call
-    res2 = priox_rs.parse_structure(pdb_file, spec)
+    res2 = oxidize.parse_structure(pdb_file, spec)
     
     assert np.allclose(res1["coordinates"], res2["coordinates"])
     

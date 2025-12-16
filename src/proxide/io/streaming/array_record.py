@@ -15,8 +15,8 @@ from array_record.python.array_record_module import (  # type: ignore[unresolved
   ArrayRecordReader,
 )
 
-from proxide.core.containers import Protein
 from proxide.chem.residues import atom_order
+from proxide.core.containers import Protein
 
 m.patch()
 

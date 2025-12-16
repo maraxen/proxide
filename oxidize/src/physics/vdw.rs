@@ -1,6 +1,6 @@
 //! Van der Waals (Lennard-Jones) force calculations
 //!
-//! Port of priox/physics/vdw.py
+//! Port of proxide/physics/vdw.py
 //!
 //! Note: These utilities will be exposed to Python in a future phase.
 

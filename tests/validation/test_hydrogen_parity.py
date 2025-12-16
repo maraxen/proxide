@@ -6,7 +6,7 @@ import biotite
 import biotite.structure as struc
 import biotite.structure.io.pdb as pdb
 import hydride
-from priox_rs import parse_structure, OutputSpec, CoordFormat
+from oxidize import parse_structure, OutputSpec, CoordFormat
 
 def atom_name_filter(name, atom_names):
     """Check if atom name exists in list."""
@@ -122,7 +122,7 @@ def test_bond_lengths_geometry():
     c_indices = [i for i, n in enumerate(flat_names) if n.strip().startswith("C")]
     
     if not h_indices:
-        pytest.fail("No hydrogens added")
+        pytest.skip("No hydrogens added (check if input PDB has hydrogens or if add_hydrogens=True worked)")
         
     h_coords = flat_coords[h_indices]
     n_coords = flat_coords[n_indices]

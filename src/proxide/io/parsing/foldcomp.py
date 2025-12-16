@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from proxide.chem.conversion import string_to_protein_sequence
-from proxide.core.containers import ProteinStream, Protein
 from proxide.chem.residues import atom_order
+from proxide.core.containers import Protein, ProteinStream
 
 if TYPE_CHECKING:
   from collections.abc import Sequence

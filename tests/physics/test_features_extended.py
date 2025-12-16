@@ -1,5 +1,5 @@
 
-"""Extended tests for priox.physics.features to increase coverage."""
+"""Extended tests for proxide.physics.features to increase coverage."""
 
 import unittest
 from unittest import mock
@@ -47,7 +47,7 @@ class TestFeaturesExtended(unittest.TestCase):
     def test_compute_vdw_node_features(self):
         """Test vdW feature computation."""
         # Mock compute_lj_forces_at_backbone to avoid complex physics logic
-        with mock.patch("priox.physics.features.compute_lj_forces_at_backbone") as mock_forces:
+        with mock.patch("proxide.physics.features.compute_lj_forces_at_backbone") as mock_forces:
             # Return dummy forces (n_res, 5, 3)
             mock_forces.return_value = jnp.zeros((2, 5, 3))
             
@@ -70,7 +70,7 @@ class TestFeaturesExtended(unittest.TestCase):
 
     def test_compute_vdw_node_features_noise(self):
         """Test vdW features with noise."""
-        with mock.patch("priox.physics.features.compute_noised_lj_forces_at_backbone") as mock_forces:
+        with mock.patch("proxide.physics.features.compute_noised_lj_forces_at_backbone") as mock_forces:
             mock_forces.return_value = jnp.zeros((2, 5, 3))
             
             key = jax.random.key(0)

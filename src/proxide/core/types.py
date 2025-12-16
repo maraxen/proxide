@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Union
+from typing import Any, Union
 
 from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, PyTree
 from optax import GradientTransformation

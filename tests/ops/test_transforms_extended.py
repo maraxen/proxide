@@ -1,5 +1,5 @@
 
-"""Extended tests for priox.ops.transforms to increase coverage."""
+"""Extended tests for proxide.ops.transforms to increase coverage."""
 
 import unittest
 from unittest import mock
@@ -137,7 +137,7 @@ class TestTransformsExtended(parameterized.TestCase):
         self.assertIsInstance(flattened[0], Protein)
         self.assertIsInstance(flattened[1], Protein)
 
-    @mock.patch("priox.ops.transforms.compute_electrostatic_node_features")
+    @mock.patch("proxide.ops.transforms.compute_electrostatic_node_features")
     def test_apply_electrostatics(self, mock_compute):
         """Test electrostatic feature application."""
         mock_compute.return_value = np.zeros((self.n_res, 5))
@@ -155,9 +155,9 @@ class TestTransformsExtended(parameterized.TestCase):
         args, kwargs = mock_compute.call_args
         self.assertEqual(kwargs["noise_scale"], 0.1)
 
-    @mock.patch("priox.ops.transforms.jax_md_bridge")
-    @mock.patch("priox.ops.transforms.force_fields")
-    def test_apply_md_parameterization(self, mock_ff_loader, mock_bridge):
+    @mock.patch("proxide.ops.transforms.md")
+    @mock.patch("proxide.ops.transforms.force_fields")
+    def test_apply_md_parameterization(self, mock_ff_loader, mock_md):
         """Test MD parameterization."""
         # Setup mocks
         mock_ff = mock.Mock()
@@ -174,7 +174,7 @@ class TestTransformsExtended(parameterized.TestCase):
             "sigmas": np.zeros((10,)),
             "epsilons": np.zeros((10,)),
         }
-        mock_bridge.parameterize_system.return_value = mock_params
+        mock_md.parameterize_system.return_value = mock_params
         
         elements = [self.protein_tuple]
         updated = transforms._apply_md_parameterization(elements, use_md=True)
@@ -187,7 +187,7 @@ class TestTransformsExtended(parameterized.TestCase):
         
         # Verify calls
         mock_ff_loader.load_force_field_from_hub.assert_called_with("ff14SB")
-        mock_bridge.parameterize_system.assert_called_once()
+        mock_md.parameterize_system.assert_called_once()
 
     def test_pad_protein(self):
         """Test protein padding."""
@@ -244,7 +244,7 @@ class TestTransformsExtended(parameterized.TestCase):
         
         self.assertEqual(padded.exclusion_mask.shape, (30, 30))
 
-    @mock.patch("priox.ops.transforms._apply_md_parameterization")
+    @mock.patch("proxide.ops.transforms._apply_md_parameterization")
     def test_pad_and_collate_proteins(self, mock_md_param):
         """Test batching and padding."""
         mock_md_param.side_effect = lambda elements, **kwargs: elements

@@ -89,7 +89,7 @@ def test_load_stereo_chemical_props(mock_file):
 
 
 @pytest.mark.smoke
-@patch("priox.chem.residues.load_stereo_chemical_props")
+@patch("proxide.chem.residues.load_stereo_chemical_props")
 def test_make_atom14_dists_bounds(mock_load_stereo):
     """Test the creation of atom14 distance bounds."""
     mock_residue_bonds = {

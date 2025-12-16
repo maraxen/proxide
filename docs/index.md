@@ -1,17 +1,15 @@
-# Priox Documentation
+# Proxide Documentation
 
-Welcome to the documentation for **Priox**.
+Welcome to the documentation for **Proxide**.
 
-## Overview
-
-Priox is designed to facilitate protein structure processing and molecular dynamics integration within the JAX ecosystem.
+Proxide is designed to facilitate protein structure processing and molecular dynamics integration within the JAX ecosystem.
 
 ## Modules
 
-- **`priox.io`**: Input/Output operations for protein structures.
-- **`priox.chem`**: Chemical data and conversion utilities.
-- **`priox.md`**: Molecular dynamics bridges (JAX MD).
-- **`priox.ops`**: Geometric and structural operations.
+- **`proxide.io`**: Input/Output operations for protein structures.
+- **`proxide.chem`**: Chemical data and conversion utilities.
+- **`proxide.md`**: Molecular dynamics bridges (JAX MD).
+- **`proxide.ops`**: Geometric and structural operations.
 
 ## Getting Started
 

@@ -1,6 +1,6 @@
 //! Electrostatic force calculations using Coulomb's law
 //!
-//! Port of priox/physics/electrostatics.py
+//! Port of proxide/physics/electrostatics.py
 //!
 //! Note: These utilities will be exposed to Python in a future phase.
 
