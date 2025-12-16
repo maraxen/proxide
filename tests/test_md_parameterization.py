@@ -5,9 +5,9 @@ import pytest
 from pathlib import Path
 
 # Skip if Rust extension not available
-pytest.importorskip("priox_rs")
+pytest.importorskip("oxidize")
 
-from proxide.io.parsing.rust_wrapper import (
+from proxide.io.parsing.rust import (
     parse_structure,
     OutputSpec,
     MissingResidueMode,
@@ -17,7 +17,7 @@ from proxide.io.parsing.rust_wrapper import (
 
 # Path to test data
 TEST_DATA_DIR = Path(__file__).parent.parent / "data"
-FF_XML_PATH = Path(__file__).parent.parent / "src" / "priox" / "physics" / "force_fields" / "xml" / "protein.ff19SB.xml"
+FF_XML_PATH = Path(__file__).parent.parent / "src" / "proxide" / "physics" / "force_fields" / "xml" / "protein.ff19SB.xml"
 
 
 class TestMDParameterization:
@@ -55,7 +55,7 @@ END
         
         # Parse with parameterization
         import proxide_rs
-        result = priox_rs.parse_structure(str(simple_pdb), spec)
+        result = oxidize.parse_structure(str(simple_pdb), spec)
         
         # Check that charges were assigned
         assert "charges" in result, "Missing charges in result"
@@ -85,7 +85,7 @@ END
         )
         
         import proxide_rs
-        result = priox_rs.parse_structure(str(simple_pdb), spec)
+        result = oxidize.parse_structure(str(simple_pdb), spec)
         
         charges = result["charges"]
         
@@ -99,8 +99,8 @@ END
 
     def test_no_parameterization_by_default(self, simple_pdb):
         """Test that parameterization is disabled by default."""
-        import proxide_rs
-        result = priox_rs.parse_structure(str(simple_pdb))
+        import oxidize
+        result = oxidize.parse_structure(str(simple_pdb))
         
         # Should not have MD params when not requested
         assert "charges" not in result or result.get("charges") is None
@@ -114,9 +114,9 @@ END
             parameterize_md=True,
             # force_field not set
         )
-        
-        import proxide_rs
-        result = priox_rs.parse_structure(str(simple_pdb), spec)
+    
+        import oxidize
+        result = oxidize.parse_structure(str(simple_pdb), spec)
         
         # Should complete without error, but no charges assigned
         assert "charges" not in result or result.get("charges") is None

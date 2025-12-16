@@ -7,6 +7,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from jax_md import space
+
 from proxide.physics.constants import COULOMB_CONSTANT, MIN_DISTANCE
 
 

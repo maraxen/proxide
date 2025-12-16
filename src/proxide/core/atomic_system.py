@@ -1,4 +1,4 @@
-"""Atomic system definitions for PrioX.
+"""Atomic system definitions for Proxide.
 
 This module defines the base classes for atomic systems, including
 proteins, small molecules, and complexes.
@@ -34,6 +34,7 @@ class AtomicSystem:
       impropers: Improper dihedral indices (N_impropers, 4)
       charges: Atomic partial charges (N_atoms,)
       radii: Atomic radii (N_atoms,)
+
   """
 
   coordinates: jnp.ndarray
@@ -116,11 +117,11 @@ class AtomicSystem:
     """Number of protein atoms."""
     if self.molecule_type is None:
       return int(jnp.sum(self.atom_mask))
-    
+
     # Check if molecule_type is packed (size mismatch with atom_mask)
     if self.molecule_type.size != self.atom_mask.size:
-        return int(jnp.sum(self.molecule_type == 0))
-        
+      return int(jnp.sum(self.molecule_type == 0))
+
     return int(jnp.sum((self.molecule_type == 0) & (self.atom_mask > 0)))
 
   @property
@@ -128,10 +129,10 @@ class AtomicSystem:
     """Number of ligand atoms."""
     if self.molecule_type is None:
       return 0
-      
+
     if self.molecule_type.size != self.atom_mask.size:
-        return int(jnp.sum(self.molecule_type == 1))
-        
+      return int(jnp.sum(self.molecule_type == 1))
+
     return int(jnp.sum((self.molecule_type == 1) & (self.atom_mask > 0)))
 
   @property
@@ -142,16 +143,16 @@ class AtomicSystem:
         scipy.sparse.csr_matrix: Sparse (N_atoms, N_atoms) matrix where
             entry (i,j) = 1 if atoms i and j are bonded, 0 otherwise.
             Returns None if bonds are not available.
+
     """
     if self.bonds is None:
       return None
-
 
     try:
       from scipy.sparse import csr_matrix
     except ImportError:
       raise ImportError(
-        "scipy is required for topology adjacency matrix. Install with: pip install scipy"
+        "scipy is required for topology adjacency matrix. Install with: pip install scipy",
       )
 
     # Get number of atoms from mask
@@ -206,13 +207,14 @@ class AtomicSystem:
 
     Raises:
         ImportError: If openmm is not installed.
+
     """
     try:
-      from openmm.app import Topology, Element
+      from openmm.app import Element, Topology
     except ImportError:
       raise ImportError(
         "OpenMM is required for to_openmm_topology(). "
-        "Install with: conda install -c conda-forge openmm"
+        "Install with: conda install -c conda-forge openmm",
       )
 
     import numpy as np
@@ -293,17 +295,17 @@ class AtomicSystem:
     """
     try:
       from openmm import (
-        System,
-        NonbondedForce,
-        HarmonicBondForce,
         HarmonicAngleForce,
+        HarmonicBondForce,
+        NonbondedForce,
         PeriodicTorsionForce,
+        System,
       )
       from openmm import unit as u
     except ImportError:
       raise ImportError(
         "OpenMM is required for to_openmm_system(). "
-        "Install with: conda install -c conda-forge openmm"
+        "Install with: conda install -c conda-forge openmm",
       )
 
     import numpy as np
@@ -351,7 +353,7 @@ class AtomicSystem:
     sigmas = np.asarray(self.sigmas) if self.sigmas is not None else np.ones(n_atoms) * 0.3
     epsilons = np.asarray(self.epsilons) if self.epsilons is not None else np.zeros(n_atoms)
 
-    # Convert units: priox uses Angstroms and kcal/mol, OpenMM uses nm and kJ/mol
+    # Convert units: proxide uses Angstroms and kcal/mol, OpenMM uses nm and kJ/mol
     sigmas_nm = sigmas * 0.1  # Å to nm
     epsilons_kjmol = epsilons * 4.184  # kcal/mol to kJ/mol
 
@@ -397,7 +399,11 @@ class AtomicSystem:
           theta = float(angle_params[a_idx, 0])  # Already in radians
           k_angle = float(angle_params[a_idx, 1]) * 4.184  # kcal/mol/rad² to kJ/mol/rad²
           angle_force.addAngle(
-            i, j, k, theta * u.radian, k_angle * u.kilojoule_per_mole / u.radian**2
+            i,
+            j,
+            k,
+            theta * u.radian,
+            k_angle * u.kilojoule_per_mole / u.radian**2,
           )
 
       system.addForce(angle_force)
@@ -490,8 +496,14 @@ class AtomicSystem:
             # Psi: N(i)-CA(i)-C(i)-N(i+1) -> atoms[1:5]
             cmap_force.addTorsion(
               cmap_idx,
-              atoms[0], atoms[1], atoms[2], atoms[3],  # phi atoms
-              atoms[1], atoms[2], atoms[3], atoms[4],  # psi atoms
+              atoms[0],
+              atoms[1],
+              atoms[2],
+              atoms[3],  # phi atoms
+              atoms[1],
+              atoms[2],
+              atoms[3],
+              atoms[4],  # psi atoms
             )
 
         system.addForce(cmap_force)
@@ -569,6 +581,7 @@ class AtomicSystem:
 
     Example:
         >>> complex_system = protein.merge_with(ligand)
+
     """
     import numpy as np
 
@@ -593,8 +606,16 @@ class AtomicSystem:
 
     # Merge molecule_type (preserve from both)
     if self.molecule_type is not None or other.molecule_type is not None:
-      mt1 = self.molecule_type if self.molecule_type is not None else jnp.zeros(n_atoms_self, dtype=jnp.int32)
-      mt2 = other.molecule_type if other.molecule_type is not None else jnp.ones(n_atoms_other, dtype=jnp.int32)
+      mt1 = (
+        self.molecule_type
+        if self.molecule_type is not None
+        else jnp.zeros(n_atoms_self, dtype=jnp.int32)
+      )
+      mt2 = (
+        other.molecule_type
+        if other.molecule_type is not None
+        else jnp.ones(n_atoms_other, dtype=jnp.int32)
+      )
       new_molecule_type = jnp.concatenate([mt1, mt2], axis=0)
     else:
       new_molecule_type = None

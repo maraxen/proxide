@@ -4,15 +4,15 @@ This module provides a high-level interface to the oxidize Rust extension,
 handling data conversion and maintaining API compatibility with existing parsers.
 """
 
-import numpy as np
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from dataclasses import dataclass
+
+import numpy as np
 
 import oxidize
-
 from proxide.core.containers import Protein, ProteinStream
-from proxide.io.parsing.registry import register_parser, ParsingError
+from proxide.io.parsing.registry import ParsingError, register_parser
 
 
 @register_parser(["pdb", "cif", "mmcif", "rust"])
@@ -28,7 +28,7 @@ def load_rust(
   **kwargs: Any,
 ) -> ProteinStream:
   """Load a protein structure using the Rust extension.
-  
+
   Args:
       file_path: Path to the structure file.
       chain_id: Unused for now in Rust parser (filtering happens post-parse if needed).
@@ -38,9 +38,10 @@ def load_rust(
       add_hydrogens: Whether to add hydrogens.
       infer_bonds: Whether to infer connectivity.
       **kwargs: Additional args passed to OutputSpec.
-      
+
   Yields:
       Protein instances.
+
   """
   # Construct OutputSpec
   spec = OutputSpec()
@@ -48,54 +49,53 @@ def load_rust(
   spec.infer_bonds = infer_bonds
   # If populate_physics is requested, we need a force field
   if populate_physics and force_field_name:
-      spec.parameterize_md = True
-      spec.force_field = force_field_name
+    spec.parameterize_md = True
+    spec.force_field = force_field_name
   elif populate_physics:
-      # If physics requested but no FF, we assume we might error or just skip?
-      pass
-      
+    # If physics requested but no FF, we assume we might error or just skip?
+    pass
+
   # Handle other kwargs
   if "remove_solvent" in kwargs:
-      spec.remove_solvent = kwargs["remove_solvent"]
-      
+    spec.remove_solvent = kwargs["remove_solvent"]
+
   try:
     if hasattr(file_path, "read"):
-        # Handle file-like objects (StringIO, etc)
-        import tempfile
-        import os
-        
-        # Read content
-        content = file_path.read()
-        if hasattr(content, "encode"):
-             # String content - assume PDB (default) unless detectable?
-             # For StringIO, we don't know suffix. Default to .pdb
-             suffix = ".pdb"
-             mode = "w"
-        else:
-             # Bytes content
-             suffix = ".pdb" # Fallback
-             mode = "wb"
-             
-        with tempfile.NamedTemporaryFile(mode=mode, suffix=suffix, delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-            
-        try:
-            result_dict = oxidize.parse_structure(tmp_path, spec)
-            protein = Protein.from_rust_dict(result_dict, source="<stream>")
-            yield protein
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-    else:
-        path_str = str(file_path)
-        result_dict = oxidize.parse_structure(path_str, spec)
-        protein = Protein.from_rust_dict(result_dict, source=path_str)
+      # Handle file-like objects (StringIO, etc)
+      import os
+      import tempfile
+
+      # Read content
+      content = file_path.read()
+      if hasattr(content, "encode"):
+        # String content - assume PDB (default) unless detectable?
+        # For StringIO, we don't know suffix. Default to .pdb
+        suffix = ".pdb"
+        mode = "w"
+      else:
+        # Bytes content
+        suffix = ".pdb"  # Fallback
+        mode = "wb"
+
+      with tempfile.NamedTemporaryFile(mode=mode, suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+      try:
+        result_dict = oxidize.parse_structure(tmp_path, spec)
+        protein = Protein.from_rust_dict(result_dict, source="<stream>")
         yield protein
-    
+      finally:
+        if os.path.exists(tmp_path):
+          os.unlink(tmp_path)
+    else:
+      path_str = str(file_path)
+      result_dict = oxidize.parse_structure(path_str, spec)
+      protein = Protein.from_rust_dict(result_dict, source=path_str)
+      yield protein
+
   except Exception as e:
     raise ParsingError(f"Rust parsing failed for {file_path}: {e}") from e
-
 
 
 # =============================================================================
@@ -216,6 +216,7 @@ def parse_pdb_to_protein(file_path: str | Path, spec=None, use_jax: bool = True)
 
   Raises:
       ValueError: If parsing fails
+
   """
   result = oxidize.parse_structure(str(file_path), spec)
   return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
@@ -269,15 +270,43 @@ def parse_structure(file_path: str | Path, spec=None, use_jax: bool = True) -> P
       >>> spec.force_field = "openff-2.0.0.xml"
       >>> system = rust_wrapper.parse_structure("complex.pdb", spec=spec)
       >>> print(system.charges)
+
   """
   return parse_pdb_to_protein(file_path, spec, use_jax)
 
 
 # Export Rust types
-from oxidize import OutputSpec, CoordFormat, ErrorMode, MissingResidueMode
+# These should be available from the oxidize module directly if PyO3 exports them correctly
+from oxidize import CoordFormat, ErrorMode, MissingResidueMode, OutputSpec
 
 # Optional XTC support
 parse_xtc = getattr(oxidize, "parse_xtc", None)
+
+__all__ = [
+  "OutputSpec",
+  "CoordFormat",
+  "ErrorMode",
+  "MissingResidueMode",
+  "load_rust",
+  "parse_structure",
+  "parse_pdb_to_protein",
+  "parse_pdb_raw_rust",
+  "parse_mmcif_rust",
+  "load_forcefield_rust",
+  "parse_xtc_rust",
+  "parse_mdtraj_h5_metadata",
+  "parse_mdtraj_h5_frame",
+  "parse_mdcath_metadata",
+  "get_mdcath_replicas",
+  "parse_mdcath_frame",
+  "is_hdf5_support_available",
+  "is_rust_parser_available",
+  "get_rust_capabilities",
+  "RawAtomData",
+  "ForceFieldData",
+  "MdtrajH5Data",
+  "MdcathData",
+]
 
 
 def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
@@ -294,6 +323,7 @@ def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
 
   Raises:
       ValueError: If parsing fails
+
   """
   result = oxidize.parse_pdb(str(file_path))
 
@@ -321,6 +351,7 @@ def parse_mmcif_rust(file_path: str | Path) -> RawAtomData:
 
   Raises:
       ValueError: If parsing fails
+
   """
   result = oxidize.parse_mmcif(str(file_path))
 
@@ -354,6 +385,7 @@ def load_forcefield_rust(file_path: str | Path) -> ForceFieldData:
       >>> print(f"Loaded {ff.num_atom_types} atom types")
       >>> ala = ff.get_residue("ALA")
       >>> print(f"ALA has {len(ala['atoms'])} atoms")
+
   """
   result = oxidize.load_forcefield(str(file_path))
 
@@ -393,6 +425,7 @@ def parse_xtc_rust(file_path: str | Path) -> dict[str, Any]:
   Raises:
       ImportError: If trajectory feature not available
       ValueError: If parsing fails
+
   """
   if parse_xtc is None:
     raise ImportError("parse_xtc not found in oxidize. Ensure 'trajectories' feature is enabled.")
@@ -417,6 +450,7 @@ def parse_mdtraj_h5_metadata(file_path: str | Path) -> MdtrajH5Data:
   Raises:
       ImportError: If mdcath feature not available
       ValueError: If parsing fails
+
   """
   if not hasattr(oxidize, "parse_mdtraj_h5_metadata"):
     raise ImportError("HDF5 support not available. Rebuild with: maturin develop --features mdcath")
@@ -447,6 +481,7 @@ def parse_mdtraj_h5_frame(file_path: str | Path, frame_idx: int = 0) -> RawAtomD
   Raises:
       ImportError: If mdcath feature not available
       ValueError: If parsing fails
+
   """
   # Get metadata for atom info
   metadata = parse_mdtraj_h5_metadata(file_path)
@@ -479,6 +514,7 @@ def parse_mdcath_metadata(file_path: str | Path) -> MdcathData:
   Raises:
       ImportError: If mdcath feature not available
       ValueError: If parsing fails
+
   """
   if not hasattr(oxidize, "parse_mdcath_metadata"):
     raise ImportError("HDF5 support not available. Rebuild with: maturin develop --features mdcath")
@@ -504,6 +540,7 @@ def get_mdcath_replicas(file_path: str | Path, domain_id: str, temperature: str)
 
   Returns:
       List of replica identifiers
+
   """
   return oxidize.get_mdcath_replicas(str(file_path), domain_id, temperature)
 
@@ -530,6 +567,7 @@ def parse_mdcath_frame(
   Raises:
       ImportError: If mdcath feature not available
       ValueError: If parsing fails
+
   """
   return oxidize.parse_mdcath_frame(str(file_path), domain_id, temperature, replica, frame_idx)
 
@@ -539,6 +577,7 @@ def is_hdf5_support_available() -> bool:
 
   Returns:
       True if mdcath feature was compiled, False otherwise.
+
   """
   # Check if the function exists
   if not hasattr(oxidize, "parse_mdtraj_h5_metadata"):
@@ -562,7 +601,7 @@ def is_hdf5_support_available() -> bool:
 
 def is_rust_parser_available() -> bool:
   """Check if Rust parser is available.
-  
+
   Always returns True since oxidize is now a hard dependency.
   """
   return True
@@ -573,6 +612,7 @@ def get_rust_capabilities() -> dict[str, bool]:
 
   Returns:
       Dictionary mapping capability names to availability status.
+
   """
   return {
     "parse_pdb": hasattr(oxidize, "parse_pdb"),

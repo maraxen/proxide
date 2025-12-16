@@ -8,7 +8,7 @@
 
 syntax = "proto3";
 
-package priox.hydride;
+package proxide.hydride;
 
 // A single fragment represents the local chemical environment around
 // a heavy atom and the positions of its bonded hydrogen atoms.

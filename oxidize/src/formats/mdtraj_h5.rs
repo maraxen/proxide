@@ -125,7 +125,7 @@ pub fn parse_mdtraj_h5_frame(path: &str, frame_idx: usize) -> Result<MdtrajFrame
 
     let mut frame_coords = all_coords[start..end].to_vec();
 
-    // Convert from Nanometers (MDTraj default) to Angstroms (Priox default)
+    // Convert from Nanometers (MDTraj default) to Angstroms (Proxide default)
     for coord in &mut frame_coords {
         *coord *= 10.0;
     }

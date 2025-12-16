@@ -1,4 +1,4 @@
-"""Physics parity tests for priox Rust vs Python implementations.
+"""Physics parity tests for proxide Rust vs Python implementations.
 
 Tests P1.3 objectives:
 - RBF: Match get_rbf_features output (1e-5 tolerance)
@@ -16,7 +16,7 @@ try:
 except ImportError:
     MDTRAJ_AVAILABLE = False
 
-from priox_rs import parse_structure, OutputSpec, CoordFormat
+from oxidize import parse_structure, OutputSpec, CoordFormat
 
 
 # =============================================================================
@@ -187,7 +187,7 @@ def python_gaussian_rbf(coords, num_rbf=16, r_min=0.0, r_max=20.0, sigma=None):
     k_neighbors = min(num_rbf, n_res - 1)
     
     # Simple pairwise distance for all atoms? 
-    # Priox RBF usually operates on Residue level features (e.g. CA-CA distances)
+    # Proxide RBF usually operates on Residue level features (e.g. CA-CA distances)
     # or specific frames. 
     # Let's assume standard AlphaFold-style RBF on CA-CA distances for this test.
     # The Rust implementation usually extracts features from rigid body frames.
@@ -218,7 +218,7 @@ def test_rbf_output_shape():
     # For multi-residue structures (1uao is large):
     # Expected shape: (N_res, min(K_neighbors, n_res-1), 400)
     # Actually wait, is it K_neighbors? 
-    # Priox output might be dense (N, N, ...)? 
+    # Proxide output might be dense (N, N, ...)? 
     # Or sparse/neighbor list based (N, K, ...)?
     # The previous code assumed (N, K, 400).
     
@@ -269,8 +269,7 @@ def test_bond_inference_parity_vs_biotite():
     # Biotite infers bonds based on connectivity records or distance
     # Ensure we use similar logic. 
     # If PDB has CONECT records, Biotite uses them. 1UAO might have them.
-    # Priox might infer from distance or library.
-    
+            # Proxide might infer from distance or library.    
     if biotite_atoms.bonds is None:
         # Force inference
         biotite_atoms.bonds = struc.connect_via_residue_names(biotite_atoms)

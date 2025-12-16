@@ -60,8 +60,6 @@ def _resolve_sigma(
   raise ValueError(msg)
 
 
-
-
 def _compute_electrostatic_features_raw(
   backbone_positions: jax.Array,
   all_positions: jax.Array,

@@ -15,9 +15,9 @@ from proxide.chem.residues import (
   atom_order,
 )
 from proxide.core.containers import ProteinStream
-from proxide.io.parsing.types import TrajectoryStaticFeatures
 from proxide.io.parsing.registry import ParsingError, register_parser
 from proxide.io.parsing.structures import ProcessedStructure
+from proxide.io.parsing.types import TrajectoryStaticFeatures
 from proxide.io.parsing.utils import processed_structure_to_protein_tuples
 
 from .mappings import atom_names_to_index, residue_names_to_aatype
@@ -299,9 +299,9 @@ def parse_mdtraj_to_processed_structure(  # noqa: C901
     # Check for mdCATH and warn if chain_id is used
     # We do this first because md.load_frame might fail on mdCATH files
     # (missing coordinates/topology at root)
-    import warnings  # noqa: PLC0415
+    import warnings
 
-    import h5py  # noqa: PLC0415
+    import h5py
 
     if isinstance(source, (str, pathlib.Path)) and str(source).endswith((".h5", ".hdf5")):
       try:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
+
 from proxide.chem.ordering import C_INDEX, CA_INDEX, CB_PDB_INDEX, N_INDEX
 
 

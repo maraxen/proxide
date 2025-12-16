@@ -38,3 +38,4 @@ dist/
 .vscode/
 .idea/
 *.swp
+.gemini/

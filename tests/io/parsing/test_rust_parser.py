@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 
 try:
-    from proxide.io.parsing.rust_wrapper import parse_pdb_rust, is_rust_parser_available
+    from proxide.io.parsing.rust import parse_pdb_to_protein as parse_pdb_rust, is_rust_parser_available
     RUST_AVAILABLE = is_rust_parser_available()
 except ImportError:
     RUST_AVAILABLE = False

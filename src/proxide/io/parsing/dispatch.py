@@ -17,23 +17,23 @@ if TYPE_CHECKING:
 
 
 def _infer_format(path: pathlib.Path | None) -> str | None:
-    """Infer file format from path suffix."""
-    if path is None:
-        return None
-    suffix = path.suffix.lower()
-    if suffix == ".pdb":
-        return "pdb"
-    if suffix in (".cif", ".mmcif"):
-        return "cif"
-    if suffix == ".pqr":
-        return "pqr"
-    if suffix in (".fcz", ".foldcomp"):
-        return "foldcomp"
-    if suffix in (".dcd", ".xtc", ".h5", ".hdf5"):
-        # Could be mdtraj or mdcath (handled inside mdtraj parser or check here if needed)
-        # Assuming mdtraj for dispatch purposes, let parser handle specific HDF5 types if needed
-        return "mdtraj"
+  """Infer file format from path suffix."""
+  if path is None:
     return None
+  suffix = path.suffix.lower()
+  if suffix == ".pdb":
+    return "pdb"
+  if suffix in (".cif", ".mmcif"):
+    return "cif"
+  if suffix == ".pqr":
+    return "pqr"
+  if suffix in (".fcz", ".foldcomp"):
+    return "foldcomp"
+  if suffix in (".dcd", ".xtc", ".h5", ".hdf5"):
+    # Could be mdtraj or mdcath (handled inside mdtraj parser or check here if needed)
+    # Assuming mdtraj for dispatch purposes, let parser handle specific HDF5 types if needed
+    return "mdtraj"
+  return None
 
 
 def load_structure(
@@ -62,19 +62,18 @@ def load_structure(
     path = file_path
 
   if file_format is None:
-      file_format = _infer_format(path)
+    file_format = _infer_format(path)
 
   # Default to pdb for file-like objects (e.g. StringIO) if format not specified
   if file_format is None and path is None:
-      file_format = "pdb"
+    file_format = "pdb"
 
   parser = get_parser(file_format)
   if not parser:
-      msg = (
-        f"Failed to parse structure from source: {file_path}. "
-        f"Unsupported file format: {file_format}"
-      )
-      raise FormatNotSupportedError(msg)
+    msg = (
+      f"Failed to parse structure from source: {file_path}. Unsupported file format: {file_format}"
+    )
+    raise FormatNotSupportedError(msg)
 
   return parser(file_path, chain_id=chain_id, **kwargs)
 

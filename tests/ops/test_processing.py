@@ -1,8 +1,8 @@
-
 """Tests for the io.process module."""
 
 import pathlib
 from io import StringIO
+import unittest
 from unittest.mock import Mock, patch
 from proxide.ops import processing
 from proxide.core.containers import Protein
@@ -498,11 +498,24 @@ class TestFrameIteratorFromInputs:
     test_file = tmp_path / "test.pdb"
     test_file.write_text("ATOM   1  CA  ALA A   1      10.000  20.000  30.000")
 
-    with patch("priox.ops.processing.parse_input") as mock_parse:
-      mock_parse.return_value = iter([])  # Mock empty iterator
+    with patch("proxide.ops.processing.parse_input") as mock_parse:
+      mock_parse.return_value = iter([Mock()])  # Yield one mock protein
 
       result = list(frame_iterator_from_inputs([str(test_file)]))
 
       # Verify parse_input was called
       mock_parse.assert_called()
-      assert isinstance(result, list)
+      assert len(result) == 1
+
+  def test_frame_iterator_from_inputs_empty(self):
+    """Test with empty input iterator."""
+    with patch("proxide.ops.processing.parse_input") as mock_parse:
+      mock_parse.return_value = iter([])  # Mock empty iterator
+
+      iterator = processing.frame_iterator_from_inputs(
+        ["dummy.pdb"],
+        # chain_id_dict=None  # Removed
+      )
+
+      frames = list(iterator)
+      assert len(frames) == 0

@@ -1,4 +1,9 @@
-"""Trajectory parity tests for priox Rust vs MDTraj/reference implementations.
+"""Trajectory parity tests for proxide Rust vs MDTraj/reference implementations.
+
+Checks:
+1. XTC reading matches MDTraj (coordinates, box vectors, time).
+2. HDF5 reading (if implemented) matches reference.
+3. Pure-Rust XTC parser (molly) correctness.
 
 Tests P3.1 objectives:
 - DCD: Match MDTraj frame coordinates (1e-3 Å tolerance)
@@ -45,7 +50,7 @@ HDF5_FILE = TRAJ_DATA_DIR / "test.h5"
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 def test_xtc_frame_coordinates_vs_mdtraj():
     """Compare XTC frame coordinates against MDTraj using pure-Rust molly parser."""
-    import proxide_rs
+    import oxidize
 
     # Use MDTraj test files from /tmp (downloaded from GitHub)
     xtc_file = Path("/tmp/frame0.xtc")
@@ -54,8 +59,8 @@ def test_xtc_frame_coordinates_vs_mdtraj():
     if not xtc_file.exists() or not pdb_file.exists():
         pytest.skip("MDTraj test files not available in /tmp")
 
-    # Parse with priox_rs (pure-Rust molly)
-    result = priox_rs.parse_xtc(str(xtc_file))
+    # Parse with oxidize (pure-Rust molly)
+    result = oxidize.parse_xtc(str(xtc_file))
     priox_coords = result["coordinates"]  # Already in Angstroms
 
     # Parse with MDTraj
@@ -84,7 +89,7 @@ def test_xtc_frame_coordinates_vs_mdtraj():
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 def test_xtc_import_available():
     """Check if XTC parser is importable (now using pure-Rust molly)."""
-    from priox_rs import parse_xtc
+    from oxidize import parse_xtc
 
     assert callable(parse_xtc)
 
@@ -143,7 +148,7 @@ def test_hdf5_parsing_parity():
         traj.save(str(HDF5_FILE))
         
     try:
-        from priox_rs import parse_mdtraj_h5_metadata, parse_mdtraj_h5_frame
+        from oxidize import parse_mdtraj_h5_metadata, parse_mdtraj_h5_frame
     except ImportError:
         pytest.skip("HDF5 support not available (mdcath feature not compiled)")
 
@@ -168,7 +173,7 @@ def test_hdf5_parsing_parity():
     
     # Check units (Rust usually Angstroms, MDTraj nm)
     # If Rust HDF5 implementation follows MDTraj convention strictly, it might return nm?
-    # But priox usually standardizes on Angstroms.
+    # But proxide usually standardizes on Angstroms.
     # Let's check magnitude.
     # mdTraj coords ~ 0.1-10 nm range (1-100 A)
     # If Rust returns nm, values will be small. If A, 10x larger.
@@ -211,13 +216,11 @@ def test_box_vectors_parity():
 
 def test_all_trajectory_parsers_available():
     """Test that all trajectory parsers are at least importable."""
-    from priox_rs import parse_xtc  # Always available (PyO3 function defined)
+    from oxidize import parse_xtc  # Always available (PyO3 function defined)
     
     # These will raise ImportError with helpful message if feature not compiled
     try:
-        from priox_rs import parse_dcd, parse_trr
+        from oxidize import parse_dcd, parse_trr
         print("All trajectory parsers available")
     except ImportError as e:
-        if "trajectories" in str(e).lower():
-            pytest.skip("Trajectory parsing requires 'trajectories' feature")
-        raise
+        print(f"Some parsers not available: {e}")

@@ -14,8 +14,8 @@ import tempfile
 import warnings
 
 try:
-    from proxide.io.parsing.rust_wrapper import (
-        parse_pdb_rust,
+    from proxide.io.parsing.rust import (
+        parse_pdb_to_protein as parse_pdb_rust,
         parse_pdb_to_protein,
         parse_pdb_raw_rust,
         parse_mmcif_rust,
@@ -457,7 +457,7 @@ END
         pdb_file.write_text(pdb_content.strip())
         
         # Import OutputSpec from Rust
-        from priox_rs import OutputSpec
+        from oxidize import OutputSpec
         
         # Parse with VdW features enabled
         spec = OutputSpec(compute_vdw=True)

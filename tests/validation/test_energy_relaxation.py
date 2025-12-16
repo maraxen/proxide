@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 from pathlib import Path
 import os
-import proxide_rs
+import oxidize
 
 try:
     import openmm
@@ -15,13 +15,13 @@ try:
 except ImportError:
     OPENMM_AVAILABLE = False
 
-from proxide.io.parsing.rust_wrapper import parse_structure, OutputSpec, CoordFormat, ErrorMode
+from proxide.io.parsing.rust import parse_structure, OutputSpec, CoordFormat, ErrorMode
 
 TEST_DATA_DIR = Path("tests/data")
 
 def get_forcefield_path(name):
     """Find force field in assets."""
-    assets_dir = Path("src/priox/assets")
+    assets_dir = Path("src/proxide/assets")
     # Recursive search
     matches = list(assets_dir.glob(f"**/{name}"))
     if matches:

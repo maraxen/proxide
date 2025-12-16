@@ -8,14 +8,13 @@ import warnings
 from collections.abc import Sequence
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 
-from proxide.physics.force_fields import loader as force_fields
+from proxide import md
 from proxide.chem import residues as residue_constants
 from proxide.core.containers import Protein
-from priox import md
 from proxide.physics.features import compute_electrostatic_node_features
+from proxide.physics.force_fields import loader as force_fields
 
 _MAX_TRIES = 5
 

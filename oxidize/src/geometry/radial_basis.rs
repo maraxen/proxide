@@ -1,7 +1,7 @@
 //! Radial basis functions for distance encoding
 //!
 //! Computes RBF features for backbone atom pairs, used in protein structure learning.
-//! Port of priox/geometry/radial_basis.py
+//! Port of proxide/geometry/radial_basis.py
 //!
 //! Note: These utilities will be exposed to Python in a future phase.
 

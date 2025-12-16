@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-import proxide_rs
+import oxidize
 
 
 # Get the assets directory
-ASSETS_DIR = Path(__file__).parent.parent.parent / "src" / "priox" / "assets"
+ASSETS_DIR = Path(__file__).parent.parent.parent / "src" / "proxide" / "assets"
 
 
 def get_all_xml_files() -> list[Path]:
@@ -62,7 +62,7 @@ class TestLoadAllForceFields:
         }
 
         try:
-            result = priox_rs.load_forcefield(str(xml_file))
+            result = oxidize.load_forcefield(str(xml_file))
 
             # Basic validation - should return a dict
             assert isinstance(result, dict), f"Expected dict, got {type(result)}"
@@ -98,7 +98,7 @@ class TestGaffXmlFiles:
         xml_file = gaff_dir / f"{version}.xml"
         assert xml_file.exists(), f"GAFF file not found: {xml_file}"
 
-        result = priox_rs.load_forcefield(str(xml_file))
+        result = oxidize.load_forcefield(str(xml_file))
 
         # GAFF should have atom types
         assert len(result["atom_types"]) > 0, f"No atom types in {version}"
@@ -118,7 +118,7 @@ class TestGaffXmlFiles:
     def test_gaff_211_has_expected_types(self, gaff_dir: Path) -> None:
         """Test that GAFF 2.11 has expected atom types."""
         xml_file = gaff_dir / "gaff-2.11.xml"
-        result = priox_rs.load_forcefield(str(xml_file))
+        result = oxidize.load_forcefield(str(xml_file))
 
         # Get atom type names
         atom_type_names = {at["name"] for at in result["atom_types"]}
@@ -142,7 +142,7 @@ class TestAmberXmlFiles:
         if not xml_file.exists():
             pytest.skip("ff14SB.xml not found")
 
-        result = priox_rs.load_forcefield(str(xml_file))
+        result = oxidize.load_forcefield(str(xml_file))
         assert len(result["atom_types"]) > 0
         assert len(result["residue_templates"]) > 0
 
@@ -152,7 +152,7 @@ class TestAmberXmlFiles:
         if not xml_file.exists():
             pytest.skip("protein.ff19SB.xml not found")
 
-        result = priox_rs.load_forcefield(str(xml_file))
+        result = oxidize.load_forcefield(str(xml_file))
         assert len(result["atom_types"]) > 0
         assert len(result["residue_templates"]) > 0
 
@@ -179,7 +179,7 @@ class TestImplicitSolventFiles:
         if not xml_file.exists():
             pytest.skip(f"{version}.xml not found")
 
-        result = priox_rs.load_forcefield(str(xml_file))
+        result = oxidize.load_forcefield(str(xml_file))
 
         # OBC files should have GBSA parameters
         assert "gbsa_obc_params" in result
@@ -209,7 +209,7 @@ class TestWaterModels:
             pytest.skip(f"{model}.xml not found")
 
         try:
-            result = priox_rs.load_forcefield(str(xml_file))
+            result = oxidize.load_forcefield(str(xml_file))
             # Water models may have just residue templates
             assert isinstance(result, dict)
         except ValueError as e:

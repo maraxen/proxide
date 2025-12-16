@@ -1,5 +1,5 @@
 
-"""Extended tests for priox.io.parsing.mappings to increase coverage."""
+"""Extended tests for proxide.io.parsing.mappings to increase coverage."""
 
 import unittest
 from unittest import mock

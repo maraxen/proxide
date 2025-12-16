@@ -57,11 +57,11 @@
 
 **Tasks:**
 
-- [ ] Port PQR parsing to Rust (`formats/pqr.rs`)
-- [ ] Delete `physics_utils.py` (use Rust parameterization)
+- [x] Port PQR parsing to Rust (`formats/pqr.rs`)
+- [x] Delete `physics_utils.py` (use Rust parameterization)
 - [ ] Refactor `utils.py` to remove biotite dependency
 - [ ] Simplify `mdtraj.py` - remove biotite conversion layer
-- [ ] Port `assign_masses()` to Rust
+- [x] Port `assign_masses()` to Rust
 - [ ] Update `structures.py` type hints
 
 ---
@@ -69,7 +69,7 @@
 ## Current Rust Modules
 
 ```
-rust_ext/src/physics/
+oxidize/src/physics/
 ├── mod.rs
 ├── constants.rs
 ├── electrostatics.rs
@@ -86,7 +86,7 @@ rust_ext/src/physics/
 
 ```python
 # Structure parsing with MD parameterization
-from priox.io.parsing.rust import parse_structure, OutputSpec
+from proxide.io.parsing.rust import parse_structure, OutputSpec
 spec = OutputSpec()
 spec.parameterize_md = True
 spec.force_field = "protein.ff14SB"
@@ -97,7 +97,7 @@ protein = parse_structure("structure.pdb", spec)
 
 ## Bridge Directory (Minimal)
 
-Only 2 files remain in `src/priox/md/bridge/`:
+Only 2 files remain in `src/proxide/md/bridge/`:
 
 - `types.py` - TypedDict definitions for SystemParams
 - `utils.py` - Mass assignment helper (~25 lines)
@@ -168,12 +168,12 @@ except ImportError:
 
 ---
 
-### 7.3 Split `lib.rs` Into Modules
+### 7.3 Split `lib.rs` Into Modules ✅
 
 Current `lib.rs` is ~1670 lines. Recommended split:
 
 ```
-rust_ext/src/
+oxidize/src/
 ├── lib.rs           # Module exports, pymodule registration only
 ├── py_parsers.rs    # parse_pdb, parse_structure, parse_mmcif, parse_pqr
 ├── py_trajectory.rs # parse_xtc, parse_dcd, parse_trr
@@ -182,10 +182,10 @@ rust_ext/src/
 └── py_chemistry.rs  # assign_masses, assign_gaff_atom_types, etc.
 ```
 
-- [ ] Create module files with function implementations
-- [ ] Update `lib.rs` to import and re-export
-- [ ] Verify with `maturin develop`
-- [ ] Run full test suite
+- [x] Create module files with function implementations
+- [x] Update `lib.rs` to import and re-export
+- [x] Verify with `maturin develop`
+- [x] Run full test suite
 
 ---
 

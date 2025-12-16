@@ -1,3 +1,1 @@
-"""Physics modules for priox."""
-
-
+"""Physics modules for proxide."""

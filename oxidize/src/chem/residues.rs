@@ -1,6 +1,6 @@
 //! Chemistry constants for protein structures
 //! 
-//! This module contains constants ported from priox/chem/residues.py
+//! This module contains constants ported from proxide/chem/residues.py
 //! for residue types, atom ordering, and residue-specific atom masks.
 //!
 //! Note: Some utilities are used internally and will be fully exposed later.

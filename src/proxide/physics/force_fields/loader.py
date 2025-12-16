@@ -2,27 +2,26 @@
 
 from __future__ import annotations
 
-import numpy as np
-import jax.numpy as jnp
 from pathlib import Path
 from typing import Any
 
+import jax.numpy as jnp
+import numpy as np
+from flax.struct import dataclass, field
+
+from proxide.io.parsing import rust as rw
 from proxide.physics.constants import DEFAULT_EPSILON, DEFAULT_SIGMA
 from proxide.physics.force_fields.components import (
+  AnglePotentialParams,
   AtomTypeParams,
   BondPotentialParams,
-  AnglePotentialParams,
-  DihedralPotentialParams,
   CMAPParams,
+  DihedralPotentialParams,
+  GAFFNonbondedParams,
+  NonbondedGlobalParams,
   UreyBradleyParams,
   VirtualSiteParams,
-  NonbondedGlobalParams,
-  GAFFNonbondedParams,
 )
-
-
-from flax.struct import dataclass, field
-from proxide.io.parsing import rust as rw
 
 
 @dataclass(frozen=True)
@@ -46,7 +45,8 @@ class FullForceField:
 
   # Top-level Metadata (must have defaults since they follow gaff_nonbonded_params)
   residue_templates: dict[str, list[tuple[str, str]]] = field(
-    default_factory=dict, pytree_node=False
+    default_factory=dict,
+    pytree_node=False,
   )
   source_files: list[str] = field(default_factory=list, pytree_node=False)
 
@@ -144,7 +144,6 @@ class FullForceField:
 
 def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> FullForceField:
   """Convert parsed ForceFieldData to FullForceField."""
-
   # 1. Expand atoms from residue templates to build ID maps
   atom_key_to_id = {}
   id_to_atom_key = []
@@ -154,11 +153,10 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
   # Build type -> class map
   type_to_class = {}
   for at in ff_data.atom_types:
-      t_name = at.get("name")
-      t_class = at.get("class")
-      if t_name:
-          type_to_class[t_name] = t_class if t_class else t_name
-
+    t_name = at.get("name")
+    t_class = at.get("class")
+    if t_name:
+      type_to_class[t_name] = t_class if t_class else t_name
 
   # Pre-process nonbonded params for fast lookup by type/class
   # Note: Using class if available, else type. In XML, often type or class is used.
@@ -199,12 +197,11 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
       atom_key_to_id[key] = idx
       id_to_atom_key.append(key)
       atom_type_map[f"{res_name}|{atom_name}"] = atom_type
-      
+
       # Populate atom_class_map for core.py dihedral matching
       # Key format: "{res_name}_{atom_name}" (e.g. "ALA_CA", "NALA_N")
       class_name = type_to_class.get(atom_type, atom_type)
       atom_class_map[f"{res_name}_{atom_name}"] = class_name
-
 
       # Look up params
       # Charge: atom.charge (from residue def) usually takes precedence
@@ -267,7 +264,8 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
 
   # Dihedrals
   dihedral_params = DihedralPotentialParams(
-    propers=ff_data.proper_torsions, impropers=ff_data.improper_torsions
+    propers=ff_data.proper_torsions,
+    impropers=ff_data.improper_torsions,
   )
 
   # CMAP
@@ -292,7 +290,8 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
     energy_grids = jnp.zeros((0, 24, 24), dtype=jnp.float32)
 
   cmap_params = CMAPParams(
-    energy_grids=energy_grids, torsions=ff_data.cmap_torsions if ff_data.cmap_torsions else []
+    energy_grids=energy_grids,
+    torsions=ff_data.cmap_torsions if ff_data.cmap_torsions else [],
   )
 
   # Defaults for others
@@ -309,7 +308,6 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
     # core.py expects residue_templates to be a list of bond pairs (atom1, atom2)
     # Rust extraction returns "bonds" as list of strings (a1, a2)
     res_templates_meta[res_name] = res.get("bonds", [])
-
 
   return FullForceField(
     atom_params=atom_params,
@@ -339,7 +337,7 @@ def load_force_field(
     # Assets in src/priox/assets
     # Relative: ../../assets
     asset_dir = Path(__file__).parent.parent.parent / "assets"
-    
+
     # Try direct match in root
     potential_path = asset_dir / path.name
     if potential_path.exists():
@@ -371,7 +369,7 @@ def list_available_force_fields() -> list[str]:
     # Get path relative to assets directory
     rel_path = xml_file.relative_to(asset_dir)
     # Return stem (filename without .xml) with parent path if in subdir
-    if rel_path.parent != Path("."):
+    if rel_path.parent != Path():
       result.append(str(rel_path.parent / rel_path.stem))
     else:
       result.append(rel_path.stem)
