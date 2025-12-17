@@ -1,4 +1,4 @@
-"""Atomic system definitions for Proxide.
+"""Atomic system definitions for PrioX.
 
 This module defines the base classes for atomic systems, including
 proteins, small molecules, and complexes.
@@ -120,7 +120,7 @@ class AtomicSystem:
 
     # Check if molecule_type is packed (size mismatch with atom_mask)
     if self.molecule_type.size != self.atom_mask.size:
-      return int(jnp.sum(self.molecule_type == 0))
+        return int(jnp.sum(self.molecule_type == 0))
 
     return int(jnp.sum((self.molecule_type == 0) & (self.atom_mask > 0)))
 
@@ -131,7 +131,7 @@ class AtomicSystem:
       return 0
 
     if self.molecule_type.size != self.atom_mask.size:
-      return int(jnp.sum(self.molecule_type == 1))
+        return int(jnp.sum(self.molecule_type == 1))
 
     return int(jnp.sum((self.molecule_type == 1) & (self.atom_mask > 0)))
 
@@ -147,6 +147,7 @@ class AtomicSystem:
     """
     if self.bonds is None:
       return None
+
 
     try:
       from scipy.sparse import csr_matrix
@@ -310,7 +311,12 @@ class AtomicSystem:
 
     import numpy as np
 
-    mask = np.asarray(self.atom_mask) > 0.5
+    # Handle Atom37 format masks: (N_res, 37) -> flatten to (N_res*37,)
+    mask_raw = np.asarray(self.atom_mask)
+    if mask_raw.ndim > 1:
+      mask = mask_raw.flatten() > 0.5
+    else:
+      mask = mask_raw > 0.5
     n_atoms = int(np.sum(mask))
 
     if n_atoms == 0:
@@ -353,7 +359,7 @@ class AtomicSystem:
     sigmas = np.asarray(self.sigmas) if self.sigmas is not None else np.ones(n_atoms) * 0.3
     epsilons = np.asarray(self.epsilons) if self.epsilons is not None else np.zeros(n_atoms)
 
-    # Convert units: proxide uses Angstroms and kcal/mol, OpenMM uses nm and kJ/mol
+    # Convert units: priox uses Angstroms and kcal/mol, OpenMM uses nm and kJ/mol
     sigmas_nm = sigmas * 0.1  # Å to nm
     epsilons_kjmol = epsilons * 4.184  # kcal/mol to kJ/mol
 
@@ -399,11 +405,7 @@ class AtomicSystem:
           theta = float(angle_params[a_idx, 0])  # Already in radians
           k_angle = float(angle_params[a_idx, 1]) * 4.184  # kcal/mol/rad² to kJ/mol/rad²
           angle_force.addAngle(
-            i,
-            j,
-            k,
-            theta * u.radian,
-            k_angle * u.kilojoule_per_mole / u.radian**2,
+            i, j, k, theta * u.radian, k_angle * u.kilojoule_per_mole / u.radian**2,
           )
 
       system.addForce(angle_force)
@@ -496,14 +498,8 @@ class AtomicSystem:
             # Psi: N(i)-CA(i)-C(i)-N(i+1) -> atoms[1:5]
             cmap_force.addTorsion(
               cmap_idx,
-              atoms[0],
-              atoms[1],
-              atoms[2],
-              atoms[3],  # phi atoms
-              atoms[1],
-              atoms[2],
-              atoms[3],
-              atoms[4],  # psi atoms
+              atoms[0], atoms[1], atoms[2], atoms[3],  # phi atoms
+              atoms[1], atoms[2], atoms[3], atoms[4],  # psi atoms
             )
 
         system.addForce(cmap_force)
@@ -606,16 +602,8 @@ class AtomicSystem:
 
     # Merge molecule_type (preserve from both)
     if self.molecule_type is not None or other.molecule_type is not None:
-      mt1 = (
-        self.molecule_type
-        if self.molecule_type is not None
-        else jnp.zeros(n_atoms_self, dtype=jnp.int32)
-      )
-      mt2 = (
-        other.molecule_type
-        if other.molecule_type is not None
-        else jnp.ones(n_atoms_other, dtype=jnp.int32)
-      )
+      mt1 = self.molecule_type if self.molecule_type is not None else jnp.zeros(n_atoms_self, dtype=jnp.int32)
+      mt2 = other.molecule_type if other.molecule_type is not None else jnp.ones(n_atoms_other, dtype=jnp.int32)
       new_molecule_type = jnp.concatenate([mt1, mt2], axis=0)
     else:
       new_molecule_type = None

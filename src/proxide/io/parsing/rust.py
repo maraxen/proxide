@@ -28,7 +28,7 @@ def load_rust(
   **kwargs: Any,
 ) -> ProteinStream:
   """Load a protein structure using the Rust extension.
-
+  
   Args:
       file_path: Path to the structure file.
       chain_id: Unused for now in Rust parser (filtering happens post-parse if needed).
@@ -38,7 +38,7 @@ def load_rust(
       add_hydrogens: Whether to add hydrogens.
       infer_bonds: Whether to infer connectivity.
       **kwargs: Additional args passed to OutputSpec.
-
+      
   Yields:
       Protein instances.
 
@@ -49,53 +49,54 @@ def load_rust(
   spec.infer_bonds = infer_bonds
   # If populate_physics is requested, we need a force field
   if populate_physics and force_field_name:
-    spec.parameterize_md = True
-    spec.force_field = force_field_name
+      spec.parameterize_md = True
+      spec.force_field = force_field_name
   elif populate_physics:
-    # If physics requested but no FF, we assume we might error or just skip?
-    pass
+      # If physics requested but no FF, we assume we might error or just skip?
+      pass
 
   # Handle other kwargs
   if "remove_solvent" in kwargs:
-    spec.remove_solvent = kwargs["remove_solvent"]
+      spec.remove_solvent = kwargs["remove_solvent"]
 
   try:
     if hasattr(file_path, "read"):
-      # Handle file-like objects (StringIO, etc)
-      import os
-      import tempfile
+        # Handle file-like objects (StringIO, etc)
+        import os
+        import tempfile
 
-      # Read content
-      content = file_path.read()
-      if hasattr(content, "encode"):
-        # String content - assume PDB (default) unless detectable?
-        # For StringIO, we don't know suffix. Default to .pdb
-        suffix = ".pdb"
-        mode = "w"
-      else:
-        # Bytes content
-        suffix = ".pdb"  # Fallback
-        mode = "wb"
+        # Read content
+        content = file_path.read()
+        if hasattr(content, "encode"):
+             # String content - assume PDB (default) unless detectable?
+             # For StringIO, we don't know suffix. Default to .pdb
+             suffix = ".pdb"
+             mode = "w"
+        else:
+             # Bytes content
+             suffix = ".pdb" # Fallback
+             mode = "wb"
 
-      with tempfile.NamedTemporaryFile(mode=mode, suffix=suffix, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
+        with tempfile.NamedTemporaryFile(mode=mode, suffix=suffix, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
 
-      try:
-        result_dict = oxidize.parse_structure(tmp_path, spec)
-        protein = Protein.from_rust_dict(result_dict, source="<stream>")
-        yield protein
-      finally:
-        if os.path.exists(tmp_path):
-          os.unlink(tmp_path)
+        try:
+            result_dict = oxidize.parse_structure(tmp_path, spec)
+            protein = Protein.from_rust_dict(result_dict, source="<stream>")
+            yield protein
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
     else:
-      path_str = str(file_path)
-      result_dict = oxidize.parse_structure(path_str, spec)
-      protein = Protein.from_rust_dict(result_dict, source=path_str)
-      yield protein
+        path_str = str(file_path)
+        result_dict = oxidize.parse_structure(path_str, spec)
+        protein = Protein.from_rust_dict(result_dict, source=path_str)
+        yield protein
 
   except Exception as e:
     raise ParsingError(f"Rust parsing failed for {file_path}: {e}") from e
+
 
 
 # =============================================================================
@@ -276,37 +277,10 @@ def parse_structure(file_path: str | Path, spec=None, use_jax: bool = True) -> P
 
 
 # Export Rust types
-# These should be available from the oxidize module directly if PyO3 exports them correctly
-from oxidize import CoordFormat, ErrorMode, MissingResidueMode, OutputSpec
+from oxidize import OutputSpec
 
 # Optional XTC support
 parse_xtc = getattr(oxidize, "parse_xtc", None)
-
-__all__ = [
-  "OutputSpec",
-  "CoordFormat",
-  "ErrorMode",
-  "MissingResidueMode",
-  "load_rust",
-  "parse_structure",
-  "parse_pdb_to_protein",
-  "parse_pdb_raw_rust",
-  "parse_mmcif_rust",
-  "load_forcefield_rust",
-  "parse_xtc_rust",
-  "parse_mdtraj_h5_metadata",
-  "parse_mdtraj_h5_frame",
-  "parse_mdcath_metadata",
-  "get_mdcath_replicas",
-  "parse_mdcath_frame",
-  "is_hdf5_support_available",
-  "is_rust_parser_available",
-  "get_rust_capabilities",
-  "RawAtomData",
-  "ForceFieldData",
-  "MdtrajH5Data",
-  "MdcathData",
-]
 
 
 def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
@@ -601,7 +575,7 @@ def is_hdf5_support_available() -> bool:
 
 def is_rust_parser_available() -> bool:
   """Check if Rust parser is available.
-
+  
   Always returns True since oxidize is now a hard dependency.
   """
   return True

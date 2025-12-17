@@ -45,8 +45,7 @@ class FullForceField:
 
   # Top-level Metadata (must have defaults since they follow gaff_nonbonded_params)
   residue_templates: dict[str, list[tuple[str, str]]] = field(
-    default_factory=dict,
-    pytree_node=False,
+    default_factory=dict, pytree_node=False,
   )
   source_files: list[str] = field(default_factory=list, pytree_node=False)
 
@@ -153,10 +152,11 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
   # Build type -> class map
   type_to_class = {}
   for at in ff_data.atom_types:
-    t_name = at.get("name")
-    t_class = at.get("class")
-    if t_name:
-      type_to_class[t_name] = t_class if t_class else t_name
+      t_name = at.get("name")
+      t_class = at.get("class")
+      if t_name:
+          type_to_class[t_name] = t_class if t_class else t_name
+
 
   # Pre-process nonbonded params for fast lookup by type/class
   # Note: Using class if available, else type. In XML, often type or class is used.
@@ -202,6 +202,7 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
       # Key format: "{res_name}_{atom_name}" (e.g. "ALA_CA", "NALA_N")
       class_name = type_to_class.get(atom_type, atom_type)
       atom_class_map[f"{res_name}_{atom_name}"] = class_name
+
 
       # Look up params
       # Charge: atom.charge (from residue def) usually takes precedence
@@ -264,8 +265,7 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
 
   # Dihedrals
   dihedral_params = DihedralPotentialParams(
-    propers=ff_data.proper_torsions,
-    impropers=ff_data.improper_torsions,
+    propers=ff_data.proper_torsions, impropers=ff_data.improper_torsions,
   )
 
   # CMAP
@@ -290,8 +290,7 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
     energy_grids = jnp.zeros((0, 24, 24), dtype=jnp.float32)
 
   cmap_params = CMAPParams(
-    energy_grids=energy_grids,
-    torsions=ff_data.cmap_torsions if ff_data.cmap_torsions else [],
+    energy_grids=energy_grids, torsions=ff_data.cmap_torsions if ff_data.cmap_torsions else [],
   )
 
   # Defaults for others
@@ -308,6 +307,7 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
     # core.py expects residue_templates to be a list of bond pairs (atom1, atom2)
     # Rust extraction returns "bonds" as list of strings (a1, a2)
     res_templates_meta[res_name] = res.get("bonds", [])
+
 
   return FullForceField(
     atom_params=atom_params,

@@ -233,17 +233,18 @@ pub fn kabsch_rotation(fixed: &[[f32; 3]; 3], mobile: &[[f32; 3]; 3]) -> [[f32; 
     let u = svd.u.unwrap();
     let vt = svd.v_t.unwrap();
 
-    // Rotation matrix R = V × U^T
-    let mut r = vt.transpose() * u.transpose();
+    // Rotation matrix R = U × V^T
+    // This rotates mobile coordinates onto fixed coordinates
+    let mut r = u * vt;
 
     // Check for reflection (det(R) should be +1, not -1)
     if r.determinant() < 0.0 {
-        // Fix by negating the last column of V (or equivalently last row of V^T)
-        let mut vt_fixed = vt;
-        for j in 0..3 {
-            vt_fixed[(2, j)] = -vt_fixed[(2, j)];
+        // Fix by negating the last column of U
+        let mut u_fixed = u;
+        for i in 0..3 {
+            u_fixed[(i, 2)] = -u_fixed[(i, 2)];
         }
-        r = vt_fixed.transpose() * u.transpose();
+        r = u_fixed * vt;
     }
 
     // Convert back to [[f32; 3]; 3]

@@ -217,21 +217,36 @@ pub fn parameterize_structure(
                 atom_types[atom_idx] = template_atom.atom_type.clone();
 
                 // Get Class from Atom Type
-                if let Some(at) = ff.get_atom_type(&template_atom.atom_type) {
-                    atom_classes[atom_idx] = at.class.clone();
+                let atom_class = if let Some(at) = ff.get_atom_type(&template_atom.atom_type) {
+                    at.class.clone()
                 } else {
-                    atom_classes[atom_idx] = template_atom.atom_type.clone(); // Fallback
-                }
+                    template_atom.atom_type.clone() // Fallback
+                };
+                atom_classes[atom_idx] = atom_class.clone();
 
-                // Look up LJ params by atom type
+                // Look up LJ params by atom type, then fallback to class
+                // This handles CMAP-specific types (e.g., "cmap-TYR-N") that have
+                // a class (e.g., "protein-N") with nonbonded params.
                 if let Some(nb) = nonbonded_map.get(&template_atom.atom_type) {
+                    sigmas[atom_idx] = nb.sigma;
+                    epsilons[atom_idx] = nb.epsilon;
+                } else if let Some(nb) = nonbonded_map.get(&atom_class) {
+                    // Fallback to class-based lookup
                     sigmas[atom_idx] = nb.sigma;
                     epsilons[atom_idx] = nb.epsilon;
                 }
 
-                // Look up GBSA params if available
+                // Look up GBSA params if available (same fallback logic)
                 if has_gbsa {
                     if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
+                        if let Some(ref mut r) = radii {
+                            r[atom_idx] = gbsa.radius;
+                        }
+                        if let Some(ref mut s) = scales {
+                            s[atom_idx] = gbsa.scale;
+                        }
+                    } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
+                        // Fallback to class-based lookup
                         if let Some(ref mut r) = radii {
                             r[atom_idx] = gbsa.radius;
                         }
