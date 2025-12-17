@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Literal
 
 import jax.numpy as jnp
 import numpy as np
-from flax.struct import dataclass, field
+from flax.struct import dataclass
 
 from proxide.chem.residues import atom_order
 
@@ -124,20 +124,9 @@ class Protein(AtomicSystem):
   # Derived features
   physics_features: jnp.ndarray | None = None
   backbone_indices: jnp.ndarray | None = None
-  vdw_features: jnp.ndarray | None = None
-  rbf_features: jnp.ndarray | None = None
-  electrostatic_features: jnp.ndarray | None = None
 
   # Coordinate format (set by parser)
-  format: Literal["Atom37", "Atom14", "Full", "BackboneOnly"] | None = field(
-    pytree_node=False, default=None
-  )
-
-  # AtomicSystem overrides to ensure strings are static
-  elements: Sequence[str] | None = field(pytree_node=False, default=None)
-  atom_names: Sequence[str] | None = field(pytree_node=False, default=None)
-  atom_types: Sequence[str] | None = field(pytree_node=False, default=None)
-  molecule_type: str | None = field(pytree_node=False, default=None)
+  format: Literal["Atom37", "Atom14", "Full", "BackboneOnly"] | None = None
 
   @classmethod
   def from_rust_dict(
@@ -167,16 +156,45 @@ class Protein(AtomicSystem):
 
     # Check if we can/should reshape to Atom37 (N, 37, 3)
     # or if we have a flat structure (N_atoms, 3)
-    is_atom37 = (
-      (raw_coords.ndim == 3 and raw_coords.shape[1] == 37)
-      or (raw_coords.ndim == 2 and raw_coords.size == num_residues * 37 * 3)
-      or (raw_coords.ndim == 1 and raw_coords.size == num_residues * 37 * 3)
-    )
+    is_atom37 = (raw_coords.ndim == 3 and raw_coords.shape[1] == 37) or \
+                (raw_coords.ndim == 2 and raw_coords.size == num_residues * 37 * 3) or \
+                (raw_coords.ndim == 1 and raw_coords.size == num_residues * 37 * 3)
 
     if use_jax:
       convert = jnp.asarray
     else:
       convert = np.asarray
+
+    # Unit conversion constants (OpenMM nm/kJ -> Prolix A/kcal)
+    NM_TO_ANGSTROM = 10.0
+    KJMOL_TO_KCALMOL = 0.2390057
+    BOND_K_FACTOR = KJMOL_TO_KCALMOL / (NM_TO_ANGSTROM ** 2)
+
+    def convert_params(arr, type_):
+        if arr is None: return None
+        arr = np.array(arr, dtype=np.float32)
+        if type_ == "bond":
+             # [length, k]
+             arr[:, 0] *= NM_TO_ANGSTROM
+             arr[:, 1] *= BOND_K_FACTOR
+        elif type_ == "angle":
+             # [theta, k] - theta is rad (no change), k is energy/rad^2
+             arr[:, 1] *= KJMOL_TO_KCALMOL
+        elif type_ == "dihedral":
+             # [per, phase, k] - phase rad, k energy
+             arr[:, 2] *= KJMOL_TO_KCALMOL
+        elif type_ == "improper":
+             # [per, phase, k]
+             arr[:, 2] *= KJMOL_TO_KCALMOL
+        elif type_ == "length":
+             arr *= NM_TO_ANGSTROM
+        elif type_ == "energy":
+             arr *= KJMOL_TO_KCALMOL
+        
+        if use_jax:
+            return jnp.asarray(arr)
+        return arr
+
 
     if is_atom37:
       # Reshape coordinates and atom_mask to (N, 37, ...)
@@ -200,33 +218,25 @@ class Protein(AtomicSystem):
         atom_names=None,
         # Optional fields from Rust
         charges=convert(rust_dict["charges"]) if rust_dict.get("charges") is not None else None,
-        radii=convert(rust_dict["radii"]) if rust_dict.get("radii") is not None else None,
-        sigmas=convert(rust_dict["sigmas"]) if rust_dict.get("sigmas") is not None else None,
-        epsilons=convert(rust_dict["epsilons"]) if rust_dict.get("epsilons") is not None else None,
+        radii=convert_params(rust_dict.get("radii") if rust_dict.get("radii") is not None else rust_dict.get("gbsa_radii"), "length") if (rust_dict.get("radii") is not None or rust_dict.get("gbsa_radii") is not None) else None,
+        sigmas=convert_params(rust_dict.get("sigmas"), "length") if rust_dict.get("sigmas") is not None else None,
+        epsilons=convert_params(rust_dict.get("epsilons"), "energy") if rust_dict.get("epsilons") is not None else None,
         molecule_type=convert(rust_dict["molecule_type"])
         if rust_dict.get("molecule_type") is not None
         else None,
         # Topology / GAFF
         atom_types=rust_dict.get("atom_types"),
         bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
+        bond_params=convert_params(rust_dict.get("bond_params"), "bond") if rust_dict.get("bond_params") is not None else None,
         angles=convert(rust_dict["angles"]) if rust_dict.get("angles") is not None else None,
+        angle_params=convert_params(rust_dict.get("angle_params"), "angle") if rust_dict.get("angle_params") is not None else None,
         proper_dihedrals=convert(rust_dict["dihedrals"])
         if rust_dict.get("dihedrals") is not None
         else None,
-        impropers=convert(rust_dict["impropers"])
-        if rust_dict.get("impropers") is not None
-        else None,
+        dihedral_params=convert_params(rust_dict.get("dihedral_params"), "dihedral") if rust_dict.get("dihedral_params") is not None else None,
+        impropers=convert(rust_dict["impropers"]) if rust_dict.get("impropers") is not None else None,
+        improper_params=convert_params(rust_dict.get("improper_params"), "improper") if rust_dict.get("improper_params") is not None else None,
         format="Atom37",
-        # Features
-        vdw_features=convert(rust_dict["vdw_features"])
-        if rust_dict.get("vdw_features") is not None
-        else None,
-        rbf_features=convert(rust_dict["rbf_features"])
-        if rust_dict.get("rbf_features") is not None
-        else None,
-        electrostatic_features=convert(rust_dict["electrostatic_features"])
-        if rust_dict.get("electrostatic_features") is not None
-        else None,
       )
     # Flat format (Full)
     # In this case, Protein fields like 'mask' (CA mask) need to be derived differently
@@ -238,52 +248,49 @@ class Protein(AtomicSystem):
     # For CA mask: we don't have CA info easily unless we assume input is CA-only (unlikely)
     # or check atom names if provided.
     # For now, we set mask to ones (all residues present)
-    mask_dummy = np.ones((num_residues, 37), dtype=np.float32)  # Dummy
+    mask_dummy = np.ones((num_residues, 37), dtype=np.float32) # Dummy
 
     # Full format elements/atom_names handling
     atom_names = rust_dict.get("atom_names")
     elements = rust_dict.get("elements")
 
     if elements is None and atom_names is not None:
-      # Infer elements from atom names if missing
-      elements = [name[0].upper() if name else "C" for name in atom_names]
+        # Infer elements from atom names if missing
+        elements = [name[0].upper() if name else "C" for name in atom_names]
 
     return cls(
-      coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),  # (N_padded, 3)
+      coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3), # (N_padded, 3)
       aatype=convert(rust_dict["aatype"], dtype=np.int8),
       one_hot_sequence=convert(np.eye(21)[rust_dict["aatype"]]),
-      mask=convert(np.ones(num_residues), dtype=np.float32),  # Residue mask
+      mask=convert(np.ones(num_residues), dtype=np.float32), # Residue mask
       residue_index=convert(rust_dict["residue_index"], dtype=np.int32),
       chain_index=convert(rust_dict["chain_index"], dtype=np.int32),
       # AtomicSystem
-      atom_mask=convert(raw_mask, dtype=np.float32),  # Flat mask
+      atom_mask=convert(raw_mask, dtype=np.float32), # Flat mask
+
       elements=elements,
       atom_names=atom_names,
+
       charges=convert(rust_dict["charges"]) if rust_dict.get("charges") is not None else None,
-      radii=convert(rust_dict["radii"]) if rust_dict.get("radii") is not None else None,
-      sigmas=convert(rust_dict["sigmas"]) if rust_dict.get("sigmas") is not None else None,
-      epsilons=convert(rust_dict["epsilons"]) if rust_dict.get("epsilons") is not None else None,
+      radii=convert_params(rust_dict.get("radii") if rust_dict.get("radii") is not None else rust_dict.get("gbsa_radii"), "length") if (rust_dict.get("radii") is not None or rust_dict.get("gbsa_radii") is not None) else None,
+      sigmas=convert_params(rust_dict.get("sigmas"), "length") if rust_dict.get("sigmas") is not None else None,
+      epsilons=convert_params(rust_dict.get("epsilons"), "energy") if rust_dict.get("epsilons") is not None else None,
       molecule_type=convert(rust_dict["molecule_type"])
       if rust_dict.get("molecule_type") is not None
       else None,
+
       atom_types=rust_dict.get("atom_types"),
       bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
+      bond_params=convert_params(rust_dict.get("bond_params"), "bond") if rust_dict.get("bond_params") is not None else None,
       angles=convert(rust_dict["angles"]) if rust_dict.get("angles") is not None else None,
+      angle_params=convert_params(rust_dict.get("angle_params"), "angle") if rust_dict.get("angle_params") is not None else None,
       proper_dihedrals=convert(rust_dict["dihedrals"])
       if rust_dict.get("dihedrals") is not None
       else None,
+      dihedral_params=convert_params(rust_dict.get("dihedral_params"), "dihedral") if rust_dict.get("dihedral_params") is not None else None,
       impropers=convert(rust_dict["impropers"]) if rust_dict.get("impropers") is not None else None,
+      improper_params=convert_params(rust_dict.get("improper_params"), "improper") if rust_dict.get("improper_params") is not None else None,
       format="Full",
-      # Features
-      vdw_features=convert(rust_dict["vdw_features"])
-      if rust_dict.get("vdw_features") is not None
-      else None,
-      rbf_features=convert(rust_dict["rbf_features"])
-      if rust_dict.get("rbf_features") is not None
-      else None,
-      electrostatic_features=convert(rust_dict["electrostatic_features"])
-      if rust_dict.get("electrostatic_features") is not None
-      else None,
     )
 
 

@@ -47,6 +47,30 @@ structure = bio.load_structure("path/to/file.pdb")
 print(structure)
 ```
 
+### Hydrogen Addition
+
+Proxide supports automatic hydrogen placement with configurable source selection:
+
+```python
+from oxidize import OutputSpec, HydrogenSource, CoordFormat
+from proxide.io.parsing.rust import parse_structure
+
+spec = OutputSpec(
+    coord_format=CoordFormat.Full,
+    add_hydrogens=True,
+    hydrogen_source=HydrogenSource.FragmentLibrary,  # Geometric placement
+    relax_hydrogens=True  # Energy minimize after placement
+)
+
+protein = parse_structure("path/to/file.pdb", spec)
+```
+
+**HydrogenSource Options:**
+
+- `ForceFieldFirst` (default): Use FF templates, fallback to fragment library
+- `FragmentLibrary`: Use geometric placement via Kabsch alignment
+- `ForceFieldOnly`: Use FF templates only (fails if undefined)
+
 ### Sequence Conversion
 
 ```python

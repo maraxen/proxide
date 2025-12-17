@@ -595,6 +595,7 @@ dependencies = [
  "nalgebra",
  "nom",
  "numpy",
+ "once_cell",
  "pyo3",
  "pyo3-log",
  "quick-xml",

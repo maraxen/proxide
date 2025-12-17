@@ -46,6 +46,19 @@ pub enum MissingResidueMode {
     ClosestMatch,
 }
 
+/// Source for hydrogen atom placement
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HydrogenSource {
+    /// Use force field templates first, fallback to fragment library
+    #[default]
+    ForceFieldFirst,
+    /// Use fragment library only (geometric placement via Kabsch)
+    FragmentLibrary,
+    /// Use force field templates only (fail if not defined)
+    ForceFieldOnly,
+}
+
 /// Output specification for structure formatting
 #[pyclass]
 #[derive(Debug, Clone)]
@@ -71,6 +84,8 @@ pub struct OutputSpec {
     // Processing
     #[pyo3(get, set)]
     pub add_hydrogens: bool,
+    #[pyo3(get, set)]
+    pub hydrogen_source: HydrogenSource,
     #[pyo3(get, set)]
     pub relax_hydrogens: bool,
     #[pyo3(get, set)]
@@ -127,6 +142,7 @@ impl OutputSpec {
         remove_solvent=true,
         residue_range=None,
         add_hydrogens=false,
+        hydrogen_source=HydrogenSource::ForceFieldFirst,
         relax_hydrogens=false,
         relax_max_iterations=None,
         infer_bonds=false,
@@ -152,6 +168,7 @@ impl OutputSpec {
         remove_solvent: bool,
         residue_range: Option<(i32, i32)>,
         add_hydrogens: bool,
+        hydrogen_source: HydrogenSource,
         relax_hydrogens: bool,
         relax_max_iterations: Option<usize>,
         infer_bonds: bool,
@@ -177,6 +194,7 @@ impl OutputSpec {
             remove_solvent,
             residue_range,
             add_hydrogens,
+            hydrogen_source,
             relax_hydrogens,
             relax_max_iterations,
             infer_bonds,
@@ -208,6 +226,7 @@ impl Default for OutputSpec {
             remove_solvent: true,
             residue_range: None,
             add_hydrogens: false,
+            hydrogen_source: HydrogenSource::ForceFieldFirst,
             relax_hydrogens: false,
             relax_max_iterations: None,
             infer_bonds: false,
