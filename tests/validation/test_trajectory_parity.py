@@ -147,9 +147,9 @@ def test_hdf5_parsing_parity():
         traj = mdtraj.load(str(TRR_FILE), top=str(PDB_TOPOLOGY))
         traj.save(str(HDF5_FILE))
         
-    try:
-        from proxide import parse_mdtraj_h5_metadata, parse_mdtraj_h5_frame
-    except ImportError:
+    from proxide.io.parsing.rust import is_hdf5_support_available, parse_mdtraj_h5_metadata, parse_mdtraj_h5_frame
+    
+    if not is_hdf5_support_available():
         pytest.skip("HDF5 support not available (mdcath feature not compiled)")
 
     # Load with MDTraj
@@ -159,14 +159,14 @@ def test_hdf5_parsing_parity():
     metadata = parse_mdtraj_h5_metadata(str(HDF5_FILE))
     
     # Compare counts
-    assert metadata["num_frames"] == traj_mdtraj.n_frames
-    assert metadata["num_atoms"] == traj_mdtraj.n_atoms
+    assert metadata.num_frames == traj_mdtraj.n_frames
+    assert metadata.num_atoms == traj_mdtraj.n_atoms
     
     # Load frames
     rust_frames = []
-    for i in range(metadata["num_frames"]):
+    for i in range(metadata.num_frames):
         frame = parse_mdtraj_h5_frame(str(HDF5_FILE), i)
-        rust_frames.append(frame["coords"])
+        rust_frames.append(frame.coords)
         
     rust_coords = np.array(rust_frames)
     mdtraj_coords = traj_mdtraj.xyz # nm
