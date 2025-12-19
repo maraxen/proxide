@@ -1,6 +1,6 @@
 # Agent Development Guidelines
 
-This document provides essential guidelines for AI agents working on the priox codebase.
+This document provides essential guidelines for AI agents working on the proxide codebase.
 
 ## Current Status (Dec 2025)
 
@@ -23,7 +23,7 @@ This document provides essential guidelines for AI agents working on the priox c
 
 - **Pure-Rust TRR/DCD:** Researching alternatives (groan_rs, custom parsers)
 - **Documentation Refresh:** Update docs/ folder with current API
-- **CMAPForce:** Not yet implemented (for ff14SB/ff19SB backbone)
+- **CMAPForce:** ✅ Implemented
 
 ---
 
@@ -89,17 +89,17 @@ print('hello')
 
 ```bash
 # Build with maturin (installs into current venv)
-timeout 180 cd rust_ext && maturin develop --release
+timeout 180 cd oxidize && maturin develop --release
 
 # Run Rust tests only
-timeout 60 cd rust_ext && cargo test --lib
+timeout 60 cd oxidize && cargo test --lib
 ```
 
 ### Testing
 
 ```bash
 # Test the Rust extension from Python
-timeout 30 uv run python -c "import priox_rs; print(priox_rs)"
+timeout 30 uv run python -c "import oxidize; print(oxidize)"
 ```
 
 ## Environment
@@ -116,10 +116,10 @@ timeout 30 uv run python -c "import priox_rs; print(priox_rs)"
 
 | Class | Location | Description |
 |-------|----------|-------------|
-| `AtomicSystem` | `src/priox/core/atomic_system.py` | Base class for all atomic systems |
-| `Protein` | `src/priox/core/containers.py` | Protein structure (inherits AtomicSystem) |
-| `Molecule` | `src/priox/core/atomic_system.py` | Small molecule/ligand |
-| `FullForceField` | `src/priox/physics/force_fields/loader.py` | Force field parameter container |
+| `AtomicSystem` | `src/proxide/core/atomic_system.py` | Base class for all atomic systems |
+| `Protein` | `src/proxide/core/containers.py` | Protein structure (inherits AtomicSystem) |
+| `Molecule` | `src/proxide/core/atomic_system.py` | Small molecule/ligand |
+| `FullForceField` | `src/proxide/physics/force_fields/loader.py` | Force field parameter container |
 
 ### Key Methods
 
@@ -146,11 +146,11 @@ timeout 30 uv run python -c "import priox_rs; print(priox_rs)"
 
 | File | Purpose |
 |------|---------|
-| `121211.md` | Master task list with current priorities |
 | `ROADMAP.md` | Long-term architecture roadmap |
 | `TECHNICAL_DEBT.md` | Known issues and deferred work |
 | `VALIDATION_ROADMAP.md` | Parity testing checklist |
 | `ATOMIC_SYSTEM_ARCHITECTURE.md` | AtomicSystem design docs |
+| `archive/` | Historical migration and task tracking |
 
 ---
 
