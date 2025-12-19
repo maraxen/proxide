@@ -55,7 +55,7 @@ END
         
         # Parse with parameterization
         import proxide_rs
-        result = oxidize.parse_structure(str(simple_pdb), spec)
+        result = _oxidize.parse_structure(str(simple_pdb), spec)
         
         # Check that charges were assigned
         assert "charges" in result, "Missing charges in result"
@@ -85,7 +85,7 @@ END
         )
         
         import proxide_rs
-        result = oxidize.parse_structure(str(simple_pdb), spec)
+        result = _oxidize.parse_structure(str(simple_pdb), spec)
         
         charges = result["charges"]
         
@@ -99,8 +99,8 @@ END
 
     def test_no_parameterization_by_default(self, simple_pdb):
         """Test that parameterization is disabled by default."""
-        import oxidize
-        result = oxidize.parse_structure(str(simple_pdb))
+        from proxide import _oxidize
+        result = _oxidize.parse_structure(str(simple_pdb))
         
         # Should not have MD params when not requested
         assert "charges" not in result or result.get("charges") is None
@@ -115,8 +115,8 @@ END
             # force_field not set
         )
     
-        import oxidize
-        result = oxidize.parse_structure(str(simple_pdb), spec)
+        from proxide import _oxidize
+        result = _oxidize.parse_structure(str(simple_pdb), spec)
         
         # Should complete without error, but no charges assigned
         assert "charges" not in result or result.get("charges") is None

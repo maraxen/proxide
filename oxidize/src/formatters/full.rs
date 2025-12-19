@@ -28,6 +28,8 @@ pub struct FormattedFull {
     pub residue_index: Vec<i32>,
     /// Chain indices: (N_res)
     pub chain_index: Vec<i32>,
+    /// Atom-level residue IDs: (N_atoms)
+    pub atom_residue_ids: Vec<i32>,
     /// Shape info: (num_residues, max_atoms_in_any_residue, 3)
     pub coord_shape: (usize, usize, usize),
 }
@@ -77,12 +79,16 @@ impl FullFormatter {
             .map(|r| *processed.chain_indices.get(&r.chain_id).unwrap_or(&0) as i32)
             .collect();
 
+        // Atom residue IDs (per atom)
+        let atom_residue_ids = processed.raw_atoms.res_ids.clone();
+
         Ok(FormattedFull {
             coordinates,
             atom_mask,
             atom_names,
             aatype,
             residue_index,
+            atom_residue_ids,
             chain_index,
             coord_shape: (num_atoms, 3, 1), // Flat shape indicator
         })
@@ -115,6 +121,10 @@ impl FormattedFull {
         dict.set_item(
             "chain_index",
             PyArray1::from_vec_bound(py, self.chain_index.clone()),
+        )?;
+        dict.set_item(
+            "atom_residue_ids",
+            PyArray1::from_vec_bound(py, self.atom_residue_ids.clone()),
         )?;
 
         // Atom names as Python list
@@ -179,22 +189,19 @@ mod tests {
         let spec = create_test_spec();
         let formatted = FullFormatter::format(&processed, &spec).unwrap();
 
-        // Verify dimensions
-        assert_eq!(formatted.coord_shape.0, 1); // 1 residue
-        assert!(formatted.coord_shape.1 >= 5); // at least 5 atoms
-        assert_eq!(formatted.coord_shape.2, 3); // 3D
+        // Verify dimensions - now flat (N_atoms, 3, 1)
+        assert_eq!(formatted.coord_shape.0, 5); // 5 atoms total
+        assert_eq!(formatted.coord_shape.1, 3); // 3D coordinates
+        assert_eq!(formatted.coord_shape.2, 1); // flat indicator
 
-        // Check aatype (ALA = 0)
+        // Check aatype (ALA = 0) - 1 residue
+        assert_eq!(formatted.aatype.len(), 1);
         assert_eq!(formatted.aatype[0], 0);
 
-        // Check that first 5 atoms have mask = 1
+        // All 5 atoms have mask = 1
+        assert_eq!(formatted.atom_mask.len(), 5);
         for i in 0..5 {
             assert_eq!(formatted.atom_mask[i], 1.0, "Atom {} should be present", i);
-        }
-
-        // Check padding has mask = 0
-        for i in 5..formatted.coord_shape.1 {
-            assert_eq!(formatted.atom_mask[i], 0.0, "Atom {} should be padding", i);
         }
 
         // Check atom names
@@ -254,25 +261,22 @@ mod tests {
         let spec = create_test_spec();
         let formatted = FullFormatter::format(&processed, &spec).unwrap();
 
-        // Should have 2 residues
-        assert_eq!(formatted.coord_shape.0, 2);
+        // Should have 9 atoms total in flat format
+        assert_eq!(formatted.coord_shape.0, 9); // 9 atoms total
+        assert_eq!(formatted.coord_shape.1, 3); // 3D
+        assert_eq!(formatted.coord_shape.2, 1); // flat indicator
+
+        // Should have 2 residues in aatype
         assert_eq!(formatted.aatype.len(), 2);
 
         // Check residue types
         assert_eq!(formatted.aatype[0], 0); // ALA
         assert_eq!(formatted.aatype[1], 7); // GLY
 
-        // First residue: 5 atoms present
-        let max_atoms = formatted.coord_shape.1;
-        for i in 0..5 {
+        // All 9 atoms have mask = 1 (no padding in flat format)
+        assert_eq!(formatted.atom_mask.len(), 9);
+        for i in 0..9 {
             assert_eq!(formatted.atom_mask[i], 1.0);
         }
-
-        // Second residue: 4 atoms present
-        for i in 0..4 {
-            assert_eq!(formatted.atom_mask[max_atoms + i], 1.0);
-        }
-        // 5th position should be padding
-        assert_eq!(formatted.atom_mask[max_atoms + 4], 0.0);
     }
 }

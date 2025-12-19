@@ -24,7 +24,7 @@ except ImportError:
     HAS_OPENMMFORCEFIELDS = False
 
 try:
-    import oxidize
+    from proxide import _oxidize
     
     HAS_OXIDIZE_RS = True
 except ImportError:
