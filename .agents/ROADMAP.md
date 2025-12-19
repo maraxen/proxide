@@ -1,6 +1,6 @@
 # Rust Extension Roadmap - ALL-RUST PIPELINE
 
-**Last Updated:** 2025-12-13 (Phase 5 Complete - Python/Biotite Migration)  
+**Last Updated:** 2025-12-19 (All Phases Complete)  
 **Architecture:** Parse → Format → Geometry Ops → AtomicSystem (ALL in Rust)
 
 ---
@@ -362,7 +362,7 @@ rust_ext/
 **Single entry point:**
 
 ```python
-from priox_rs import parse_structure, OutputSpec, CoordFormat
+from oxidize import parse_structure, OutputSpec, CoordFormat
 
 # Simple case (defaults to atom37, all models, remove solvent)
 protein = parse_structure("structure.pdb")
