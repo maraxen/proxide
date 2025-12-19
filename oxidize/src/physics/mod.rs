@@ -6,6 +6,7 @@
 pub mod cmap;
 pub mod constants;
 pub mod electrostatics;
+pub mod frame;
 pub mod gbsa;
 pub mod md_params;
 pub mod vdw;

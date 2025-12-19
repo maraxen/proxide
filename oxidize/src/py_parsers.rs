@@ -459,14 +459,31 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             if let Some(ref charges) = processed.raw_atoms.charges {
                 // Ensure charges match atoms
                 if charges.len() == processed.raw_atoms.num_atoms {
-                    let backbone_coords = processed.extract_backbone_coords();
+                    let mut backbone_coords = processed.extract_backbone_coords();
                     let all_coords = processed.extract_all_coords();
+                    let backbone_charges = processed.extract_backbone_charges();
 
-                    let features = physics::electrostatics::compute_electrostatic_features(
+                    // Infer missing CB positions (e.g. for Glycine or snippets)
+                    for res_bb in backbone_coords.iter_mut() {
+                        if res_bb[3][0].is_nan() {
+                            // 3 is CB_INDEX
+                            res_bb[3] =
+                                physics::frame::compute_c_beta(res_bb[0], res_bb[1], res_bb[2]);
+                        }
+                    }
+
+                    // Compute 3D forces at backbone atoms
+                    let forces = physics::electrostatics::compute_coulomb_forces_at_backbone(
                         &backbone_coords,
                         &all_coords,
+                        &backbone_charges,
                         charges,
                     );
+
+                    // Project forces onto local backbone frames
+                    // Result is flat vector (N_res * 5)
+                    let features =
+                        physics::frame::project_backbone_forces(&forces, &backbone_coords);
 
                     // Shape (N_res, 5)
                     let shape = (backbone_coords.len(), 5);
@@ -488,8 +505,16 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
         }
 
         if spec.compute_vdw {
-            let backbone_coords = processed.extract_backbone_coords();
+            let mut backbone_coords = processed.extract_backbone_coords();
             let all_coords = processed.extract_all_coords();
+
+            // Infer missing CB positions
+            for res_bb in backbone_coords.iter_mut() {
+                if res_bb[3][0].is_nan() {
+                    // 3 is CB_INDEX
+                    res_bb[3] = physics::frame::compute_c_beta(res_bb[0], res_bb[1], res_bb[2]);
+                }
+            }
 
             // Get LJ parameters - either from structure (parameterize_md) or defaults
             let (all_sigmas, all_epsilons): (Vec<f32>, Vec<f32>) =
@@ -505,13 +530,21 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                     (default_sigmas, default_epsilons)
                 };
 
-            // Compute VdW features (N_res * 5 values)
-            let features = physics::vdw::compute_vdw_features(
+            let backbone_sigmas = processed.extract_backbone_sigmas();
+            let backbone_epsilons = processed.extract_backbone_epsilons();
+
+            // Compute 3D forces
+            let forces = physics::vdw::compute_lj_forces_at_backbone(
                 &backbone_coords,
                 &all_coords,
+                &backbone_sigmas,
+                &backbone_epsilons,
                 &all_sigmas,
                 &all_epsilons,
             );
+
+            // Project forces onto local backbone frames
+            let features = physics::frame::project_backbone_forces(&forces, &backbone_coords);
 
             // Shape (N_res, 5)
             let shape = (backbone_coords.len(), 5);
