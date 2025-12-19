@@ -50,7 +50,7 @@ HDF5_FILE = TRAJ_DATA_DIR / "test.h5"
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 def test_xtc_frame_coordinates_vs_mdtraj():
     """Compare XTC frame coordinates against MDTraj using pure-Rust molly parser."""
-    import oxidize
+    from proxide import _oxidize
 
     # Use MDTraj test files from /tmp (downloaded from GitHub)
     xtc_file = Path("/tmp/frame0.xtc")
@@ -60,7 +60,7 @@ def test_xtc_frame_coordinates_vs_mdtraj():
         pytest.skip("MDTraj test files not available in /tmp")
 
     # Parse with oxidize (pure-Rust molly)
-    result = oxidize.parse_xtc(str(xtc_file))
+    result = _oxidize.parse_xtc(str(xtc_file))
     priox_coords = result["coordinates"]  # Already in Angstroms
 
     # Parse with MDTraj
@@ -89,7 +89,7 @@ def test_xtc_frame_coordinates_vs_mdtraj():
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 def test_xtc_import_available():
     """Check if XTC parser is importable (now using pure-Rust molly)."""
-    from oxidize import parse_xtc
+    from proxide import parse_xtc
 
     assert callable(parse_xtc)
 
@@ -148,7 +148,7 @@ def test_hdf5_parsing_parity():
         traj.save(str(HDF5_FILE))
         
     try:
-        from oxidize import parse_mdtraj_h5_metadata, parse_mdtraj_h5_frame
+        from proxide import parse_mdtraj_h5_metadata, parse_mdtraj_h5_frame
     except ImportError:
         pytest.skip("HDF5 support not available (mdcath feature not compiled)")
 
@@ -216,11 +216,11 @@ def test_box_vectors_parity():
 
 def test_all_trajectory_parsers_available():
     """Test that all trajectory parsers are at least importable."""
-    from oxidize import parse_xtc  # Always available (PyO3 function defined)
+    from proxide import parse_xtc  # Always available (PyO3 function defined)
     
     # These will raise ImportError with helpful message if feature not compiled
     try:
-        from oxidize import parse_dcd, parse_trr
+        from proxide import parse_dcd, parse_trr
         print("All trajectory parsers available")
     except ImportError as e:
         print(f"Some parsers not available: {e}")

@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 from pathlib import Path
 import os
-import oxidize
+from proxide import _oxidize
 
 try:
     import openmm

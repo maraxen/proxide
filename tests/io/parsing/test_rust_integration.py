@@ -457,7 +457,7 @@ END
         pdb_file.write_text(pdb_content.strip())
         
         # Import OutputSpec from Rust
-        from oxidize import OutputSpec
+        from proxide import OutputSpec
         
         # Parse with VdW features enabled
         spec = OutputSpec(compute_vdw=True)

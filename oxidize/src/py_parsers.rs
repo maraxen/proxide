@@ -1,10 +1,10 @@
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
-use numpy::PyArray1;
-use numpy::PyArrayMethods;
-use crate::{formats, formatters, geometry, physics, processing, spec, forcefield};
 use crate::processing::ProcessedStructure;
 use crate::spec::{CoordFormat, OutputSpec};
+use crate::{forcefield, formats, formatters, geometry, physics, processing, spec};
+use numpy::PyArray1;
+use numpy::PyArrayMethods;
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 /// Parse a PDB file and return raw atom data (low-level)
 /// Returns first model only for backward compatibility.
@@ -133,13 +133,20 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             // Infer bonds if not provided
             bonds_for_h = geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
 
-            let num_h_added = geometry::hydrogens::add_hydrogens(&mut processed, &mut bonds_for_h)
-                .map_err(|e| {
-                    pyo3::exceptions::PyValueError::new_err(format!(
-                        "Hydrogen addition failed: {}",
-                        e
-                    ))
-                })?;
+            eprintln!(
+                "[OXIDIZE DEBUG] Calling add_hydrogens_with_relax. relax={}, max_iter={:?}",
+                spec.relax_hydrogens, spec.relax_max_iterations
+            );
+            let num_h_added = geometry::hydrogens::add_hydrogens_with_relax(
+                &mut processed,
+                &mut bonds_for_h,
+                spec.relax_hydrogens,
+                spec.relax_max_iterations,
+            )
+            .map(|(n, _, _)| n)
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Hydrogen addition failed: {}", e))
+            })?;
 
             log::debug!("Added {} hydrogens to reference model", num_h_added);
 
@@ -188,14 +195,19 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                             let all_elements = &m_processed.raw_atoms.elements;
                             let mut m_bonds =
                                 geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
-                            geometry::hydrogens::add_hydrogens(&mut m_processed, &mut m_bonds)
-                                .map_err(|e| {
-                                    pyo3::exceptions::PyValueError::new_err(format!(
-                                        "H-add model {}: {}",
-                                        i + 1,
-                                        e
-                                    ))
-                                })?;
+                            geometry::hydrogens::add_hydrogens_with_relax(
+                                &mut m_processed,
+                                &mut m_bonds,
+                                spec.relax_hydrogens,
+                                spec.relax_max_iterations,
+                            )
+                            .map_err(|e| {
+                                pyo3::exceptions::PyValueError::new_err(format!(
+                                    "H-add model {}: {}",
+                                    i + 1,
+                                    e
+                                ))
+                            })?;
                             // m_processed is updated in-place, no reassignment needed
                         }
 

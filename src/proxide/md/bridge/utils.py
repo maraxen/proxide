@@ -4,7 +4,7 @@ This module provides utilities for preparing structures for MD simulations,
 bridging between the parsing layer and the JAX MD simulation layer.
 """
 
-import oxidize
+from proxide import _oxidize
 
 
 def assign_masses(atom_names: list[str]) -> list[float]:
@@ -19,4 +19,4 @@ def assign_masses(atom_names: list[str]) -> list[float]:
       List of masses in amu.
 
   """
-  return oxidize.assign_masses(atom_names)
+  return _oxidize.assign_masses(atom_names)

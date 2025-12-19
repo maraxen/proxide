@@ -515,6 +515,10 @@ pub fn relax_hydrogens(
 ) -> (usize, f32) {
     // Find rotatable groups
     let rotatable_groups = find_rotatable_groups(elements, bonds);
+    eprintln!(
+        "[OXIDIZE DEBUG] relax_hydrogens: found {} rotatable groups",
+        rotatable_groups.len()
+    );
     if rotatable_groups.is_empty() {
         return (0, 0.0);
     }

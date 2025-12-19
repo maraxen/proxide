@@ -2618,6 +2618,12 @@ ml = [
     { name = "optax" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "array-record" },
@@ -2654,6 +2660,12 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'" },
 ]
 provides-extras = ["ml", "dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.1" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+]
 
 [[package]]
 name = "psutil"

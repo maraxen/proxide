@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 import jax
 import numpy as np
-from priox import md
+from proxide import md
 
 from proxide.chem import residues as residue_constants
 from proxide.core.containers import Protein

@@ -1,7 +1,7 @@
+use crate::formats;
+use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use numpy::PyArray1;
-use crate::formats;
 
 /// Parse an XTC trajectory file
 #[pyfunction]

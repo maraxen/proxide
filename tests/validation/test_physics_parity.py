@@ -16,7 +16,7 @@ try:
 except ImportError:
     MDTRAJ_AVAILABLE = False
 
-from oxidize import parse_structure, OutputSpec, CoordFormat
+from proxide import parse_structure, OutputSpec, CoordFormat
 
 
 # =============================================================================

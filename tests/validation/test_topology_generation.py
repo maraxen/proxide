@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from pathlib import Path
 
-from oxidize import parse_structure, OutputSpec, CoordFormat
+from proxide import parse_structure, OutputSpec, CoordFormat
 
 
 def test_topology_generation_basic():

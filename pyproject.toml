@@ -54,8 +54,8 @@ dev = [
 manifest-path = "oxidize/Cargo.toml"
 # Python source directory
 python-source = "src"
-# The compiled Rust module name (import oxidize)
-module-name = "oxidize"
+# The compiled Rust module name (import proxide._oxidize)
+module-name = "proxide._oxidize"
 # Include Python package files
 include = [
     "src/proxide/**/*",
@@ -93,4 +93,10 @@ pylint.max-args = 15
 [tool.ty]
 # Ignore missing stubs for these libraries
 [tool.ty.environment]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+    "pytest-cov>=7.0.0",
+]
 # ignored-modules = ["biotite", "openmm", "rdkit", "hydride", "mdtraj", "h5py", "jax_md", "grain", "foldcomp", "openmmforcefields", "openff.toolkit", "proxide_rs"]

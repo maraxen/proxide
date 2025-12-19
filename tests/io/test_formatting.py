@@ -3,7 +3,7 @@ import numpy as np
 import tempfile
 import os
 
-import oxidize
+from proxide import _oxidize
 
 PDB_CONTENT = """ATOM      1  N   ALA A   1      -0.525   1.362   0.000  1.00  0.00           N
 ATOM      2  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00           C
@@ -24,9 +24,9 @@ def pdb_file():
             os.remove(path)
 
 def test_format_atom37(pdb_file):
-    spec = oxidize.OutputSpec()
-    spec.coord_format = oxidize.CoordFormat.Atom37
-    result = oxidize.parse_structure(pdb_file, spec)
+    spec = _oxidize.OutputSpec()
+    spec.coord_format = _oxidize.CoordFormat.Atom37
+    result = _oxidize.parse_structure(pdb_file, spec)
     
     # Check basic fields
     assert "coordinates" in result
@@ -38,18 +38,18 @@ def test_format_atom37(pdb_file):
     assert result["atom_mask"].shape == (37,)
 
 def test_format_atom14(pdb_file):
-    spec = oxidize.OutputSpec()
-    spec.coord_format = oxidize.CoordFormat.Atom14
-    result = oxidize.parse_structure(pdb_file, spec)
+    spec = _oxidize.OutputSpec()
+    spec.coord_format = _oxidize.CoordFormat.Atom14
+    result = _oxidize.parse_structure(pdb_file, spec)
     
     coords = result["coordinates"]
     # 1 * 14 * 3 = 42
     assert coords.shape == (42,)
 
 def test_format_backbone(pdb_file):
-    spec = oxidize.OutputSpec()
-    spec.coord_format = oxidize.CoordFormat.BackboneOnly
-    result = oxidize.parse_structure(pdb_file, spec)
+    spec = _oxidize.OutputSpec()
+    spec.coord_format = _oxidize.CoordFormat.BackboneOnly
+    result = _oxidize.parse_structure(pdb_file, spec)
     
     coords = result["coordinates"]
     # 1 * 4 * 3 = 12
@@ -61,41 +61,36 @@ def test_format_backbone(pdb_file):
     assert np.all(mask == 1.0)
 
 def test_format_full(pdb_file):
-    spec = oxidize.OutputSpec()
-    spec.coord_format = oxidize.CoordFormat.Full
-    result = oxidize.parse_structure(pdb_file, spec)
+    spec = _oxidize.OutputSpec()
+    spec.coord_format = _oxidize.CoordFormat.Full
+    result = _oxidize.parse_structure(pdb_file, spec)
     
     assert "coord_shape" in result
-    shape = result["coord_shape"] # (N_res, max_atoms, 3)
-    assert shape[0] == 1
-    assert shape[1] >= 5 # ALA has 5 atoms
-    assert shape[2] == 3
+    shape = result["coord_shape"] # (N_atoms, 3, 1) for flat format
+    assert shape[0] == 5  # 5 atoms in ALA
+    assert shape[1] == 3  # 3D coords
+    assert shape[2] == 1  # flat indicator
     
     assert "atom_names" in result
     atom_names = result["atom_names"]
-    # Should be list of strings (or object array)
-    assert len(atom_names) == shape[0] * shape[1]
+    # Should be list of strings with N_atoms entries
+    assert len(atom_names) == 5
     
-    # Check first few names (Atom order in full formatter is sorted by input order usually)
-    # The input PDB order is N, CA, C, O, CB
-    # But ProcessedStructure might reorder to canonical if it does?
-    # No, it keeps PDB order usually for `ProcessedStructure`?
-    # Actually `RawAtomData` keeps order. `ProcessedStructure` residue atoms are sorted by global index if we iterate range.
-    # So yes, PDB order.
+    # Check first few names (PDB order: N, CA, C, O, CB)
     assert atom_names[0] == "N"
     assert atom_names[1] == "CA"
 
 def test_caching(pdb_file):
     # Enable caching
-    spec = oxidize.OutputSpec()
+    spec = _oxidize.OutputSpec()
     spec.enable_caching = True
-    spec.coord_format = oxidize.CoordFormat.Atom37
+    spec.coord_format = _oxidize.CoordFormat.Atom37
     
     # First call
-    res1 = oxidize.parse_structure(pdb_file, spec)
+    res1 = _oxidize.parse_structure(pdb_file, spec)
     
     # Second call
-    res2 = oxidize.parse_structure(pdb_file, spec)
+    res2 = _oxidize.parse_structure(pdb_file, spec)
     
     assert np.allclose(res1["coordinates"], res2["coordinates"])
     
