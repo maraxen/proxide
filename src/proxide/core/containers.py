@@ -121,11 +121,11 @@ class Protein(AtomicSystem):
   full_coordinates: StructureAtomicCoordinates | None = None
   full_atom_mask: AtomMask | None = None
 
-  # Derived features
   physics_features: jnp.ndarray | None = None
   backbone_indices: jnp.ndarray | None = None
-
-  # Coordinate format (set by parser)
+  vdw_features: jnp.ndarray | None = None
+  rbf_features: jnp.ndarray | None = None
+  electrostatic_features: jnp.ndarray | None = None
   format: Literal["Atom37", "Atom14", "Full", "BackboneOnly"] | None = None
 
   @classmethod
@@ -259,6 +259,16 @@ class Protein(AtomicSystem):
         improper_params=convert_params(rust_dict.get("improper_params"), "improper")
         if rust_dict.get("improper_params") is not None
         else None,
+        # Derived features
+        vdw_features=convert(rust_dict["vdw_features"])
+        if rust_dict.get("vdw_features") is not None
+        else None,
+        rbf_features=convert(rust_dict["rbf_features"])
+        if rust_dict.get("rbf_features") is not None
+        else None,
+        electrostatic_features=convert(rust_dict["electrostatic_features"])
+        if rust_dict.get("electrostatic_features") is not None
+        else None,
         format="Atom37",
       )
     # Flat format (Full)
@@ -268,10 +278,8 @@ class Protein(AtomicSystem):
     # We attempt to treat it as "Full Coordinates" stored in the main coordinates field
     # This technically violates the (N, 37, 3) type hint of Protein, but matches AtomicSystem
 
-    # For CA mask: we don't have CA info easily unless we assume input is CA-only (unlikely)
-    # or check atom names if provided.
+    # For CA mask: we don't have CA info easily from a flat list without assumptions.
     # For now, we set mask to ones (all residues present)
-    mask_dummy = np.ones((num_residues, 37), dtype=np.float32)  # Dummy
 
     # Full format elements/atom_names handling
     atom_names = rust_dict.get("atom_names")
@@ -328,6 +336,16 @@ class Protein(AtomicSystem):
       impropers=convert(rust_dict["impropers"]) if rust_dict.get("impropers") is not None else None,
       improper_params=convert_params(rust_dict.get("improper_params"), "improper")
       if rust_dict.get("improper_params") is not None
+      else None,
+      # Derived features
+      vdw_features=convert(rust_dict["vdw_features"])
+      if rust_dict.get("vdw_features") is not None
+      else None,
+      rbf_features=convert(rust_dict["rbf_features"])
+      if rust_dict.get("rbf_features") is not None
+      else None,
+      electrostatic_features=convert(rust_dict["electrostatic_features"])
+      if rust_dict.get("electrostatic_features") is not None
       else None,
       format="Full",
     )

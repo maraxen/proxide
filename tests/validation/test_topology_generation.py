@@ -99,10 +99,15 @@ def test_bond_indices_valid():
     
     # Get atom count from mask
     mask = np.array(result["atom_mask"])
-    shape = result["coord_shape"]
-    n_res, max_atoms = shape[0], shape[1]
-    mask_reshaped = mask.reshape((n_res, max_atoms))
-    n_atoms = int(np.sum(mask_reshaped > 0.5))
+    
+    # Handle both flat (N,) and padded (N_res, max_atoms) masks
+    if mask.ndim == 1:
+        n_atoms = int(np.sum(mask > 0.5))
+    else:
+        shape = result["coord_shape"]
+        # If mask is 1D but result['coord_shape'] is provided, verify consistency?
+        # Just use mask dimensions
+        n_atoms = int(np.sum(mask > 0.5))
     
     bonds = np.array(result["bonds"])
     
