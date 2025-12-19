@@ -42,34 +42,24 @@ once_cell = "1.19"
 # Linear algebra for Kabsch SVD
 nalgebra = "0.33"
 
-# Chemistry file formats (optional, for trajectory support)
-chemfiles = { version = "0.10", optional = true }
-
-# Pure Rust XTC reader (alternative to chemfiles, no C++ deps)
-# Use this when chemfiles has compatibility issues
-molly = { version = "0.4", optional = true }
+# Pure Rust XTC reader (no C++ deps)
+molly = "0.4.0"
 
 # HDF5 support (optional, for mdCATH)
 # Using hdf5-metno fork which supports HDF5 1.14+
 hdf5 = { package = "hdf5-metno", version = "0.11", optional = true }
 
 [features]
-# chemfiles disabled by default due to CMake version requirements
-# Enable with: cargo build --features trajectories
-default = []
-# Legacy: uses chemfiles (may crash with SIGFPE on some systems)
-trajectories = ["chemfiles"]
-# Pure Rust XTC support (recommended - no C++ dependencies, no crashes)
-xtc-pure = ["molly"]
+default = ["xtc", "mdcath"]
+# XTC support using molly (pure Rust)
+xtc = []
+# mdCATH support using HDF5
 mdcath = ["hdf5"]
-# Full with pure-Rust XTC (recommended)
-full = ["xtc-pure", "mdcath"]
-# Full with chemfiles (legacy, may crash)
-full-chemfiles = ["trajectories", "mdcath"]
+# Aggregated features
+full = ["xtc", "mdcath"]
 
 [profile.release]
 lto = true
 codegen-units = 1
 opt-level = 3
 strip = true
-

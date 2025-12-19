@@ -1,0 +1,38 @@
+name: Trajectory Parity Tests
+
+on: [push, pull_request]
+
+jobs:
+  trajectory-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          
+      - name: Install dependencies
+        run: |
+          uv pip install --system mdtraj numpy pytest maturin
+          
+      - name: Build Rust extension
+        run: |
+          cd oxidize
+          # Build with new pure-Rust features enabled
+          maturin develop --release --features full
+          
+      - name: Fetch test data
+        run: |
+          uv run python scripts/fetch_test_data.py
+          
+      - name: Run parity tests
+        run: |
+          # Use -k to select specific trajectory tests if needed, or run all validation
+          uv run pytest tests/validation/test_trajectory_parity.py -v

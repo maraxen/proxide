@@ -2,8 +2,9 @@
 
 Checks:
 1. XTC reading matches MDTraj (coordinates, box vectors, time).
-2. HDF5 reading (if implemented) matches reference.
-3. Pure-Rust XTC parser (molly) correctness.
+2. DCD reading matches MDTraj.
+3. TRR reading matches MDTraj.
+4. HDF5 reading (if implemented) matches reference.
 
 Tests P3.1 objectives:
 - DCD: Match MDTraj frame coordinates (1e-3 Å tolerance)
@@ -52,15 +53,29 @@ def test_xtc_frame_coordinates_vs_mdtraj():
     """Compare XTC frame coordinates against MDTraj using pure-Rust molly parser."""
     from proxide import _oxidize
 
-    # Use MDTraj test files from /tmp (downloaded from GitHub)
-    xtc_file = Path("/tmp/frame0.xtc")
-    pdb_file = Path("/tmp/frame0.pdb")
+    # Try multiple common paths for test files
+    xtc_file = TRAJ_DATA_DIR / "frame0.xtc"
+    pdb_file = TRAJ_DATA_DIR / "frame0.pdb"
+
+    if not xtc_file.exists():
+        xtc_file = Path("/tmp/frame0.xtc")
+        pdb_file = Path("/tmp/frame0.pdb")
+    
+    if not xtc_file.exists():
+        xtc_file = TRAJ_DATA_DIR / "test.xtc"
+        pdb_file = TRAJ_DATA_DIR / "test.pdb"
 
     if not xtc_file.exists() or not pdb_file.exists():
-        pytest.skip("MDTraj test files not available in /tmp")
+        pytest.skip(f"XTC test files not available (checked {xtc_file})")
 
     # Parse with oxidize (pure-Rust molly)
-    result = _oxidize.parse_xtc(str(xtc_file))
+    try:
+        result = _oxidize.parse_xtc(str(xtc_file))
+    except Exception as e:
+        if "requires compiling with" in str(e):
+            pytest.skip("xtc feature not enabled")
+        raise e
+        
     priox_coords = result["coordinates"]  # Already in Angstroms
 
     # Parse with MDTraj
@@ -75,12 +90,7 @@ def test_xtc_frame_coordinates_vs_mdtraj():
     # Check coordinate parity
     diff = np.abs(priox_coords - mdtraj_coords)
     max_diff = np.max(diff)
-    mean_diff = np.mean(diff)
-
-    print(f"Max coordinate difference: {max_diff:.6f} Å")
-    print(f"Mean coordinate difference: {mean_diff:.6f} Å")
-    print(f"Frame count: {result['num_frames']}")
-    print(f"Atom count: {result['num_atoms']}")
+    print(f"XTC Max coord difference: {max_diff:.6f} Å")
 
     # XTC uses single precision - allow small tolerance
     assert max_diff < 0.01, f"XTC coordinates differ by {max_diff} Å"
@@ -90,7 +100,6 @@ def test_xtc_frame_coordinates_vs_mdtraj():
 def test_xtc_import_available():
     """Check if XTC parser is importable (now using pure-Rust molly)."""
     from proxide import parse_xtc
-
     assert callable(parse_xtc)
 
 
@@ -100,17 +109,57 @@ def test_xtc_import_available():
 # =============================================================================
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
-@pytest.mark.skip(reason="DCD support blocked by chemfiles SIGFPE crash on this environment")
 def test_dcd_frame_coordinates_vs_mdtraj():
     """Compare DCD frame coordinates against MDTraj."""
-    pass
+    from proxide import _oxidize
+    
+    dcd_file = TRAJ_DATA_DIR / "frame0.dcd"
+    pdb_file = TRAJ_DATA_DIR / "frame0.pdb"
+    
+    if not dcd_file.exists():
+        dcd_file = TRAJ_DATA_DIR / "test.dcd"
+    
+    if not dcd_file.exists() or not pdb_file.exists():
+        pytest.skip(f"DCD test files not available (checked {dcd_file} and {pdb_file})")
+    
+    # Parse with oxidize (pure-Rust)
+    result = _oxidize.parse_dcd(str(dcd_file))
+    priox_coords = result["coordinates"]  # Already in Angstroms
+    
+    # Parse with MDTraj
+    traj = mdtraj.load(str(dcd_file), top=str(pdb_file))
+    mdtraj_coords = traj.xyz * 10.0  # nm -> Angstroms
+    
+    # Check shapes match
+    assert (
+        priox_coords.shape == mdtraj_coords.shape
+    ), f"Shape mismatch: {priox_coords.shape} vs {mdtraj_coords.shape}"
+    
+    # Check coordinate parity
+    diff = np.abs(priox_coords - mdtraj_coords)
+    max_diff = np.max(diff)
+    print(f"DCD Max coord difference: {max_diff:.6f} Å")
+    
+    # Single precision coordinates, so allowing 1e-3
+    assert max_diff < 1e-3, f"DCD coordinates differ by {max_diff} Å"
+
+    # Check unit cell parity if available
+    if "unit_cells" in result:
+        priox_cells = result["unit_cells"]
+        mdtraj_cells_len = traj.unitcell_lengths * 10.0 # nm -> Angstroms
+        mdtraj_cells_ang = traj.unitcell_angles
+        
+        # priox_cells is (N_frames, 6) -> [a, b, c, alpha, beta, gamma]
+        np.testing.assert_allclose(priox_cells[:, :3], mdtraj_cells_len, atol=1e-3)
+        np.testing.assert_allclose(priox_cells[:, 3:], mdtraj_cells_ang, atol=1e-2)
+        print("DCD Unit cell parity OK")
 
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
-@pytest.mark.skip(reason="DCD support blocked by chemfiles SIGFPE crash on this environment")
 def test_dcd_import_available():
     """Check if DCD parser is importable."""
-    pass
+    from proxide import parse_dcd
+    assert callable(parse_dcd)
 
 
 # =============================================================================
@@ -118,17 +167,55 @@ def test_dcd_import_available():
 # =============================================================================
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
-@pytest.mark.skip(reason="TRR support blocked by chemfiles SIGFPE crash on this environment")
 def test_trr_frame_coordinates_vs_mdtraj():
     """Compare TRR frame coordinates against MDTraj."""
-    pass
+    from proxide import _oxidize
+    
+    trr_file = TRAJ_DATA_DIR / "frame0.trr"
+    pdb_file = TRAJ_DATA_DIR / "frame0.pdb"
+    
+    if not trr_file.exists():
+        trr_file = TRAJ_DATA_DIR / "test.trr"
+    
+    if not trr_file.exists() or not pdb_file.exists():
+        pytest.skip(f"TRR test files not available (checked {trr_file} and {pdb_file})")
+    
+    # Parse with oxidize (pure-Rust)
+    result = _oxidize.parse_trr(str(trr_file))
+    priox_coords = result["coordinates"]  # Already in Angstroms
+    
+    # Parse with MDTraj
+    traj = mdtraj.load(str(trr_file), top=str(pdb_file))
+    mdtraj_coords = traj.xyz * 10.0  # nm -> Angstroms
+    
+    # Check shapes match
+    assert (
+        priox_coords.shape == mdtraj_coords.shape
+    ), f"Shape mismatch: {priox_coords.shape} vs {mdtraj_coords.shape}"
+    
+    # Check coordinate parity
+    diff = np.abs(priox_coords - mdtraj_coords)
+    max_diff = np.max(diff)
+    print(f"TRR Max coord difference: {max_diff:.6f} Å")
+    
+    # TRR can be single or double precision. frame0.trr is usually single.
+    assert max_diff < 1e-3, f"TRR coordinates differ by {max_diff} Å"
+
+    # Check box vectors if available
+    if "box_vectors" in result:
+        priox_box = result["box_vectors"]
+        mdtraj_box = traj.unitcell_vectors * 10.0 # nm -> Angstroms
+        
+        # MDTraj vectors are (N_frames, 3, 3)
+        np.testing.assert_allclose(priox_box, mdtraj_box, atol=1e-3)
+        print("TRR Box vector parity OK")
 
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
-@pytest.mark.skip(reason="TRR support blocked by chemfiles SIGFPE crash on this environment")
 def test_trr_import_available():
     """Check if TRR parser is importable."""
-    pass
+    from proxide import parse_trr
+    assert callable(parse_trr)
 
 
 # =============================================================================
@@ -171,14 +258,7 @@ def test_hdf5_parsing_parity():
     rust_coords = np.array(rust_frames)
     mdtraj_coords = traj_mdtraj.xyz # nm
     
-    # Check units (Rust usually Angstroms, MDTraj nm)
-    # If Rust HDF5 implementation follows MDTraj convention strictly, it might return nm?
-    # But proxide usually standardizes on Angstroms.
-    # Let's check magnitude.
-    # mdTraj coords ~ 0.1-10 nm range (1-100 A)
-    # If Rust returns nm, values will be small. If A, 10x larger.
-    
-    # Based on test_physics_parity, we expect Angstroms.
+    # Convert MDTraj nm to Angstroms
     mdtraj_coords_angstrom = mdtraj_coords * 10.0
     
     diff = np.abs(rust_coords - mdtraj_coords_angstrom)
@@ -189,38 +269,13 @@ def test_hdf5_parsing_parity():
 
 
 # =============================================================================
-# Frame Count Tests
-# =============================================================================
-
-@pytest.mark.skip(reason="XTC support blocked by chemfiles SIGFPE crash on this environment")
-def test_frame_count_consistency():
-    """Verify frame counts are consistent across multiple reads."""
-    pass
-
-
-# =============================================================================
-# Box Vector / Unit Cell Tests
-# =============================================================================
-
-@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
-@pytest.mark.skip(reason="TRR support blocked by chemfiles SIGFPE crash on this environment")
-def test_box_vectors_parity():
-    """Verify box vectors match MDTraj."""
-    # 1e-4 nm tolerance for box vectors
-    assert max_diff < 1e-4, f"Box vectors differ by {max_diff}"
-
-
-# =============================================================================
 # Integration Test
 # =============================================================================
 
 def test_all_trajectory_parsers_available():
     """Test that all trajectory parsers are at least importable."""
-    from proxide import parse_xtc  # Always available (PyO3 function defined)
-    
-    # These will raise ImportError with helpful message if feature not compiled
-    try:
-        from proxide import parse_dcd, parse_trr
-        print("All trajectory parsers available")
-    except ImportError as e:
-        print(f"Some parsers not available: {e}")
+    from proxide import parse_xtc, parse_dcd, parse_trr
+    assert callable(parse_xtc)
+    assert callable(parse_dcd)
+    assert callable(parse_trr)
+    print("All trajectory parsers available")

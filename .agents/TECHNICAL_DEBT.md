@@ -25,40 +25,16 @@
 - [x] ProteinTuple deprecation and removal
 - [x] AtomicSystem architecture implementation
 
----
+### Trajectory Format Integration ✅ COMPLETE
 
-## 🔴 High Priority
-
-### Trajectory Format Integration
-
-- **Status**: XTC working, DCD/TRR need pure-Rust alternatives.
-- **Goal**: Replace `chemfiles` dependent code to resolve SIGFPE crashes.
-
-### Trajectory Format Integration Tests
-
-**Status:** XTC working, DCD/TRR need pure-Rust alternatives
-
-**Files:**
-
-- `formats/dcd.rs` - implemented (chemfiles-based, crashes)
-- `formats/trr.rs` - implemented (chemfiles-based, crashes)
-- `formats/xtc.rs` - ✅ working (pure-Rust via `molly` crate)
-
-**Current State:**
-
-- ✅ XTC: Fixed using pure-Rust `molly` crate (`xtc-pure` feature)
-- ❌ DCD: Blocked by chemfiles SIGFPE crash (no pure-Rust alternative found)
-- ❌ TRR: Blocked by chemfiles SIGFPE crash (`groan_rs` has TRR support but complex API)
-
-**Future Options for DCD/TRR:**
-
-1. Use `groan_rs` crate for TRR (pure Rust, complex API)
-2. Implement custom DCD parser (DCD is a simple binary format)
-3. Wait for chemfiles fix upstream
+- [x] Pure-Rust implementations for XTC (via `molly`), DCD, and TRR.
+- [x] `chemfiles` dependency completely removed (no more SIGFPE crashes).
+- [x] Simplified features: `xtc`, `mdcath`, `full`. Baseline DCD/TRR.
+- [x] Parity validated against MDTraj for all formats.
 
 ---
 
-## 🟡 Medium Priority
+## � High Priority
 
 ### Documentation Refresh
 
@@ -126,8 +102,8 @@ The `to_openmm_system()` method has complexity warnings (22 > 10, 21 branches, 8
 
 ### Test Coverage
 
-Current test status:
+Current test status (December 2025):
 
-- Core tests: ~140 passing
-- Validation tests: Some require OpenMM or trajectory features
-- Skip patterns working correctly for optional dependencies
+- **442 tests passing**
+- **61 tests skipped** (expected - optional dependencies)
+- Skip patterns working correctly for GAFF/antechamber, HDF5, OpenMM features

@@ -8,8 +8,9 @@ This document provides essential guidelines for AI agents working on the proxide
 
 - **Rust Extension:** PDB, mmCIF, PQR parsers
 - **Trajectory Formats:**
-  - ✅ XTC: Pure-Rust via `molly` crate (no chemfiles crash)
-  - ⏳ DCD/TRR: Deferred (blocked by chemfiles SIGFPE, need pure-Rust impl)
+  - ✅ XTC: Pure-Rust via `molly` crate
+  - ✅ DCD: Pure-Rust implementation
+  - ✅ TRR: Pure-Rust implementation
   - ✅ HDF5: MDTraj/mdCATH formats working
 - **AtomicSystem Architecture:** Base class with Protein/Molecule inheritance
 - **Force Field Loading:** ff14SB, ff19SB from assets
@@ -21,9 +22,7 @@ This document provides essential guidelines for AI agents working on the proxide
 
 ### 🔄 Remaining Work
 
-- **Pure-Rust TRR/DCD:** Researching alternatives (groan_rs, custom parsers)
 - **Documentation Refresh:** Update docs/ folder with current API
-- **CMAPForce:** ✅ Implemented
 
 ---
 
