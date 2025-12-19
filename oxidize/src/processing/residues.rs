@@ -267,6 +267,80 @@ impl ProcessedStructure {
         }
         coords
     }
+
+    /// Extract charges at backbone positions (N_res * 5)
+    pub fn extract_backbone_charges(&self) -> Vec<f32> {
+        let mut values = vec![0.0f32; self.num_residues * 5];
+        if let Some(ref data) = self.raw_atoms.charges {
+            for (i, res) in self.residue_info.iter().enumerate() {
+                for atom_idx in res.start_atom..(res.start_atom + res.num_atoms) {
+                    if atom_idx >= data.len() {
+                        continue;
+                    }
+                    let val = data[atom_idx];
+                    match self.raw_atoms.atom_names[atom_idx].as_str() {
+                        "N" => values[i * 5 + 0] = val,
+                        "CA" => values[i * 5 + 1] = val,
+                        "C" => values[i * 5 + 2] = val,
+                        "CB" => values[i * 5 + 3] = val,
+                        "O" => values[i * 5 + 4] = val,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        values
+    }
+
+    /// Extract sigmas at backbone positions (N_res * 5)
+    pub fn extract_backbone_sigmas(&self) -> Vec<f32> {
+        // Default sigma? Or 0.0?
+        // Using DEFAULT_SIGMA if missing might be safer if used in VdW equation
+        let mut values = vec![crate::physics::constants::DEFAULT_SIGMA; self.num_residues * 5];
+        if let Some(ref data) = self.raw_atoms.sigmas {
+            for (i, res) in self.residue_info.iter().enumerate() {
+                for atom_idx in res.start_atom..(res.start_atom + res.num_atoms) {
+                    if atom_idx >= data.len() {
+                        continue;
+                    }
+                    let val = data[atom_idx];
+                    match self.raw_atoms.atom_names[atom_idx].as_str() {
+                        "N" => values[i * 5 + 0] = val,
+                        "CA" => values[i * 5 + 1] = val,
+                        "C" => values[i * 5 + 2] = val,
+                        "CB" => values[i * 5 + 3] = val,
+                        "O" => values[i * 5 + 4] = val,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        values
+    }
+
+    /// Extract epsilons at backbone positions (N_res * 5)
+    pub fn extract_backbone_epsilons(&self) -> Vec<f32> {
+        let mut values = vec![crate::physics::constants::DEFAULT_EPSILON; self.num_residues * 5];
+        if let Some(ref data) = self.raw_atoms.epsilons {
+            for (i, res) in self.residue_info.iter().enumerate() {
+                for atom_idx in res.start_atom..(res.start_atom + res.num_atoms) {
+                    if atom_idx >= data.len() {
+                        continue;
+                    }
+                    let val = data[atom_idx];
+                    match self.raw_atoms.atom_names[atom_idx].as_str() {
+                        "N" => values[i * 5 + 0] = val,
+                        "CA" => values[i * 5 + 1] = val,
+                        "C" => values[i * 5 + 2] = val,
+                        "CB" => values[i * 5 + 3] = val,
+                        "O" => values[i * 5 + 4] = val,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        values
+    }
 }
 
 /// Rebuild ProcessedStructure and Bonds by sorting atoms to ensure contiguous residues.
