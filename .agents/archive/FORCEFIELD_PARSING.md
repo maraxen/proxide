@@ -11,7 +11,7 @@
 - **GAFF Integration:** Special handling for GAFF atom typing (`force_field="gaff"`).
 - **Topology Generation:** Bond, angle, and dihedral lists generated from residue templates.
 - **Exclusions:** 1-2, 1-3, and 1-4 exclusion lists generated compatible with OpenMM.
-- **Python Integration:** Exposed via `priox_rs.parse_structure` with `OutputSpec`.
+- **Python Integration:** Exposed via `oxidize.parse_structure` with `OutputSpec`.
 
 ## Data Flow
 
@@ -19,7 +19,7 @@
 XML File / "gaff" string → Rust Parser (`load_forcefield`) → `ForceField` Struct → `ProcessedStructure` → `AtomicSystem` (Python)
 ```
 
-## rust_ext/src/forcefield/ Structure
+## oxidize/src/forcefield/ Structure
 
 ```rust
 pub struct ForceField {

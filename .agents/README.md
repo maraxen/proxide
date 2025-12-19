@@ -146,10 +146,12 @@ timeout 30 uv run python -c "import oxidize; print(oxidize)"
 
 | File | Purpose |
 |------|---------|
-| `ROADMAP.md` | Long-term architecture roadmap |
+| `README.md` | Agent development guidelines |
 | `TECHNICAL_DEBT.md` | Known issues and deferred work |
 | `VALIDATION_ROADMAP.md` | Parity testing checklist |
 | `ATOMIC_SYSTEM_ARCHITECTURE.md` | AtomicSystem design docs |
+| `FORCEFIELD_PARSING.md` | Force field XML parser design |
+| `PYTHON_REMOVAL_OXIDIZE_REPLACEMENT.md` | **Final migration report** (Dec 2025) |
 | `archive/` | Historical migration and task tracking |
 
 ---
