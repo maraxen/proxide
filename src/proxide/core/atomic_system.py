@@ -6,7 +6,7 @@ proteins, small molecules, and complexes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 from flax.struct import dataclass
@@ -14,12 +14,13 @@ from flax.struct import dataclass
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
-  import numpy as np
-
 
 @dataclass(kw_only=True)
 class AtomicSystem:
   """Base class for any atomic system.
+
+  This class acts as a JAX-compatible container for atomic data and can
+  optionally wrap a Rust-backend AtomicSystem for performance-critical operations.
 
   Attributes:
       coordinates: Atom positions (N_atoms, 3)
@@ -34,6 +35,7 @@ class AtomicSystem:
       impropers: Improper dihedral indices (N_impropers, 4)
       charges: Atomic partial charges (N_atoms,)
       radii: Atomic radii (N_atoms,)
+      _rust_obj: Optional reference to the Rust-side AtomicSystem object.
 
   """
 
@@ -67,6 +69,9 @@ class AtomicSystem:
   sigmas: jnp.ndarray | None = None
   epsilons: jnp.ndarray | None = None
   radii: jnp.ndarray | None = None
+
+  # Internal storage for Rust object (if available)
+  _rust_obj: Any = None
 
   # --- Convenience properties for filtering by molecule type ---
 
@@ -120,7 +125,7 @@ class AtomicSystem:
 
     # Check if molecule_type is packed (size mismatch with atom_mask)
     if self.molecule_type.size != self.atom_mask.size:
-        return int(jnp.sum(self.molecule_type == 0))
+      return int(jnp.sum(self.molecule_type == 0))
 
     return int(jnp.sum((self.molecule_type == 0) & (self.atom_mask > 0)))
 
@@ -131,44 +136,9 @@ class AtomicSystem:
       return 0
 
     if self.molecule_type.size != self.atom_mask.size:
-        return int(jnp.sum(self.molecule_type == 1))
+      return int(jnp.sum(self.molecule_type == 1))
 
     return int(jnp.sum((self.molecule_type == 1) & (self.atom_mask > 0)))
-
-  @property
-  def topology(self):
-    """Adjacency matrix representing atom connectivity.
-
-    Returns:
-        scipy.sparse.csr_matrix: Sparse (N_atoms, N_atoms) matrix where
-            entry (i,j) = 1 if atoms i and j are bonded, 0 otherwise.
-            Returns None if bonds are not available.
-
-    """
-    if self.bonds is None:
-      return None
-
-
-    try:
-      from scipy.sparse import csr_matrix
-    except ImportError:
-      raise ImportError(
-        "scipy is required for topology adjacency matrix. Install with: pip install scipy",
-      )
-
-    # Get number of atoms from mask
-    n_atoms = len(self.atom_mask)
-    bonds = np.asarray(self.bonds)
-
-    if bonds.size == 0:
-      return csr_matrix((n_atoms, n_atoms), dtype=np.int8)
-
-    # Build symmetric adjacency matrix
-    rows = np.concatenate([bonds[:, 0], bonds[:, 1]])
-    cols = np.concatenate([bonds[:, 1], bonds[:, 0]])
-    data = np.ones(len(rows), dtype=np.int8)
-
-    return csr_matrix((data, (rows, cols)), shape=(n_atoms, n_atoms))
 
   @property
   def num_bonds(self) -> int:
@@ -405,7 +375,11 @@ class AtomicSystem:
           theta = float(angle_params[a_idx, 0])  # Already in radians
           k_angle = float(angle_params[a_idx, 1]) * 4.184  # kcal/mol/rad² to kJ/mol/rad²
           angle_force.addAngle(
-            i, j, k, theta * u.radian, k_angle * u.kilojoule_per_mole / u.radian**2,
+            i,
+            j,
+            k,
+            theta * u.radian,
+            k_angle * u.kilojoule_per_mole / u.radian**2,
           )
 
       system.addForce(angle_force)
@@ -498,8 +472,14 @@ class AtomicSystem:
             # Psi: N(i)-CA(i)-C(i)-N(i+1) -> atoms[1:5]
             cmap_force.addTorsion(
               cmap_idx,
-              atoms[0], atoms[1], atoms[2], atoms[3],  # phi atoms
-              atoms[1], atoms[2], atoms[3], atoms[4],  # psi atoms
+              atoms[0],
+              atoms[1],
+              atoms[2],
+              atoms[3],  # phi atoms
+              atoms[1],
+              atoms[2],
+              atoms[3],
+              atoms[4],  # psi atoms
             )
 
         system.addForce(cmap_force)
@@ -602,8 +582,16 @@ class AtomicSystem:
 
     # Merge molecule_type (preserve from both)
     if self.molecule_type is not None or other.molecule_type is not None:
-      mt1 = self.molecule_type if self.molecule_type is not None else jnp.zeros(n_atoms_self, dtype=jnp.int32)
-      mt2 = other.molecule_type if other.molecule_type is not None else jnp.ones(n_atoms_other, dtype=jnp.int32)
+      mt1 = (
+        self.molecule_type
+        if self.molecule_type is not None
+        else jnp.zeros(n_atoms_self, dtype=jnp.int32)
+      )
+      mt2 = (
+        other.molecule_type
+        if other.molecule_type is not None
+        else jnp.ones(n_atoms_other, dtype=jnp.int32)
+      )
       new_molecule_type = jnp.concatenate([mt1, mt2], axis=0)
     else:
       new_molecule_type = None

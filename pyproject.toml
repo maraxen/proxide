@@ -1,31 +1,24 @@
 [build-system]
-requires = ["maturin>=1.4,<2.0"]
+requires = ["maturin>=1.5,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "proxide"
 version = "0.1.0"
-description = "Protein I/O for JAX"
+description = "Protein I/O for JAX with high-performance Rust backend"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "jax",
     "numpy",
-    "biotite",
     "hydride",
-    "mdtraj",
-    "array_record",
-    "chex",
-    "rdkit",
     "grain",
     "jax-md",
-    "h5py",
-    "foldcomp",
     "msgpack",
     "msgpack-numpy",
     "equinox",
     "jaxtyping",
-    "tables",
+    "array_record",
 ]
 
 [project.optional-dependencies]
@@ -33,11 +26,28 @@ ml = [
     "huggingface_hub",
     "optax",
 ]
+molecules = [
+    "rdkit",
+    "openff-toolkit",
+]
+trajectories = [
+    "mdtraj",
+    "h5py",
+    "biotite",
+]
+foldcomp = [
+    "foldcomp",
+]
+openmm = [
+    "openmm",
+    "openmmforcefields",
+]
 dev = [
     "ruff",
     "pytest",
     "pytest-cov",
     "ty",
+    "chex",
     "sphinx",
     "sphinx-book-theme",
     "myst-nb",
@@ -46,8 +56,6 @@ dev = [
     "sphinx-autodoc-typehints",
     "sphinxext-rediraffe",
     "maturin",
-    "hydride",
-    "openmm",
 ]
 
 [tool.maturin]
@@ -97,7 +105,7 @@ pylint.max-args = 15
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.1",
-    "pytest-cov>=7.0.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "chex",
 ]
-# ignored-modules = ["biotite", "openmm", "rdkit", "hydride", "mdtraj", "h5py", "jax_md", "grain", "foldcomp", "openmmforcefields", "openff.toolkit", "proxide_rs"]
