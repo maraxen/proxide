@@ -56,7 +56,7 @@ pub struct CachedStructure {
     pub aatype: Vec<i8>,
     pub residue_index: Vec<i32>,
     pub chain_index: Vec<i32>,
-    pub num_residues: usize,
+    pub _num_residues: usize,
     /// Optional atom names (for Full format)
     pub atom_names: Option<Vec<String>>,
     /// Optional coordinate shape (for Full format)
@@ -148,15 +148,15 @@ impl FormatCache {
         self.cache.insert(key, value);
     }
 
-    pub fn len(&self) -> usize {
+    pub fn _len(&self) -> usize {
         self.cache.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub fn _is_empty(&self) -> bool {
         self.cache.is_empty()
     }
 
-    pub fn clear(&mut self) {
+    pub fn _clear(&mut self) {
         self.cache.clear();
         self.order.clear();
     }
@@ -180,15 +180,15 @@ pub fn insert_cached(key: CacheKey, value: CachedStructure) {
 }
 
 /// Clear the global cache
-pub fn clear_cache() {
+pub fn _clear_cache() {
     let mut cache = GLOBAL_CACHE.lock().unwrap();
-    cache.clear();
+    cache._clear();
 }
 
 /// Get the current cache size
-pub fn cache_size() -> usize {
+pub fn _cache_size() -> usize {
     let cache = GLOBAL_CACHE.lock().unwrap();
-    cache.len()
+    cache._len()
 }
 
 #[cfg(test)]
@@ -209,7 +209,7 @@ mod tests {
             aatype: vec![0],
             residue_index: vec![1],
             chain_index: vec![0],
-            num_residues: 1,
+            _num_residues: 1,
             atom_names: None,
             coord_shape: None,
         };
@@ -217,7 +217,7 @@ mod tests {
         cache.insert(key1.clone(), value.clone());
         cache.insert(key2.clone(), value.clone());
 
-        assert_eq!(cache.len(), 2);
+        assert_eq!(cache._len(), 2);
         assert!(cache.get(&key1).is_some());
         assert!(cache.get(&key2).is_some());
 
@@ -228,7 +228,7 @@ mod tests {
         // So key1 is LRU and should be evicted when key3 is inserted
         cache.insert(key3.clone(), value);
 
-        assert_eq!(cache.len(), 2);
+        assert_eq!(cache._len(), 2);
         // key1 should be evicted (was LRU after accessing key1 then key2)
         assert!(cache.get(&key1).is_none());
         assert!(cache.get(&key2).is_some());

@@ -423,7 +423,7 @@ pub fn find_rotatable_groups(elements: &[String], bonds: &[[usize; 2]]) -> Vec<R
 
         // Check rotation freedom
         // Nitrogen attached to double-bonded carbon is restricted to 180°
-        let mut is_free = true;
+        let is_free = true;
         if is_nitrogen[i] {
             // In a more complete implementation, we'd check bond order
             // For now, assume free rotation for simplicity

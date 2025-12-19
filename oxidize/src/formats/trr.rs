@@ -15,7 +15,7 @@ pub enum TrrError {
     #[error("Invalid TRR file: {0}")]
     InvalidFormat(String),
     #[error("Unexpected end of file")]
-    UnexpectedEof,
+    _UnexpectedEof,
 }
 
 #[derive(Debug, Clone)]
@@ -31,8 +31,8 @@ pub struct TrrHeader {
     pub natoms: usize,
     pub step: i32,
     pub t: f64,
-    pub lambda: f64,
-    pub version: String,
+    pub _lambda: f64,
+    pub _version: String,
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +41,7 @@ pub struct TrrFrame {
     pub velocities: Option<Vec<f32>>,       // nm / ps
     pub forces: Option<Vec<f32>>,           // kJ / mol / nm
     pub box_vectors: Option<[[f32; 3]; 3]>, // Angstroms
-    pub step: i32,
+    pub _step: i32,
     pub time: f32,
 }
 
@@ -127,8 +127,8 @@ impl TrrReader {
             natoms,
             step,
             t,
-            lambda,
-            version,
+            _lambda: lambda,
+            _version: version,
         }))
     }
 
@@ -224,7 +224,7 @@ impl TrrReader {
             velocities,
             forces,
             box_vectors,
-            step: header.step,
+            _step: header.step,
             time: header.t as f32,
         }))
     }
@@ -245,7 +245,7 @@ pub struct TrrTrajectory {
     pub times: Vec<f32>,
     pub coords: Vec<Vec<f32>>,
     pub velocities: Option<Vec<Vec<f32>>>,
-    pub forces: Option<Vec<Vec<f32>>>,
+    pub _forces: Option<Vec<Vec<f32>>>,
     pub box_vectors: Option<Vec<[[f32; 3]; 3]>>,
 }
 
@@ -301,7 +301,7 @@ pub fn parse_trr(path: &str) -> Result<TrrTrajectory, TrrError> {
         times,
         coords,
         velocities: if has_vel { Some(vels) } else { None },
-        forces: if has_frc { Some(frcs) } else { None },
+        _forces: if has_frc { Some(frcs) } else { None },
         box_vectors: if has_box { Some(boxes) } else { None },
     })
 }

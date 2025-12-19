@@ -98,7 +98,7 @@ class Molecule:
           # Format: atom_id atom_name x y z atom_type [subst_id subst_name charge [status_bit]]
           parts = line.split()
           if len(parts) >= 6:
-            atom_id = int(parts[0])  # 1-indexed
+            _atom_id = int(parts[0])  # 1-indexed
             atom_name = parts[1]
             x, y, z = float(parts[2]), float(parts[3]), float(parts[4])
             atom_type = parts[5]  # GAFF type (e.g., ca, c3, os)
@@ -352,7 +352,6 @@ class Molecule:
     """
     try:
       from rdkit import Chem
-      from rdkit.Chem import AllChem
     except ImportError as e:
       raise ImportError(
         "RDKit is required for this operation. Install with: pip install rdkit",
@@ -373,7 +372,7 @@ class Molecule:
       3: Chem.BondType.TRIPLE,
     }
 
-    for (i, j), order in zip(self.bonds, self.bond_orders):
+    for (i, j), order in zip(self.bonds, self.bond_orders, strict=True):
       bond_type = bond_type_map.get(order, Chem.BondType.SINGLE)
       mol.AddBond(i, j, bond_type)
 

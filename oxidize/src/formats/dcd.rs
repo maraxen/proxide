@@ -21,11 +21,11 @@ pub enum DcdError {
 pub struct DcdHeader {
     pub n_frames: usize,
     pub n_atoms: usize,
-    pub start_step: i32,
-    pub save_freq: i32,
+    pub _start_step: i32,
+    pub _save_freq: i32,
     pub delta: f32,
     pub has_unit_cell: bool,
-    pub charmm_version: i32,
+    pub _charmm_version: i32,
     pub is_little_endian: bool,
 }
 
@@ -131,11 +131,11 @@ impl DcdReader {
             header: DcdHeader {
                 n_frames,
                 n_atoms,
-                start_step,
-                save_freq,
+                _start_step: start_step,
+                _save_freq: save_freq,
                 delta,
                 has_unit_cell,
-                charmm_version,
+                _charmm_version: charmm_version,
                 is_little_endian,
             },
         })

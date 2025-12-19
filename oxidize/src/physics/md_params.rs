@@ -19,10 +19,10 @@ pub enum ParamError {
     MissingTemplate(String),
 
     #[error("Missing atom in template: residue={0}, atom={1}")]
-    MissingAtom(String, String),
+    _MissingAtom(String, String),
 
     #[error("Missing nonbonded params for atom type: {0}")]
-    MissingNonbonded(String),
+    _MissingNonbonded(String),
 }
 
 /// How to handle missing residue templates
@@ -748,7 +748,7 @@ fn get_terminal_template_name(
 }
 
 /// Find the closest matching template based on shared atom names
-fn find_closest_template<'a>(
+fn _find_closest_template<'a>(
     res_info: &crate::processing::ResidueInfo,
     ff: &'a ForceField,
 ) -> Option<&'a ResidueTemplate> {

@@ -11,7 +11,7 @@ use crate::spec::OutputSpec;
 
 /// Maximum atoms per residue for padding
 /// Set to 27 which covers most amino acids with hydrogens
-const MAX_ATOMS_PER_RESIDUE: usize = 27;
+const _MAX_ATOMS_PER_RESIDUE: usize = 27;
 
 /// Formatted structure with all atoms (padded representation)
 #[derive(Debug)]

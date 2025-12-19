@@ -124,14 +124,13 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
         })?;
 
         // 4. Add Hydrogens / Infer Bonds on Reference
-        let mut bonds_for_h = Vec::new();
         if spec.add_hydrogens {
             log::debug!("Adding hydrogens to reference model...");
             let all_coords = processed.extract_all_coords();
             let all_elements = &processed.raw_atoms.elements;
 
             // Infer bonds if not provided
-            bonds_for_h = geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
+            let mut bonds_for_h = geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
 
             eprintln!(
                 "[OXIDIZE DEBUG] Calling add_hydrogens_with_relax. relax={}, max_iter={:?}",
@@ -153,21 +152,19 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             // Note: ProcessedStructure was updated in-place, no need to reassign
             let _ = processed; // Keep processed in scope (no-op, updated in place)
         } else if spec.infer_bonds {
-            let all_coords = processed.extract_all_coords();
-            let all_elements = &processed.raw_atoms.elements;
-            bonds_for_h = geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
+            // Bonds will be inferred later in section "Topology" if needed
         }
 
         // 5. Format and Stack
-        let (mut dict, cached_structure) = match spec.coord_format {
+        let (dict, cached_structure) = match spec.coord_format {
             CoordFormat::Atom37 => {
-                let formatter = formatters::Atom37Formatter;
+                let _formatter = formatters::Atom37Formatter;
                 let ref_formatted = formatters::Atom37Formatter::format(&processed, &spec)
                     .map_err(|e| {
                         pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
                     })?;
 
-                let mut dict = ref_formatted.to_py_dict(py)?;
+                let dict = ref_formatted.to_py_dict(py)?;
 
                 // --- Multi-Model Stacking for Atom37 ---
                 if models_to_process.len() > 1 {
@@ -248,7 +245,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                         aatype: ref_formatted.aatype.clone(),
                         residue_index: ref_formatted.residue_index.clone(),
                         chain_index: ref_formatted.chain_index.clone(),
-                        num_residues: ref_formatted.aatype.len(),
+                        _num_residues: ref_formatted.aatype.len(),
                         atom_names: None,
                         coord_shape: None,
                     })
@@ -288,7 +285,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                         aatype: formatted.aatype.clone(),
                         residue_index: formatted.residue_index.clone(),
                         chain_index: formatted.chain_index.clone(),
-                        num_residues: formatted.aatype.len(),
+                        _num_residues: formatted.aatype.len(),
                         atom_names: Some(formatted.atom_names.clone()),
                         coord_shape: Some(formatted.coord_shape),
                     })

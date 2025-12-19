@@ -16,6 +16,8 @@ pub mod mdtraj_h5;
 
 // Re-export for convenience
 #[cfg(feature = "mdcath")]
+#[allow(unused_imports)]
 pub use mdcath_h5::{MdcathDomain, MdcathFrame};
 #[cfg(feature = "mdcath")]
+#[allow(unused_imports)]
 pub use mdtraj_h5::{MdtrajFrame, MdtrajH5Result};
