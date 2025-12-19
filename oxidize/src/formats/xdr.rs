@@ -46,7 +46,7 @@ impl<R: Read> XdrReader<R> {
         Ok(String::from_utf8_lossy(&buf).into_owned())
     }
 
-    pub fn read_opaque(&mut self, len: usize) -> Result<Vec<u8>> {
+    pub fn _read_opaque(&mut self, len: usize) -> Result<Vec<u8>> {
         let mut buf = vec![0u8; len];
         self.inner.read_exact(&mut buf)?;
 

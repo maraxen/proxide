@@ -202,14 +202,14 @@ pub fn smith_waterman_affine(
 /// Traceback for local alignment
 fn traceback_local(
     h: &[Vec<i32>],
-    e: &[Vec<i32>],
+    _e: &[Vec<i32>],
     f: &[Vec<i32>],
     seq_a: &[u8],
     seq_b: &[u8],
     mut i: usize,
     mut j: usize,
-    gap_open: i32,
-    gap_extend: i32,
+    _gap_open: i32,
+    _gap_extend: i32,
 ) -> (Vec<Option<usize>>, Vec<Option<usize>>, String, String) {
     let mut aligned_a = Vec::new();
     let mut aligned_b = Vec::new();

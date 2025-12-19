@@ -182,11 +182,11 @@ class AtomicSystem:
     """
     try:
       from openmm.app import Element, Topology
-    except ImportError:
+    except ImportError as e:
       raise ImportError(
         "OpenMM is required for to_openmm_topology(). "
         "Install with: conda install -c conda-forge openmm",
-      )
+      ) from e
 
     import numpy as np
 
@@ -273,11 +273,11 @@ class AtomicSystem:
         System,
       )
       from openmm import unit as u
-    except ImportError:
+    except ImportError as e:
       raise ImportError(
         "OpenMM is required for to_openmm_system(). "
         "Install with: conda install -c conda-forge openmm",
-      )
+      ) from e
 
     import numpy as np
 
@@ -514,13 +514,13 @@ class AtomicSystem:
     if self.proper_dihedrals is not None:
       dihedrals = np.asarray(self.proper_dihedrals)
       for d_idx in range(len(dihedrals)):
-        i, l = int(dihedrals[d_idx, 0]), int(dihedrals[d_idx, 3])
-        if i < n_atoms and l < n_atoms:
-          pair = tuple(sorted((i, l)))
+        idx_i, idx_l = int(dihedrals[d_idx, 0]), int(dihedrals[d_idx, 3])
+        if idx_i < n_atoms and idx_l < n_atoms:
+          pair = tuple(sorted((idx_i, idx_l)))
           if pair not in excluded_pairs:
             # Get parameters
-            q1, sig1, eps1 = particle_params[i]
-            q2, sig2, eps2 = particle_params[l]
+            q1, sig1, eps1 = particle_params[idx_i]
+            q2, sig2, eps2 = particle_params[idx_l]
 
             # Calculate scaled parameters
             # Coulomb 1-4
@@ -531,8 +531,8 @@ class AtomicSystem:
             epsilon_mix = np.sqrt(eps1 * eps2) * lj14scale
 
             nonbonded.addException(
-              i,
-              l,
+              idx_i,
+              idx_l,
               charge_prod,
               sigma_mix * u.nanometer,
               epsilon_mix * u.kilojoule_per_mole,
