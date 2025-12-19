@@ -2599,6 +2599,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "hydride" },
     { name = "maturin" },
     { name = "myst-nb" },
     { name = "pytest" },
@@ -2628,6 +2629,7 @@ requires-dist = [
     { name = "h5py" },
     { name = "huggingface-hub", marker = "extra == 'ml'" },
     { name = "hydride" },
+    { name = "hydride", marker = "extra == 'dev'" },
     { name = "jax" },
     { name = "jax-md" },
     { name = "jaxtyping" },

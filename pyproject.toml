@@ -46,6 +46,7 @@ dev = [
     "sphinx-autodoc-typehints",
     "sphinxext-rediraffe",
     "maturin",
+    "hydride",
 ]
 
 [tool.maturin]
