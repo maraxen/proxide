@@ -5,6 +5,7 @@ pub mod mmcif;
 pub mod pdb;
 pub mod pqr;
 pub mod trr;
+pub mod xdr;
 pub mod xtc;
 
 // HDF5 formats (feature-gated)

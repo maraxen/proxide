@@ -87,9 +87,9 @@
 
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
-| Coordinate ordering | `Atom37Formatter::format()` | Legacy Python `Protein` | 1e-3 Å | ⬜ |
-| Atom mask | atom_mask output | Legacy Python | Exact | ⬜ |
-| Residue type indices | aatype output | Legacy Python | Exact | ⬜ |
+| Coordinate ordering | `Atom37Formatter::format()` | Legacy Python `Protein` | 1e-3 Å | ✅ |
+| Atom mask | atom_mask output | Legacy Python | Exact | ✅ |
+| Residue type indices | aatype output | Legacy Python | Exact | ✅ |
 
 ### 3.2 Atom14 Format
 
@@ -112,15 +112,15 @@
 
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
-| Coulomb potential | `coulomb_potential()` | Legacy `features.py` | 1e-4 kJ/mol | ⬜ |
-| Coulomb forces | `coulomb_forces()` | OpenMM NonbondedForce | 1e-4 kJ/mol/nm | ⬜ |
+| Coulomb potential | `coulomb_potential()` | Legacy `features.py` | 1e-4 kJ/mol | ✅ |
+| Coulomb forces | `coulomb_forces()` | OpenMM NonbondedForce | 1e-4 kJ/mol/nm | ✅ |
 
 ### 4.2 Van der Waals
 
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
-| LJ energy | `lj_energy()` | Legacy `features.py` | 1e-4 kJ/mol | ⬜ |
-| LJ forces | `lj_forces()` | OpenMM NonbondedForce | 1e-4 kJ/mol/nm | ⬜ |
+| LJ energy | `lj_energy()` | Legacy `features.py` | 1e-4 kJ/mol | ✅ |
+| LJ forces | `lj_forces()` | OpenMM NonbondedForce | 1e-4 kJ/mol/nm | ✅ |
 
 ### 4.3 Radial Basis Functions
 
@@ -170,43 +170,48 @@
 
 ### XTC Format
 
-> **Implementation Status:** ✅ FIXED (2024-12-12)
+> **Implementation Status:** ✅ FIXED (2024-12-19)
 >
-> - Migrated from `chemfiles` (crashed with SIGFPE) to pure-Rust `molly` crate
-> - Enabled via `xtc-pure` feature flag (default in `full` feature)
-> - Exact coordinate parity with MDTraj verified
-> - No C++ dependencies, no crashes
+> - Migrated from `chemfiles` to pure-Rust `molly` crate.
+> - Enabled via `xtc` feature flag (default in `full` feature).
+> - Exact coordinate parity with MDTraj verified.
+> - No C++ dependencies, no crashes.
 
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
 | Frame coordinates | `parse_xtc()` via molly | MDTraj `load_xtc()` | 1e-3 Å | ✅ |
 | Frame count | num_frames | MDTraj | Exact | ✅ |
-| Unitcell/box | box_vectors | MDTraj | 1e-4 nm | ⬜ |
+| Unitcell/box | box_vectors | MDTraj | 1e-4 nm | ✅ |
 
 ### DCD Format
 
-> **Status:** ⚠️ DEFERRED - Blocked by chemfiles SIGFPE crash
+> **Implementation Status:** ✅ FIXED (2024-12-19)
 >
-> - No pure-Rust DCD crate available
-> - Custom implementation planned (DCD is a simple binary format)
+> - Pure-Rust implementation in `dcd.rs`.
+> - Always available, no special feature flag required.
+> - Verified against MDTraj for coordinates and unit cells.
 
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
-| Frame coordinates | `parse_dcd_file()` | MDTraj `load_dcd()` | 1e-3 Å | ⏳ |
-| Header parsing | DcdHeader | MDTraj | Exact | ⏳ |
+| Frame coordinates | `parse_dcd()` | MDTraj `load_dcd()` | 1e-3 Å | ✅ |
+| Header parsing | DcdHeader | MDTraj | Exact | ✅ |
+| Unit cell | unit_cells | MDTraj | 1e-3 Å | ✅ |
 
 ### TRR Format
 
-> **Status:** ⚠️ DEFERRED - Blocked by chemfiles SIGFPE crash
+> **Implementation Status:** ✅ FIXED (2024-12-19)
 >
-> - `groan_rs` crate has TRR support (pure Rust) but complex API
-> - May implement using groan_rs or custom XDR parser
+> - Pure-Rust implementation in `trr.rs` with custom XDR reader.
+> - Always available, no special feature flag required.
+> - Support for coordinates, velocities, forces, and box vectors.
+> - Verified against MDTraj for all fields.
 
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
-| Frame coordinates | `parse_trr_file()` | MDTraj `load_trr()` | 1e-3 Å | ⏳ |
-| Velocities | velocities field | MDTraj | 1e-4 | ⏳ |
-| Forces | forces field | MDTraj (if present) | 1e-4 | ⏳ |
+| Frame coordinates | `parse_trr()` | MDTraj `load_trr()` | 1e-3 Å | ✅ |
+| Velocities | velocities field | MDTraj | 1e-4 | ✅ |
+| Forces | forces field | MDTraj (if present) | 1e-4 | ✅ |
+| Box vectors | box_vectors | MDTraj | 1e-3 Å | ✅ |
 
 ---
 
@@ -216,9 +221,9 @@
 
 | Test | Rust Function | Reference | Tolerance | Status |
 |------|--------------|-----------|-----------|--------|
-| Coordinates | `parse_mdtraj_h5()` | MDTraj `load()` | 1e-3 Å | ⬜ |
-| Topology | chain/residue info | MDTraj | Exact | ⬜ |
-| Atom names | atom_names | MDTraj | Exact | ⬜ |
+| Coordinates | `parse_mdtraj_h5()` | MDTraj `load()` | 1e-3 Å | ✅ |
+| Topology | chain/residue info | MDTraj | Exact | ✅ |
+| Atom names | atom_names | MDTraj | Exact | ✅ |
 
 ### MDCATH HDF5
 
@@ -360,6 +365,7 @@ Track which parity tests are passing in CI:
 ✅ PDB parsing (coordinates)
 ✅ PDB parsing (residues)
 ✅ Bond inference
+✅ XTC/DCD/TRR Reading (coordinates & box)
 ⬜ Dihedral angles (pending MDTraj comparison)
 ⬜ OpenMM energy parity
 ```
