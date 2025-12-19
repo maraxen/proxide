@@ -5,9 +5,8 @@ from __future__ import annotations
 import pathlib
 from typing import IO, TYPE_CHECKING, Any
 
-# Register parsers by importing modules
+# Register parsers by importing modules lazily or when needed
 # NOTE: biotite.py removed - Rust parser is now the primary parser for pdb/cif
-from proxide.io.parsing import mdtraj, pqr, rust  # noqa: F401
 from proxide.io.parsing.registry import FormatNotSupportedError, get_parser
 
 if TYPE_CHECKING:
@@ -67,6 +66,16 @@ def load_structure(
   # Default to pdb for file-like objects (e.g. StringIO) if format not specified
   if file_format is None and path is None:
     file_format = "pdb"
+
+  if file_format == "mdtraj":
+    from proxide.io.parsing import mdtraj  # noqa: F401
+  elif file_format == "pqr":
+    from proxide.io.parsing import pqr  # noqa: F401
+  elif file_format in ("pdb", "cif", "mmcif"):
+    from proxide.io.parsing import rust  # noqa: F401
+  elif file_format == "foldcomp":
+    # Foldcomp might be in its own module or handled by rust
+    pass
 
   parser = get_parser(file_format)
   if not parser:
