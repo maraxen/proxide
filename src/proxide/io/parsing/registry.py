@@ -26,7 +26,9 @@ class FormatNotSupportedError(ProxideError):
 # --- Registry ---
 
 # Parser function signature:
-# (file_path: str | pathlib.Path | IO[str], chain_id: str | Sequence[str] | None, **kwargs) -> ProteinStream
+# Parser function signature:
+# (file_path: str | pathlib.Path | IO[str], chain_id: str | Sequence[str] | None, **kwargs)
+#   -> ProteinStream
 ParserFunc = Callable[..., "ProteinStream"]
 
 _PARSER_REGISTRY: dict[str, ParserFunc] = {}

@@ -18,7 +18,7 @@ except ImportError:
 
 def generate_test_trajectories(output_dir: Path, num_frames: int = 10):
     """Generate test trajectory files.
-    
+
     Args:
         output_dir: Directory to write trajectory files
         num_frames: Number of frames to generate

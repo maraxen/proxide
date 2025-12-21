@@ -14,6 +14,31 @@ from flax.struct import dataclass
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
+  from proxide.core.containers import Protein
+
+from proxide.core.types import (
+  AngleParams,
+  AtomChainIndex,
+  AtomMask,
+  AtomResidueIndex,
+  AtomTypes,
+  BondParams,
+  Bonds,
+  Charges,
+  CmapGrid,
+  CmapIndices,
+  Coordinates,
+  DihedralParams,
+  Elements,
+  Epsilons,
+  ImproperParams,
+  Impropers,
+  MoleculeType,
+  ProperDihedrals,
+  Radii,
+  Sigmas,
+)
+
 
 @dataclass(kw_only=True)
 class AtomicSystem:
@@ -39,36 +64,46 @@ class AtomicSystem:
 
   """
 
-  coordinates: jnp.ndarray
-  atom_mask: jnp.ndarray
-  elements: Sequence[str] | None = None
+  coordinates: Coordinates
+  atom_mask: AtomMask
+  elements: Elements | None = None
+  mapping: Any | None = None
+  full_coordinates: Coordinates | None = None
+  full_atom_mask: AtomMask | None = None
   atom_names: Sequence[str] | None = None
+  source: str | None = None
+
+  # Metadata for Protein conversion
+  atom_res_index: AtomResidueIndex | None = None
+  atom_chain_index: AtomChainIndex | None = None
+  res_names: Sequence[str] | None = None
+  chain_ids: Sequence[str] | None = None
 
   # HETATM / Topology features
-  molecule_type: jnp.ndarray | None = None  # (N_atoms,) 0=Protein, 1=Ligand, 2=Solvent, 3=Ion
-  atom_types: Sequence[str] | None = None  # GAFF/ForceField atom types
-  bonds: jnp.ndarray | None = None  # (N_bonds, 2) - atom index pairs
-  angles: jnp.ndarray | None = None  # (N_angles, 3) - i-j-k with j as central atom
-  proper_dihedrals: jnp.ndarray | None = None  # (N_dihedrals, 4) - proper torsions i-j-k-l
-  impropers: jnp.ndarray | None = None  # (N_impropers, 4) - improper torsions for planar groups
+  molecule_type: MoleculeType | None = None  # (N_atoms,) 0=Protein, 1=Ligand, 2=Solvent, 3=Ion
+  atom_types: AtomTypes | None = None  # GAFF/ForceField atom types
+  bonds: Bonds | None = None  # (N_bonds, 2) - atom index pairs
+  angles: ProperDihedrals | None = None  # (N_angles, 3) - i-j-k with j as central atom
+  proper_dihedrals: ProperDihedrals | None = None  # (N_dihedrals, 4) - proper torsions i-j-k-l
+  impropers: Impropers | None = None  # (N_impropers, 4) - improper torsions for planar groups
 
   # Force field parameters
-  bond_params: jnp.ndarray | None = None
-  angle_params: jnp.ndarray | None = None
-  dihedral_params: jnp.ndarray | None = None  # (N_dihedrals, 3) - [periodicity, phase, k]
-  improper_params: jnp.ndarray | None = None  # (N_impropers, 3) - [periodicity, phase, k]
+  bond_params: BondParams | None = None
+  angle_params: AngleParams | None = None
+  dihedral_params: DihedralParams | None = None  # (N_dihedrals, 3) - [periodicity, phase, k]
+  improper_params: ImproperParams | None = None  # (N_impropers, 3) - [periodicity, phase, k]
 
   # CMAP parameters for backbone correction
-  cmap_indices: jnp.ndarray | None = None  # (N_cmap, 5) - C-N-CA-C-N atom indices for phi-psi
-  cmap_grid: jnp.ndarray | None = None  # (grid_size, grid_size) raw energy grid in kJ/mol
+  cmap_indices: CmapIndices | None = None  # (N_cmap, 5) - C-N-CA-C-N atom indices for phi-psi
+  cmap_grid: CmapGrid | None = None  # (grid_size, grid_size) raw energy grid in kJ/mol
 
-  exclusion_mask: jnp.ndarray | None = None
+  exclusion_mask: Any | None = None
 
   # Optional MD parameters common to all systems
-  charges: jnp.ndarray | None = None
-  sigmas: jnp.ndarray | None = None
-  epsilons: jnp.ndarray | None = None
-  radii: jnp.ndarray | None = None
+  charges: Charges | None = None
+  sigmas: Sigmas | None = None
+  epsilons: Epsilons | None = None
+  radii: Radii | None = None
 
   # Internal storage for Rust object (if available)
   _rust_obj: Any = None
@@ -181,7 +216,7 @@ class AtomicSystem:
 
     """
     try:
-      from openmm.app import Element, Topology
+      from openmm.app import Element, Topology  # type: ignore[unresolved-import]
     except ImportError as e:
       raise ImportError(
         "OpenMM is required for to_openmm_topology(). "
@@ -265,14 +300,14 @@ class AtomicSystem:
 
     """
     try:
-      from openmm import (
+      from openmm import (  # type: ignore[unresolved-import]
         HarmonicAngleForce,
         HarmonicBondForce,
         NonbondedForce,
         PeriodicTorsionForce,
         System,
       )
-      from openmm import unit as u
+      from openmm import unit as u  # type: ignore[unresolved-import]
     except ImportError as e:
       raise ImportError(
         "OpenMM is required for to_openmm_system(). "
@@ -447,7 +482,7 @@ class AtomicSystem:
     # CMAP Torsion Force (backbone corrections)
     if self.cmap_indices is not None and self.cmap_grid is not None:
       try:
-        from openmm import CMAPTorsionForce
+        from openmm import CMAPTorsionForce  # type: ignore[unresolved-import]
       except ImportError:
         CMAPTorsionForce = None
 
@@ -666,6 +701,124 @@ class AtomicSystem:
       epsilons=new_epsilons,
       radii=new_radii,
     )
+
+  def to_protein(self, format: str = "Atom37") -> Protein:
+    """Convert AtomicSystem to Protein object.
+
+    Args:
+        format: Format for protein structure ("Atom37", "Atom14", "Full", "BackboneOnly").
+                Defaults to "Atom37".
+
+    Returns:
+        Protein object.
+
+    Raises:
+        ValueError: If required metadata is missing or format is not supported.
+    """
+    import numpy as np
+
+    from proxide.chem.residues import atom_order, restype_3to1, restype_order_with_x
+    from proxide.core.containers import Protein
+
+    if self.atom_res_index is None or self.res_names is None:
+      raise ValueError(
+        "Cannot convert to Protein: missing residue information (atom_res_index, res_names)"
+      )
+
+    # Group atoms by residue
+    # We assume atom_res_index is contiguous and sorted, but let's be safe
+    # Actually, usually they correspond to unique residue indices.
+
+    # Get unique residues
+    unique_res_indices = np.unique(np.asarray(self.atom_res_index))
+    num_residues = len(unique_res_indices)
+
+    # Check if indices are 0..N-1
+    if num_residues > 0 and (unique_res_indices.max() != num_residues - 1):
+      # We might need to handle non-contiguous indices or just assume they map to 0..N-1 in Protein
+      # For this implementation, we map unique indices to 0..N-1
+      pass
+
+    # Prepare Protein arrays
+    if format == "Atom37":
+      coords_37 = np.zeros((num_residues, 37, 3), dtype=np.float32)
+      mask_37 = np.zeros((num_residues, 37), dtype=np.float32)
+      aatype = np.zeros(num_residues, dtype=np.int32)
+      residue_index = np.zeros(num_residues, dtype=np.int32)
+      chain_index = np.zeros(num_residues, dtype=np.int32)
+
+      # We need to iterate over atoms and place them in the grid
+      # This is slow in Python, but fine for conversion for now.
+      # Vectorized approach would be better.
+
+      # Map res_id to 0..N-1
+      res_id_map = {rid: i for i, rid in enumerate(unique_res_indices)}
+
+      # Get flattened arrays
+      res_indices = np.asarray(self.atom_res_index)
+      chain_indices = (
+        np.asarray(self.atom_chain_index)
+        if self.atom_chain_index is not None
+        else np.zeros(len(res_indices), dtype=int)
+      )
+
+      # We need atom names to map to Atom37
+      if self.atom_names is None:
+        raise ValueError("AtomicSystem must have atom_names to convert to Atom37")
+
+      # We need residue names to determine aatype
+      # res_names should be per atom? Or per residue?
+      # The field added is `res_names: Sequence[str]` per atom
+      # (matching usage in rust parser output usually)
+      # But efficiently we want per-residue info.
+
+      # Iterate over atoms
+      for i in range(len(res_indices)):
+        rid = res_indices[i]
+        if rid not in res_id_map:
+          continue
+
+        res_idx = res_id_map[rid]
+        name = self.atom_names[i]
+        res_name = self.res_names[i]
+
+        # Populate residue metadata (first time we see it)
+        if mask_37[res_idx].sum() == 0:
+          # Set aatype
+          # use get with "X" default
+          short_res = restype_3to1.get(res_name, "X")
+          aatype[res_idx] = restype_order_with_x.get(short_res, 20)
+
+          residue_index[res_idx] = rid  # Use original index
+          chain_index[res_idx] = chain_indices[i]
+
+        # Place atom
+        if name in atom_order:
+          atom_idx = atom_order[name]
+          coords_37[res_idx, atom_idx] = self.coordinates[i]
+          mask_37[res_idx, atom_idx] = 1.0
+
+      # Create Protein
+      return Protein(
+        coordinates=jnp.array(coords_37),
+        aatype=jnp.array(aatype),
+        one_hot_sequence=jnp.array(np.eye(21)[aatype]),
+        mask=jnp.array(mask_37[:, atom_order["CA"]]),  # CA mask
+        residue_index=jnp.array(residue_index),
+        chain_index=jnp.array(chain_index),
+        atom_mask=jnp.array(mask_37),  # Used for reconstruction
+        elements=self.elements,
+        atom_names=self.atom_names,
+        full_coordinates=self.coordinates,  # Link to source coordinates
+        full_atom_mask=self.atom_mask,
+        epsilons=self.epsilons,  # Propagate physics
+        charges=self.charges,
+        radii=self.radii,
+        sigmas=self.sigmas,
+        format="Atom37",
+      )
+    else:
+      raise ValueError(f"Format {format} not yet implemented for to_protein")
 
 
 @dataclass(kw_only=True)

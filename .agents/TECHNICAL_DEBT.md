@@ -94,6 +94,15 @@ GAFF provides LJ parameters and atom types but NOT partial charges.
 
 ---
 
+### Foldcomp Direct Parsing
+
+**Status:** Not started
+
+**Tasks:**
+
+- [ ] Implement direct parsing of foldcomp, implementing their C++ logic in Rust
+- [ ] Direct python binding to our Rust implementation
+
 ## Code Health Notes
 
 ### Lint Warnings (Acceptable)

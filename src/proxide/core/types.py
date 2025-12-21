@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Union
+from typing import Any
 
 from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, PyTree
 from optax import GradientTransformation
@@ -22,7 +22,7 @@ AtomResidueIndex = Int[Array, "num_residues num_atoms"]  # Residue indices for a
 AtomChainIndex = Int[Array, "num_residues num_atoms"]  # Chain indices for atoms
 Parameters = Float[Array, "num_parameters"]  # Model parameters
 ModelParameters = PyTree[str, "P"]
-Model = Union[Any, ModelParameters]
+Model = Any | ModelParameters
 AlphaCarbonDistance = Float[Array, "num_atoms num_atoms"]  # Distances between alpha carbon atoms
 Distances = Float[Array, "num_atoms num_neighbors"]  # Distances between nodes
 AtomIndexPair = Int[Array, "2"]  # Pairs of atom indices for edges
@@ -84,3 +84,25 @@ class TrainingMetrics(dict):
   accuracy: float
   perplexity: float
   learning_rate: float
+
+
+# Missing types added
+Coordinates = Float[Array, "num_atoms 3"]
+# Elements = list[str]
+# Defined as Any typically or list, but AtomicSystem uses Any | None currently for elements
+Elements = Any
+MoleculeType = Int[Array, "num_atoms"]
+AtomTypes = Any  # list[str]
+Bonds = Int[Array, "num_bonds 2"]
+ProperDihedrals = Int[Array, "num_dihedrals 4"]
+Impropers = Int[Array, "num_impropers 4"]
+BondParams = Float[Array, "num_bonds 2"]
+AngleParams = Float[Array, "num_angles 2"]
+DihedralParams = Float[Array, "num_dihedrals 3"]
+ImproperParams = Float[Array, "num_impropers 3"]
+CmapIndices = Int[Array, "num_cmap 5"]
+CmapGrid = Float[Array, "grid_size grid_size"]
+Charges = Float[Array, "num_atoms"]
+Sigmas = Float[Array, "num_atoms"]
+Epsilons = Float[Array, "num_atoms"]
+Radii = Float[Array, "num_atoms"]

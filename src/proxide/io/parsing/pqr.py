@@ -7,11 +7,12 @@ used for electrostatics calculations (Poisson-Boltzmann, etc).
 
 import logging
 import pathlib
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from typing import IO, Any
 
 import jax.numpy as jnp
 import numpy as np
+from jaxtyping import ArrayLike
 
 from proxide import _oxidize
 from proxide.core.atomic_system import AtomicSystem
@@ -20,10 +21,10 @@ from proxide.io.parsing.registry import ParsingError, register_parser
 logger = logging.getLogger(__name__)
 
 # Type alias for PQR stream
-PQRStream = "Sequence[AtomicSystem]"
+PQRStream = Generator[AtomicSystem, None, None]
 
 
-def parse_pqr_rust(file_path: str | pathlib.Path) -> dict[str, Any]:
+def parse_pqr_rust(file_path: str | pathlib.Path) -> dict[str, ArrayLike]:
   """Parse a PQR file using the Rust parser.
 
   Args:
@@ -92,14 +93,30 @@ def _convert_rust_pqr_to_system(
   # Create atom mask (all atoms present in PQR)
   atom_mask = np.ones(num_atoms, dtype=np.float32)
 
-  return AtomicSystem(
+  system = AtomicSystem(
     coordinates=jnp.array(coords),
     atom_mask=jnp.array(atom_mask),
     elements=elements,
     atom_names=atom_names,
     charges=jnp.array(charges) if len(charges) > 0 else None,
     radii=jnp.array(radii) if len(radii) > 0 else None,
+    epsilons=jnp.array(data.get("epsilons")) if data.get("epsilons") is not None else None,
+    # Populate metadata for Protein conversion
+    atom_res_index=jnp.array(data["res_ids"])[mask] if chain_id else jnp.array(data["res_ids"]),
+    # We need numeric chain index for Protein, but PQR gives chain IDs (strings)
+    # We can perform a mapping here or let to_protein handle it?
+    # For now, let's just store str chain_ids and let AtomicSystem handle indices if possible.
+    # AtomicSystem.atom_chain_index expects Int[Array].
+    atom_chain_index=None,  # To be populated if we map strings to ints
+    res_names=res_names,
+    chain_ids=chain_ids,
   )
+
+  # Populate atom_chain_index by mapping chain_ids to integers
+  unique_chains = sorted(list(set(chain_ids)))
+  chain_map = {c: i for i, c in enumerate(unique_chains)}
+  chain_indices = [chain_map[c] for c in chain_ids]
+  return system.replace(atom_chain_index=jnp.array(chain_indices, dtype=jnp.int32))
 
 
 @register_parser(["pqr"])
@@ -110,8 +127,9 @@ def load_pqr(
   extract_dihedrals: bool = False,  # noqa: ARG001
   populate_physics: bool = False,  # noqa: ARG001
   force_field_name: str = "ff14SB",  # noqa: ARG001
+  return_type: str = "AtomicSystem",
   **kwargs: Any,  # noqa: ANN401, ARG001
-) -> PQRStream:
+) -> Any:  # Returns PQRStream (yields AtomicSystem) or yields Protein
   """Load a PQR file.
 
   Uses the Rust parser for high-performance parsing.
@@ -142,7 +160,11 @@ def load_pqr(
   try:
     data = parse_pqr_rust(path)
     system = _convert_rust_pqr_to_system(data, chain_id)
-    yield system
+
+    if return_type == "Protein":
+      yield system.to_protein()
+    else:
+      yield system
   except Exception as e:
     msg = f"Failed to parse PQR from source: {file_path}. {e}"
     raise ParsingError(msg) from e

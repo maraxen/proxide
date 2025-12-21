@@ -39,8 +39,9 @@ def load_structure(
   file_path: str | pathlib.Path | IO[str],
   file_format: str | None = None,
   chain_id: str | Sequence[str] | None = None,
+  return_type: str = "Protein",
   **kwargs: Any,  # noqa: ANN401
-) -> ProteinStream:
+) -> Any:
   """Load a protein structure from a file.
 
   Args:
@@ -77,6 +78,10 @@ def load_structure(
     # Foldcomp might be in its own module or handled by rust
     pass
 
+  if file_format is None:
+    msg = f"Failed to infer file format for: {file_path}"
+    raise FormatNotSupportedError(msg)
+
   parser = get_parser(file_format)
   if not parser:
     msg = (
@@ -84,7 +89,7 @@ def load_structure(
     )
     raise FormatNotSupportedError(msg)
 
-  return parser(file_path, chain_id=chain_id, **kwargs)
+  return parser(file_path, chain_id=chain_id, return_type=return_type, **kwargs)
 
 
 parse_input = load_structure

@@ -6,7 +6,7 @@ to Protocol Buffers for safe, cross-language use in the Rust extension.
 
 Usage:
     python convert_fragments.py [--output fragments.pb]
-    
+
 Requirements:
     - hydride (with fragments.pickle generated)
     - protobuf Python package
@@ -30,7 +30,7 @@ def load_pickle_fragments(pickle_path: Path) -> dict:
 
 def convert_to_protobuf_dict(frag_dict: dict) -> dict:
     """Convert the pickle dictionary to a structure matching our protobuf schema.
-    
+
     The pickle structure is:
         key: (element, charge, stereo, tuple(bond_types))
         value: (res_name, atom_name, heavy_coord (3,3), hydrogen_coord (k,3))
@@ -94,7 +94,7 @@ def write_json_preview(library: dict, output_path: Path):
 
 def write_binary_format(library: dict, output_path: Path):
     """Write the library in a simple binary format.
-    
+
     Format (all little-endian):
     - Header: b'FRAG' (4 bytes)
     - Version: u32

@@ -6,7 +6,7 @@ prxteinmpnn.utils.data_structures
 from __future__ import annotations
 
 from collections.abc import Generator, Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import jax.numpy as jnp
 import numpy as np
@@ -15,11 +15,8 @@ from flax.struct import dataclass
 from proxide.chem.residues import atom_order
 
 if TYPE_CHECKING:
-  from jaxtyping import Int
-
   from proxide.core.types import (
     AlphaCarbonMask,
-    AtomMask,
     BackboneDihedrals,
     ChainIndex,
     OneHotProteinSequence,
@@ -117,15 +114,15 @@ class Protein(AtomicSystem):
   residue_index: ResidueIndex
   chain_index: ChainIndex
   dihedrals: BackboneDihedrals | None = None
-  mapping: Int | None = None
-  full_coordinates: StructureAtomicCoordinates | None = None
-  full_atom_mask: AtomMask | None = None
+  mapping: Any | None = None
+  full_coordinates: Any | None = None
+  full_atom_mask: Any | None = None
 
-  physics_features: jnp.ndarray | None = None
-  backbone_indices: jnp.ndarray | None = None
-  vdw_features: jnp.ndarray | None = None
-  rbf_features: jnp.ndarray | None = None
-  electrostatic_features: jnp.ndarray | None = None
+  physics_features: Any | None = None
+  backbone_indices: Any | None = None
+  vdw_features: Any | None = None
+  rbf_features: Any | None = None
+  electrostatic_features: Any | None = None
   format: Literal["Atom37", "Atom14", "Full", "BackboneOnly"] | None = None
 
   @classmethod
@@ -270,6 +267,25 @@ class Protein(AtomicSystem):
         if rust_dict.get("electrostatic_features") is not None
         else None,
         format="Atom37",
+        source=source,
+        # Populate new AtomicSystem fields to maintain info
+        # We need mapping for chain IDs if available in rust_dict
+        # rust_dict usually has "chain_ids" (list of strings) corresponding to "chain_index"?
+        # If so, we can populate chain_ids sequence.
+        chain_ids=rust_dict.get("unique_chain_ids")
+        or (["A"] * len(rust_dict["chain_index"])),  # Placeholder if missing
+        res_names=None,  # Only available if passed/parsed
+        atom_res_index=convert(
+          atom_mask_2d * rust_dict["residue_index"][:, None], dtype=np.int32
+        ).flatten(),  # Approx?
+        # Actually, best to rely on flattening existing if possible.
+        # Populate full_coordinates (AtomicSystem needs it)
+        full_coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3)
+        if is_atom37
+        else convert(raw_coords, dtype=np.float32),
+        full_atom_mask=convert(raw_mask, dtype=np.float32).flatten()
+        if is_atom37
+        else convert(raw_mask, dtype=np.float32),
       )
     # Flat format (Full)
     # In this case, Protein fields like 'mask' (CA mask) need to be derived differently
@@ -291,6 +307,9 @@ class Protein(AtomicSystem):
 
     return cls(
       coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),  # (N_padded, 3)
+      full_coordinates=convert(raw_coords, dtype=np.float32).reshape(
+        -1, 3
+      ),  # Full coords populated
       aatype=convert(rust_dict["aatype"], dtype=np.int8),
       one_hot_sequence=convert(np.eye(21)[rust_dict["aatype"]]),
       mask=convert(np.ones(num_residues), dtype=np.float32),  # Residue mask
@@ -348,10 +367,11 @@ class Protein(AtomicSystem):
       if rust_dict.get("electrostatic_features") is not None
       else None,
       format="Full",
+      source=source,
     )
 
 
-ProteinStream = Generator[Protein, None]
+ProteinStream = Generator[AtomicSystem, None, None]
 """Generator yielding Protein instances."""
 
 ProteinBatch = Sequence[Protein]

@@ -1,5 +1,5 @@
-import urllib.request
 import shutil
+import urllib.request
 from pathlib import Path
 
 DATA_DIR = Path("tests/data/trajectories")
