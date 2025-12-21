@@ -208,8 +208,16 @@ impl ProcessedStructure {
 
     /// Extract AlphaFold-style backbone coordinates (N, CA, C, CB, O)
     /// Returns (N_res, 5, 3) array. Missing atoms are NaN.
-    pub fn extract_backbone_coords(&self) -> Vec<[[f32; 3]; 5]> {
+    pub fn extract_backbone_coords(
+        &self,
+        target: crate::spec::OutputFormatTarget,
+    ) -> Vec<[[f32; 3]; 5]> {
         let mut backbone = vec![[[f32::NAN; 3]; 5]; self.num_residues];
+
+        let (idx_cb, idx_o) = match target {
+            crate::spec::OutputFormatTarget::General => (3, 4),
+            crate::spec::OutputFormatTarget::Mpnn => (4, 3),
+        };
 
         for (i, res) in self.residue_info.iter().enumerate() {
             for atom_idx in res.start_atom..(res.start_atom + res.num_atoms) {
@@ -225,8 +233,8 @@ impl ProcessedStructure {
                     "N" => backbone[i][0] = coords,
                     "CA" => backbone[i][1] = coords,
                     "C" => backbone[i][2] = coords,
-                    "CB" => backbone[i][3] = coords,
-                    "O" => backbone[i][4] = coords,
+                    "CB" => backbone[i][idx_cb] = coords,
+                    "O" => backbone[i][idx_o] = coords,
                     _ => {}
                 }
             }
@@ -269,8 +277,12 @@ impl ProcessedStructure {
     }
 
     /// Extract charges at backbone positions (N_res * 5)
-    pub fn extract_backbone_charges(&self) -> Vec<f32> {
+    pub fn extract_backbone_charges(&self, target: crate::spec::OutputFormatTarget) -> Vec<f32> {
         let mut values = vec![0.0f32; self.num_residues * 5];
+        let (idx_cb, idx_o) = match target {
+            crate::spec::OutputFormatTarget::General => (3, 4),
+            crate::spec::OutputFormatTarget::Mpnn => (4, 3),
+        };
         if let Some(ref data) = self.raw_atoms.charges {
             for (i, res) in self.residue_info.iter().enumerate() {
                 for atom_idx in res.start_atom..(res.start_atom + res.num_atoms) {
@@ -282,8 +294,8 @@ impl ProcessedStructure {
                         "N" => values[i * 5 + 0] = val,
                         "CA" => values[i * 5 + 1] = val,
                         "C" => values[i * 5 + 2] = val,
-                        "CB" => values[i * 5 + 3] = val,
-                        "O" => values[i * 5 + 4] = val,
+                        "CB" => values[i * 5 + idx_cb] = val,
+                        "O" => values[i * 5 + idx_o] = val,
                         _ => {}
                     }
                 }
@@ -293,10 +305,14 @@ impl ProcessedStructure {
     }
 
     /// Extract sigmas at backbone positions (N_res * 5)
-    pub fn extract_backbone_sigmas(&self) -> Vec<f32> {
+    pub fn extract_backbone_sigmas(&self, target: crate::spec::OutputFormatTarget) -> Vec<f32> {
         // Default sigma? Or 0.0?
         // Using DEFAULT_SIGMA if missing might be safer if used in VdW equation
         let mut values = vec![crate::physics::constants::DEFAULT_SIGMA; self.num_residues * 5];
+        let (idx_cb, idx_o) = match target {
+            crate::spec::OutputFormatTarget::General => (3, 4),
+            crate::spec::OutputFormatTarget::Mpnn => (4, 3),
+        };
         if let Some(ref data) = self.raw_atoms.sigmas {
             for (i, res) in self.residue_info.iter().enumerate() {
                 for atom_idx in res.start_atom..(res.start_atom + res.num_atoms) {
@@ -308,8 +324,8 @@ impl ProcessedStructure {
                         "N" => values[i * 5 + 0] = val,
                         "CA" => values[i * 5 + 1] = val,
                         "C" => values[i * 5 + 2] = val,
-                        "CB" => values[i * 5 + 3] = val,
-                        "O" => values[i * 5 + 4] = val,
+                        "CB" => values[i * 5 + idx_cb] = val,
+                        "O" => values[i * 5 + idx_o] = val,
                         _ => {}
                     }
                 }
@@ -319,8 +335,12 @@ impl ProcessedStructure {
     }
 
     /// Extract epsilons at backbone positions (N_res * 5)
-    pub fn extract_backbone_epsilons(&self) -> Vec<f32> {
+    pub fn extract_backbone_epsilons(&self, target: crate::spec::OutputFormatTarget) -> Vec<f32> {
         let mut values = vec![crate::physics::constants::DEFAULT_EPSILON; self.num_residues * 5];
+        let (idx_cb, idx_o) = match target {
+            crate::spec::OutputFormatTarget::General => (3, 4),
+            crate::spec::OutputFormatTarget::Mpnn => (4, 3),
+        };
         if let Some(ref data) = self.raw_atoms.epsilons {
             for (i, res) in self.residue_info.iter().enumerate() {
                 for atom_idx in res.start_atom..(res.start_atom + res.num_atoms) {
@@ -332,8 +352,8 @@ impl ProcessedStructure {
                         "N" => values[i * 5 + 0] = val,
                         "CA" => values[i * 5 + 1] = val,
                         "C" => values[i * 5 + 2] = val,
-                        "CB" => values[i * 5 + 3] = val,
-                        "O" => values[i * 5 + 4] = val,
+                        "CB" => values[i * 5 + idx_cb] = val,
+                        "O" => values[i * 5 + idx_o] = val,
                         _ => {}
                     }
                 }

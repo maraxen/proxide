@@ -19,6 +19,36 @@ pub enum CoordFormat {
     BackboneOnly,
 }
 
+/// Output format target for backbone ordering
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OutputFormatTarget {
+    /// General format: 0:N, 1:CA, 2:C, 3:CB, 4:O (standard Atom37)
+    #[default]
+    General,
+    /// MPNN format: 0:N, 1:CA, 2:C, 3:O, 4:CB (PrxteinMPNN compatible)
+    Mpnn,
+}
+
+impl OutputFormatTarget {
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "general" => Ok(Self::General),
+            "mpnn" => Ok(Self::Mpnn),
+            _ => Err(format!(
+                "Invalid output_format_target: {}. Must be 'general' or 'mpnn'",
+                s
+            )),
+        }
+    }
+
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::General => "general",
+            Self::Mpnn => "mpnn",
+        }
+    }
+}
+
 /// Error handling mode for missing atoms/residues
 #[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +96,8 @@ pub struct OutputSpec {
     // Format
     #[pyo3(get, set)]
     pub coord_format: CoordFormat,
+    #[pyo3(get, set)]
+    pub output_format_target: String,
 
     // Filtering
     #[pyo3(get, set)]
@@ -135,6 +167,7 @@ impl OutputSpec {
     #[new]
     #[pyo3(signature = (
         coord_format=CoordFormat::Atom37,
+        output_format_target="general",
         models=None,
         chains=None,
         remove_hetatm=false,
@@ -161,6 +194,7 @@ impl OutputSpec {
     ))]
     pub fn new(
         coord_format: CoordFormat,
+        output_format_target: &str,
         models: Option<Vec<usize>>,
         chains: Option<Vec<String>>,
         remove_hetatm: bool,
@@ -187,6 +221,7 @@ impl OutputSpec {
     ) -> Self {
         OutputSpec {
             coord_format,
+            output_format_target: output_format_target.to_string(),
             models,
             chains,
             remove_hetatm,
@@ -219,6 +254,7 @@ impl Default for OutputSpec {
     fn default() -> Self {
         Self {
             coord_format: CoordFormat::Atom37,
+            output_format_target: "general".to_string(),
             models: None,
             chains: None,
             remove_hetatm: false,
