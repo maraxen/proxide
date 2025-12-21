@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, cast
 
+import jax.numpy as jnp
 import numpy as np
 from jaxtyping import ArrayLike
 
@@ -15,6 +16,7 @@ from proxide import _oxidize  # type: ignore[unresolved-import]
 from proxide._oxidize import OutputSpec  # type: ignore[unresolved-import]
 from proxide.core.atomic_system import AtomicSystem
 from proxide.core.containers import Protein
+from proxide.geometry.radial_basis import compute_radial_basis
 from proxide.io.parsing.registry import ParsingError, register_parser
 
 
@@ -41,6 +43,54 @@ def _filter_rust_dict_by_chain(data: dict, chain_id: str | list[str]) -> dict:
   # If not available, we can't filter by string ID easily.
 
   return data  # Placeholder if we can't safely filter dictionary without more info on structure
+
+
+def _apply_rbf_fallback(result_dict: dict) -> None:
+  """Implement Python fallback for RBF computation with MPNN ordering."""
+  if "rbf_features" not in result_dict or result_dict["rbf_features"] is None:
+    return
+
+  # Check coordinates
+  coords = result_dict["coordinates"]
+  if coords is None:
+    return
+
+  # Ensure numpy/jax array
+  if not hasattr(coords, "ndim"):
+    coords = np.array(coords)
+
+  n_res = len(result_dict["aatype"])
+
+  # Reshape if flat (N*37, 3) -> (N, 37, 3)
+  if coords.ndim == 2 and coords.shape[0] == n_res * 37:
+    coords = coords.reshape(n_res, 37, 3)
+
+  if coords.ndim != 3:
+    # If we can't get (N, 37, 3), we can't reliably extract backbone by index 0,1,2,4,3
+    return
+
+  # Indices for [N, CA, C, O, CB]
+  # Atom37: N=0, CA=1, C=2, CB=3, O=4
+  # We want: 0, 1, 2, 4, 3
+  perm_indices = np.array([0, 1, 2, 4, 3])
+
+  # Extract backbone (N, 5, 3)
+  backbone = coords[:, perm_indices, :]
+
+  # Neighbors
+  neighbors = result_dict.get("neighbor_indices")
+  if neighbors is None:
+    return
+
+  # Compute RBF
+  # use jax.numpy for computation as compute_radial_basis expects it
+  backbone_jax = jnp.array(backbone)
+  neighbors_jax = jnp.array(neighbors)
+
+  rbf = compute_radial_basis(backbone_jax, neighbors_jax)
+
+  # Update dict
+  result_dict["rbf_features"] = np.array(rbf)
 
 
 def _convert_rust_dict_to_system(data: dict) -> AtomicSystem:
@@ -84,6 +134,7 @@ def load_rust(
   add_hydrogens: bool = True,
   infer_bonds: bool = False,
   return_type: str = "Protein",
+  output_format_target: str | None = None,
   **kwargs: Any,
 ) -> Any:
   """Load a protein structure using the Rust extension.
@@ -115,6 +166,15 @@ def load_rust(
   elif populate_physics:
     # If physics requested but no FF, we assume we might error or just skip?
     pass
+
+  # Handle output format target
+  use_fallback_rbf = False
+  try:
+    spec.output_format_target = output_format_target
+  except AttributeError:
+    # Old binary fallback
+    if output_format_target == "mpnn" and getattr(spec, "compute_rbf", False):
+      use_fallback_rbf = True
 
   # Handle other kwargs
   if "remove_solvent" in kwargs:
@@ -150,6 +210,10 @@ def load_rust(
 
       # Parse structure using Rust
       result_dict = _oxidize.parse_structure(path_str, spec)
+
+      # RBF Fallback
+      if use_fallback_rbf:
+        _apply_rbf_fallback(result_dict)
 
       # Convert to Protein/AtomicSystem
       obj = Protein.from_rust_dict(result_dict, source=path_str if tmp_path is None else "<stream>")
@@ -347,7 +411,9 @@ class MdcathData:
 # =============================================================================
 
 
-def parse_pdb_to_protein(file_path: str | Path, spec=None, use_jax: bool = True) -> Protein:
+def parse_pdb_to_protein(
+  file_path: str | Path, spec=None, use_jax: bool = True, output_format_target: str | None = None
+) -> Protein:
   """Parse a PDB file and return a Protein directly.
 
   This is the preferred method for parsing PDB files, as it returns a Protein
@@ -365,11 +431,31 @@ def parse_pdb_to_protein(file_path: str | Path, spec=None, use_jax: bool = True)
       ValueError: If parsing fails
 
   """
+  if spec is None:
+    spec = OutputSpec()
+
+  # Handle output format target with fallback capability
+  use_fallback_rbf = False
+
+  if output_format_target is not None:
+    try:
+      spec.output_format_target = output_format_target
+    except AttributeError:
+      # Old binary fallback
+      if output_format_target == "mpnn" and getattr(spec, "compute_rbf", False):
+        use_fallback_rbf = True
+
   result = _oxidize.parse_structure(str(file_path), spec)
+
+  if use_fallback_rbf:
+    _apply_rbf_fallback(result)
+
   return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
 
 
-def parse_structure(file_path: str | Path, spec=None, use_jax: bool = True) -> Protein:
+def parse_structure(
+  file_path: str | Path, spec=None, use_jax: bool = True, output_format_target: str | None = None
+) -> Protein:
   """Generic entry point for parsing structures using the Rust backend.
 
   This function uses the high-performance Rust extension to parse PDB/mmCIF files
@@ -419,7 +505,7 @@ def parse_structure(file_path: str | Path, spec=None, use_jax: bool = True) -> P
       >>> print(system.charges)
 
   """
-  return parse_pdb_to_protein(file_path, spec, use_jax)
+  return parse_pdb_to_protein(file_path, spec, use_jax, output_format_target)
 
 
 # Export Rust types
