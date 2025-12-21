@@ -122,6 +122,7 @@ class Protein(AtomicSystem):
   backbone_indices: Any | None = None
   vdw_features: Any | None = None
   rbf_features: Any | None = None
+  neighbor_indices: Any | None = None
   electrostatic_features: Any | None = None
   format: Literal["Atom37", "Atom14", "Full", "BackboneOnly"] | None = None
 
@@ -262,6 +263,9 @@ class Protein(AtomicSystem):
         else None,
         rbf_features=convert(rust_dict["rbf_features"])
         if rust_dict.get("rbf_features") is not None
+        else None,
+        neighbor_indices=convert(rust_dict["neighbor_indices"])
+        if rust_dict.get("neighbor_indices") is not None
         else None,
         electrostatic_features=convert(rust_dict["electrostatic_features"])
         if rust_dict.get("electrostatic_features") is not None

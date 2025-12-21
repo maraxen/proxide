@@ -361,6 +361,29 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             let neighbor_indices =
                 geometry::neighbors::find_k_nearest_neighbors(&ca_coords, spec.rbf_num_neighbors);
 
+            // Convert neighbors to (N, K) array
+            let n_res = neighbor_indices.len();
+            let k_neighbors = spec.rbf_num_neighbors;
+            let mut flat_neighbors = vec![-1i32; n_res * k_neighbors];
+
+            for (i, neighbors) in neighbor_indices.iter().enumerate() {
+                for (j, &neighbor_idx) in neighbors.iter().enumerate() {
+                    if j < k_neighbors {
+                        flat_neighbors[i * k_neighbors + j] = neighbor_idx as i32;
+                    }
+                }
+            }
+
+            let neighbors_array = PyArray1::from_slice_bound(py, &flat_neighbors);
+            let neighbors_reshaped =
+                neighbors_array.reshape((n_res, k_neighbors)).map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Failed to reshape neighbor indices: {}",
+                        e
+                    ))
+                })?;
+            dict_bound.set_item("neighbor_indices", neighbors_reshaped)?;
+
             // 2. Compute RBF
             let rbf_result = geometry::radial_basis::compute_radial_basis_with_shape(
                 &backbone_coords,

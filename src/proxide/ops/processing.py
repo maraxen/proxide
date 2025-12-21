@@ -7,7 +7,7 @@ import time
 import warnings
 from collections.abc import Generator, Iterator, Sequence
 from io import StringIO
-from typing import IO, Any
+from typing import IO, Any, Literal
 
 import requests
 
@@ -84,25 +84,92 @@ def _fetch_with_retry(
   raise requests.RequestException(msg) from last_exception
 
 
-def _fetch_pdb(pdb_id: str) -> str:
-  """Fetch PDB content from the RCSB data bank with retry logic.
+def _fetch_rcsb(
+  pdb_id: str,
+  format_type: Literal["mmcif", "pdb"] = "mmcif",
+) -> pathlib.Path:
+  """Fetch structure content from the RCSB data bank.
+
+  Defaults to mmCIF format, falling back to PDB if mmCIF is not found (unless
+  PDB is explicitly requested). Saves the file to a local 'rcsb_data' directory.
 
   Args:
     pdb_id: The PDB identifier (e.g., "1abc").
+    format_type: The preferred format ("mmcif" or "pdb").
+
+  Returns:
+    Path to the downloaded file.
+
+  Raises:
+    requests.RequestException: If fetching fails.
+
+  """
+  data_dir = pathlib.Path("rcsb_data")
+  data_dir.mkdir(exist_ok=True)
+
+  # Normalize ID
+  pdb_id = pdb_id.lower()
+
+  # Define strategies
+  # attempt_order: list of (format_name, extension, url)
+  strategies = []
+
+  if format_type == "mmcif":
+    strategies.append(
+      ("mmcif", ".cif", f"https://files.rcsb.org/download/{pdb_id}.cif"),
+    )
+    # Fallback to PDB if mmcif fails
+    strategies.append(
+      ("pdb", ".pdb", f"https://files.rcsb.org/download/{pdb_id}.pdb"),
+    )
+  else:  # format_type == "pdb"
+    strategies.append(
+      ("pdb", ".pdb", f"https://files.rcsb.org/download/{pdb_id}.pdb"),
+    )
+
+  last_exception = None
+
+  for fmt, ext, url in strategies:
+    # Check if we already have it
+    file_path = data_dir / f"{pdb_id}{ext}"
+    if file_path.exists():
+      return file_path
+
+    try:
+      # We use a smaller retry count for the first attempt if we have a fallback
+      # But _fetch_with_retry handles retries internally.
+      # If we are in mmcif mode and it fails, we want to catch 404 and try pdb.
+      # _fetch_with_retry raises RequestException on failure.
+      response = _fetch_with_retry(url)
+      with file_path.open("wb") as f:
+        f.write(response.content)
+      return file_path
+    except requests.RequestException as e:
+      last_exception = e
+      logger.info(
+        "Failed to fetch %s format for %s: %s. Trying next strategy...",
+        fmt,
+        pdb_id,
+        e,
+      )
+      continue
+
+  msg = f"Failed to fetch {pdb_id} in {format_type} (or fallback) formats."
+  raise requests.RequestException(msg) from last_exception
+
+
+def _fetch_pdb(pdb_id: str) -> str:
+  """Fetch PDB content from the RCSB data bank (Legacy wrapper).
+
+  Args:
+    pdb_id: The PDB identifier.
 
   Returns:
     The PDB file content as a string.
-
-  Raises:
-    requests.RequestException: If fetching fails after all retry attempts.
-
-  Example:
-    >>> pdb_content = _fetch_pdb("1abc")
-
   """
-  url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
-  response = _fetch_with_retry(url)
-  return response.text
+  # Maintain backward compatibility by reading the file back
+  path = _fetch_rcsb(pdb_id, format_type="pdb")
+  return path.read_text()
 
 
 def _fetch_md_cath(md_cath_id: str) -> pathlib.Path:
@@ -134,6 +201,7 @@ def _fetch_md_cath(md_cath_id: str) -> pathlib.Path:
 def _resolve_inputs(  # noqa: C901
   inputs: Sequence[str | IO[str] | pathlib.Path],
   foldcomp_database: FoldCompDatabase | None = None,
+  rcsb_format: Literal["mmcif", "pdb"] = "mmcif",
 ) -> Generator[str | pathlib.Path | IO[str] | Protein, None, None]:
   """Resolve a heterogeneous list of inputs into parseable sources.
 
@@ -157,7 +225,7 @@ def _resolve_inputs(  # noqa: C901
           foldcomp_ids.append(item)
           continue
         if _PDB_PATTERN.match(item) and not pathlib.Path(item).exists():
-          yield StringIO(_fetch_pdb(item))
+          yield _fetch_rcsb(item, format_type=rcsb_format)
           continue
         if _MD_CATH_PATTERN.match(item) and not pathlib.Path(item).exists():
           yield _fetch_md_cath(item)
@@ -225,6 +293,7 @@ def frame_iterator_from_inputs(
   inputs: Sequence[str | pathlib.Path | IO[str]],
   parse_kwargs: dict[str, Any] | None = None,
   foldcomp_database: FoldCompDatabase | None = None,
+  rcsb_format: Literal["mmcif", "pdb"] = "mmcif",
 ) -> Iterator[Protein]:
   """Create a generator that yields Protein frames from mixed inputs.
 
@@ -240,7 +309,11 @@ def frame_iterator_from_inputs(
   input_chain_pairs = _get_input_chain_pairs(inputs, chain_id_arg)
 
   for input_item, specific_chain_id in input_chain_pairs:
-    resolved_sources = _resolve_inputs([input_item], foldcomp_database)
+    resolved_sources = _resolve_inputs(
+      [input_item],
+      foldcomp_database,
+      rcsb_format=rcsb_format,
+    )
 
     for source in resolved_sources:
       if isinstance(source, Protein):

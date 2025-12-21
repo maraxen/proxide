@@ -200,14 +200,20 @@ class TestFetchPdb:
 
     """
     mock_response = Mock()
-    mock_response.text = "ATOM   1  CA  ALA A   1      10.000  20.000  30.000"
+    mock_response.content = b"ATOM   1  CA  ALA A   1      10.000  20.000  30.000"
     mock_response.raise_for_status = Mock()
 
-    with patch("requests.get", return_value=mock_response):
-      result = _fetch_pdb("1abc")
+    # handle read_text returning string
+    m_open = mock_file_open(read_data="ATOM   1  CA  ALA A   1      10.000  20.000  30.000")
 
-      assert result == mock_response.text
-      assert "ATOM" in result
+    with (
+      patch("requests.get", return_value=mock_response),
+      patch("pathlib.Path.mkdir"),
+      patch("pathlib.Path.open", m_open),
+      patch("pathlib.Path.exists", return_value=False),
+    ):
+      result = _fetch_pdb("1abc")
+      assert result == mock_response.content.decode()
 
   def test_fetch_pdb_with_retry(self) -> None:
     """Test PDB fetching with retry logic.
@@ -226,18 +232,21 @@ class TestFetchPdb:
 
     """
     mock_response = Mock()
-    mock_response.text = "ATOM   1  CA  ALA A   1      10.000  20.000  30.000"
+    mock_response.content = b"ATOM   1  CA  ALA A   1      10.000  20.000  30.000"
     mock_response.raise_for_status = Mock()
 
     side_effects = [requests.RequestException("Timeout"), mock_response]
+    m_open = mock_file_open(read_data="ATOM   1  CA  ALA A   1      10.000  20.000  30.000")
 
     with (
       patch("requests.get", side_effect=side_effects),
       patch("time.sleep"),
+      patch("pathlib.Path.mkdir"),
+      patch("pathlib.Path.open", m_open),
+      patch("pathlib.Path.exists", return_value=False),
     ):
       result = _fetch_pdb("1abc")
-
-      assert result == mock_response.text
+      assert result == mock_response.content.decode()
 
   def test_fetch_pdb_failure(self) -> None:
     """Test PDB fetching failure after all retries.
@@ -259,11 +268,14 @@ class TestFetchPdb:
       requests.RequestException("Error 1"),
       requests.RequestException("Error 2"),
       requests.RequestException("Error 3"),
+      requests.RequestException("Error 4"), # Need extra for fallback
     ]
 
     with (
       patch("requests.get", side_effect=side_effects),
       patch("time.sleep"),
+      patch("pathlib.Path.mkdir"),
+      patch("pathlib.Path.exists", return_value=False),
       pytest.raises(requests.RequestException),
     ):
       _fetch_pdb("1abc")
@@ -390,14 +402,29 @@ class TestResolveInputs:
 
     """
     mock_response = Mock()
-    mock_response.text = "ATOM   1  CA  ALA A   1"
+    mock_response.content = b"ATOM   1  CA  ALA A   1"
     mock_response.raise_for_status = Mock()
+    
+    m_open = mock_file_open()
 
-    with patch("requests.get", return_value=mock_response):
+    with (
+      patch("requests.get", return_value=mock_response),
+      patch("pathlib.Path.mkdir"),
+      patch("pathlib.Path.open", m_open),
+      # The first exists is for _resolve_inputs check (not pathlib.Path(item).exists()), 
+      # the second is for _fetch_rcsb check (cache)
+      # Actually, _resolve_inputs calls exists() on the input string to see if it is a local file.
+      # Then _fetch_rcsb calls exists() to see if it is in cache.
+      # We want both to return False to trigger download.
+      patch("pathlib.Path.exists", return_value=False), 
+    ):
       result = list(_resolve_inputs(["1abc"]))
 
       assert len(result) == 1
-      assert isinstance(result[0], StringIO)
+      assert isinstance(result[0], pathlib.Path)
+      # We default to mmcif now, so verify correct suffix if possible, 
+      # but here we just check it is a Path.
+      assert result[0].suffix == ".cif"
 
   def test_resolve_file_path(self, tmp_path: pathlib.Path) -> None:
     """Test resolving a file path input.
