@@ -53,6 +53,8 @@ pub fn parse_pqr(path: String) -> PyResult<PyObject> {
 pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         let spec = spec.unwrap_or_default();
+        let target = spec::OutputFormatTarget::from_str(&spec.output_format_target)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
 
         // Check cache (only if features are simple)
         let should_cache = spec.enable_caching
@@ -355,7 +357,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
         if spec.compute_rbf {
             // Extract coordinates
             let ca_coords = processed.extract_ca_coords();
-            let backbone_coords = processed.extract_backbone_coords();
+            let backbone_coords = processed.extract_backbone_coords(target);
 
             // 1. Find neighbors
             let neighbor_indices =
@@ -520,9 +522,9 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             if let Some(ref charges) = processed.raw_atoms.charges {
                 // Ensure charges match atoms
                 if charges.len() == processed.raw_atoms.num_atoms {
-                    let mut backbone_coords = processed.extract_backbone_coords();
+                    let mut backbone_coords = processed.extract_backbone_coords(target);
                     let all_coords = processed.extract_all_coords();
-                    let backbone_charges = processed.extract_backbone_charges();
+                    let backbone_charges = processed.extract_backbone_charges(target);
 
                     // Infer missing CB positions (e.g. for Glycine or snippets)
                     for res_bb in backbone_coords.iter_mut() {
@@ -566,7 +568,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
         }
 
         if spec.compute_vdw {
-            let mut backbone_coords = processed.extract_backbone_coords();
+            let mut backbone_coords = processed.extract_backbone_coords(target);
             let all_coords = processed.extract_all_coords();
 
             // Infer missing CB positions
@@ -591,8 +593,8 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                     (default_sigmas, default_epsilons)
                 };
 
-            let backbone_sigmas = processed.extract_backbone_sigmas();
-            let backbone_epsilons = processed.extract_backbone_epsilons();
+            let backbone_sigmas = processed.extract_backbone_sigmas(target);
+            let backbone_epsilons = processed.extract_backbone_epsilons(target);
 
             // Compute 3D forces
             let forces = physics::vdw::compute_lj_forces_at_backbone(
