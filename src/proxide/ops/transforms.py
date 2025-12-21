@@ -6,11 +6,12 @@ for parsing, transforming, and batching protein data.
 
 import warnings
 from collections.abc import Sequence
+from typing import Any
 
 import jax
 import numpy as np
-from proxide import md
 
+from proxide import md
 from proxide.chem import residues as residue_constants
 from proxide.core.containers import Protein
 from proxide.physics.features import compute_electrostatic_node_features
@@ -52,7 +53,7 @@ def truncate_protein(
 
   end = start + max_length
 
-  def slice_array(arr: np.ndarray | None) -> np.ndarray | None:
+  def slice_array(arr: Any | None) -> Any | None:
     if arr is None:
       return None
     # Assuming the first dimension is always the residue dimension for arrays that need slicing
@@ -60,7 +61,7 @@ def truncate_protein(
       return arr[start:end]
     return arr
 
-  return protein.replace(
+  return protein.replace(  # type: ignore[attr-defined]
     coordinates=slice_array(protein.coordinates),
     aatype=slice_array(protein.aatype),
     atom_mask=slice_array(protein.atom_mask),
@@ -146,7 +147,7 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[Protein]) -> Protein:
 
   chain_ids = np.concatenate(remapped_chain_ids, axis=0)
   concatenated = jax.tree_util.tree_map(lambda *x: np.concatenate(x, axis=0), *proteins)
-  concatenated = concatenated.replace(chain_index=chain_ids, mapping=structure_mapping)
+  concatenated = concatenated.replace(chain_index=chain_ids, mapping=structure_mapping)  # type: ignore[attr-defined]
   return jax.tree_util.tree_map(lambda x: x[None, ...], concatenated)
 
 
@@ -224,7 +225,10 @@ def _apply_electrostatics_if_needed(
     )
     phys_feats.append(np.array(feat))
 
-  return [p.replace(physics_features=feat) for p, feat in zip(elements, phys_feats, strict=False)]
+  return [
+    p.replace(physics_features=feat)  # type: ignore[attr-defined]
+    for p, feat in zip(elements, phys_feats, strict=False)
+  ]
 
 
 def _apply_md_parameterization(
@@ -246,7 +250,7 @@ def _apply_md_parameterization(
     return elements
 
   # Load force field (cached)
-  ff = force_fields.load_force_field_from_hub("ff14SB")
+  ff = force_fields.load_force_field("ff14SB")
 
   # Get residue names map
   # residue_constants.restypes is list of 20 AA.
@@ -275,7 +279,7 @@ def _apply_md_parameterization(
     params = md.parameterize_system(ff, res_names, atom_names)
 
     # Convert JAX arrays to numpy and populate ProteinTuple
-    p_new = p.replace(
+    p_new = p.replace(  # type: ignore[attr-defined]
       bonds=np.array(params["bonds"]),
       bond_params=np.array(params["bond_params"]),
       angles=np.array(params["angles"]),
@@ -390,13 +394,13 @@ def _pad_protein(  # noqa: C901
     if padded_protein.bonds is not None:
       p_bonds = pad_array(padded_protein.bonds, md_pads.get("bonds", 0))
       p_params = pad_array(padded_protein.bond_params, md_pads.get("bonds", 0))
-      padded_protein = padded_protein.replace(bonds=p_bonds, bond_params=p_params)
+      padded_protein = padded_protein.replace(bonds=p_bonds, bond_params=p_params)  # type: ignore[attr-defined]
 
     # Angles
     if padded_protein.angles is not None:
       p_angles = pad_array(padded_protein.angles, md_pads.get("angles", 0))
       p_params = pad_array(padded_protein.angle_params, md_pads.get("angles", 0))
-      padded_protein = padded_protein.replace(angles=p_angles, angle_params=p_params)
+      padded_protein = padded_protein.replace(angles=p_angles, angle_params=p_params)  # type: ignore[attr-defined]
 
     # Exclusion mask (N_atoms, N_atoms)
     if padded_protein.exclusion_mask is not None:
@@ -410,7 +414,7 @@ def _pad_protein(  # noqa: C901
           ((0, amt), (0, amt)),
           constant_values=False,
         )
-        padded_protein = padded_protein.replace(exclusion_mask=mask)
+        padded_protein = padded_protein.replace(exclusion_mask=mask)  # type: ignore[attr-defined]
 
     # Backbone indices (N_res, 4) ? or (N_atoms)?
     # Assuming standard padding along first dim

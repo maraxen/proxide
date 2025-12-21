@@ -3,14 +3,12 @@
 //! Defines local coordinate frames for residues and projects 3D forces
 //! onto these frames to create SE(3)-invariant features.
 
-use crate::physics::constants::MIN_DISTANCE;
-
 /// Backbone atom indices (PDB order)
 pub const N_INDEX: usize = 0;
 pub const CA_INDEX: usize = 1;
 pub const C_INDEX: usize = 2;
 pub const CB_INDEX: usize = 3;
-pub const O_INDEX: usize = 4;
+// O_INDEX (4) unused in frame calc
 
 /// Local backbone coordinate frame (4 unit vectors)
 pub struct BackboneFrame {

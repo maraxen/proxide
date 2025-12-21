@@ -28,7 +28,7 @@ ml = [
 ]
 molecules = [
     "rdkit",
-    "openff-toolkit",
+    # "openff-toolkit", # TODO: Fix resolution on Python 3.13/Linux
 ]
 trajectories = [
     "mdtraj",
@@ -40,7 +40,7 @@ foldcomp = [
 ]
 openmm = [
     "openmm",
-    "openmmforcefields",
+    # "openmmforcefields", # TODO: Fix resolution
 ]
 dev = [
     "ruff",
@@ -109,3 +109,6 @@ dev = [
     "pytest-cov>=5.0.0",
     "chex",
 ]
+
+[tool.uv]
+environments = ["sys_platform == 'linux'"]
