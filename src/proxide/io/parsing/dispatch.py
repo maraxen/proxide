@@ -12,7 +12,6 @@ from proxide.io.parsing.registry import FormatNotSupportedError, get_parser
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
-  from proxide.core.containers import ProteinStream
 
 
 def _infer_format(path: pathlib.Path | None) -> str | None:
