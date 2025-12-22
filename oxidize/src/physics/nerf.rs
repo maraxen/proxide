@@ -2,12 +2,6 @@ use std::f32::consts::PI;
 
 pub struct Nerf;
 
-// Constants from C++ headers
-pub const N_TO_CA_DIST: f32 = 1.4581;
-pub const PRO_N_TO_CA_DIST: f32 = 1.353;
-pub const CA_TO_C_DIST: f32 = 1.5281;
-pub const C_TO_N_DIST: f32 = 1.3311;
-
 impl Nerf {
     /// Calculate the position of the next atom using the NeRF algorithm.
     ///

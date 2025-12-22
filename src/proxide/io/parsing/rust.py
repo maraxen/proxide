@@ -4,6 +4,8 @@ This module provides a high-level interface to the oxidize Rust extension,
 handling data conversion and maintaining API compatibility with existing parsers.
 """
 
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, cast
@@ -13,12 +15,9 @@ import numpy as np
 from jaxtyping import ArrayLike
 
 from proxide import _oxidize
-from proxide._oxidize import (
-  OutputSpec,
-)
+from proxide._oxidize import OutputSpec
 from proxide.core.atomic_system import AtomicSystem
 from proxide.core.containers import Protein
-
 from proxide.io.parsing.registry import ParsingError, register_parser
 
 FLAT_COORD_NDIM = 2
@@ -103,9 +102,6 @@ def load_rust(
 
     try:
       if hasattr(file_path, "read"):
-        import os
-        import tempfile
-
         content = cast(object, file_path).read()
         if hasattr(content, "encode"):
           suffix = ".pdb"
@@ -335,14 +331,7 @@ def parse_pdb_to_protein(
   if spec is None:
     spec = OutputSpec()
 
-  # Handle output format target with fallback capability
-  if output_format_target is not None:
-    try:
-      spec.output_format_target = output_format_target
-    except AttributeError:
-      # Old binary fallback
   result = _oxidize.parse_structure(str(file_path), spec)
-
   return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
 
 
@@ -401,9 +390,6 @@ def parse_structure(
   return parse_pdb_to_protein(file_path, spec, use_jax, output_format_target)
 
 
-# Export Rust types
-
-# Optional XTC support
 parse_xtc = getattr(_oxidize, "parse_xtc", None)
 
 

@@ -1,7 +1,7 @@
-use crate::physics::nerf::{self, Nerf};
+use crate::physics::nerf::Nerf;
 use crate::structure::systems::AtomicSystem;
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 pub mod db;
