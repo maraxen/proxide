@@ -1,7 +1,4 @@
-"""Utilities for processing and manipulating protein structures from foldcomp.
-
-prxteinmpnn.utils.foldcomp_utils
-"""
+"""Utilities for processing and manipulating protein structures from foldcomp."""
 
 from __future__ import annotations
 

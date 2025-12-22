@@ -12,44 +12,17 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import ArrayLike
 
-from proxide import _oxidize  # type: ignore[unresolved-import]
-from proxide import _oxidize  # type: ignore[unresolved-import]
+from proxide import _oxidize
 from proxide._oxidize import (
-  CoordFormat,
-  ErrorMode,
-  HydrogenSource,
-  MissingResidueMode,
   OutputSpec,
-)  # type: ignore[unresolved-import]
+)
 from proxide.core.atomic_system import AtomicSystem
 from proxide.core.containers import Protein
 from proxide.geometry.radial_basis import compute_radial_basis
 from proxide.io.parsing.registry import ParsingError, register_parser
 
-
-def _filter_rust_dict_by_chain(data: dict, chain_id: str | list[str]) -> dict:
-  """Filter rust parse result by chain ID."""
-  # target_chains = {chain_id} if isinstance(chain_id, str) else set(chain_id)
-
-  # data["chain_ids"] usually corresponds to atoms or residues depending on parser.
-  # checking RawAtomData: chain_ids is list[str]
-  # parse_structure usually returns "chain_index" (int) and "chain_ids"
-  # (list of STRINGS usually per residue or unique?)
-  # Let's assume data["chain_ids"] exists and corresponds to atoms or residue mapping?
-
-  # Actually, parse_structure returns rich dict.
-  # It has 'aatype' (res), 'coordinates' (atom/res), 'chain_index' (res).
-  # It usually also has 'chain_ids' in the raw form, or we can look at 'chain_ids'
-  # list which maps to index?
-  # If not present, we can't filter easily by string ID without mapping.
-
-  # Safe fallback: if 'chain_ids' (list of str per atom) present, use it.
-  # If 'chain_names' (list of unique names) + 'chain_index' (per atom/res), use that.
-
-  # We will assume 'chain_ids' is per-atom or compatible length.
-  # If not available, we can't filter by string ID easily.
-
-  return data  # Placeholder if we can't safely filter dictionary without more info on structure
+FLAT_COORD_NDIM = 2
+ATOM37_DIM = 3
 
 
 def _apply_rbf_fallback(result_dict: dict) -> None:
@@ -68,57 +41,36 @@ def _apply_rbf_fallback(result_dict: dict) -> None:
 
   n_res = len(result_dict["aatype"])
 
-  # Reshape if flat (N*37, 3) -> (N, 37, 3)
-  if coords.ndim == 2 and coords.shape[0] == n_res * 37:
+  if coords.ndim == FLAT_COORD_NDIM and coords.shape[0] == n_res * 37:
     coords = coords.reshape(n_res, 37, 3)
 
-  if coords.ndim != 3:
-    # If we can't get (N, 37, 3), we can't reliably extract backbone by index 0,1,2,4,3
+  if coords.ndim != ATOM37_DIM:
     return
 
-  # Indices for [N, CA, C, O, CB]
-  # Atom37: N=0, CA=1, C=2, CB=3, O=4
-  # We want: 0, 1, 2, 4, 3
-  perm_indices = np.array([0, 1, 2, 4, 3])
-
-  # Extract backbone (N, 5, 3)
+  perm_indices = np.array([0, 1, 2, 4, 3])  # MPNN order for [N, CA, C, O, CB]
   backbone = coords[:, perm_indices, :]
-
-  # Neighbors
   neighbors = result_dict.get("neighbor_indices")
   if neighbors is None:
     return
-
-  # Compute RBF
-  # use jax.numpy for computation as compute_radial_basis expects it
   backbone_jax = jnp.array(backbone)
   neighbors_jax = jnp.array(neighbors)
-
   rbf = compute_radial_basis(backbone_jax, neighbors_jax)
-
-  # Update dict
   result_dict["rbf_features"] = np.array(rbf)
 
 
 def _convert_rust_dict_to_system(data: dict) -> AtomicSystem:
   """Convert rust dict to AtomicSystem (flat)."""
   # Similar to Protein.from_rust_dict but creating flat AtomicSystem
-  import jax.numpy as jnp
 
   coords = data["coordinates"]
-  # Flatten if needed
-  if coords.ndim == 3:
+  if coords.ndim == ATOM37_DIM:
     coords = coords.reshape(-1, 3)
 
   mask = data["atom_mask"]
   if mask.ndim > 1:
     mask = mask.flatten()
 
-  # Get metadata
   atom_names = data.get("atom_names")
-
-  # Construct AtomicSystem
-  # We need to populate the new metadata fields we added
 
   return AtomicSystem(
     coordinates=jnp.array(coords),
@@ -162,27 +114,15 @@ def load_rust(
       Protein or AtomicSystem instances.
 
   """
-  # Construct OutputSpec
-  spec = OutputSpec()
-  spec.add_hydrogens = add_hydrogens
-  spec.infer_bonds = infer_bonds
-  # If populate_physics is requested, we need a force field
-  if populate_physics and force_field_name:
-    spec.parameterize_md = True
-    spec.force_field = force_field_name
-  elif populate_physics:
-    # If physics requested but no FF, we assume we might error or just skip?
-    pass
 
-  # Handle output format target
-  use_fallback_rbf = False
-  try:
-    spec.output_format_target = output_format_target
-  except AttributeError:
-    # Old binary fallback
-    if output_format_target == "mpnn" and getattr(spec, "compute_rbf", False):
-      use_fallback_rbf = True
-
+  spec = OutputSpec(
+    add_hydrogens=add_hydrogens,
+    infer_bonds=infer_bonds,
+    parameterize_md=populate_physics and bool(force_field_name),
+    force_field=force_field_name if populate_physics else None,
+    output_format_target=output_format_target,
+    remove_solvent=kwargs.get("remove_solvent", True),
+  )
   # Handle other kwargs
   if "remove_solvent" in kwargs:
     spec.remove_solvent = kwargs["remove_solvent"]
@@ -215,25 +155,14 @@ def load_rust(
       else:
         path_str = str(file_path)
 
-      # Parse structure using Rust
       result_dict = _oxidize.parse_structure(path_str, spec)
-
-      # RBF Fallback
-      if use_fallback_rbf:
-        _apply_rbf_fallback(result_dict)
-
-      # Convert to Protein/AtomicSystem
       obj = Protein.from_rust_dict(result_dict, source=path_str if tmp_path is None else "<stream>")
 
-      # Filter if requested
       if chain_id:
         target_chains = {chain_id} if isinstance(chain_id, str) else set(chain_id)
 
-        # Check if we have chain_ids populated (from Rust output)
         if getattr(obj, "chain_ids", None) is not None:
           unique_ids = obj.chain_ids
-          # Map chain IDs to unique indices in the structure
-          # chain_index maps residue -> index in unique_ids list
           allowed_indices = {i for i, cid in enumerate(unique_ids) if cid in target_chains}
 
           if allowed_indices:
@@ -241,8 +170,6 @@ def load_rust(
             mask = np.isin(c_idx, list(allowed_indices))
 
             if mask.sum() > 0:
-              # Re-construct Protein with filtered data
-              # We need to slice all arrays.
               new_coords = obj.coordinates[mask]
               new_aatype = obj.aatype[mask]
               new_res_idx = obj.residue_index[mask]
@@ -251,7 +178,7 @@ def load_rust(
               new_seq = obj.one_hot_sequence[mask]
 
               # Handle full_coordinates / atom_mask slicing
-              if new_coords.ndim == 3:
+              if new_coords.ndim == ATOM37_DIM:
                 # Atom37 mode: coordinates are (N_residues, 37, 3)
                 # full_coordinates are (N_residues * 37, 3)
                 # We can assume full_coordinates corresponds to flattened coordinates
@@ -463,7 +390,7 @@ def parse_pdb_to_protein(
 def parse_structure(
   file_path: str | Path, spec=None, use_jax: bool = True, output_format_target: str | None = None
 ) -> Protein:
-  """Generic entry point for parsing structures using the Rust backend.
+  """Parse structures using the Rust backend.
 
   This function uses the high-performance Rust extension to parse PDB/mmCIF files
   and optionally compute topology, force field parameters, and atom types.
