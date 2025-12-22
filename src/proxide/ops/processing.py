@@ -3,12 +3,9 @@
 import logging
 import pathlib
 import re
-import time
 import warnings
 from collections.abc import Generator, Iterator, Sequence
 from typing import IO, Any, Literal
-
-import requests
 
 from proxide.core.containers import Protein
 from proxide.io.parsing.dispatch import load_structure as parse_input
@@ -27,176 +24,6 @@ _PDB_PATTERN = re.compile(r"^[a-zA-Z0-9]{4}$")
 _MD_CATH_PATTERN = re.compile(r"[a-zA-Z0-9]{5}[0-9]{2}")
 
 
-def _fetch_with_retry(
-  url: str,
-  max_retries: int = 3,
-  initial_delay: float = 1.0,
-  backoff_factor: float = 2.0,
-  timeout: int = 60,
-) -> requests.Response:
-  """Fetch content from a URL with exponential backoff retry logic.
-
-  Args:
-    url: The URL to fetch.
-    max_retries: Maximum number of retry attempts (default: 3).
-    initial_delay: Initial delay in seconds before first retry (default: 1.0).
-    backoff_factor: Multiplier for delay between retries (default: 2.0).
-    timeout: Request timeout in seconds (default: 60).
-
-  Returns:
-    The response object if successful.
-
-  Raises:
-    requests.RequestException: If all retry attempts fail.
-
-  Example:
-    >>> response = _fetch_with_retry("https://example.com/data.pdb")
-    >>> content = response.text
-
-  """
-  delay = initial_delay
-  last_exception = None
-
-  for attempt in range(max_retries):
-    try:
-      response = requests.get(url, timeout=timeout)
-      response.raise_for_status()
-    except requests.RequestException as e:
-      last_exception = e
-      if attempt < max_retries - 1:
-        logger.warning(
-          "Attempt %d/%d failed for URL %s: %s. Retrying in %.1f seconds...",
-          attempt + 1,
-          max_retries,
-          url,
-          e,
-          delay,
-        )
-        time.sleep(delay)
-        delay *= backoff_factor
-      else:
-        logger.exception("All %d attempts failed for URL %s", max_retries, url)
-    else:
-      return response
-
-  msg = f"Failed to fetch {url} after {max_retries} attempts"
-  raise requests.RequestException(msg) from last_exception
-
-
-def _fetch_rcsb(
-  pdb_id: str,
-  format_type: Literal["mmcif", "pdb"] = "mmcif",
-) -> pathlib.Path:
-  """Fetch structure content from the RCSB data bank.
-
-  Defaults to mmCIF format, falling back to PDB if mmCIF is not found (unless
-  PDB is explicitly requested). Saves the file to a local 'rcsb_data' directory.
-
-  Args:
-    pdb_id: The PDB identifier (e.g., "1abc").
-    format_type: The preferred format ("mmcif" or "pdb").
-
-  Returns:
-    Path to the downloaded file.
-
-  Raises:
-    requests.RequestException: If fetching fails.
-
-  """
-  data_dir = pathlib.Path("rcsb_data")
-  data_dir.mkdir(exist_ok=True)
-
-  # Normalize ID
-  pdb_id = pdb_id.lower()
-
-  # Define strategies
-  # attempt_order: list of (format_name, extension, url)
-  strategies = []
-
-  if format_type == "mmcif":
-    strategies.append(
-      ("mmcif", ".cif", f"https://files.rcsb.org/download/{pdb_id}.cif"),
-    )
-    # Fallback to PDB if mmcif fails
-    strategies.append(
-      ("pdb", ".pdb", f"https://files.rcsb.org/download/{pdb_id}.pdb"),
-    )
-  else:  # format_type == "pdb"
-    strategies.append(
-      ("pdb", ".pdb", f"https://files.rcsb.org/download/{pdb_id}.pdb"),
-    )
-
-  last_exception = None
-
-  for fmt, ext, url in strategies:
-    # Check if we already have it
-    file_path = data_dir / f"{pdb_id}{ext}"
-    if file_path.exists():
-      return file_path
-
-    try:
-      # We use a smaller retry count for the first attempt if we have a fallback
-      # But _fetch_with_retry handles retries internally.
-      # If we are in mmcif mode and it fails, we want to catch 404 and try pdb.
-      # _fetch_with_retry raises RequestException on failure.
-      response = _fetch_with_retry(url)
-      with file_path.open("wb") as f:
-        f.write(response.content)
-      return file_path
-    except requests.RequestException as e:
-      last_exception = e
-      logger.info(
-        "Failed to fetch %s format for %s: %s. Trying next strategy...",
-        fmt,
-        pdb_id,
-        e,
-      )
-      continue
-
-  msg = f"Failed to fetch {pdb_id} in {format_type} (or fallback) formats."
-  raise requests.RequestException(msg) from last_exception
-
-
-def _fetch_pdb(pdb_id: str) -> str:
-  """Fetch PDB content from the RCSB data bank (Legacy wrapper).
-
-  Args:
-    pdb_id: The PDB identifier.
-
-  Returns:
-    The PDB file content as a string.
-  """
-  # Maintain backward compatibility by reading the file back
-  path = _fetch_rcsb(pdb_id, format_type="pdb")
-  return path.read_text()
-
-
-def _fetch_md_cath(md_cath_id: str) -> pathlib.Path:
-  """Fetch h5 content from the MD-CATH data bank and save to disk with retry logic.
-
-  Args:
-    md_cath_id: The MD-CATH identifier (e.g., "1a2b00").
-
-  Returns:
-    Path to the downloaded HDF5 file.
-
-  Raises:
-    requests.RequestException: If fetching fails after all retry attempts.
-
-  Example:
-    >>> path = _fetch_md_cath("1a2b00")
-
-  """
-  url = f"https://huggingface.co/datasets/compsciencelab/mdCATH/resolve/main/data/mdcath_dataset_{md_cath_id}.h5"
-  response = _fetch_with_retry(url)
-  data_dir = pathlib.Path("mdcath_data")
-  data_dir.mkdir(exist_ok=True)
-  md_cath_file = data_dir / f"mdcath_dataset_{md_cath_id}.h5"
-  with md_cath_file.open("wb") as f:
-    f.write(response.content)
-  return md_cath_file
-
-
 def _resolve_inputs(  # noqa: C901
   inputs: Sequence[str | IO[str] | pathlib.Path],
   foldcomp_database: FoldCompDatabase | None = None,
@@ -211,12 +38,19 @@ def _resolve_inputs(  # noqa: C901
   Args:
       inputs: A sequence of input items.
       foldcomp_database: An optional FoldCompDatabase for resolving FoldComp IDs.
+      rcsb_format: The format to fetch from RCSB ("mmcif" or "pdb").
 
   Yields:
       A parseable source (str, pathlib.Path, or StringIO).
 
   """
+  from proxide.io.fetching import fetch_afdb, fetch_md_cath, fetch_rcsb
+
   foldcomp_ids = []
+
+  # Configuration constant (TODO: move to config module)
+  AFDB_FETCH_LIMIT = 50
+
   for item in inputs:
     try:
       if isinstance(item, str):
@@ -224,10 +58,10 @@ def _resolve_inputs(  # noqa: C901
           foldcomp_ids.append(item)
           continue
         if _PDB_PATTERN.match(item) and not pathlib.Path(item).exists():
-          yield _fetch_rcsb(item, format_type=rcsb_format)
+          yield fetch_rcsb(item, format_type=rcsb_format)
           continue
         if _MD_CATH_PATTERN.match(item) and not pathlib.Path(item).exists():
-          yield _fetch_md_cath(item)
+          yield fetch_md_cath(item)
           continue
 
         path = pathlib.Path(item)
@@ -245,7 +79,58 @@ def _resolve_inputs(  # noqa: C901
       warnings.warn(f"Failed to resolve input '{item}': {e}", stacklevel=2)
 
   if foldcomp_ids:
-    yield from get_protein_structures(foldcomp_ids, foldcomp_database)
+    # Logic: If database is provided and IDs > limit, use database.
+    # Otherwise (or if no DB), use direct fetch.
+    use_database = foldcomp_database is not None and len(foldcomp_ids) > AFDB_FETCH_LIMIT
+
+    if use_database and foldcomp_database:
+      yield from get_protein_structures(foldcomp_ids, foldcomp_database)
+    else:
+      # Fallback to direct fetching for each ID
+      # Verify if IDs are compatible with AFDB fetching (Uniprot ID extraction might be needed)
+      # _FOLDCOMP_PATTERN matches both AFDB and ESM IDs.
+      # fetch_afdb expects Uniprot ID.
+      # We need to extract Uniprot ID from AF-Identifier if possible.
+      # Pattern: AF-{UNIPROT}-F1-model_v{VERSION}
+
+      for fid in foldcomp_ids:
+        # Try to parse AFDB ID
+        af_match = _FOLDCOMP_AFDB_PATTERN.fullmatch(fid)
+        if af_match:
+          # Extract parts purely for verifying it looks like AFDB,
+          # but fetch_afdb might need just the uniprot part?
+          # Actually `fetch_afdb` implementation takes `uniprot_id`.
+          # But the input here is the full ID like `AF-P12345-F1-model_v4`.
+          # We should probably strip it?
+          # Or implementation of fetch_afdb expects uniprot id.
+          # Let's extract:
+          parts = fid.split("-")
+          if len(parts) >= 2 and parts[0] == "AF":
+            uid = parts[1]
+            # Version?
+            # parts[-1] is model_v4
+            # version extraction:
+            version = 4  # Default
+            try:
+              v_str = parts[-1].split("_v")[1]
+              version = int(v_str)
+            except:
+              pass
+
+            try:
+              yield fetch_afdb(uid, version=version)
+            except Exception as e:
+              warnings.warn(f"Failed to fetch AFDB ID {fid}: {e}", stacklevel=2)
+          else:
+            warnings.warn(
+              f"Cannot fetch ID {fid} directly (only AFDB IDs supported for direct fetch).",
+              stacklevel=2,
+            )
+        else:
+          warnings.warn(
+            f"Cannot fetch ID {fid} directly (ESM/other IDs not supported for direct fetch).",
+            stacklevel=2,
+          )
 
 
 def _get_input_chain_pairs(
