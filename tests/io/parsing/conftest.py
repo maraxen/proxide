@@ -2,8 +2,15 @@
 import pathlib
 import tempfile
 
-import h5py
-import mdtraj as md
+try:
+    import h5py
+    import mdtraj as md
+    HAS_H5PY = True
+except ImportError:
+    HAS_H5PY = False
+    h5py = None
+    md = None
+
 import numpy as np
 import pytest
 

@@ -40,6 +40,7 @@ fn _oxidize(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_parsers::parse_pdb, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_mmcif, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_pqr, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parsers::parse_foldcomp, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_structure, m)?)?;
 
     // Force field functions (from py_forcefield)
@@ -78,11 +79,13 @@ fn _oxidize(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Atomic System Architecture
     m.add_class::<AtomicSystem>()?;
+    m.add_class::<py_parsers::FoldCompDatabase>()?;
 
     // Fetching functions (from io::fetching)
     m.add_function(wrap_pyfunction!(io::fetching::fetch_rcsb, m)?)?;
     m.add_function(wrap_pyfunction!(io::fetching::fetch_md_cath, m)?)?;
     m.add_function(wrap_pyfunction!(io::fetching::fetch_afdb, m)?)?;
+    m.add_function(wrap_pyfunction!(io::fetching::fetch_foldcomp_database, m)?)?;
 
     Ok(())
 }

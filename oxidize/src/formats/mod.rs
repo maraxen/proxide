@@ -1,6 +1,7 @@
 //! File format parsers
 
 pub mod dcd;
+pub mod foldcomp;
 pub mod mmcif;
 pub mod pdb;
 pub mod pqr;

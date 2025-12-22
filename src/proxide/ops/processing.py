@@ -114,7 +114,7 @@ def _resolve_inputs(  # noqa: C901
             try:
               v_str = parts[-1].split("_v")[1]
               version = int(v_str)
-            except:
+            except Exception:
               pass
 
             try:

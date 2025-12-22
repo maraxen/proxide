@@ -1,10 +1,9 @@
 use pyo3::prelude::*;
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
-use std::collections::HashMap;
 use std::fs::File;
-use std::io::{copy, Cursor};
-use std::path::{Path, PathBuf};
+use std::io::copy;
+use std::path::Path;
 
 const RCSB_URL_MMCIF: &str = "https://files.rcsb.org/download/";
 const RCSB_URL_PDB: &str = "https://files.rcsb.org/download/";
@@ -40,7 +39,7 @@ pub fn fetch_rcsb(pdb_id: &str, output_dir: &str, format_type: &str) -> PyResult
         return Ok(target_path.to_string_lossy().to_string());
     }
 
-    let resp = match _fetch_with_retry(&client, &url) {
+    let _resp = match _fetch_with_retry(&client, &url) {
         Ok(r) => r,
         Err(_) => {
             // Fallback logic: if mmcif failed, try pdb, and vice versa
@@ -197,8 +196,69 @@ fn _fetch_with_retry(client: &Client, url: &str) -> Result<reqwest::blocking::Re
 }
 
 fn _download_file(client: &Client, url: &str, target_path: &Path) -> Result<(), String> {
-    let mut response = _fetch_with_retry(client, url)?;
     let mut file = File::create(target_path).map_err(|e| e.to_string())?;
-    copy(&mut response, &mut file).map_err(|e| e.to_string())?;
+    _download_file_to_writer(client, url, &mut file)
+}
+
+fn _download_file_to_writer<W: std::io::Write>(
+    client: &Client,
+    url: &str,
+    writer: &mut W,
+) -> Result<(), String> {
+    let mut response = _fetch_with_retry(client, url)?;
+    copy(&mut response, writer).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Fetch a FoldComp database from the MMseqs2 server.
+/// downloads: {db}, {db}.index, {db}.lookup, {db}.dbtype, {db}.source
+#[pyfunction]
+#[pyo3(signature = (db_name, output_dir, _download_chunks=16))]
+pub fn fetch_foldcomp_database(
+    db_name: &str,
+    output_dir: &str,
+    _download_chunks: usize,
+) -> PyResult<String> {
+    let output_path = Path::new(output_dir);
+    if !output_path.exists() {
+        std::fs::create_dir_all(output_path)?;
+    }
+
+    // Base URL: https://opendata.mmseqs.org/foldcomp/
+    let base_url = "https://opendata.mmseqs.org/foldcomp/";
+    let client = Client::new();
+
+    let extensions = ["", ".index", ".lookup", ".dbtype", ".source"];
+
+    for ext in extensions.iter() {
+        let filename = format!("{}{}", db_name, ext);
+        let url = format!("{}{}", base_url, filename);
+        let target_path = output_path.join(&filename);
+
+        if target_path.exists() {
+            // Check size? For now skip if exists.
+            continue;
+        }
+
+        // Use a temporary file to avoid partial downloads
+        let tmp_path = target_path.with_extension("tmp");
+        {
+            let mut file = File::create(&tmp_path).map_err(|e| {
+                pyo3::exceptions::PyIOError::new_err(format!("Failed to create tmp file: {}", e))
+            })?;
+
+            _download_file_to_writer(&client, &url, &mut file).map_err(|e| {
+                pyo3::exceptions::PyIOError::new_err(format!(
+                    "Failed to download {}: {}",
+                    filename, e
+                ))
+            })?;
+        }
+
+        std::fs::rename(&tmp_path, &target_path).map_err(|e| {
+            pyo3::exceptions::PyIOError::new_err(format!("Failed to rename tmp file: {}", e))
+        })?;
+    }
+
+    Ok(output_path.to_string_lossy().to_string())
 }

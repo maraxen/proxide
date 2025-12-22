@@ -18,44 +18,11 @@ from proxide._oxidize import (
 )
 from proxide.core.atomic_system import AtomicSystem
 from proxide.core.containers import Protein
-from proxide.geometry.radial_basis import compute_radial_basis
+
 from proxide.io.parsing.registry import ParsingError, register_parser
 
 FLAT_COORD_NDIM = 2
 ATOM37_DIM = 3
-
-
-def _apply_rbf_fallback(result_dict: dict) -> None:
-  """Implement Python fallback for RBF computation with MPNN ordering."""
-  if "rbf_features" not in result_dict or result_dict["rbf_features"] is None:
-    return
-
-  # Check coordinates
-  coords = result_dict["coordinates"]
-  if coords is None:
-    return
-
-  # Ensure numpy/jax array
-  if not hasattr(coords, "ndim"):
-    coords = np.array(coords)
-
-  n_res = len(result_dict["aatype"])
-
-  if coords.ndim == FLAT_COORD_NDIM and coords.shape[0] == n_res * 37:
-    coords = coords.reshape(n_res, 37, 3)
-
-  if coords.ndim != ATOM37_DIM:
-    return
-
-  perm_indices = np.array([0, 1, 2, 4, 3])  # MPNN order for [N, CA, C, O, CB]
-  backbone = coords[:, perm_indices, :]
-  neighbors = result_dict.get("neighbor_indices")
-  if neighbors is None:
-    return
-  backbone_jax = jnp.array(backbone)
-  neighbors_jax = jnp.array(neighbors)
-  rbf = compute_radial_basis(backbone_jax, neighbors_jax)
-  result_dict["rbf_features"] = np.array(rbf)
 
 
 def _convert_rust_dict_to_system(data: dict) -> AtomicSystem:
@@ -369,20 +336,12 @@ def parse_pdb_to_protein(
     spec = OutputSpec()
 
   # Handle output format target with fallback capability
-  use_fallback_rbf = False
-
   if output_format_target is not None:
     try:
       spec.output_format_target = output_format_target
     except AttributeError:
       # Old binary fallback
-      if output_format_target == "mpnn" and getattr(spec, "compute_rbf", False):
-        use_fallback_rbf = True
-
   result = _oxidize.parse_structure(str(file_path), spec)
-
-  if use_fallback_rbf:
-    _apply_rbf_fallback(result)
 
   return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
 
