@@ -40,13 +40,6 @@ impl OutputFormatTarget {
             )),
         }
     }
-
-    pub fn to_str(&self) -> &'static str {
-        match self {
-            Self::General => "general",
-            Self::Mpnn => "mpnn",
-        }
-    }
 }
 
 /// Error handling mode for missing atoms/residues

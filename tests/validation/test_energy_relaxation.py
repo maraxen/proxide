@@ -15,7 +15,8 @@ try:
 except ImportError:
     OPENMM_AVAILABLE = False
 
-from proxide.io.parsing.rust import parse_structure, OutputSpec, CoordFormat, ErrorMode
+from proxide.io.parsing.rust import parse_structure, OutputSpec
+from proxide._oxidize import CoordFormat, ErrorMode
 
 TEST_DATA_DIR = Path("tests/data")
 

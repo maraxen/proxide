@@ -47,6 +47,16 @@ pub fn parse_pqr(path: String) -> PyResult<PyObject> {
     })
 }
 
+/// Parse a FoldComp file and return AtomicSystem
+#[pyfunction]
+pub fn parse_foldcomp(path: String) -> PyResult<crate::structure::systems::AtomicSystem> {
+    Python::with_gil(|_py| {
+        formats::foldcomp::read_foldcomp(&path).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("FoldComp parsing failed: {}", e))
+        })
+    })
+}
+
 /// Parse a structure file (PDB/mmCIF) into a format suitable for the Protein class.
 #[pyfunction]
 #[pyo3(signature = (path, spec=None))]
@@ -782,6 +792,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                     arr.reshape((params.improper_params.len(), 3)).unwrap(),
                 )?;
             }
+
             if !params.pairs_14.is_empty() {
                 let mut flat = Vec::with_capacity(params.pairs_14.len() * 2);
                 for x in &params.pairs_14 {
@@ -815,4 +826,51 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
 
         Ok(dict.into_py(py))
     })
+}
+
+/// FoldComp Database accessor
+#[pyclass]
+pub struct FoldCompDatabase {
+    inner: formats::foldcomp::db::FoldCompDb,
+}
+
+#[pymethods]
+impl FoldCompDatabase {
+    #[new]
+    pub fn new(path: String) -> PyResult<Self> {
+        let db = formats::foldcomp::db::FoldCompDb::open(&path).map_err(|e| {
+            pyo3::exceptions::PyIOError::new_err(format!("Failed to open FoldComp database: {}", e))
+        })?;
+        Ok(FoldCompDatabase { inner: db })
+    }
+
+    pub fn get(&self, id: u32) -> PyResult<crate::structure::systems::AtomicSystem> {
+        Python::with_gil(|_py| {
+            self.inner.get(id).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "Failed to retrieve ID {}: {}",
+                    id, e
+                ))
+            })
+        })
+    }
+
+    pub fn get_by_name(&self, name: String) -> PyResult<crate::structure::systems::AtomicSystem> {
+        Python::with_gil(|_py| {
+            self.inner.get_by_name(&name).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "Failed to retrieve entry {}: {}",
+                    name, e
+                ))
+            })
+        })
+    }
+
+    pub fn __len__(&self) -> usize {
+        self.inner.keys.len()
+    }
+
+    pub fn __contains__(&self, name: String) -> bool {
+        self.inner.lookup.contains_key(&name)
+    }
 }
