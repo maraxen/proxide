@@ -6,7 +6,6 @@ import re
 import time
 import warnings
 from collections.abc import Generator, Iterator, Sequence
-from io import StringIO
 from typing import IO, Any, Literal
 
 import requests

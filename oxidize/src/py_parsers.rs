@@ -157,6 +157,65 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             // Bonds will be inferred later in section "Topology" if needed
         }
 
+        // Store parameterized structure for later output
+        let mut md_params = None;
+
+        // --- MD Parameterization (Moved Up) ---
+        // Parameterize *before* formatting/features so we can use the parameters
+        if spec.parameterize_md {
+            if let Some(ref ff_path) = spec.force_field {
+                log::debug!("Parameterizing structure with {}", ff_path);
+
+                let ff = forcefield::parse_forcefield_xml(ff_path).map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Force field parsing failed: {}",
+                        e
+                    ))
+                })?;
+
+                let param_options = physics::md_params::ParamOptions {
+                    auto_terminal_caps: spec.auto_terminal_caps,
+                    missing_mode: match spec.missing_residue_mode {
+                        spec::MissingResidueMode::SkipWarn => {
+                            physics::md_params::MissingResidueMode::SkipWarn
+                        }
+                        spec::MissingResidueMode::Fail => {
+                            physics::md_params::MissingResidueMode::Fail
+                        }
+                        spec::MissingResidueMode::GaffFallback => {
+                            physics::md_params::MissingResidueMode::GaffFallback
+                        }
+                        spec::MissingResidueMode::ClosestMatch => {
+                            physics::md_params::MissingResidueMode::ClosestMatch
+                        }
+                    },
+                };
+
+                let params =
+                    physics::md_params::parameterize_structure(&processed, &ff, &param_options)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyValueError::new_err(format!(
+                                "Parameterization failed: {}",
+                                e
+                            ))
+                        })?;
+
+                processed.raw_atoms.charges = Some(params.charges.clone());
+                processed.raw_atoms.sigmas = Some(params.sigmas.clone());
+                processed.raw_atoms.epsilons = Some(params.epsilons.clone());
+
+                log::info!(
+                    "Parameterized {}/{} atoms",
+                    params.num_parameterized,
+                    processed.raw_atoms.num_atoms
+                );
+
+                md_params = Some(params);
+            } else {
+                log::warn!("parameterize_md=true but no force_field path provided");
+            }
+        }
+
         // 5. Format and Stack
         let (dict, cached_structure) = match spec.coord_format {
             CoordFormat::Atom37 => {
@@ -622,190 +681,121 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             dict_bound.set_item("vdw_features", array)?;
         }
 
-        // --- MD Parameterization ---
-        if spec.parameterize_md {
-            if let Some(ref ff_path) = spec.force_field {
-                // Parse force field
-                let ff = forcefield::parse_forcefield_xml(ff_path).map_err(|e| {
-                    pyo3::exceptions::PyValueError::new_err(format!(
-                        "Force field parsing failed: {}",
-                        e
-                    ))
-                })?;
+        // --- Output MD Parameters ---
+        if let Some(params) = md_params {
+            dict_bound.set_item("charges", PyArray1::from_slice_bound(py, &params.charges))?;
+            dict_bound.set_item("sigmas", PyArray1::from_slice_bound(py, &params.sigmas))?;
+            dict_bound.set_item("epsilons", PyArray1::from_slice_bound(py, &params.epsilons))?;
 
-                // Convert spec mode to physics mode
-                let param_options = physics::md_params::ParamOptions {
-                    auto_terminal_caps: spec.auto_terminal_caps,
-                    missing_mode: match spec.missing_residue_mode {
-                        spec::MissingResidueMode::SkipWarn => {
-                            physics::md_params::MissingResidueMode::SkipWarn
-                        }
-                        spec::MissingResidueMode::Fail => {
-                            physics::md_params::MissingResidueMode::Fail
-                        }
-                        spec::MissingResidueMode::GaffFallback => {
-                            physics::md_params::MissingResidueMode::GaffFallback
-                        }
-                        spec::MissingResidueMode::ClosestMatch => {
-                            physics::md_params::MissingResidueMode::ClosestMatch
-                        }
-                    },
-                };
-
-                // Parameterize structure
-                let params =
-                    physics::md_params::parameterize_structure(&processed, &ff, &param_options)
-                        .map_err(|e| {
-                            pyo3::exceptions::PyValueError::new_err(format!(
-                                "Parameterization failed: {}",
-                                e
-                            ))
-                        })?;
-
-                // Add to output
-                dict_bound.set_item("charges", PyArray1::from_slice_bound(py, &params.charges))?;
-                dict_bound.set_item("sigmas", PyArray1::from_slice_bound(py, &params.sigmas))?;
-                dict_bound
-                    .set_item("epsilons", PyArray1::from_slice_bound(py, &params.epsilons))?;
-
-                if let Some(ref radii) = params.radii {
-                    dict_bound.set_item(
-                        "gbsa_radii",
-                        PyArray1::from_slice_bound(py, radii.as_slice()),
-                    )?;
-                }
-                if let Some(ref scales) = params.scales {
-                    dict_bound.set_item(
-                        "gbsa_scales",
-                        PyArray1::from_slice_bound(py, scales.as_slice()),
-                    )?;
-                }
-
-                // Bonds (N, 2)
-                if !params.bonds.is_empty() {
-                    let mut bonds_flat = Vec::with_capacity(params.bonds.len() * 2);
-                    for b in &params.bonds {
-                        bonds_flat.extend_from_slice(b);
-                    }
-                    let arr = PyArray1::from_slice_bound(py, &bonds_flat);
-                    dict_bound.set_item("bonds", arr.reshape((params.bonds.len(), 2)).unwrap())?;
-                }
-
-                // Bond Params (N, 2)
-                if !params.bond_params.is_empty() {
-                    let mut params_flat = Vec::with_capacity(params.bond_params.len() * 2);
-                    for p in &params.bond_params {
-                        params_flat.extend_from_slice(p);
-                    }
-                    let arr = PyArray1::from_slice_bound(py, &params_flat);
-                    dict_bound.set_item(
-                        "bond_params",
-                        arr.reshape((params.bond_params.len(), 2)).unwrap(),
-                    )?;
-                }
-
-                // Angles (N, 3)
-                if !params.angles.is_empty() {
-                    let mut flat = Vec::with_capacity(params.angles.len() * 3);
-                    for a in &params.angles {
-                        flat.extend_from_slice(a);
-                    }
-                    let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict_bound
-                        .set_item("angles", arr.reshape((params.angles.len(), 3)).unwrap())?;
-                }
-
-                // Angle Params (N, 2)
-                if !params.angle_params.is_empty() {
-                    let mut flat = Vec::with_capacity(params.angle_params.len() * 2);
-                    for p in &params.angle_params {
-                        flat.extend_from_slice(p);
-                    }
-                    let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict_bound.set_item(
-                        "angle_params",
-                        arr.reshape((params.angle_params.len(), 2)).unwrap(),
-                    )?;
-                }
-
-                // Proper Dihedrals (N, 4)
-                if !params.dihedrals.is_empty() {
-                    let mut flat = Vec::with_capacity(params.dihedrals.len() * 4);
-                    for d in &params.dihedrals {
-                        flat.extend_from_slice(d);
-                    }
-                    let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict_bound.set_item(
-                        "dihedrals",
-                        arr.reshape((params.dihedrals.len(), 4)).unwrap(),
-                    )?;
-                }
-
-                // Proper Dihedral Params (N, 3)
-                if !params.dihedral_params.is_empty() {
-                    let mut flat = Vec::with_capacity(params.dihedral_params.len() * 3);
-                    for p in &params.dihedral_params {
-                        flat.extend_from_slice(p);
-                    }
-                    let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict_bound.set_item(
-                        "dihedral_params",
-                        arr.reshape((params.dihedral_params.len(), 3)).unwrap(),
-                    )?;
-                }
-
-                // Improper Dihedrals (N, 4)
-                if !params.impropers.is_empty() {
-                    let mut flat = Vec::with_capacity(params.impropers.len() * 4);
-                    for i in &params.impropers {
-                        flat.extend_from_slice(i);
-                    }
-                    let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict_bound.set_item(
-                        "impropers",
-                        arr.reshape((params.impropers.len(), 4)).unwrap(),
-                    )?;
-                }
-
-                // Improper Params (N, 3)
-                if !params.improper_params.is_empty() {
-                    let mut flat = Vec::with_capacity(params.improper_params.len() * 3);
-                    for p in &params.improper_params {
-                        flat.extend_from_slice(p);
-                    }
-                    let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict_bound.set_item(
-                        "improper_params",
-                        arr.reshape((params.improper_params.len(), 3)).unwrap(),
-                    )?;
-                }
-
-                // 1-4 Pairs (N, 2)
-                if !params.pairs_14.is_empty() {
-                    let mut flat = Vec::with_capacity(params.pairs_14.len() * 2);
-                    for p in &params.pairs_14 {
-                        flat.extend_from_slice(p);
-                    }
-                    let arr = PyArray1::from_slice_bound(py, &flat);
-                    dict_bound
-                        .set_item("pairs_14", arr.reshape((params.pairs_14.len(), 2)).unwrap())?;
-                }
-
-                // Atom types as list
-                let atom_types: Vec<&str> = params.atom_types.iter().map(|s| s.as_str()).collect();
-                dict_bound.set_item("atom_types", atom_types)?;
-
-                dict_bound.set_item("num_parameterized", params.num_parameterized)?;
-                dict_bound.set_item("num_skipped", params.num_skipped)?;
-
-                log::info!(
-                    "Parameterized {}/{} atoms",
-                    params.num_parameterized,
-                    processed.raw_atoms.num_atoms
-                );
-            } else {
-                log::warn!("parameterize_md=true but no force_field path provided");
+            if let Some(ref radii) = params.radii {
+                dict_bound.set_item(
+                    "gbsa_radii",
+                    PyArray1::from_slice_bound(py, radii.as_slice()),
+                )?;
             }
+            if let Some(ref scales) = params.scales {
+                dict_bound.set_item(
+                    "gbsa_scales",
+                    PyArray1::from_slice_bound(py, scales.as_slice()),
+                )?;
+            }
+
+            if !params.bonds.is_empty() {
+                let mut flat = Vec::with_capacity(params.bonds.len() * 2);
+                for b in &params.bonds {
+                    flat.extend_from_slice(b);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item("bonds", arr.reshape((params.bonds.len(), 2)).unwrap())?;
+            }
+            if !params.bond_params.is_empty() {
+                let mut flat = Vec::with_capacity(params.bond_params.len() * 2);
+                for p in &params.bond_params {
+                    flat.extend_from_slice(p);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item(
+                    "bond_params",
+                    arr.reshape((params.bond_params.len(), 2)).unwrap(),
+                )?;
+            }
+            if !params.angles.is_empty() {
+                let mut flat = Vec::with_capacity(params.angles.len() * 3);
+                for x in &params.angles {
+                    flat.extend_from_slice(x);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item("angles", arr.reshape((params.angles.len(), 3)).unwrap())?;
+            }
+            if !params.angle_params.is_empty() {
+                let mut flat = Vec::with_capacity(params.angle_params.len() * 2);
+                for p in &params.angle_params {
+                    flat.extend_from_slice(p);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item(
+                    "angle_params",
+                    arr.reshape((params.angle_params.len(), 2)).unwrap(),
+                )?;
+            }
+            if !params.dihedrals.is_empty() {
+                let mut flat = Vec::with_capacity(params.dihedrals.len() * 4);
+                for x in &params.dihedrals {
+                    flat.extend_from_slice(x);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item(
+                    "dihedrals",
+                    arr.reshape((params.dihedrals.len(), 4)).unwrap(),
+                )?;
+            }
+            if !params.dihedral_params.is_empty() {
+                let mut flat = Vec::with_capacity(params.dihedral_params.len() * 3);
+                for p in &params.dihedral_params {
+                    flat.extend_from_slice(p);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item(
+                    "dihedral_params",
+                    arr.reshape((params.dihedral_params.len(), 3)).unwrap(),
+                )?;
+            }
+            if !params.impropers.is_empty() {
+                let mut flat = Vec::with_capacity(params.impropers.len() * 4);
+                for x in &params.impropers {
+                    flat.extend_from_slice(x);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item(
+                    "impropers",
+                    arr.reshape((params.impropers.len(), 4)).unwrap(),
+                )?;
+            }
+            if !params.improper_params.is_empty() {
+                let mut flat = Vec::with_capacity(params.improper_params.len() * 3);
+                for p in &params.improper_params {
+                    flat.extend_from_slice(p);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item(
+                    "improper_params",
+                    arr.reshape((params.improper_params.len(), 3)).unwrap(),
+                )?;
+            }
+            if !params.pairs_14.is_empty() {
+                let mut flat = Vec::with_capacity(params.pairs_14.len() * 2);
+                for x in &params.pairs_14 {
+                    flat.extend_from_slice(x);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound
+                    .set_item("pairs_14", arr.reshape((params.pairs_14.len(), 2)).unwrap())?;
+            }
+
+            let atom_types: Vec<&str> = params.atom_types.iter().map(|s| s.as_str()).collect();
+            dict_bound.set_item("atom_types", atom_types)?;
+            dict_bound.set_item("num_parameterized", params.num_parameterized)?;
+            dict_bound.set_item("num_skipped", params.num_skipped)?;
         }
 
         // --- GAFF Typing (if requested) ---
