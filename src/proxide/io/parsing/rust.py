@@ -13,7 +13,14 @@ import numpy as np
 from jaxtyping import ArrayLike
 
 from proxide import _oxidize  # type: ignore[unresolved-import]
-from proxide._oxidize import OutputSpec  # type: ignore[unresolved-import]
+from proxide import _oxidize  # type: ignore[unresolved-import]
+from proxide._oxidize import (
+  CoordFormat,
+  ErrorMode,
+  HydrogenSource,
+  MissingResidueMode,
+  OutputSpec,
+)  # type: ignore[unresolved-import]
 from proxide.core.atomic_system import AtomicSystem
 from proxide.core.containers import Protein
 from proxide.geometry.radial_basis import compute_radial_basis

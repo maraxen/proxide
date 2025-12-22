@@ -11,6 +11,7 @@ mod forcefield;
 mod formats;
 mod formatters;
 mod geometry;
+mod io;
 mod physics;
 mod processing;
 mod spec;
@@ -77,6 +78,11 @@ fn _oxidize(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Atomic System Architecture
     m.add_class::<AtomicSystem>()?;
+
+    // Fetching functions (from io::fetching)
+    m.add_function(wrap_pyfunction!(io::fetching::fetch_rcsb, m)?)?;
+    m.add_function(wrap_pyfunction!(io::fetching::fetch_md_cath, m)?)?;
+    m.add_function(wrap_pyfunction!(io::fetching::fetch_afdb, m)?)?;
 
     Ok(())
 }
