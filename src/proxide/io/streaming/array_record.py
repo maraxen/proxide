@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, SupportsIndex
 
@@ -23,12 +24,75 @@ m.patch()
 logger = logging.getLogger(__name__)
 
 
+def _normalize_index_entry(
+  entry: int | dict[str, Any], default_split: str = "all"
+) -> dict[str, Any]:
+  """Normalize an index entry to the modern format.
+
+  Supports multiple index formats:
+  - Legacy integer: `42` -> `{"idx": [42], "set": "all"}`
+  - Modern dict: `{"idx": [42], "set": "train"}` -> unchanged
+  - Extended dict: `{"idx": [42], "tag": "high_quality", ...}` -> unchanged
+
+  Args:
+      entry: The index entry (integer or dict)
+      default_split: Default split to assign if entry is an integer
+
+  Returns:
+      Normalized dictionary with at least "idx" key
+
+  """
+  if isinstance(entry, int):
+    return {"idx": [entry], "set": default_split}
+
+  if isinstance(entry, dict):
+    # Ensure idx is a list
+    if "idx" not in entry:
+      # Maybe it's a direct index without idx key
+      return {"idx": [0], "set": default_split, **entry}
+    if isinstance(entry["idx"], int):
+      entry = {**entry, "idx": [entry["idx"]]}
+    return entry
+
+  msg = f"Unsupported index entry type: {type(entry)}"
+  raise TypeError(msg)
+
+
+def _detect_index_format(full_index: dict[str, Any]) -> str:
+  """Detect the format of an index file.
+
+  Returns:
+      "legacy" if all values are integers
+      "modern" if all values are dicts with "idx" and "set" keys
+      "extended" if all values are dicts with "idx" but not necessarily "set"
+
+  """
+  if not full_index:
+    return "modern"
+
+  first_value = next(iter(full_index.values()))
+
+  if isinstance(first_value, int):
+    return "legacy"
+  if isinstance(first_value, dict):
+    if "set" in first_value:
+      return "modern"
+    return "extended"
+
+  return "unknown"
+
+
 class ArrayRecordDataSource(grain.RandomAccessDataSource):
   """Grain data source for preprocessed protein structures in array_record format.
 
   This source reads from array_record files created by the PQR preprocessing pipeline,
   which include precomputed physics features (electrostatic forces projected onto
   backbone frame).
+
+  Supports multiple index formats:
+  - Legacy: `{"protein_id": 0, ...}` (integers)
+  - Modern: `{"protein_id": {"idx": [0], "set": "train"}, ...}`
+  - Extended: `{"protein_id": {"idx": [0], "tag": "value", ...}, ...}`
 
   Attributes:
       array_record_path: Path to the .array_record file
@@ -44,6 +108,13 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       >>> protein = source[0]  # Returns Protein with physics_features
       >>> print(protein.physics_features.shape)  # (n_residues, 5)
 
+      >>> # With custom filter function
+      >>> source = ArrayRecordDataSource(
+      ...     "data/preprocessed/data.array_record",
+      ...     "data/preprocessed/data.index.json",
+      ...     filter_fn=lambda pid, entry: entry.get("quality") == "high",
+      ... )
+
   """
 
   def __init__(
@@ -51,13 +122,17 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
     array_record_path: str | Path,
     index_path: str | Path,
     split: str = "train",
+    filter_fn: Callable[[str, dict[str, Any]], bool] | None = None,
   ) -> None:
     """Initialize the array_record data source.
 
     Args:
         array_record_path: Path to the array_record file
         index_path: Path to the JSON index file mapping protein_id -> index
-        split: Data split to load ("train", "valid", "test")
+        split: Data split to load ("train", "valid", "test", "inference", "all")
+        filter_fn: Optional custom filter function. Takes (protein_id, entry_dict)
+            and returns True if the entry should be included. If provided, this
+            takes precedence over split-based filtering.
 
     Raises:
         FileNotFoundError: If array_record or index file doesn't exist
@@ -92,17 +167,35 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       with self.index_path.open("r") as f:
         full_index = json.load(f)
 
-    # Filter index by split
+    # Detect index format and normalize entries
+    index_format = _detect_index_format(full_index)
+    if index_format == "legacy":
+      logger.info(
+        "Detected legacy index format (integer values). "
+        "All records will be included for split '%s'.",
+        split,
+      )
+      # For legacy format, include all records regardless of split
+      # (since there's no split information in the index)
+      full_index = {
+        pid: _normalize_index_entry(entry, default_split=split) for pid, entry in full_index.items()
+      }
+
+    # Filter index by split or custom filter_fn
     self.index = {}
     for pid, entry in full_index.items():
-      if entry.get("set") == split:
-        # The new format is {"idx": [i1, i2...], "set": "..."}
-        # We flatten the list of indices for this split
-        for _ in entry["idx"]:
-          # We use a composite key if needed, but here we just need a list of record indices
-          # For RandomAccessDataSource, we need a mapping from 0..N to record_index
-          pass
-        self.index[pid] = entry
+      normalized = _normalize_index_entry(entry)
+
+      if filter_fn is not None:
+        # Use custom filter function
+        if filter_fn(pid, normalized):
+          self.index[pid] = normalized
+      elif split in ["inference", "all"]:
+        # Include all records for inference/all splits
+        self.index[pid] = normalized
+      elif normalized.get("set") == split:
+        # Filter by split field
+        self.index[pid] = normalized
 
     self._record_indices = []
     for entry in self.index.values():

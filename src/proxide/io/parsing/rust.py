@@ -89,9 +89,6 @@ def load_rust(
     output_format_target=output_format_target,
     remove_solvent=kwargs.get("remove_solvent", True),
   )
-  # Handle other kwargs
-  if "remove_solvent" in kwargs:
-    spec.remove_solvent = kwargs["remove_solvent"]
 
   try:
     # Create a usage context for the file path
