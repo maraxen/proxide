@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 import numpy as np
+import jax.numpy as jnp
 
 # Biotite is still needed for MDTraj trajectory parsing
 from biotite.structure import (
@@ -335,19 +336,19 @@ def processed_structure_to_protein_tuples(
     atom_mask_2d = static_features.static_atom_mask_37.astype(np.float32)
 
     return Protein(
-      coordinates=coords_37,
-      aatype=static_features.aatype,
-      atom_mask=atom_mask_2d,
-      mask=atom_mask_2d[:, atom_order["CA"]],
-      one_hot_sequence=np.eye(21)[static_features.aatype],
-      residue_index=static_features.residue_indices,
-      chain_index=static_features.chain_index,
-      dihedrals=dihedrals,
-      full_coordinates=coords,
-      charges=charges,
-      radii=radii,
-      epsilons=epsilons,
-      sigmas=sigmas,
+      coordinates=jnp.array(coords_37, dtype=jnp.float32),
+      aatype=jnp.array(static_features.aatype, dtype=jnp.int8),
+      atom_mask=jnp.array(atom_mask_2d, dtype=jnp.float32),
+      mask=jnp.array(atom_mask_2d[:, atom_order["CA"]], dtype=jnp.float32),
+      one_hot_sequence=jnp.eye(21)[static_features.aatype],
+      residue_index=jnp.array(static_features.residue_indices, dtype=jnp.int32),
+      chain_index=jnp.array(static_features.chain_index, dtype=jnp.int32),
+      dihedrals=jnp.array(dihedrals, dtype=jnp.float32) if dihedrals is not None else None,
+      full_coordinates=jnp.array(coords, dtype=jnp.float32),
+      charges=jnp.array(charges, dtype=jnp.float32) if charges is not None else None,
+      radii=jnp.array(radii, dtype=jnp.float32) if radii is not None else None,
+      epsilons=jnp.array(epsilons, dtype=jnp.float32) if epsilons is not None else None,
+      sigmas=jnp.array(sigmas, dtype=jnp.float32) if sigmas is not None else None,
       elements=None,
       atom_names=None,
     )

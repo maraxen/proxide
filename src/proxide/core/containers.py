@@ -1,6 +1,8 @@
-"""Dataclasses for the PrxteinMPNN project.
+"""Dataclasses for protein structures.
 
-prxteinmpnn.utils.data_structures
+This module defines:
+- Protein: Residue-level protein representation (Atom37 format)
+- ProteinStream, ProteinBatch: Type aliases for sequences
 """
 
 from __future__ import annotations
@@ -25,8 +27,6 @@ if TYPE_CHECKING:
     StructureAtomicCoordinates,
   )
 
-from proxide.core.atomic_system import AtomicSystem
-
 
 def include_feature(feature_name: str, include_features: Sequence[str] | None) -> bool:
   """Determine if a feature should be included.
@@ -46,78 +46,60 @@ def include_feature(feature_name: str, include_features: Sequence[str] | None) -
 
 
 def none_or_jnp(array: np.ndarray | None) -> jnp.ndarray | None:
-  """Convert a numpy array to jnp array, or return None if input is None.
-
-  Args:
-      array (np.ndarray | None): Input numpy array or None.
-
-  Returns:
-      jnp.ndarray | None: Converted jnp array or None.
-
-  """
+  """Convert a numpy array to jnp array, or return None if input is None."""
   if array is None:
     return None
   return jnp.asarray(array)
 
 
 def none_or_numpy(array: np.ndarray | None) -> np.ndarray | None:
-  """Convert to numpy array, or return None if input is None.
-
-  Args:
-      array (np.ndarray | None): Input array or None.
-
-  Returns:
-      np.ndarray | None: Converted numpy array or None.
-
-  """
+  """Convert to numpy array, or return None if input is None."""
   if array is None:
     return None
   return np.asarray(array)
 
 
 @dataclass(frozen=True, kw_only=True)
-class Protein(AtomicSystem):
-  """Protein structure or ensemble representation.
+class Protein:
+  """Residue-level protein structure representation.
+
+  This is the Atom37 format used by AlphaFold and related tools.
+  Each residue has up to 37 atom positions.
+
+  Note:
+    This class is separate from AtomicSystem (per-atom) by design.
+    For training, use MPNNBatch which contains pre-computed features.
+    For MD simulation, use AtomicSystem.
 
   Attributes:
-    coordinates (StructureAtomicCoordinates): Atom positions in the structure, represented as a
-      3D array. Cartesian coordinates of atoms in angstroms. The atom types correspond to
-      residue_constants.atom_types, i.e. the first three are N, CA, CB. Shape is
-      (num_res, num_atom_type, 3), where num_res is the number of residues, num_atom_type is the
-      number of atom types (e.g., N, CA, CB, C, O), and 3 is the spatial dimension (x, y, z).
-    aatype (Sequence): Amino-acid type for each residue represented as an integer between 0 and 20,
-      where 20 is 'X'. Shape is [num_res].
-    mask (AlphaCarbonMask): Binary float mask to indicate presence of alpha carbon atom.
-      1.0 if an atom is present and 0.0 if not. This should be used for loss masking.
-      Shape is [num_res, num_atom_type].
-    residue_index (AtomResidueIndex): Residue index as used in PDB. It is not necessarily
-      continuous or 0-indexed. Shape is [num_res].
-    chain_index (ChainIndex): Chain index for each residue. Shape is [num_res].
-    dihedrals (BackboneDihedrals | None): Dihedral angles for backbone atoms (phi, psi, omega).
-      Shape is [num_res, 3]. If not provided, defaults to None.
-    mapping (jnp.Array | None): Optional array mapping residues in the ensemble to original
-      structure indices. Shape is [num_res, num_frames]. If not provided, defaults to None.
-    full_coordinates (StructureAtomicCoordinates | None): Full atomic coordinates
-      including all heavy atoms. Shape is (num_res, num_full_atom_type, 3), where num_full_atom_type
-      is the number of all heavy atom types (e.g., N, CA, CB, C, O, CG, etc.), and 3 is the spatial
-      dimension (x, y, z). If not provided, defaults to None.
-    full_atom_mask (AtomMask | None): Binary float mask to indicate presence of a particular
-      heavy atom. 1.0 if an atom is present and 0.0 if not. This should be used for loss masking.
-      Shape is [num_res, num_full_atom_type]. If not provided, defaults to None.
+    coordinates: Atom positions. Shape (N_res, 37, 3) for Atom37.
+    aatype: Amino acid type per residue (0-20). Shape (N_res,).
+    one_hot_sequence: One-hot encoded sequence. Shape (N_res, 21).
+    mask: Alpha carbon presence mask. Shape (N_res,).
+    residue_index: PDB residue numbering. Shape (N_res,).
+    chain_index: Chain identifier per residue. Shape (N_res,).
+    atom_mask: Per-atom validity mask. Shape (N_res, 37).
+    dihedrals: Backbone dihedral angles. Shape (N_res, 3).
+    rbf_features: Pre-computed RBF features. Shape (N_res, K, F).
+    physics_features: Pre-computed physics features. Shape (N_res, F).
+    neighbor_indices: K-nearest neighbor indices. Shape (N_res, K).
 
   """
 
   coordinates: StructureAtomicCoordinates
   aatype: ProteinSequence
-  one_hot_sequence: OneHotProteinSequence
-  mask: AlphaCarbonMask
   residue_index: ResidueIndex
   chain_index: ChainIndex
+  one_hot_sequence: OneHotProteinSequence | None = None
+  mask: AlphaCarbonMask | None = None
+  atom_mask: Any | None = None
   dihedrals: BackboneDihedrals | None = None
   mapping: Any | None = None
   full_coordinates: Any | None = None
   full_atom_mask: Any | None = None
+  source: str | None = None
 
+  # Derived features
   physics_features: Any | None = None
   backbone_indices: Any | None = None
   vdw_features: Any | None = None
@@ -125,6 +107,28 @@ class Protein(AtomicSystem):
   neighbor_indices: Any | None = None
   electrostatic_features: Any | None = None
   format: Literal["Atom37", "Atom14", "Full", "BackboneOnly"] | None = None
+
+  # Legacy AtomicSystem fields for backward compat during transition
+  elements: Any | None = None
+  atom_names: Any | None = None
+  chain_ids: Any | None = None
+  res_names: Any | None = None
+  molecule_type: Any | None = None
+  atom_types: Any | None = None
+  bonds: Any | None = None
+  bond_params: Any | None = None
+  angles: Any | None = None
+  angle_params: Any | None = None
+  proper_dihedrals: Any | None = None
+  dihedral_params: Any | None = None
+  impropers: Any | None = None
+  improper_params: Any | None = None
+  exclusion_mask: Any | None = None
+  charges: Any | None = None
+  sigmas: Any | None = None
+  epsilons: Any | None = None
+  radii: Any | None = None
+  atom_res_index: Any | None = None
 
   @classmethod
   def from_rust_dict(
@@ -152,57 +156,44 @@ class Protein(AtomicSystem):
     raw_coords = rust_dict["coordinates"]
     raw_mask = rust_dict["atom_mask"]
 
-    # Check if we can/should reshape to Atom37 (N, 37, 3)
-    # or if we have a flat structure (N_atoms, 3)
     is_atom37 = (
       (raw_coords.ndim == 3 and raw_coords.shape[1] == 37)
       or (raw_coords.ndim == 2 and raw_coords.size == num_residues * 37 * 3)
       or (raw_coords.ndim == 1 and raw_coords.size == num_residues * 37 * 3)
     )
 
-    if use_jax:
-      convert = jnp.asarray
-    else:
-      convert = np.asarray
+    def convert(x: Any, dtype: Any = None) -> Any:
+      if use_jax:
+        return jnp.asarray(x, dtype=dtype)
+      return np.asarray(x, dtype=dtype)
 
-    # Unit conversion constants (OpenMM nm/kJ -> Prolix A/kcal)
+    # Unit conversion constants
     NM_TO_ANGSTROM = 10.0
     KJMOL_TO_KCALMOL = 0.2390057
     BOND_K_FACTOR = KJMOL_TO_KCALMOL / (NM_TO_ANGSTROM**2)
 
-    def convert_params(arr, type_):
+    def convert_params(arr: Any, type_: str) -> Any:
       if arr is None:
         return None
       arr = np.array(arr, dtype=np.float32)
       if type_ == "bond":
-        # [length, k]
         arr[:, 0] *= NM_TO_ANGSTROM
         arr[:, 1] *= BOND_K_FACTOR
       elif type_ == "angle":
-        # [theta, k] - theta is rad (no change), k is energy/rad^2
         arr[:, 1] *= KJMOL_TO_KCALMOL
-      elif type_ == "dihedral":
-        # [per, phase, k] - phase rad, k energy
-        arr[:, 2] *= KJMOL_TO_KCALMOL
-      elif type_ == "improper":
-        # [per, phase, k]
+      elif type_ == "dihedral" or type_ == "improper":
         arr[:, 2] *= KJMOL_TO_KCALMOL
       elif type_ == "length":
         arr *= NM_TO_ANGSTROM
       elif type_ == "energy":
         arr *= KJMOL_TO_KCALMOL
-
       if use_jax:
         return jnp.asarray(arr)
       return arr
 
     if is_atom37:
-      # Reshape coordinates and atom_mask to (N, 37, ...)
       coordinates = raw_coords.reshape(num_residues, 37, 3)
       atom_mask_2d = raw_mask.reshape(num_residues, 37)
-
-      # For Protein dataclass (AF2 style), mask is CA mask from the 37 grid
-      # But we also need full atom_mask for AtomicSystem
       mask_ca = atom_mask_2d[:, atom_order["CA"]]
 
       return cls(
@@ -212,52 +203,28 @@ class Protein(AtomicSystem):
         mask=convert(mask_ca, dtype=np.float32),
         residue_index=convert(rust_dict["residue_index"], dtype=np.int32),
         chain_index=convert(rust_dict["chain_index"], dtype=np.int32),
-        # AtomicSystem required fields
         atom_mask=convert(atom_mask_2d, dtype=np.float32),
-        elements=None,
-        atom_names=None,
-        # Optional fields from Rust
+        # Optional fields
         charges=convert(rust_dict["charges"]) if rust_dict.get("charges") is not None else None,
-        radii=convert_params(
-          rust_dict.get("radii")
-          if rust_dict.get("radii") is not None
-          else rust_dict.get("gbsa_radii"),
-          "length",
-        )
-        if (rust_dict.get("radii") is not None or rust_dict.get("gbsa_radii") is not None)
-        else None,
-        sigmas=convert_params(rust_dict.get("sigmas"), "length")
-        if rust_dict.get("sigmas") is not None
-        else None,
-        epsilons=convert_params(rust_dict.get("epsilons"), "energy")
-        if rust_dict.get("epsilons") is not None
-        else None,
+        radii=convert_params(rust_dict.get("radii") or rust_dict.get("gbsa_radii"), "length"),
+        sigmas=convert_params(rust_dict.get("sigmas"), "length"),
+        epsilons=convert_params(rust_dict.get("epsilons"), "energy"),
         molecule_type=convert(rust_dict["molecule_type"])
         if rust_dict.get("molecule_type") is not None
         else None,
-        # Topology / GAFF
         atom_types=rust_dict.get("atom_types"),
         bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
-        bond_params=convert_params(rust_dict.get("bond_params"), "bond")
-        if rust_dict.get("bond_params") is not None
-        else None,
+        bond_params=convert_params(rust_dict.get("bond_params"), "bond"),
         angles=convert(rust_dict["angles"]) if rust_dict.get("angles") is not None else None,
-        angle_params=convert_params(rust_dict.get("angle_params"), "angle")
-        if rust_dict.get("angle_params") is not None
-        else None,
+        angle_params=convert_params(rust_dict.get("angle_params"), "angle"),
         proper_dihedrals=convert(rust_dict["dihedrals"])
         if rust_dict.get("dihedrals") is not None
         else None,
-        dihedral_params=convert_params(rust_dict.get("dihedral_params"), "dihedral")
-        if rust_dict.get("dihedral_params") is not None
-        else None,
+        dihedral_params=convert_params(rust_dict.get("dihedral_params"), "dihedral"),
         impropers=convert(rust_dict["impropers"])
         if rust_dict.get("impropers") is not None
         else None,
-        improper_params=convert_params(rust_dict.get("improper_params"), "improper")
-        if rust_dict.get("improper_params") is not None
-        else None,
-        # Derived features
+        improper_params=convert_params(rust_dict.get("improper_params"), "improper"),
         vdw_features=convert(rust_dict["vdw_features"])
         if rust_dict.get("vdw_features") is not None
         else None,
@@ -272,95 +239,46 @@ class Protein(AtomicSystem):
         else None,
         format="Atom37",
         source=source,
-        # Populate new AtomicSystem fields to maintain info
-        # We need mapping for chain IDs if available in rust_dict
-        # rust_dict usually has "chain_ids" (list of strings) corresponding to "chain_index"?
-        # If so, we can populate chain_ids sequence.
-        chain_ids=rust_dict.get("unique_chain_ids")
-        or (["A"] * len(rust_dict["chain_index"])),  # Placeholder if missing
-        res_names=None,  # Only available if passed/parsed
-        atom_res_index=convert(
-          atom_mask_2d * rust_dict["residue_index"][:, None], dtype=np.int32
-        ).flatten(),  # Approx?
-        # Actually, best to rely on flattening existing if possible.
-        # Populate full_coordinates (AtomicSystem needs it)
-        full_coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3)
-        if is_atom37
-        else convert(raw_coords, dtype=np.float32),
-        full_atom_mask=convert(raw_mask, dtype=np.float32).flatten()
-        if is_atom37
-        else convert(raw_mask, dtype=np.float32),
+        chain_ids=rust_dict.get("unique_chain_ids") or (["A"] * len(rust_dict["chain_index"])),
+        full_coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),
+        full_atom_mask=convert(raw_mask, dtype=np.float32).flatten(),
       )
+
     # Flat format (Full)
-    # In this case, Protein fields like 'mask' (CA mask) need to be derived differently
-    # or populated with dummies if we are treating this as a general AtomicSystem
-
-    # We attempt to treat it as "Full Coordinates" stored in the main coordinates field
-    # This technically violates the (N, 37, 3) type hint of Protein, but matches AtomicSystem
-
-    # For CA mask: we don't have CA info easily from a flat list without assumptions.
-    # For now, we set mask to ones (all residues present)
-
-    # Full format elements/atom_names handling
     atom_names = rust_dict.get("atom_names")
     elements = rust_dict.get("elements")
-
     if elements is None and atom_names is not None:
-      # Infer elements from atom names if missing
       elements = [name[0].upper() if name else "C" for name in atom_names]
 
     return cls(
-      coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),  # (N_padded, 3)
-      full_coordinates=convert(raw_coords, dtype=np.float32).reshape(
-        -1, 3
-      ),  # Full coords populated
+      coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),
+      full_coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),
       aatype=convert(rust_dict["aatype"], dtype=np.int8),
       one_hot_sequence=convert(np.eye(21)[rust_dict["aatype"]]),
-      mask=convert(np.ones(num_residues), dtype=np.float32),  # Residue mask
+      mask=convert(np.ones(num_residues), dtype=np.float32),
       residue_index=convert(rust_dict["residue_index"], dtype=np.int32),
       chain_index=convert(rust_dict["chain_index"], dtype=np.int32),
-      # AtomicSystem
-      atom_mask=convert(raw_mask, dtype=np.float32),  # Flat mask
+      atom_mask=convert(raw_mask, dtype=np.float32),
       elements=elements,
       atom_names=atom_names,
       charges=convert(rust_dict["charges"]) if rust_dict.get("charges") is not None else None,
-      radii=convert_params(
-        rust_dict.get("radii")
-        if rust_dict.get("radii") is not None
-        else rust_dict.get("gbsa_radii"),
-        "length",
-      )
-      if (rust_dict.get("radii") is not None or rust_dict.get("gbsa_radii") is not None)
-      else None,
-      sigmas=convert_params(rust_dict.get("sigmas"), "length")
-      if rust_dict.get("sigmas") is not None
-      else None,
-      epsilons=convert_params(rust_dict.get("epsilons"), "energy")
-      if rust_dict.get("epsilons") is not None
-      else None,
+      radii=convert_params(rust_dict.get("radii") or rust_dict.get("gbsa_radii"), "length"),
+      sigmas=convert_params(rust_dict.get("sigmas"), "length"),
+      epsilons=convert_params(rust_dict.get("epsilons"), "energy"),
       molecule_type=convert(rust_dict["molecule_type"])
       if rust_dict.get("molecule_type") is not None
       else None,
       atom_types=rust_dict.get("atom_types"),
       bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
-      bond_params=convert_params(rust_dict.get("bond_params"), "bond")
-      if rust_dict.get("bond_params") is not None
-      else None,
+      bond_params=convert_params(rust_dict.get("bond_params"), "bond"),
       angles=convert(rust_dict["angles"]) if rust_dict.get("angles") is not None else None,
-      angle_params=convert_params(rust_dict.get("angle_params"), "angle")
-      if rust_dict.get("angle_params") is not None
-      else None,
+      angle_params=convert_params(rust_dict.get("angle_params"), "angle"),
       proper_dihedrals=convert(rust_dict["dihedrals"])
       if rust_dict.get("dihedrals") is not None
       else None,
-      dihedral_params=convert_params(rust_dict.get("dihedral_params"), "dihedral")
-      if rust_dict.get("dihedral_params") is not None
-      else None,
+      dihedral_params=convert_params(rust_dict.get("dihedral_params"), "dihedral"),
       impropers=convert(rust_dict["impropers"]) if rust_dict.get("impropers") is not None else None,
-      improper_params=convert_params(rust_dict.get("improper_params"), "improper")
-      if rust_dict.get("improper_params") is not None
-      else None,
-      # Derived features
+      improper_params=convert_params(rust_dict.get("improper_params"), "improper"),
       vdw_features=convert(rust_dict["vdw_features"])
       if rust_dict.get("vdw_features") is not None
       else None,
@@ -375,7 +293,10 @@ class Protein(AtomicSystem):
     )
 
 
-ProteinStream = Generator[AtomicSystem, None, None]
+# Keep AtomicSystem import for backward compat type hints
+from proxide.core.atomic_system import AtomicSystem  # noqa: E402
+
+ProteinStream = Generator[Protein, None, None]
 """Generator yielding Protein instances."""
 
 ProteinBatch = Sequence[Protein]

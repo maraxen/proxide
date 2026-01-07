@@ -115,6 +115,10 @@ def create_protein_dataset(  # noqa: PLR0913
   ram_budget_mb: int = 1024,
   max_workers: int | None = None,
   max_buffer_size: int | None = None,
+  output_format: str = "protein",
+  compute_rbf_rust: bool = False,
+  backbone_noise: float | None = None,
+  num_neighbors: int = 48,
 ) -> grain.IterDataset:
   """Construct a high-performance protein data pipeline using Grain.
 
@@ -164,6 +168,14 @@ def create_protein_dataset(  # noqa: PLR0913
   if "add_hydrogens" not in parse_kwargs:
     parse_kwargs["add_hydrogens"] = use_electrostatics or use_vdw
 
+  # Auto-configure for MPNN output format
+  if output_format == "mpnn":
+    # Enable Rust RBF computation by default for MPNN
+    compute_rbf_rust = True
+    # Default backbone noise to 0.0 (no noise) for inference
+    if backbone_noise is None:
+      backbone_noise = 0.0
+
   if use_preprocessed:
     if preprocessed_index_path is None:
       msg = "preprocessed_index_path is required when use_preprocessed=True"
@@ -207,6 +219,17 @@ def create_protein_dataset(  # noqa: PLR0913
     max_buffer_size=max_buffer_size,
   )
 
+  # Optionally compute RBF features using Rust before batching
+  if compute_rbf_rust:
+    ds = ds.map(
+      partial(
+        operations.compute_rbf_features_rust,
+        num_neighbors=num_neighbors,
+        noise_std=backbone_noise,
+        compute_physics=use_electrostatics or use_vdw,
+      ),
+    )
+
   batch_fn = (
     operations.concatenate_proteins_for_inter_mode
     if pass_mode == "inter"  # noqa: S105
@@ -219,6 +242,7 @@ def create_protein_dataset(  # noqa: PLR0913
       vdw_noise=vdw_noise,
       vdw_noise_mode=vdw_noise_mode,
       max_length=max_length,
+      output_format=output_format,
     )
   )
 

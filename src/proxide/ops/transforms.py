@@ -2,11 +2,13 @@
 
 This module implements `grain.transforms.Map` and `grain.IterOperation` classes
 for parsing, transforming, and batching protein data.
+
+Includes a padding registry pattern for extensible output format support.
 """
 
 import warnings
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
 import jax
 import numpy as np
@@ -14,10 +16,106 @@ import numpy as np
 from proxide import md
 from proxide.chem import residues as residue_constants
 from proxide.core.containers import Protein
+from proxide.core.projector import MPNNBatch
 from proxide.physics.features import compute_electrostatic_node_features
 from proxide.physics.force_fields import loader as force_fields
 
 _MAX_TRIES = 5
+
+# Type variable for batch output
+T = TypeVar("T", Protein, MPNNBatch)
+
+# Padding function registry
+_PADDING_REGISTRY: dict[str, Callable[[Protein, int, int | None, dict | None], Any]] = {}
+
+
+def register_padding(format_key: str) -> Callable:
+  """Decorator to register a padding function for an output format.
+
+  Example:
+    @register_padding("mpnn")
+    def _pad_to_mpnn(protein: Protein, max_len: int, ...) -> MPNNBatch:
+      ...
+  """
+
+  def decorator(fn: Callable) -> Callable:
+    _PADDING_REGISTRY[format_key] = fn
+    return fn
+
+  return decorator
+
+
+def get_padding_fn(format_key: str) -> Callable | None:
+  """Get a registered padding function by format key."""
+  return _PADDING_REGISTRY.get(format_key)
+
+
+def compute_rbf_features_rust(
+  protein: Protein,
+  num_neighbors: int = 30,
+  noise_std: float | None = None,
+  noise_seed: int | None = None,
+  compute_physics: bool = False,
+) -> Protein:
+  """Compute RBF features using Rust backend and attach to Protein.
+
+  This function uses the high-performance Rust implementation to compute
+  RBF features and neighbor indices, optionally with Gaussian backbone noise.
+
+  Args:
+    protein: Input protein structure.
+    num_neighbors: Number of K-nearest neighbors (default: 30).
+    noise_std: Standard deviation for Gaussian backbone noise. None = no noise.
+    noise_seed: Random seed for reproducible noising. None = random seed.
+    compute_physics: Whether to compute physics features (charges, sigmas, epsilons).
+
+  Returns:
+    Protein with rbf_features and neighbor_indices populated.
+  """
+  try:
+    from proxide import _oxidize
+  except ImportError:
+    # Fall back gracefully if Rust extension not available
+    warnings.warn(
+      "Rust _oxidize extension not available, skipping RBF precomputation",
+      stacklevel=2,
+    )
+    return protein
+
+  # Get source path if available
+  source_path = getattr(protein, "source", None)
+  if source_path is None:
+    # Cannot use Rust projection without a file path
+    warnings.warn(
+      "Protein has no source path, skipping Rust RBF computation",
+      stacklevel=2,
+    )
+    return protein
+
+  try:
+    # Call Rust projection
+    result = _oxidize.project_to_mpnn_batch(
+      source_path,
+      num_neighbors,
+      noise_std,
+      noise_seed,
+      compute_physics,
+    )
+
+    # Update protein with RBF features
+    return protein.replace(  # type: ignore[attr-defined]
+      rbf_features=result.get("rbf_features"),
+      neighbor_indices=result.get("neighbor_indices"),
+      physics_features=result.get("physics_features")
+      if compute_physics
+      else protein.physics_features,
+    )
+  except Exception as e:  # noqa: BLE001
+    warnings.warn(
+      f"Rust RBF computation failed for {source_path}: {e}",
+      stacklevel=2,
+    )
+    return protein
 
 
 def truncate_protein(
@@ -64,6 +162,8 @@ def truncate_protein(
   return protein.replace(  # type: ignore[attr-defined]
     coordinates=slice_array(protein.coordinates),
     aatype=slice_array(protein.aatype),
+    mask=slice_array(protein.mask),
+    one_hot_sequence=slice_array(protein.one_hot_sequence),
     atom_mask=slice_array(protein.atom_mask),
     residue_index=slice_array(protein.residue_index),
     chain_index=slice_array(protein.chain_index),
@@ -298,115 +398,148 @@ def _apply_md_parameterization(
 def _pad_protein(  # noqa: C901
   protein: Protein,
   max_len: int,
+  full_coords_max_len: int | None = None,
   md_dims: dict[str, int] | None = None,
 ) -> Protein:
-  """Pad a single Protein to max_len.
+  """Pad a single Protein to max_len using explicit field-based padding.
 
   Args:
     protein (Protein): Protein to pad.
     max_len (int): Maximum length to pad to.
+    full_coords_max_len: Maximum length for full_coordinates field.
     md_dims: Dictionary of max dimensions for MD fields.
 
   Returns:
     Protein: Padded protein.
 
+  Raises:
+    ValueError: If the protein length exceeds max_len (negative padding).
+
   """
-  pad_len = max_len - protein.coordinates.shape[0]
   protein_len = protein.coordinates.shape[0]
+  pad_len = max_len - protein_len
+
+  # Validate: protein must not exceed max_len
+  if pad_len < 0:
+    msg = (
+      f"Protein length ({protein_len}) exceeds max_len ({max_len}). "
+      f"Truncate the protein before padding, or increase max_len."
+    )
+    raise ValueError(msg)
+
+  # Helper for residue-level padding (dim 0 = n_residues)
+  def pad_residue_array(arr: np.ndarray | None) -> np.ndarray | None:
+    if arr is None:
+      return None
+    arr = np.asarray(arr)
+    if arr.ndim == 0:
+      return arr
+    return np.pad(arr, ((0, pad_len),) + ((0, 0),) * (arr.ndim - 1))
+
+  # Helper for atomic-level padding (dim 0 = n_atoms, e.g., full_coordinates)
   full_coords_len = (
     protein.full_coordinates.shape[0] if protein.full_coordinates is not None else None
   )
-  full_coords_pad_len = max_len - full_coords_len if full_coords_len is not None else 0
+  if full_coords_len is not None and full_coords_max_len is not None:
+    full_coords_pad_len = full_coords_max_len - full_coords_len
+    if full_coords_pad_len < 0:
+      msg = (
+        f"full_coordinates length ({full_coords_len}) exceeds "
+        f"full_coords_max_len ({full_coords_max_len})."
+      )
+      raise ValueError(msg)
+  else:
+    full_coords_pad_len = 0
 
-  # MD padding lengths
-  md_pads = {}
-  md_pads = {}
-  if md_dims:
-    if protein.bonds is not None:
-      md_pads["bonds"] = md_dims["max_bonds"] - protein.bonds.shape[0]
-    if protein.angles is not None:
-      md_pads["angles"] = md_dims["max_angles"] - protein.angles.shape[0]
-    if protein.charges is not None:
-      md_pads["atoms"] = md_dims["max_atoms"] - protein.charges.shape[0]
-
-  def pad_fn(
-    x: np.ndarray | None,
-    *,
-    pad_len: int = pad_len,
-    protein_len: int = protein_len,
-    full_coords_len: int | None = full_coords_len,
-    full_coords_pad_len: int = full_coords_pad_len,
-  ) -> np.ndarray | None:
-    """Pad array along first dimension if it matches the protein residue count."""
-    if x is None:
+  def pad_atomic_array(arr: np.ndarray | None) -> np.ndarray | None:
+    if arr is None:
       return None
-    if not hasattr(x, "shape") or not hasattr(x, "ndim"):
-      return x
-    if hasattr(x, "__array__"):
-      x = np.asarray(x)
-    if x.ndim == 0:
-      return x
+    arr = np.asarray(arr)
+    if arr.ndim == 0 or full_coords_pad_len == 0:
+      return arr
+    return np.pad(arr, ((0, full_coords_pad_len),) + ((0, 0),) * (arr.ndim - 1))
 
-    # Handle MD fields explicitly by checking if they match known MD arrays
-    # This is a bit hacky, better to match by name if tree_map passed keys.
-    # But tree_map doesn't pass keys.
-    # We can check if x is one of the MD arrays by identity? No, copies.
-    # We can check shapes?
-    # But `md_bonds` shape (N_bonds, 2) is unique?
-    # N_bonds is arbitrary.
+  # Explicitly pad each field based on its semantic type
+  # Residue-level fields (shape[0] == n_residues)
+  padded_coordinates = pad_residue_array(protein.coordinates)
+  padded_aatype = pad_residue_array(protein.aatype)
+  padded_mask = pad_residue_array(protein.mask)
+  padded_one_hot = pad_residue_array(protein.one_hot_sequence)
+  padded_atom_mask = pad_residue_array(protein.atom_mask)
+  padded_residue_index = pad_residue_array(protein.residue_index)
+  padded_chain_index = pad_residue_array(protein.chain_index)
+  padded_dihedrals = pad_residue_array(protein.dihedrals)
+  padded_mapping = pad_residue_array(protein.mapping)
+  padded_physics_features = pad_residue_array(protein.physics_features)
+  padded_rbf_features = pad_residue_array(protein.rbf_features)
+  padded_vdw_features = pad_residue_array(protein.vdw_features)
+  padded_electrostatic_features = pad_residue_array(protein.electrostatic_features)
+  padded_neighbor_indices = pad_residue_array(protein.neighbor_indices)
+  padded_backbone_indices = pad_residue_array(protein.backbone_indices)
 
-    # Better approach: Manually pad MD fields in `pad_and_collate` BEFORE calling `_stack`.
-    # Or update `_pad_protein` to handle SPECIFIC fields if we could.
-    # Since we can't easily identify fields in `pad_fn`, we should rely on `jax.tree_util.tree_map`
-    # only for standard fields, and handle MD fields separately?
-    # Or we can use `jax.tree_util.tree_map_with_path` (JAX 0.4.6+).
-    # PrxteinMPNN uses JAX.
+  # Atomic-level fields (shape[0] == n_atoms, for full atomic representation)
+  padded_full_coordinates = pad_atomic_array(protein.full_coordinates)
+  padded_full_atom_mask = pad_atomic_array(protein.full_atom_mask)
+  padded_charges = pad_atomic_array(protein.charges)
+  padded_radii = pad_atomic_array(protein.radii)
+  padded_sigmas = pad_atomic_array(protein.sigmas)
+  padded_epsilons = pad_atomic_array(protein.epsilons)
 
-    # Let's try `tree_map_with_path` if available, or just manual padding for MD fields
-    # inside `_pad_protein` before/after tree_map.
-    # `Protein` is a dataclass. `tree_map` iterates fields.
+  # Create the base padded protein
+  padded_protein = protein.replace(  # type: ignore[attr-defined]
+    coordinates=padded_coordinates,
+    aatype=padded_aatype,
+    mask=padded_mask,
+    one_hot_sequence=padded_one_hot,
+    atom_mask=padded_atom_mask,
+    residue_index=padded_residue_index,
+    chain_index=padded_chain_index,
+    dihedrals=padded_dihedrals,
+    mapping=padded_mapping,
+    physics_features=padded_physics_features,
+    rbf_features=padded_rbf_features,
+    vdw_features=padded_vdw_features,
+    electrostatic_features=padded_electrostatic_features,
+    neighbor_indices=padded_neighbor_indices,
+    backbone_indices=padded_backbone_indices,
+    full_coordinates=padded_full_coordinates,
+    full_atom_mask=padded_full_atom_mask,
+    charges=padded_charges,
+    radii=padded_radii,
+    sigmas=padded_sigmas,
+    epsilons=padded_epsilons,
+  )
 
-    # Let's stick to shape-based heuristics for standard fields,
-    # and manually pad MD fields in the wrapper `_pad_protein`.
-
-    if full_coords_len is not None and x.shape[0] == full_coords_len:
-      return np.pad(x, ((0, full_coords_pad_len),) + ((0, 0),) * (x.ndim - 1))
-
-    if x.shape[0] == protein_len:
-      return np.pad(x, ((0, pad_len),) + ((0, 0),) * (x.ndim - 1))
-
-    return x
-
-  # Pad standard fields
-  padded_protein = jax.tree_util.tree_map(pad_fn, protein)
-
-  # Manually pad MD fields if present
-  # Manually pad MD fields if present
+  # MD-specific fields with their own dimensions
   if md_dims:
 
-    def pad_array(arr: np.ndarray | None, pad_amt: int) -> np.ndarray | None:
-      if arr is None:
-        return None
+    def pad_md_array(arr: np.ndarray | None, pad_amt: int) -> np.ndarray | None:
+      if arr is None or pad_amt <= 0:
+        return arr
+      arr = np.asarray(arr)
       pads = [(0, pad_amt)] + [(0, 0)] * (arr.ndim - 1)
       return np.pad(arr, pads)
 
     # Bonds
     if padded_protein.bonds is not None:
-      p_bonds = pad_array(padded_protein.bonds, md_pads.get("bonds", 0))
-      p_params = pad_array(padded_protein.bond_params, md_pads.get("bonds", 0))
-      padded_protein = padded_protein.replace(bonds=p_bonds, bond_params=p_params)  # type: ignore[attr-defined]
+      bonds_pad = md_dims.get("max_bonds", 0) - padded_protein.bonds.shape[0]
+      if bonds_pad > 0:
+        p_bonds = pad_md_array(padded_protein.bonds, bonds_pad)
+        p_params = pad_md_array(padded_protein.bond_params, bonds_pad)
+        padded_protein = padded_protein.replace(bonds=p_bonds, bond_params=p_params)  # type: ignore[attr-defined]
 
     # Angles
     if padded_protein.angles is not None:
-      p_angles = pad_array(padded_protein.angles, md_pads.get("angles", 0))
-      p_params = pad_array(padded_protein.angle_params, md_pads.get("angles", 0))
-      padded_protein = padded_protein.replace(angles=p_angles, angle_params=p_params)  # type: ignore[attr-defined]
+      angles_pad = md_dims.get("max_angles", 0) - padded_protein.angles.shape[0]
+      if angles_pad > 0:
+        p_angles = pad_md_array(padded_protein.angles, angles_pad)
+        p_params = pad_md_array(padded_protein.angle_params, angles_pad)
+        padded_protein = padded_protein.replace(angles=p_angles, angle_params=p_params)  # type: ignore[attr-defined]
 
-    # Exclusion mask (N_atoms, N_atoms)
+    # Exclusion mask (N_atoms, N_atoms) - special 2D padding
     if padded_protein.exclusion_mask is not None:
-      # Pad both dims
       curr = padded_protein.exclusion_mask.shape[0]
-      target = md_dims["max_atoms"]
+      target = md_dims.get("max_atoms", curr)
       amt = target - curr
       if amt > 0:
         mask = np.pad(
@@ -415,14 +548,6 @@ def _pad_protein(  # noqa: C901
           constant_values=False,
         )
         padded_protein = padded_protein.replace(exclusion_mask=mask)  # type: ignore[attr-defined]
-
-    # Backbone indices (N_res, 4) ? or (N_atoms)?
-    # Assuming standard padding along first dim
-    if padded_protein.backbone_indices is not None and protein_len is not None:
-      # It's explicitly sliced/padded like others if it matches protein_len
-      # But in pad_fn we handle generic fields.
-      # Is backbone_indices handled by tree_map? Yes if it's in the dataclass.
-      pass
 
   return padded_protein
 
@@ -466,26 +591,30 @@ def pad_and_collate_proteins(
   vdw_noise_mode: str = "direct",  # noqa: ARG001
   backbone_noise_mode: str = "direct",
   max_length: int | None = None,
-) -> Protein:
-  """Batch and pad a list of Proteins into a ProteinBatch.
+  output_format: str = "protein",
+) -> Protein | MPNNBatch:
+  """Batch and pad a list of Proteins.
 
-  Take a list of individual `Protein`s and batch them together into a
-  single `Protein` batch, padding them to a fixed length.
+  Take a list of individual `Protein`s and batch them together,
+  padding them to a fixed length. Output format is configurable.
 
   Args:
-    elements (list[Protein]): List of proteins to collate.
-    use_electrostatics (bool): Whether to compute and add electrostatic features.
-    use_vdw (bool): Placeholder for van der Waals features (not implemented).
+    elements: List of proteins to collate.
+    use_electrostatics: Whether to compute and add electrostatic features.
+    use_vdw: Placeholder for van der Waals features (not implemented).
     estat_noise: Noise level(s) for electrostatics.
     estat_noise_mode: Mode for electrostatic noise.
     vdw_noise: Noise level(s) for vdW.
     vdw_noise_mode: Mode for vdW noise.
     backbone_noise_mode: Mode for backbone noise (e.g. "direct", "md").
-    max_length (int | None): Fixed length to pad all proteins to. If None, pads to
-      the maximum length in the batch (variable per batch).
+    max_length: Fixed length to pad all proteins to. If None, pads to
+      the maximum length in the batch.
+    output_format: Output format key (e.g., "protein", "mpnn").
+      Use "protein" for Protein batch (default).
+      Use "mpnn" for MPNNBatch with precomputed RBF features.
 
   Returns:
-    Protein: Batched and padded protein ensemble.
+    Batched and padded data in the specified format.
 
   Raises:
     ValueError: If the input list is empty.
@@ -548,5 +677,80 @@ def pad_and_collate_proteins(
         max_atoms = max(max_atoms, p.charges.shape[0])
     md_dims = {"max_bonds": max_bonds, "max_angles": max_angles, "max_atoms": max_atoms}
 
-  padded_proteins = [_pad_protein(p, pad_len, md_dims) for p in proteins]
+  # Calculate max full_coords length
+  full_coords_max_len = 0
+  atoms_per_res_ratios = set()
+
+  # First pass to gather stats
+  for p in proteins:
+    if p.full_coordinates is not None:
+      f_len = p.full_coordinates.shape[0]
+      p_len = p.coordinates.shape[0]
+      full_coords_max_len = max(full_coords_max_len, f_len)
+      if p_len > 0 and f_len % p_len == 0:
+        atoms_per_res_ratios.add(f_len // p_len)
+      else:
+        atoms_per_res_ratios.add(-1)  # Indicator for non-uniform/non-divisible
+
+  # Determine target length
+  # If we have a single consistent ratio (e.g. 37 for all proteins), we use it to extrapolate
+  # based on pad_len (which is the target residue count).
+  # This ensures JAX static shapes consistency (e.g. 512 * 37).
+  if len(atoms_per_res_ratios) == 1:
+    ratio = list(atoms_per_res_ratios)[0]
+    if ratio > 0:
+      full_coords_max_len = max(full_coords_max_len, pad_len * ratio)
+
+  # For purely heterogeneous batches or fixed MD, full_coords_max_len is just the max seen in batch.
+
+  # Dispatch based on output_format
+  if output_format == "mpnn":
+    # Use registered MPNN padding if available
+    mpnn_pad_fn = get_padding_fn("mpnn")
+    if mpnn_pad_fn is not None:
+      return mpnn_pad_fn(proteins, pad_len, full_coords_max_len, md_dims)
+    # Fallback: convert to MPNNBatch from padded Proteins
+    padded_proteins = [_pad_protein(p, pad_len, full_coords_max_len, md_dims) for p in proteins]
+    stacked = _stack_padded_proteins(padded_proteins)
+    return _protein_batch_to_mpnn_batch(stacked)
+
+  # Default: return Protein batch
+  padded_proteins = [_pad_protein(p, pad_len, full_coords_max_len, md_dims) for p in proteins]
   return _stack_padded_proteins(padded_proteins)
+
+
+def _protein_batch_to_mpnn_batch(batch: Protein) -> MPNNBatch:
+  """Convert a batched Protein to MPNNBatch.
+
+  Takes the relevant fields from the Protein batch and creates an MPNNBatch.
+  RBF features must already be present in the Protein.
+  """
+  import jax.numpy as jnp
+
+  return MPNNBatch(
+    aatype=jnp.asarray(batch.aatype),
+    residue_index=jnp.asarray(batch.residue_index),
+    chain_index=jnp.asarray(batch.chain_index),
+    mask=jnp.asarray(batch.mask),
+    rbf_features=jnp.asarray(batch.rbf_features)
+    if batch.rbf_features is not None
+    else jnp.zeros((batch.mask.shape[0], batch.mask.shape[1], 30, 400)),
+    neighbor_indices=jnp.asarray(batch.neighbor_indices)
+    if batch.neighbor_indices is not None
+    else jnp.zeros((batch.mask.shape[0], batch.mask.shape[1], 30), dtype=jnp.int32),
+    physics_features=jnp.asarray(batch.physics_features)
+    if batch.physics_features is not None
+    else None,
+  )
+
+
+@register_padding("protein")
+def _pad_to_protein(
+  proteins: list[Protein],
+  pad_len: int,
+  full_coords_max_len: int | None,
+  md_dims: dict[str, int] | None,
+) -> Protein:
+  """Default Protein padding - registered for consistency."""
+  padded = [_pad_protein(p, pad_len, full_coords_max_len, md_dims) for p in proteins]
+  return _stack_padded_proteins(padded)

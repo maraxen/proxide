@@ -1,6 +1,7 @@
 """Grain data source for loading preprocessed array_record files with physics features."""
 
 from __future__ import annotations
+from collections.abc import Sequence
 
 import json
 import logging
@@ -11,6 +12,7 @@ from typing import Any, SupportsIndex
 import grain.python as grain
 import msgpack
 import msgpack_numpy as m
+import jax.numpy as jnp
 import numpy as np
 from array_record.python.array_record_module import (  # type: ignore[unresolved-import]
   ArrayRecordReader,
@@ -123,6 +125,7 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
     index_path: str | Path,
     split: str = "train",
     filter_fn: Callable[[str, dict[str, Any]], bool] | None = None,
+    features: Sequence[str] | None = None,
   ) -> None:
     """Initialize the array_record data source.
 
@@ -133,6 +136,11 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
         filter_fn: Optional custom filter function. Takes (protein_id, entry_dict)
             and returns True if the entry should be included. If provided, this
             takes precedence over split-based filtering.
+        features: Optional list of features to load. If None, loads all available features.
+            Standard features like 'coordinates', 'aatype', 'mask', etc are always loaded
+            if they exist, unless this list is provided and they are excluded
+            (though core features are usually required).
+            If provided, only these keys will be extracted from the record.
 
     Raises:
         FileNotFoundError: If array_record or index file doesn't exist
@@ -142,6 +150,7 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
     super().__init__()
     self.array_record_path = Path(array_record_path)
     self.index_path = Path(index_path)
+    self.features = set(features) if features is not None else None
 
     if not self.array_record_path.exists():
       msg = f"Array record file not found: {self.array_record_path}"
@@ -268,6 +277,12 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       logger.exception(msg)
       raise RuntimeError(msg) from e
 
+  def _should_load(self, feature_name: str) -> bool:
+    """Check if a feature should be loaded."""
+    if self.features is None:
+      return True
+    return feature_name in self.features
+
   def _record_to_protein(self, record: dict[str, Any]) -> Protein:
     """Convert deserialized record to Protein.
 
@@ -281,52 +296,79 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
     # Extract all fields, converting to appropriate types
     # Use .get() for optional fields to ensure robustness
 
-    # Basic structure
-    coordinates = np.array(record["coordinates"], dtype=np.float32)
-    n_residues = coordinates.shape[0]
-    aatype = np.array(record["aatype"], dtype=np.int8)
+    # Basic structure (always required usually, but can be checked if needed)
+    # We assume coordinates/aatype are core.
+    if "coordinates" in record:
+      coordinates = jnp.array(record["coordinates"], dtype=jnp.float32)
+      n_residues = coordinates.shape[0]
+    else:
+      # Should not happen for valid records
+      n_residues = 0
+      coordinates = jnp.zeros((0, 3), dtype=jnp.float32)
+
+    if "aatype" in record:
+      aatype = jnp.array(record["aatype"], dtype=jnp.int8)
+    else:
+      aatype = jnp.zeros((n_residues,), dtype=jnp.int8)
 
     # Defaults for physics features if missing
-    default_physics = np.zeros((n_residues, 5), dtype=np.float32)
+    default_physics = jnp.zeros((n_residues, 5), dtype=jnp.float32)
 
     # Defaults for full atomic data if missing
-    full_coords = record.get("full_coordinates")
-    if full_coords is not None:
-      full_coords = np.array(full_coords, dtype=np.float32)
-      n_atoms = full_coords.shape[0]
-      default_charges = np.zeros((n_atoms,), dtype=np.float32)
-      default_radii = np.zeros((n_atoms,), dtype=np.float32)
-    else:
-      full_coords = np.zeros((0, 3), dtype=np.float32)
-      default_charges = np.zeros((0,), dtype=np.float32)
-      default_radii = np.zeros((0,), dtype=np.float32)
+    full_coords = None
+    if self._should_load("full_coordinates"):
+      full_coords = record.get("full_coordinates")
+      if full_coords is not None:
+        full_coords = jnp.array(full_coords, dtype=jnp.float32)
 
-    atom_mask_2d = np.array(
-      record.get("atom_mask", np.ones((n_residues, 37), dtype=np.float32)),
-      dtype=np.float32,
+    # Need to handle charges/radii only if full_coordinates implied or requested?
+    # Usually charges/radii go with full_coords.
+    charges = None
+    if self._should_load("charges"):
+      raw_charges = record.get("charges")
+      if raw_charges is not None:
+        charges = jnp.array(raw_charges, dtype=jnp.float32)
+
+    radii = None
+    if self._should_load("radii"):
+      raw_radii = record.get("radii")
+      if raw_radii is not None:
+        radii = jnp.array(raw_radii, dtype=jnp.float32)
+
+    atom_mask_2d = jnp.array(
+      record.get("atom_mask", jnp.ones((n_residues, 37), dtype=jnp.float32)),
+      dtype=jnp.float32,
     )
+
+    physics_features = None
+    if self._should_load("physics_features"):
+      raw_phys = record.get("physics_features")
+      if raw_phys is not None:
+        physics_features = jnp.array(raw_phys, dtype=jnp.float32)
+      elif self.features is None:  # Legacy behavior: default to zeros
+        physics_features = default_physics
 
     return Protein(
       coordinates=coordinates,
       aatype=aatype,
       atom_mask=atom_mask_2d,
       mask=atom_mask_2d[:, atom_order["CA"]],
-      one_hot_sequence=np.eye(21)[aatype],
-      residue_index=np.array(
-        record.get("residue_index", np.arange(n_residues)),
-        dtype=np.int32,
+      one_hot_sequence=jnp.eye(21)[aatype],
+      residue_index=jnp.array(
+        record.get("residue_index", jnp.arange(n_residues)),
+        dtype=jnp.int32,
       ),
-      chain_index=np.array(
-        record.get("chain_index", np.zeros(n_residues)),
-        dtype=np.int32,
+      chain_index=jnp.array(
+        record.get("chain_index", jnp.zeros(n_residues)),
+        dtype=jnp.int32,
       ),
       dihedrals=None,
       # Full atomic data
       full_coordinates=full_coords,
-      charges=np.array(record.get("charges", default_charges), dtype=np.float32),
-      radii=np.array(record.get("radii", default_radii), dtype=np.float32),
+      charges=charges,
+      radii=radii,
       # Physics features
-      physics_features=np.array(record.get("physics_features", default_physics), dtype=np.float32),
+      physics_features=physics_features,
       elements=None,
       atom_names=None,
     )

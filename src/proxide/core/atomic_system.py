@@ -1,29 +1,30 @@
 """Atomic system definitions for PrioX.
 
-This module defines the base classes for atomic systems, including
-proteins, small molecules, and complexes.
+This module defines the hierarchical dataclasses for atomic systems:
+- MolecularTopology: Per-atom identity and connectivity
+- AtomicState: Per-atom dynamic state (coordinates, velocities)
+- AtomicConstants: Per-atom physics parameters
+- AtomicSystem: Composite wrapper with backward-compatible delegation
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 import jax.numpy as jnp
 from flax.struct import dataclass
 
 if TYPE_CHECKING:
-  from collections.abc import Sequence
-
   from proxide.core.containers import Protein
 
 from proxide.core.types import (
   AngleParams,
-  AtomChainIndex,
+  Angles,
   AtomMask,
-  AtomResidueIndex,
   AtomTypes,
   BondParams,
   Bonds,
+  BoxVectors,
   Charges,
   CmapGrid,
   CmapIndices,
@@ -33,82 +34,53 @@ from proxide.core.types import (
   Epsilons,
   ImproperParams,
   Impropers,
+  Masses,
   MoleculeType,
+  PerAtomChainIndex,
+  PerAtomResidueIndex,
   ProperDihedrals,
   Radii,
   Sigmas,
+  Velocities,
 )
 
 
 @dataclass(kw_only=True)
-class AtomicSystem:
-  """Base class for any atomic system.
+class MolecularTopology:
+  """Per-atom identity and connectivity data.
 
-  This class acts as a JAX-compatible container for atomic data and can
-  optionally wrap a Rust-backend AtomicSystem for performance-critical operations.
+  All arrays are indexed by atom, with shape (N_atoms,) unless otherwise noted.
+  For fields like residue_index and chain_index, a value of -1 indicates
+  non-protein atoms (ligand, solvent, ion).
 
   Attributes:
-      coordinates: Atom positions (N_atoms, 3)
-      atom_mask: Binary mask for atom presence (N_atoms,)
-      elements: Element symbols (N_atoms,)
-      atom_names: Atom names (N_atoms,)
-      molecule_type: Per-atom type (0=Protein, 1=Ligand, 2=Solvent, 3=Ion)
-      atom_types: GAFF/ForceField atom types (N_atoms,)
-      bonds: Bond indices (N_bonds, 2)
-      angles: Angle indices (N_angles, 3)
-      proper_dihedrals: Proper dihedral indices (N_dihedrals, 4)
-      impropers: Improper dihedral indices (N_impropers, 4)
-      charges: Atomic partial charges (N_atoms,)
-      radii: Atomic radii (N_atoms,)
-      _rust_obj: Optional reference to the Rust-side AtomicSystem object.
+    elements: Atomic element symbols, e.g., ["C", "N", "O"]. Shape (N_atoms,).
+    atom_names: PDB atom names, e.g., ["CA", "CB", "N"]. Shape (N_atoms,).
+    residue_index: Residue ID for each atom. -1 for non-protein. Shape (N_atoms,).
+    chain_index: Chain ID for each atom. -1 for non-protein. Shape (N_atoms,).
+    molecule_type: Molecule type per atom. 0=protein, 1=ligand, 2=solvent, 3=ion.
+      Shape (N_atoms,).
+    bonds: Covalent bond pairs as atom indices. Shape (N_bonds, 2).
+    angles: Angle triplets as atom indices (i-j-k). Shape (N_angles, 3).
+    proper_dihedrals: Proper dihedral quartets. Shape (N_dihedrals, 4).
+    impropers: Improper dihedral quartets for planar groups. Shape (N_impropers, 4).
 
   """
 
-  coordinates: Coordinates
-  atom_mask: AtomMask
   elements: Elements | None = None
-  mapping: Any | None = None
-  full_coordinates: Coordinates | None = None
-  full_atom_mask: AtomMask | None = None
   atom_names: Sequence[str] | None = None
-  source: str | None = None
-
-  # Metadata for Protein conversion
-  atom_res_index: AtomResidueIndex | None = None
-  atom_chain_index: AtomChainIndex | None = None
+  residue_index: PerAtomResidueIndex | None = None
+  chain_index: PerAtomChainIndex | None = None
+  molecule_type: MoleculeType | None = None
+  bonds: Bonds | None = None
+  angles: Angles | None = None
+  proper_dihedrals: ProperDihedrals | None = None
+  impropers: Impropers | None = None
+  # Optional residue-level info for protein conversion
   res_names: Sequence[str] | None = None
-  chain_ids: Sequence[str] | None = None
-
-  # HETATM / Topology features
-  molecule_type: MoleculeType | None = None  # (N_atoms,) 0=Protein, 1=Ligand, 2=Solvent, 3=Ion
-  atom_types: AtomTypes | None = None  # GAFF/ForceField atom types
-  bonds: Bonds | None = None  # (N_bonds, 2) - atom index pairs
-  angles: ProperDihedrals | None = None  # (N_angles, 3) - i-j-k with j as central atom
-  proper_dihedrals: ProperDihedrals | None = None  # (N_dihedrals, 4) - proper torsions i-j-k-l
-  impropers: Impropers | None = None  # (N_impropers, 4) - improper torsions for planar groups
-
-  # Force field parameters
-  bond_params: BondParams | None = None
-  angle_params: AngleParams | None = None
-  dihedral_params: DihedralParams | None = None  # (N_dihedrals, 3) - [periodicity, phase, k]
-  improper_params: ImproperParams | None = None  # (N_impropers, 3) - [periodicity, phase, k]
-
-  # CMAP parameters for backbone correction
-  cmap_indices: CmapIndices | None = None  # (N_cmap, 5) - C-N-CA-C-N atom indices for phi-psi
-  cmap_grid: CmapGrid | None = None  # (grid_size, grid_size) raw energy grid in kJ/mol
-
-  exclusion_mask: Any | None = None
-
-  # Optional MD parameters common to all systems
-  charges: Charges | None = None
-  sigmas: Sigmas | None = None
-  epsilons: Epsilons | None = None
-  radii: Radii | None = None
-
-  # Internal storage for Rust object (if available)
-  _rust_obj: Any = None
-
-  # --- Convenience properties for filtering by molecule type ---
+  atom_types: AtomTypes | None = None  # Force field atom types (GAFF etc)
+  # CMAP indices for backbone corrections
+  cmap_indices: CmapIndices | None = None
 
   @property
   def protein_mask(self) -> jnp.ndarray | None:
@@ -139,43 +111,6 @@ class AtomicSystem:
     return self.molecule_type == 3
 
   @property
-  def has_ligands(self) -> bool:
-    """Check if system contains any ligand atoms."""
-    if self.molecule_type is None:
-      return False
-    return bool(jnp.any(self.molecule_type == 1))
-
-  @property
-  def has_solvent(self) -> bool:
-    """Check if system contains any solvent atoms."""
-    if self.molecule_type is None:
-      return False
-    return bool(jnp.any(self.molecule_type == 2))
-
-  @property
-  def num_protein_atoms(self) -> int:
-    """Number of protein atoms."""
-    if self.molecule_type is None:
-      return int(jnp.sum(self.atom_mask))
-
-    # Check if molecule_type is packed (size mismatch with atom_mask)
-    if self.molecule_type.size != self.atom_mask.size:
-      return int(jnp.sum(self.molecule_type == 0))
-
-    return int(jnp.sum((self.molecule_type == 0) & (self.atom_mask > 0)))
-
-  @property
-  def num_ligand_atoms(self) -> int:
-    """Number of ligand atoms."""
-    if self.molecule_type is None:
-      return 0
-
-    if self.molecule_type.size != self.atom_mask.size:
-      return int(jnp.sum(self.molecule_type == 1))
-
-    return int(jnp.sum((self.molecule_type == 1) & (self.atom_mask > 0)))
-
-  @property
   def num_bonds(self) -> int:
     """Number of bonds in the system."""
     if self.bonds is None:
@@ -196,629 +131,302 @@ class AtomicSystem:
       return 0
     return len(self.proper_dihedrals)
 
+
+@dataclass(kw_only=True)
+class AtomicState:
+  """Per-atom dynamic state data.
+
+  Contains the time-varying properties of the system such as positions,
+  velocities, and periodic box information.
+
+  Attributes:
+    coordinates: Cartesian atom positions in Angstroms. Shape (N_atoms, 3).
+    box_vectors: Periodic box vectors for PBC. Shape (3, 3). None if non-periodic.
+    velocities: Atom velocities in Angstroms/ps. Shape (N_atoms, 3). Optional.
+
+  """
+
+  coordinates: Coordinates
+  box_vectors: BoxVectors | None = None
+  velocities: Velocities | None = None
+
+
+@dataclass(kw_only=True)
+class AtomicConstants:
+  """Per-atom physics parameters.
+
+  Contains force field parameters and physical constants for each atom.
+  All arrays have shape (N_atoms,) unless otherwise noted.
+
+  Attributes:
+    charges: Partial atomic charges in elementary charge units. Shape (N_atoms,).
+    sigmas: Lennard-Jones sigma parameters in Angstroms. Shape (N_atoms,).
+    epsilons: Lennard-Jones epsilon parameters in kcal/mol. Shape (N_atoms,).
+    masses: Atomic masses in amu. Shape (N_atoms,).
+    radii: Atomic radii (e.g., for GBSA). Shape (N_atoms,).
+    bond_params: Bond force field params [length, k]. Shape (N_bonds, 2).
+    angle_params: Angle force field params [theta, k]. Shape (N_angles, 2).
+    dihedral_params: Dihedral params [periodicity, phase, k]. Shape (N_dihedrals, 3).
+    improper_params: Improper dihedral params. Shape (N_impropers, 3).
+    cmap_grid: CMAP energy grid for backbone corrections. Shape (grid_size, grid_size).
+
+  """
+
+  charges: Charges | None = None
+  sigmas: Sigmas | None = None
+  epsilons: Epsilons | None = None
+  masses: Masses | None = None
+  radii: Radii | None = None
+  bond_params: BondParams | None = None
+  angle_params: AngleParams | None = None
+  dihedral_params: DihedralParams | None = None
+  improper_params: ImproperParams | None = None
+  cmap_grid: CmapGrid | None = None
+
+
+@dataclass(kw_only=True)
+class AtomicSystem:
+  """Composite wrapper for atomic data.
+
+  Provides a hierarchical structure separating topology, state, and constants.
+  Backward-compatible attribute access is provided via __getattr__ delegation.
+
+  Attributes:
+    topology: Static connectivity and identity data (MolecularTopology).
+    state: Dynamic positions and velocities (AtomicState).
+    constants: Physics parameters like charges/LJ params (AtomicConstants).
+    atom_mask: Per-atom validity mask. Shape (N_atoms,). 1.0=valid, 0.0=padding.
+    source: Optional source file path for provenance.
+    _rust_obj: Internal reference to Rust-side object if available.
+
+  Example:
+    >>> system = AtomicSystem(
+    ...     topology=MolecularTopology(elements=["C", "N", "O"]),
+    ...     state=AtomicState(coordinates=jnp.zeros((3, 3))),
+    ... )
+    >>> system.coordinates  # Delegates to system.state.coordinates
+    >>> system.elements  # Delegates to system.topology.elements
+
+  """
+
+  topology: MolecularTopology
+  state: AtomicState
+  constants: AtomicConstants | None = None
+  atom_mask: AtomMask | None = None
+  source: str | None = None
+  _rust_obj: Any = None
+
+  def __getattr__(self, name: str) -> Any:
+    """Delegate attribute access to sub-components for backward compatibility."""
+    # Check sub-components in order: state, topology, constants
+    for component in [self.state, self.topology, self.constants]:
+      if component is not None and hasattr(component, name):
+        return getattr(component, name)
+    raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
+
   @property
-  def num_impropers(self) -> int:
-    """Number of improper dihedrals in the system."""
-    if self.impropers is None:
+  def num_atoms(self) -> int:
+    """Total number of atoms in the system."""
+    return self.state.coordinates.shape[0]
+
+  @property
+  def num_protein_atoms(self) -> int:
+    """Number of protein atoms."""
+    if self.topology.molecule_type is None:
+      if self.atom_mask is not None:
+        return int(jnp.sum(self.atom_mask))
+      return self.num_atoms
+    protein_mask = self.topology.molecule_type == 0
+    if self.atom_mask is not None:
+      return int(jnp.sum(protein_mask & (self.atom_mask > 0)))
+    return int(jnp.sum(protein_mask))
+
+  @property
+  def num_ligand_atoms(self) -> int:
+    """Number of ligand atoms."""
+    if self.topology.molecule_type is None:
       return 0
-    return len(self.impropers)
+    return int(jnp.sum(self.topology.molecule_type == 1))
 
-  def to_openmm_topology(self):
-    """Convert to an OpenMM Topology object.
+  @property
+  def has_ligands(self) -> bool:
+    """Check if system contains any ligand atoms."""
+    return self.num_ligand_atoms > 0
 
-    Requires openmm to be installed.
+  @property
+  def has_solvent(self) -> bool:
+    """Check if system contains any solvent atoms."""
+    if self.topology.molecule_type is None:
+      return False
+    return bool(jnp.any(self.topology.molecule_type == 2))
 
-    Returns:
-        openmm.app.Topology: OpenMM topology with atoms, residues, chains.
+  @classmethod
+  def from_arrays(
+    cls,
+    coordinates: Coordinates,
+    atom_mask: AtomMask | None = None,
+    elements: Elements | None = None,
+    atom_names: Sequence[str] | None = None,
+    residue_index: PerAtomResidueIndex | None = None,
+    chain_index: PerAtomChainIndex | None = None,
+    molecule_type: MoleculeType | None = None,
+    bonds: Bonds | None = None,
+    charges: Charges | None = None,
+    sigmas: Sigmas | None = None,
+    epsilons: Epsilons | None = None,
+    radii: Radii | None = None,
+    box_vectors: BoxVectors | None = None,
+    source: str | None = None,
+  ) -> AtomicSystem:
+    """Factory to construct AtomicSystem from flat arrays.
 
-    Raises:
-        ImportError: If openmm is not installed.
-
-    """
-    try:
-      from openmm.app import Element, Topology  # type: ignore[unresolved-import]
-    except ImportError as e:
-      raise ImportError(
-        "OpenMM is required for to_openmm_topology(). "
-        "Install with: conda install -c conda-forge openmm",
-      ) from e
-
-    import numpy as np
-
-    topology = Topology()
-    chain = topology.addChain()
-
-    # Get atom mask as numpy for indexing
-    mask = np.asarray(self.atom_mask) > 0.5
-    num_atoms = int(np.sum(mask))
-
-    if num_atoms == 0:
-      return topology
-
-    # Create a single residue (simplified; could group by residue_index)
-    residue = topology.addResidue("UNK", chain)
-
-    # Get element info
-    elements = self.elements if self.elements else ["C"] * num_atoms
-    atom_names = self.atom_names if self.atom_names else [f"A{i}" for i in range(num_atoms)]
-
-    # Add atoms
-    atoms = []
-    atom_idx = 0
-    for i in range(len(mask)):
-      if mask[i]:
-        elem_str = elements[atom_idx] if atom_idx < len(elements) else "C"
-        elem = Element.getBySymbol(elem_str) if len(elem_str) <= 2 else Element.getBySymbol("C")
-        name = atom_names[atom_idx] if atom_idx < len(atom_names) else f"A{atom_idx}"
-        atom = topology.addAtom(name, elem, residue)
-        atoms.append(atom)
-        atom_idx += 1
-
-    # Add bonds if available
-    if self.bonds is not None:
-      bonds = np.asarray(self.bonds)
-      for bond_idx in range(bonds.shape[0]):
-        i, j = int(bonds[bond_idx, 0]), int(bonds[bond_idx, 1])
-        if i < len(atoms) and j < len(atoms):
-          topology.addBond(atoms[i], atoms[j])
-
-    return topology
-
-  def to_openmm_system(
-    self,
-    nonbonded_cutoff: float = 1.0,
-    use_switching_function: bool = True,
-    switch_distance: float = 0.9,
-    coulomb14scale: float = 0.8333,
-    lj14scale: float = 0.5,
-  ):
-    """Convert to an OpenMM System object with force field parameters.
-
-    Requires openmm to be installed and force field parameters (charges, sigmas,
-    epsilons) to be set on the AtomicSystem.
+    Convenience method to create an AtomicSystem by sorting inputs into
+    the appropriate sub-components (topology, state, constants).
 
     Args:
-        nonbonded_cutoff: Cutoff distance for nonbonded interactions in nm.
-        use_switching_function: If True, use a switching function for LJ.
-        switch_distance: Distance to begin switching function in nm.
+      coordinates: Atom positions, shape (N_atoms, 3).
+      atom_mask: Validity mask, shape (N_atoms,).
+      elements: Element symbols.
+      atom_names: PDB atom names.
+      residue_index: Per-atom residue IDs.
+      chain_index: Per-atom chain IDs.
+      molecule_type: Per-atom molecule type (0=protein, 1=ligand, ...).
+      bonds: Bond pairs, shape (N_bonds, 2).
+      charges: Partial charges.
+      sigmas: LJ sigma params.
+      epsilons: LJ epsilon params.
+      radii: Atomic radii.
+      box_vectors: Periodic box, shape (3, 3).
+      source: Source file path.
 
     Returns:
-        openmm.System: OpenMM system with NonbondedForce, HarmonicBondForce,
-            and HarmonicAngleForce configured.
-
-    Raises:
-        ImportError: If openmm is not installed.
-        ValueError: If required force field parameters are missing.
-
-    Notes:
-        Unit conversions:
-        - Lengths: Å → nm (multiply by 0.1)
-        - Bond force constants: kcal/mol/Å² → kJ/mol/nm² (multiply by 4.184 * 100)
-        - Angle force constants: kcal/mol/rad² → kJ/mol/rad² (multiply by 4.184)
-        - Torsion force constants: kcal/mol → kJ/mol (multiply by 4.184)
-        - Energies: kcal/mol → kJ/mol (multiply by 4.184)
+      AtomicSystem instance with populated sub-components.
 
     """
-    try:
-      from openmm import (  # type: ignore[unresolved-import]
-        HarmonicAngleForce,
-        HarmonicBondForce,
-        NonbondedForce,
-        PeriodicTorsionForce,
-        System,
+    topology = MolecularTopology(
+      elements=elements,
+      atom_names=atom_names,
+      residue_index=residue_index,
+      chain_index=chain_index,
+      molecule_type=molecule_type,
+      bonds=bonds,
+    )
+    state = AtomicState(
+      coordinates=coordinates,
+      box_vectors=box_vectors,
+    )
+    constants = None
+    if any(x is not None for x in [charges, sigmas, epsilons, radii]):
+      constants = AtomicConstants(
+        charges=charges,
+        sigmas=sigmas,
+        epsilons=epsilons,
+        radii=radii,
       )
-      from openmm import unit as u  # type: ignore[unresolved-import]
-    except ImportError as e:
-      raise ImportError(
-        "OpenMM is required for to_openmm_system(). "
-        "Install with: conda install -c conda-forge openmm",
-      ) from e
-
-    import numpy as np
-
-    # Handle Atom37 format masks: (N_res, 37) -> flatten to (N_res*37,)
-    mask_raw = np.asarray(self.atom_mask)
-    if mask_raw.ndim > 1:
-      mask = mask_raw.flatten() > 0.5
-    else:
-      mask = mask_raw > 0.5
-    n_atoms = int(np.sum(mask))
-
-    if n_atoms == 0:
-      raise ValueError("Cannot create OpenMM system with zero atoms")
-
-    system = System()
-
-    # Add atoms with masses (default to carbon mass if not specified)
-    # Element masses in atomic mass units (amu)
-    element_masses = {
-      "H": 1.008,
-      "C": 12.011,
-      "N": 14.007,
-      "O": 15.999,
-      "S": 32.065,
-      "P": 30.974,
-      "F": 18.998,
-      "Cl": 35.453,
-      "Br": 79.904,
-      "I": 126.904,
-    }
-
-    elements = self.elements if self.elements else ["C"] * n_atoms
-    for i in range(n_atoms):
-      elem = elements[i] if i < len(elements) else "C"
-      mass = element_masses.get(elem, 12.011)
-      system.addParticle(mass * u.amu)
-
-    # Nonbonded Force (electrostatics + LJ)
-    nonbonded = NonbondedForce()
-    nonbonded.setNonbondedMethod(NonbondedForce.CutoffPeriodic)
-    nonbonded.setCutoffDistance(nonbonded_cutoff * u.nanometer)
-
-    if use_switching_function:
-      nonbonded.setUseSwitchingFunction(True)
-      nonbonded.setSwitchingDistance(switch_distance * u.nanometer)
-
-    # Add particles to nonbonded force
-    charges = np.asarray(self.charges) if self.charges is not None else np.zeros(n_atoms)
-    sigmas = np.asarray(self.sigmas) if self.sigmas is not None else np.ones(n_atoms) * 0.3
-    epsilons = np.asarray(self.epsilons) if self.epsilons is not None else np.zeros(n_atoms)
-
-    # Convert units: priox uses Angstroms and kcal/mol, OpenMM uses nm and kJ/mol
-    sigmas_nm = sigmas * 0.1  # Å to nm
-    epsilons_kjmol = epsilons * 4.184  # kcal/mol to kJ/mol
-
-    atom_idx = 0
-    particle_params = []
-    for i in range(len(mask)):
-      if mask[i]:
-        q = float(charges[atom_idx]) if atom_idx < len(charges) else 0.0
-        sig = float(sigmas_nm[atom_idx]) if atom_idx < len(sigmas_nm) else 0.3
-        eps = float(epsilons_kjmol[atom_idx]) if atom_idx < len(epsilons_kjmol) else 0.0
-        nonbonded.addParticle(q, sig * u.nanometer, eps * u.kilojoule_per_mole)
-        particle_params.append((q, sig, eps))
-        atom_idx += 1
-
-    system.addForce(nonbonded)
-
-    # Harmonic Bond Force
-    if self.bonds is not None and self.bond_params is not None:
-      bond_force = HarmonicBondForce()
-      bonds = np.asarray(self.bonds)
-      bond_params = np.asarray(self.bond_params)
-
-      for b_idx in range(len(bonds)):
-        i, j = int(bonds[b_idx, 0]), int(bonds[b_idx, 1])
-        if i < n_atoms and j < n_atoms:
-          # bond_params: [length (Å), k (kcal/mol/Å²)]
-          length = float(bond_params[b_idx, 0]) * 0.1  # Å to nm
-          k = float(bond_params[b_idx, 1]) * 4.184 * 100  # kcal/mol/Å² to kJ/mol/nm²
-          bond_force.addBond(i, j, length * u.nanometer, k * u.kilojoule_per_mole / u.nanometer**2)
-
-      system.addForce(bond_force)
-
-    # Harmonic Angle Force
-    if self.angles is not None and self.angle_params is not None:
-      angle_force = HarmonicAngleForce()
-      angles = np.asarray(self.angles)
-      angle_params = np.asarray(self.angle_params)
-
-      for a_idx in range(len(angles)):
-        i, j, k = int(angles[a_idx, 0]), int(angles[a_idx, 1]), int(angles[a_idx, 2])
-        if i < n_atoms and j < n_atoms and k < n_atoms:
-          # angle_params: [theta (rad), k (kcal/mol/rad²)]
-          theta = float(angle_params[a_idx, 0])  # Already in radians
-          k_angle = float(angle_params[a_idx, 1]) * 4.184  # kcal/mol/rad² to kJ/mol/rad²
-          angle_force.addAngle(
-            i,
-            j,
-            k,
-            theta * u.radian,
-            k_angle * u.kilojoule_per_mole / u.radian**2,
-          )
-
-      system.addForce(angle_force)
-
-    # Periodic Torsion Force (proper dihedrals)
-    if self.proper_dihedrals is not None and self.dihedral_params is not None:
-      torsion_force = PeriodicTorsionForce()
-      dihedrals = np.asarray(self.proper_dihedrals)
-      dihedral_params = np.asarray(self.dihedral_params)
-
-      for d_idx in range(len(dihedrals)):
-        i, j, k, m = (
-          int(dihedrals[d_idx, 0]),
-          int(dihedrals[d_idx, 1]),
-          int(dihedrals[d_idx, 2]),
-          int(dihedrals[d_idx, 3]),
-        )
-        if i < n_atoms and j < n_atoms and k < n_atoms and m < n_atoms:
-          # dihedral_params: [periodicity, phase (rad), k (kcal/mol)]
-          periodicity = int(dihedral_params[d_idx, 0])
-          phase = float(dihedral_params[d_idx, 1])  # radians
-          k_torsion = float(dihedral_params[d_idx, 2]) * 4.184  # kcal/mol to kJ/mol
-          torsion_force.addTorsion(
-            i,
-            j,
-            k,
-            m,
-            periodicity,
-            phase * u.radian,
-            k_torsion * u.kilojoule_per_mole,
-          )
-
-      system.addForce(torsion_force)
-
-    # Periodic Torsion Force (improper dihedrals)
-    if self.impropers is not None and self.improper_params is not None:
-      improper_force = PeriodicTorsionForce()
-      impropers = np.asarray(self.impropers)
-      improper_params = np.asarray(self.improper_params)
-
-      for i_idx in range(len(impropers)):
-        i, j, k, m = (
-          int(impropers[i_idx, 0]),
-          int(impropers[i_idx, 1]),
-          int(impropers[i_idx, 2]),
-          int(impropers[i_idx, 3]),
-        )
-        if i < n_atoms and j < n_atoms and k < n_atoms and m < n_atoms:
-          # improper_params: [periodicity, phase (rad), k (kcal/mol)]
-          periodicity = int(improper_params[i_idx, 0])
-          phase = float(improper_params[i_idx, 1])  # radians
-          k_improper = float(improper_params[i_idx, 2]) * 4.184  # kcal/mol to kJ/mol
-          improper_force.addTorsion(
-            i,
-            j,
-            k,
-            m,
-            periodicity,
-            phase * u.radian,
-            k_improper * u.kilojoule_per_mole,
-          )
-
-      system.addForce(improper_force)
-
-    # CMAP Torsion Force (backbone corrections)
-    if self.cmap_indices is not None and self.cmap_grid is not None:
-      try:
-        from openmm import CMAPTorsionForce  # type: ignore[unresolved-import]
-      except ImportError:
-        CMAPTorsionForce = None
-
-      if CMAPTorsionForce is not None:
-        cmap_force = CMAPTorsionForce()
-        cmap_indices = np.asarray(self.cmap_indices)
-        cmap_grid = np.asarray(self.cmap_grid)
-
-        # Add the CMAP (energy grid)
-        grid_size = cmap_grid.shape[0]
-        # Flatten grid for OpenMM (row-major)
-        # Grid is in kJ/mol, OpenMM expects kJ/mol
-        flat_grid = cmap_grid.flatten().tolist()
-        cmap_idx = cmap_force.addMap(grid_size, flat_grid)
-
-        # Add torsions that use this CMAP
-        for t_idx in range(len(cmap_indices)):
-          # cmap_indices: [C_prev, N, CA, C, N_next] for phi-psi pair
-          atoms = [int(cmap_indices[t_idx, i]) for i in range(5)]
-          if all(a < n_atoms for a in atoms):
-            # Phi: C(i-1)-N(i)-CA(i)-C(i) -> atoms[0:4]
-            # Psi: N(i)-CA(i)-C(i)-N(i+1) -> atoms[1:5]
-            cmap_force.addTorsion(
-              cmap_idx,
-              atoms[0],
-              atoms[1],
-              atoms[2],
-              atoms[3],  # phi atoms
-              atoms[1],
-              atoms[2],
-              atoms[3],
-              atoms[4],  # psi atoms
-            )
-
-        system.addForce(cmap_force)
-
-    # Collect exclusions to avoid double counting
-    # Set of sets/tuples of indices
-    excluded_pairs = set()
-
-    # Add exclusions for bonded atoms (1-2 pairs)
-    if self.bonds is not None:
-      bonds = np.asarray(self.bonds)
-      for b_idx in range(len(bonds)):
-        i, j = int(bonds[b_idx, 0]), int(bonds[b_idx, 1])
-        if i < n_atoms and j < n_atoms:
-          pair = tuple(sorted((i, j)))
-          if pair not in excluded_pairs:
-            nonbonded.addException(i, j, 0.0, 1.0, 0.0)
-            excluded_pairs.add(pair)
-
-    # Add exclusions for angle atoms (1-3 pairs)
-    if self.angles is not None:
-      angles = np.asarray(self.angles)
-      for a_idx in range(len(angles)):
-        i, k = int(angles[a_idx, 0]), int(angles[a_idx, 2])
-        if i < n_atoms and k < n_atoms:
-          pair = tuple(sorted((i, k)))
-          if pair not in excluded_pairs:
-            nonbonded.addException(i, k, 0.0, 1.0, 0.0)
-            excluded_pairs.add(pair)
-
-    # Add scaled interactions for dihedral atoms (1-4 pairs)
-    if self.proper_dihedrals is not None:
-      dihedrals = np.asarray(self.proper_dihedrals)
-      for d_idx in range(len(dihedrals)):
-        idx_i, idx_l = int(dihedrals[d_idx, 0]), int(dihedrals[d_idx, 3])
-        if idx_i < n_atoms and idx_l < n_atoms:
-          pair = tuple(sorted((idx_i, idx_l)))
-          if pair not in excluded_pairs:
-            # Get parameters
-            q1, sig1, eps1 = particle_params[idx_i]
-            q2, sig2, eps2 = particle_params[idx_l]
-
-            # Calculate scaled parameters
-            # Coulomb 1-4
-            charge_prod = q1 * q2 * coulomb14scale
-
-            # LJ 1-4 (Lorentz-Berthelot mixing + scaling)
-            sigma_mix = (sig1 + sig2) * 0.5
-            epsilon_mix = np.sqrt(eps1 * eps2) * lj14scale
-
-            nonbonded.addException(
-              idx_i,
-              idx_l,
-              charge_prod,
-              sigma_mix * u.nanometer,
-              epsilon_mix * u.kilojoule_per_mole,
-            )
-            # Mark as processed so we don't overwrite with another 1-4 or something else
-            excluded_pairs.add(pair)
-
-    return system
+    return cls(
+      topology=topology,
+      state=state,
+      constants=constants,
+      atom_mask=atom_mask,
+      source=source,
+    )
 
   def merge_with(self, other: AtomicSystem) -> AtomicSystem:
     """Merge this system with another AtomicSystem.
 
     Combines two systems (e.g., protein + ligand) into a single AtomicSystem.
-    All topology indices (bonds, angles, dihedrals) from the second system
-    are offset by the number of atoms in the first system.
 
     Args:
-        other: Another AtomicSystem to merge with this one.
+      other: Another AtomicSystem to merge.
 
     Returns:
-        A new AtomicSystem containing atoms from both systems.
-
-    Example:
-        >>> complex_system = protein.merge_with(ligand)
+      A new AtomicSystem containing atoms from both systems.
 
     """
     import numpy as np
 
-    # Concatenate coordinates
-    n_atoms_self = len(self.atom_mask)
-    n_atoms_other = len(other.atom_mask)
+    n_self = self.num_atoms
+    n_other = other.num_atoms
 
-    new_coords = jnp.concatenate([self.coordinates, other.coordinates], axis=0)
-    new_mask = jnp.concatenate([self.atom_mask, other.atom_mask], axis=0)
+    # Merge coordinates
+    new_coords = jnp.concatenate([self.state.coordinates, other.state.coordinates], axis=0)
 
-    # Merge elements and atom_names (as lists)
-    def merge_sequences(seq1, seq2):
-      if seq1 is None and seq2 is None:
+    # Merge atom_mask
+    mask_self = self.atom_mask if self.atom_mask is not None else jnp.ones(n_self)
+    mask_other = other.atom_mask if other.atom_mask is not None else jnp.ones(n_other)
+    new_mask = jnp.concatenate([mask_self, mask_other], axis=0)
+
+    # Merge topology elements
+    def merge_seq(s1, s2, n1, n2):
+      if s1 is None and s2 is None:
         return None
-      s1 = list(seq1) if seq1 else ["X"] * n_atoms_self
-      s2 = list(seq2) if seq2 else ["X"] * n_atoms_other
-      return s1 + s2
+      l1 = list(s1) if s1 else ["X"] * n1
+      l2 = list(s2) if s2 else ["X"] * n2
+      return l1 + l2
 
-    new_elements = merge_sequences(self.elements, other.elements)
-    new_atom_names = merge_sequences(self.atom_names, other.atom_names)
-    new_atom_types = merge_sequences(self.atom_types, other.atom_types)
+    new_elements = merge_seq(self.topology.elements, other.topology.elements, n_self, n_other)
+    new_atom_names = merge_seq(self.topology.atom_names, other.topology.atom_names, n_self, n_other)
 
-    # Merge molecule_type (preserve from both)
-    if self.molecule_type is not None or other.molecule_type is not None:
-      mt1 = (
-        self.molecule_type
-        if self.molecule_type is not None
-        else jnp.zeros(n_atoms_self, dtype=jnp.int32)
-      )
-      mt2 = (
-        other.molecule_type
-        if other.molecule_type is not None
-        else jnp.ones(n_atoms_other, dtype=jnp.int32)
-      )
-      new_molecule_type = jnp.concatenate([mt1, mt2], axis=0)
-    else:
-      new_molecule_type = None
-
-    # Helper to offset and merge topology arrays
-    def merge_topology(arr1, arr2, offset: int):
-      if arr1 is None and arr2 is None:
+    # Merge arrays (with offset for topology indices)
+    def merge_arr(a1, a2):
+      if a1 is None and a2 is None:
         return None
       parts = []
-      if arr1 is not None and len(arr1) > 0:
-        parts.append(np.asarray(arr1))
-      if arr2 is not None and len(arr2) > 0:
-        parts.append(np.asarray(arr2) + offset)
-      if not parts:
-        return None
-      return jnp.array(np.concatenate(parts, axis=0))
+      if a1 is not None:
+        parts.append(np.asarray(a1))
+      if a2 is not None:
+        parts.append(np.asarray(a2))
+      return jnp.concatenate(parts, axis=0) if parts else None
 
-    # Merge bonds, angles, dihedrals, impropers
-    new_bonds = merge_topology(self.bonds, other.bonds, n_atoms_self)
-    new_angles = merge_topology(self.angles, other.angles, n_atoms_self)
-    new_dihedrals = merge_topology(self.proper_dihedrals, other.proper_dihedrals, n_atoms_self)
-    new_impropers = merge_topology(self.impropers, other.impropers, n_atoms_self)
-
-    # Merge parameter arrays (just concatenate, no offset)
-    def merge_params(arr1, arr2):
-      if arr1 is None and arr2 is None:
+    def merge_topo(a1, a2, offset):
+      if a1 is None and a2 is None:
         return None
       parts = []
-      if arr1 is not None and len(arr1) > 0:
-        parts.append(np.asarray(arr1))
-      if arr2 is not None and len(arr2) > 0:
-        parts.append(np.asarray(arr2))
-      if not parts:
-        return None
-      return jnp.array(np.concatenate(parts, axis=0))
+      if a1 is not None and len(a1) > 0:
+        parts.append(np.asarray(a1))
+      if a2 is not None and len(a2) > 0:
+        parts.append(np.asarray(a2) + offset)
+      return jnp.concatenate(parts, axis=0) if parts else None
 
-    new_bond_params = merge_params(self.bond_params, other.bond_params)
-    new_angle_params = merge_params(self.angle_params, other.angle_params)
-    new_dihedral_params = merge_params(self.dihedral_params, other.dihedral_params)
-    new_improper_params = merge_params(self.improper_params, other.improper_params)
+    new_mol_type = merge_arr(self.topology.molecule_type, other.topology.molecule_type)
+    new_res_idx = merge_arr(self.topology.residue_index, other.topology.residue_index)
+    new_chain_idx = merge_arr(self.topology.chain_index, other.topology.chain_index)
+    new_bonds = merge_topo(self.topology.bonds, other.topology.bonds, n_self)
 
-    # Merge MD parameters
-    new_charges = merge_params(self.charges, other.charges)
-    new_sigmas = merge_params(self.sigmas, other.sigmas)
-    new_epsilons = merge_params(self.epsilons, other.epsilons)
-    new_radii = merge_params(self.radii, other.radii)
-
-    # Merge CMAP (offset indices, keep grids separate - typically same grid)
-    new_cmap_indices = merge_topology(self.cmap_indices, other.cmap_indices, n_atoms_self)
-    # For cmap_grid, we use self's grid if available (ligands typically don't have CMAP)
-    new_cmap_grid = self.cmap_grid if self.cmap_grid is not None else other.cmap_grid
-
-    return AtomicSystem(
-      coordinates=new_coords,
-      atom_mask=new_mask,
+    new_topology = MolecularTopology(
       elements=new_elements,
       atom_names=new_atom_names,
-      atom_types=new_atom_types,
-      molecule_type=new_molecule_type,
+      residue_index=new_res_idx,
+      chain_index=new_chain_idx,
+      molecule_type=new_mol_type,
       bonds=new_bonds,
-      angles=new_angles,
-      proper_dihedrals=new_dihedrals,
-      impropers=new_impropers,
-      bond_params=new_bond_params,
-      angle_params=new_angle_params,
-      dihedral_params=new_dihedral_params,
-      improper_params=new_improper_params,
-      cmap_indices=new_cmap_indices,
-      cmap_grid=new_cmap_grid,
-      charges=new_charges,
-      sigmas=new_sigmas,
-      epsilons=new_epsilons,
-      radii=new_radii,
     )
+    new_state = AtomicState(coordinates=new_coords)
 
-  def to_protein(self, format: str = "Atom37") -> Protein:
-    """Convert AtomicSystem to Protein object.
-
-    Args:
-        format: Format for protein structure ("Atom37", "Atom14", "Full", "BackboneOnly").
-                Defaults to "Atom37".
-
-    Returns:
-        Protein object.
-
-    Raises:
-        ValueError: If required metadata is missing or format is not supported.
-    """
-    import numpy as np
-
-    from proxide.chem.residues import atom_order, restype_3to1, restype_order_with_x
-    from proxide.core.containers import Protein
-
-    if self.atom_res_index is None or self.res_names is None:
-      raise ValueError(
-        "Cannot convert to Protein: missing residue information (atom_res_index, res_names)"
+    # Merge constants if present
+    new_constants = None
+    if self.constants or other.constants:
+      new_constants = AtomicConstants(
+        charges=merge_arr(
+          self.constants.charges if self.constants else None,
+          other.constants.charges if other.constants else None,
+        ),
+        sigmas=merge_arr(
+          self.constants.sigmas if self.constants else None,
+          other.constants.sigmas if other.constants else None,
+        ),
+        epsilons=merge_arr(
+          self.constants.epsilons if self.constants else None,
+          other.constants.epsilons if other.constants else None,
+        ),
       )
 
-    # Group atoms by residue
-    # We assume atom_res_index is contiguous and sorted, but let's be safe
-    # Actually, usually they correspond to unique residue indices.
-
-    # Get unique residues
-    unique_res_indices = np.unique(np.asarray(self.atom_res_index))
-    num_residues = len(unique_res_indices)
-
-    # Check if indices are 0..N-1
-    if num_residues > 0 and (unique_res_indices.max() != num_residues - 1):
-      # We might need to handle non-contiguous indices or just assume they map to 0..N-1 in Protein
-      # For this implementation, we map unique indices to 0..N-1
-      pass
-
-    # Prepare Protein arrays
-    if format == "Atom37":
-      coords_37 = np.zeros((num_residues, 37, 3), dtype=np.float32)
-      mask_37 = np.zeros((num_residues, 37), dtype=np.float32)
-      aatype = np.zeros(num_residues, dtype=np.int32)
-      residue_index = np.zeros(num_residues, dtype=np.int32)
-      chain_index = np.zeros(num_residues, dtype=np.int32)
-
-      # We need to iterate over atoms and place them in the grid
-      # This is slow in Python, but fine for conversion for now.
-      # Vectorized approach would be better.
-
-      # Map res_id to 0..N-1
-      res_id_map = {rid: i for i, rid in enumerate(unique_res_indices)}
-
-      # Get flattened arrays
-      res_indices = np.asarray(self.atom_res_index)
-      chain_indices = (
-        np.asarray(self.atom_chain_index)
-        if self.atom_chain_index is not None
-        else np.zeros(len(res_indices), dtype=int)
-      )
-
-      # We need atom names to map to Atom37
-      if self.atom_names is None:
-        raise ValueError("AtomicSystem must have atom_names to convert to Atom37")
-
-      # We need residue names to determine aatype
-      # res_names should be per atom? Or per residue?
-      # The field added is `res_names: Sequence[str]` per atom
-      # (matching usage in rust parser output usually)
-      # But efficiently we want per-residue info.
-
-      # Iterate over atoms
-      for i in range(len(res_indices)):
-        rid = res_indices[i]
-        if rid not in res_id_map:
-          continue
-
-        res_idx = res_id_map[rid]
-        name = self.atom_names[i]
-        res_name = self.res_names[i]
-
-        # Populate residue metadata (first time we see it)
-        if mask_37[res_idx].sum() == 0:
-          # Set aatype
-          # use get with "X" default
-          short_res = restype_3to1.get(res_name, "X")
-          aatype[res_idx] = restype_order_with_x.get(short_res, 20)
-
-          residue_index[res_idx] = rid  # Use original index
-          chain_index[res_idx] = chain_indices[i]
-
-        # Place atom
-        if name in atom_order:
-          atom_idx = atom_order[name]
-          coords_37[res_idx, atom_idx] = self.coordinates[i]
-          mask_37[res_idx, atom_idx] = 1.0
-
-      # Create Protein
-      return Protein(
-        coordinates=jnp.array(coords_37),
-        aatype=jnp.array(aatype),
-        one_hot_sequence=jnp.array(np.eye(21)[aatype]),
-        mask=jnp.array(mask_37[:, atom_order["CA"]]),  # CA mask
-        residue_index=jnp.array(residue_index),
-        chain_index=jnp.array(chain_index),
-        atom_mask=jnp.array(mask_37),  # Used for reconstruction
-        elements=self.elements,
-        atom_names=self.atom_names,
-        full_coordinates=self.coordinates,  # Link to source coordinates
-        full_atom_mask=self.atom_mask,
-        epsilons=self.epsilons,  # Propagate physics
-        charges=self.charges,
-        radii=self.radii,
-        sigmas=self.sigmas,
-        format="Atom37",
-      )
-    else:
-      raise ValueError(f"Format {format} not yet implemented for to_protein")
+    return AtomicSystem(
+      topology=new_topology,
+      state=new_state,
+      constants=new_constants,
+      atom_mask=new_mask,
+    )
 
 
 @dataclass(kw_only=True)
@@ -827,3 +435,5 @@ class Molecule(AtomicSystem):
 
   Thin subclass of AtomicSystem for type clarity.
   """
+
+  pass

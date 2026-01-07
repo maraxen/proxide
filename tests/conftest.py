@@ -9,6 +9,7 @@ from jax import random
 
 from proxide.io.parsing.dispatch import load_structure as parse_input
 from proxide.core.containers import Protein
+from proxide.core.atomic_system import AtomicSystem
 
 
 @pytest.fixture(scope="session")
@@ -19,10 +20,11 @@ def protein_structure() -> Protein:
 
 
 @pytest.fixture(scope="session")
-def pqr_protein() -> Protein:
+def pqr_protein() -> AtomicSystem:
     """Load a sample protein structure from a PQR file."""
     pqr_path = Path(__file__).parent / "data" / "1a00.pqr"
     return next(parse_input(str(pqr_path)))
+
 
 
 @pytest.fixture(scope="session")

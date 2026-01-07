@@ -351,7 +351,7 @@ class Molecule:
     Requires RDKit.
     """
     try:
-      from rdkit import Chem
+      from rdkit import Chem  # type: ignore[unresolved-import]
     except ImportError as e:
       raise ImportError(
         "RDKit is required for this operation. Install with: pip install rdkit",

@@ -8,6 +8,7 @@ from functools import cache
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
+import jax.numpy as jnp
 
 from proxide.chem.conversion import string_to_protein_sequence
 from proxide.chem.residues import atom_order
@@ -16,7 +17,7 @@ from proxide.core.containers import Protein, ProteinStream
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
-  import foldcomp
+  import foldcomp  # type: ignore[unresolved-import]
 
   FOLDCOMP_INSTALLED = True
 else:
@@ -116,14 +117,14 @@ def get_protein_structures(
         atom_mask = np.ones((coordinates.shape[0], 37), dtype=np.float32)
 
         yield Protein(
-          coordinates=coordinates,
-          aatype=sequence,
-          atom_mask=atom_mask,
-          mask=atom_mask[:, atom_order["CA"]],
-          one_hot_sequence=np.eye(21)[sequence],
-          residue_index=np.arange(num_res, dtype=np.int32),
-          chain_index=np.zeros(num_res, dtype=np.int32),
-          dihedrals=dihedrals,
+          coordinates=jnp.array(coordinates, dtype=jnp.float32),
+          aatype=jnp.array(sequence, dtype=jnp.int32),
+          atom_mask=jnp.array(atom_mask, dtype=jnp.float32),
+          mask=jnp.array(atom_mask[:, atom_order["CA"]], dtype=jnp.float32),
+          one_hot_sequence=jnp.eye(21)[sequence],
+          residue_index=jnp.arange(num_res, dtype=jnp.int32),
+          chain_index=jnp.zeros(num_res, dtype=jnp.int32),
+          dihedrals=jnp.array(dihedrals, dtype=jnp.float32),
           elements=None,
           atom_names=None,
         )
