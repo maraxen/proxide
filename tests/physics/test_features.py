@@ -11,10 +11,30 @@ from proxide.physics.features import (
     compute_electrostatic_node_features,
 )
 from proxide.core.containers import Protein
+from proxide.core.atomic_system import AtomicSystem
 
 
-def protein_to_dict(protein: Protein) -> dict:
-    """Convert Protein dataclass to dictionary."""
+def protein_to_dict(protein: Protein | AtomicSystem) -> dict:
+    """Convert Protein or AtomicSystem dataclass to dictionary."""
+    # Handle AtomicSystem's hierarchical structure
+    if isinstance(protein, AtomicSystem) and not isinstance(protein, Protein):
+        result = {}
+        # Get coordinates from state
+        if protein.state is not None:
+            result["coordinates"] = protein.state.coordinates
+        # Get topology fields
+        if protein.topology is not None:
+            result["residue_index"] = protein.topology.residue_index
+            result["chain_index"] = protein.topology.chain_index
+            result["elements"] = protein.topology.elements
+            result["atom_names"] = protein.topology.atom_names
+        # Get constants fields
+        if protein.constants is not None:
+            result["charges"] = protein.constants.charges
+            result["radii"] = protein.constants.radii
+        result["atom_mask"] = protein.atom_mask
+        return result
+    # Regular Protein dataclass
     return {f.name: getattr(protein, f.name) for f in fields(protein)}
 
 
@@ -116,7 +136,7 @@ def _create_dummy_protein(pqr_protein):
 
 @pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])
 def test_compute_electrostatic_node_features_shape(
-    pqr_protein: Protein, jit_compile,
+    pqr_protein: AtomicSystem, jit_compile,
 ):
     """Test that the computed features have the correct shape."""
     hashable_protein_tuple = _create_dummy_protein(pqr_protein)
@@ -133,7 +153,7 @@ def test_compute_electrostatic_node_features_shape(
 
 
 def test_compute_electrostatic_node_features_no_charges(
-    pqr_protein: Protein,
+    pqr_protein: AtomicSystem,
 ):
     """Test that a ValueError is raised if protein has no charges."""
     p = _create_dummy_protein(pqr_protein)
@@ -143,7 +163,7 @@ def test_compute_electrostatic_node_features_no_charges(
 
 
 def test_compute_electrostatic_node_features_no_full_coordinates(
-    pqr_protein: Protein,
+    pqr_protein: AtomicSystem,
 ):
     """Test that a ValueError is raised if protein has no full_coordinates."""
     p = _create_dummy_protein(pqr_protein)
@@ -154,7 +174,7 @@ def test_compute_electrostatic_node_features_no_full_coordinates(
 
 @pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])
 def test_compute_electrostatic_node_features_jittable(
-    pqr_protein: Protein, jit_compile,
+    pqr_protein: AtomicSystem, jit_compile,
 ):
     """Test that the feature computation can be JIT compiled."""
     hashable_protein_tuple = _create_dummy_protein(pqr_protein)
@@ -168,7 +188,7 @@ def test_compute_electrostatic_node_features_jittable(
 
 @pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])
 def test_compute_electrostatic_features_batch_shape(
-    pqr_protein: Protein, jit_compile,
+    pqr_protein: AtomicSystem, jit_compile,
 ):
     """Test that the batched features have the correct shape."""
     hashable_protein_tuple = _create_dummy_protein(pqr_protein)
@@ -187,7 +207,7 @@ def test_compute_electrostatic_features_batch_shape(
 
 @pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])
 def test_compute_electrostatic_features_batch_padding(
-    pqr_protein: Protein, jit_compile,
+    pqr_protein: AtomicSystem, jit_compile,
 ):
     """Test that padding is applied correctly."""
     hashable_protein_tuple = _create_dummy_protein(pqr_protein)
@@ -213,7 +233,7 @@ def test_compute_electrostatic_features_batch_empty_list():
 
 
 def test_compute_electrostatic_features_batch_max_length_too_small(
-    pqr_protein: Protein,
+    pqr_protein: AtomicSystem,
 ):
     """Test that a small max_length raises a ValueError."""
     p = _create_dummy_protein(pqr_protein)
@@ -224,7 +244,7 @@ def test_compute_electrostatic_features_batch_max_length_too_small(
 
 
 def test_compute_electrostatic_node_features_thermal_mode(
-    pqr_protein: Protein,
+    pqr_protein: AtomicSystem,
 ):
     """Test that thermal mode works correctly."""
     p = _create_dummy_protein(pqr_protein)

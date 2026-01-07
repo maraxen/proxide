@@ -828,6 +828,118 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
     })
 }
 
+/// Project a parsed structure to MPNNBatch format for training
+///
+/// This function:
+/// 1. Parses the structure file (PDB/mmCIF/FoldComp)
+/// 2. Optionally applies Gaussian noising to coordinates
+/// 3. Computes RBF features from backbone geometry
+/// 4. Optionally computes physics features from force field parameters
+///
+/// Returns a dict with keys: aatype, residue_index, chain_index, mask,
+/// rbf_features, neighbor_indices, physics_features (optional)
+#[pyfunction]
+#[pyo3(signature = (path, num_neighbors=30, noise_std=None, noise_seed=0, compute_physics=false))]
+pub fn project_to_mpnn_batch(
+    path: String,
+    num_neighbors: usize,
+    noise_std: Option<f32>,
+    noise_seed: u64,
+    compute_physics: bool,
+) -> PyResult<PyObject> {
+    use numpy::PyArray1;
+    use numpy::PyArrayMethods;
+
+    Python::with_gil(|py| {
+        // 1. Parse the structure
+        let (raw_data_all, model_ids) = if path.ends_with(".cif") || path.ends_with(".mmcif") {
+            formats::mmcif::parse_mmcif_file(&path).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("mmCIF parsing failed: {}", e))
+            })?
+        } else if path.ends_with(".fcz") {
+            // FoldComp
+            let system = formats::foldcomp::read_foldcomp(&path).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("FoldComp parsing failed: {}", e))
+            })?;
+            // Convert AtomicSystem to RawAtomData
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "FoldComp projection not yet implemented - use parse_structure instead",
+            ));
+        } else {
+            formats::pdb::parse_pdb_file(&path).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("PDB parsing failed: {}", e))
+            })?
+        };
+
+        // 2. Get first model
+        let first_model = model_ids.first().copied().unwrap_or(1);
+        let filtered = processing::filter_models(&raw_data_all, &model_ids, &[first_model]);
+
+        // 3. Process structure
+        let structure = ProcessedStructure::from_raw(filtered).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Structure processing failed: {}", e))
+        })?;
+
+        // 4. Project to MPNNBatch
+        let result = processing::project_to_mpnn_batch(
+            &structure,
+            num_neighbors,
+            noise_std,
+            noise_seed,
+            compute_physics,
+        )
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Projection failed: {}", e))
+        })?;
+
+        // 5. Build Python dict
+        let dict = pyo3::types::PyDict::new_bound(py);
+
+        dict.set_item("aatype", PyArray1::from_slice_bound(py, &result.aatype))?;
+        dict.set_item(
+            "residue_index",
+            PyArray1::from_slice_bound(py, &result.residue_index),
+        )?;
+        dict.set_item(
+            "chain_index",
+            PyArray1::from_slice_bound(py, &result.chain_index),
+        )?;
+        dict.set_item("mask", PyArray1::from_slice_bound(py, &result.mask))?;
+
+        // RBF features: reshape to (N_res, K, 400)
+        let rbf_array = PyArray1::from_slice_bound(py, &result.rbf_features);
+        let rbf_shaped = rbf_array
+            .reshape((result.n_residues, result.n_neighbors, 400))
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("RBF reshape failed: {}", e))
+            })?;
+        dict.set_item("rbf_features", rbf_shaped)?;
+
+        // Neighbor indices: reshape to (N_res, K)
+        let neighbors_array = PyArray1::from_slice_bound(py, &result.neighbor_indices);
+        let neighbors_shaped = neighbors_array
+            .reshape((result.n_residues, result.n_neighbors))
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Neighbors reshape failed: {}", e))
+            })?;
+        dict.set_item("neighbor_indices", neighbors_shaped)?;
+
+        // Physics features if present: reshape to (N_res, 15)
+        if let Some(ref feats) = result.physics_features {
+            let phys_array = PyArray1::from_slice_bound(py, feats);
+            let phys_shaped = phys_array.reshape((result.n_residues, 15)).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Physics reshape failed: {}", e))
+            })?;
+            dict.set_item("physics_features", phys_shaped)?;
+        }
+
+        dict.set_item("n_residues", result.n_residues)?;
+        dict.set_item("n_neighbors", result.n_neighbors)?;
+
+        Ok(dict.into_py(py))
+    })
+}
+
 /// FoldComp Database accessor
 #[pyclass]
 pub struct FoldCompDatabase {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Callable, cast
 
 import jax
 import jax.numpy as jnp
@@ -461,7 +462,7 @@ def compute_lj_forces_at_backbone(
     all_atom_positions,
   )
 
-  forces_flat = compute_lj_forces(
+  forces_flat = cast(Callable[..., jax.Array], compute_lj_forces)(
     displacements,
     distances,
     backbone_sigmas_flat,

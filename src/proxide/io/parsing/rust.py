@@ -8,14 +8,14 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Any, cast
+from typing import IO, Any, cast, Sequence
 
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import ArrayLike
 
-from proxide import _oxidize
-from proxide._oxidize import OutputSpec
+from proxide import _oxidize  # type: ignore[unresolved-import]
+from proxide._oxidize import OutputSpec  # type: ignore[unresolved-import]
 from proxide.core.atomic_system import AtomicSystem
 from proxide.core.containers import Protein
 from proxide.io.parsing.registry import ParsingError, register_parser
@@ -86,7 +86,7 @@ def load_rust(
     infer_bonds=infer_bonds,
     parameterize_md=populate_physics and bool(force_field_name),
     force_field=force_field_name if populate_physics else None,
-    output_format_target=output_format_target,
+    output_format_target=output_format_target or "general",  # Rust requires 'general' or 'mpnn'
     remove_solvent=kwargs.get("remove_solvent", True),
   )
 
@@ -99,7 +99,7 @@ def load_rust(
 
     try:
       if hasattr(file_path, "read"):
-        content = cast(object, file_path).read()
+        content = cast(Any, file_path).read()
         if hasattr(content, "encode"):
           suffix = ".pdb"
           mode = "w"
@@ -122,7 +122,7 @@ def load_rust(
         target_chains = {chain_id} if isinstance(chain_id, str) else set(chain_id)
 
         if getattr(obj, "chain_ids", None) is not None:
-          unique_ids = obj.chain_ids
+          unique_ids = cast(Sequence[str], obj.chain_ids)
           allowed_indices = {i for i, cid in enumerate(unique_ids) if cid in target_chains}
 
           if allowed_indices:
@@ -170,6 +170,13 @@ def load_rust(
               # depending on storage AtomicSystem stores them as (N_atoms,) currently.
               # Protein doesn't explicitly slice them here (TODO).
               # For now we just filter the main residue-based fields.
+
+              if new_atom_mask is None:
+                # Fallback if mask slicing failed
+                if new_coords.ndim == ATOM37_DIM:
+                  new_atom_mask = jnp.ones((new_coords.shape[0], 37), dtype=jnp.float32)
+                else:
+                  new_atom_mask = jnp.ones(new_coords.shape[0], dtype=jnp.float32)
 
               obj = Protein(
                 coordinates=new_coords,

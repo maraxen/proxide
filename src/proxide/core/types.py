@@ -106,3 +106,32 @@ Charges = Float[Array, "num_atoms"]
 Sigmas = Float[Array, "num_atoms"]
 Epsilons = Float[Array, "num_atoms"]
 Radii = Float[Array, "num_atoms"]
+
+# Per-atom topology types (for hierarchical AtomicSystem)
+PerAtomResidueIndex = Int[Array, "num_atoms"]
+"""Per-atom residue index. Shape (N_atoms,). Value is -1 for non-protein atoms."""
+
+PerAtomChainIndex = Int[Array, "num_atoms"]
+"""Per-atom chain index. Shape (N_atoms,). Value is -1 for non-protein atoms."""
+
+Masses = Float[Array, "num_atoms"]
+"""Per-atom masses in amu. Shape (N_atoms,)."""
+
+BoxVectors = Float[Array, "3 3"]
+"""Periodic box vectors. Shape (3, 3)."""
+
+Velocities = Float[Array, "num_atoms 3"]
+"""Per-atom velocities. Shape (N_atoms, 3)."""
+
+# MPNNBatch types (per-residue, training-ready)
+RBFFeatures = Float[Array, "num_residues num_neighbors num_rbf_features"]
+"""RBF distance features. Shape (N_res, K, F)."""
+
+PhysicsFeatures = Float[Array, "num_residues num_physics_features"]
+"""Combined physics features (electrostatics, vdW). Shape (N_res, F_phys)."""
+
+ResidueMask = Float[Array, "num_residues"]
+"""Per-residue validity mask. Shape (N_res,). 1.0=valid, 0.0=padding."""
+
+Angles = Int[Array, "num_angles 3"]
+"""Angle atom index triplets. Shape (N_angles, 3)."""

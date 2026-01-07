@@ -42,6 +42,7 @@ fn _oxidize(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_parsers::parse_pqr, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_foldcomp, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_structure, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parsers::project_to_mpnn_batch, m)?)?;
 
     // Force field functions (from py_forcefield)
     m.add_function(wrap_pyfunction!(py_forcefield::load_forcefield, m)?)?;
