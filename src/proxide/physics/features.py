@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import jax
 import jax.numpy as jnp
 
 from proxide.geometry.transforms import compute_backbone_coordinates
@@ -22,13 +21,16 @@ from proxide.physics.vdw import (
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
+  from jaxtyping import Array, Float
+
   from proxide.core.containers import Protein
+  from proxide.types import ArrayLike, NodeFeatures, PRNGKey
 
 
 def _resolve_sigma(
-  value: float | jax.Array | None,
+  value: float | ArrayLike | None,
   mode: str,
-) -> float | jax.Array:
+) -> float | ArrayLike:
   """Resolve the noise standard deviation (sigma) from the input value and mode.
 
   Args:
@@ -61,12 +63,12 @@ def _resolve_sigma(
 
 
 def _compute_electrostatic_features_raw(
-  backbone_positions: jax.Array,
-  all_positions: jax.Array,
-  all_charges: jax.Array,
-  noise_scale: float | jax.Array = 0.0,
-  key: jax.Array | None = None,
-) -> jax.Array:
+  backbone_positions: ArrayLike,
+  all_positions: ArrayLike,
+  all_charges: ArrayLike,
+  noise_scale: float | ArrayLike = 0.0,
+  key: PRNGKey | None = None,
+) -> NodeFeatures:
   """Compute electrostatic features from raw arrays.
 
   Args:
@@ -129,10 +131,10 @@ def _compute_electrostatic_features_raw(
 def compute_electrostatic_node_features(
   protein: Protein,
   *,
-  noise_scale: float | jax.Array | None = None,
+  noise_scale: float | ArrayLike | None = None,
   noise_mode: str = "direct",
-  key: jax.Array | None = None,
-) -> jax.Array:
+  key: PRNGKey | None = None,
+) -> NodeFeatures:
   """Compute SE(3)-invariant electrostatic features for each residue.
 
   See `_compute_electrostatic_features_raw` for implementation details.
@@ -163,13 +165,13 @@ def compute_electrostatic_node_features(
 
 
 def _compute_vdw_features_raw(
-  backbone_positions: jax.Array,
-  all_positions: jax.Array,
-  all_sigmas: jax.Array,
-  all_epsilons: jax.Array,
-  noise_scale: float | jax.Array = 0.0,
-  key: jax.Array | None = None,
-) -> jax.Array:
+  backbone_positions: ArrayLike,
+  all_positions: ArrayLike,
+  all_sigmas: ArrayLike,
+  all_epsilons: ArrayLike,
+  noise_scale: float | ArrayLike = 0.0,
+  key: PRNGKey | None = None,
+) -> NodeFeatures:
   """Compute vdW features from raw arrays.
 
   Args:
@@ -237,10 +239,10 @@ def _compute_vdw_features_raw(
 def compute_vdw_node_features(
   protein: Protein,
   *,
-  noise_scale: float | jax.Array | None = None,
+  noise_scale: float | ArrayLike | None = None,
   noise_mode: str = "direct",
-  key: jax.Array | None = None,
-) -> jax.Array:
+  key: PRNGKey | None = None,
+) -> NodeFeatures:
   """Compute SE(3)-invariant Van der Waals features for each residue.
 
   See `_compute_vdw_features_raw` for implementation details.
@@ -277,7 +279,7 @@ def compute_electrostatic_features_batch(
   max_length: int | None = None,
   *,
   pad_value: float = 0.0,
-) -> tuple[jax.Array, jax.Array]:
+) -> tuple[NodeFeatures, Float[Array, "batch max_length"]]:  # noqa: F722
   """Compute electrostatic features for a batch of proteins with padding.
 
   Args:

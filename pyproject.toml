@@ -22,6 +22,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cuda = ["jax[cuda12]"]
+tpu = ["jax[tpu]"]
+cpu = ["jax"]
 ml = [
     "huggingface_hub",
     "optax",

@@ -6,9 +6,10 @@ handling data conversion and maintaining API compatibility with existing parsers
 
 import os
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Any, cast, Sequence
+from typing import IO, Any, cast
 
 import jax.numpy as jnp
 import numpy as np
@@ -64,20 +65,30 @@ def load_rust(
 ) -> Any:
   """Load a protein structure using the Rust extension.
 
+  This function serves as the primary entry point for the global `load_structure` dispatch,
+  routing file loading to the appropriate Rust parser.
+
+  Process:
+      1.  **Preparation**: Resolve file path (handling file-like objects if needed).
+      2.  **Configuration**: Build `OutputSpec` from arguments (hydrogens, MD params).
+      3.  **Parsing**: call `_oxidize.parse_structure` (Rust).
+      4.  **Conversion**: Convert Rust output dict to `Protein` dataclass.
+      5.  **Filtering**: Apply chain filtering if `chain_id` is specified.
+
   Args:
-      file_path: Path to the structure file.
-      chain_id: Unused for now in Rust parser (filtering happens post-parse if needed).
-      extract_dihedrals: Whether to compute dihedrals (happens automatically in Protein).
-      populate_physics: Whether to parameterize MD (requires force_field_name).
-      force_field_name: Name/path of force field if populate_physics is True.
-      add_hydrogens: Whether to add hydrogens.
-      infer_bonds: Whether to infer connectivity.
-      infer_bonds: Whether to infer connectivity.
-      return_type: Return type ("Protein" or "AtomicSystem").
-      **kwargs: Additional args passed to OutputSpec.
+      file_path: Path to the structure file or file-like object.
+      chain_id: Filter results to specific chain ID(s).
+      extract_dihedrals: Whether to compute backbone dihedrals (default: False).
+      populate_physics: Whether to parameterize for MD (requires `force_field_name`).
+      force_field_name: Name/path of force field XML (e.g. "protein.ff14SB.xml").
+      add_hydrogens: Whether to add missing geometric hydrogens (default: True).
+      infer_bonds: Whether to infer bond connectivity (default: False).
+      return_type: target class ("Protein" or "AtomicSystem").
+      output_format_target: Target format hint ("mpnn" or "general").
+      **kwargs: Additional args passed to `OutputSpec`.
 
   Yields:
-      Protein or AtomicSystem instances.
+      Protein or AtomicSystem instances (as a generator for compatibility).
 
   """
 
@@ -317,19 +328,17 @@ def parse_pdb_to_protein(
 ) -> Protein:
   """Parse a PDB file and return a Protein directly.
 
-  This is the preferred method for parsing PDB files, as it returns a Protein
-  object directly without creating an intermediate ProteinTuple.
+  This is a direct wrapper around `parse_structure` for PDB files, ensuring
+  the return type is a `Protein` dataclass.
 
   Args:
-      file_path: Path to PDB file
-      spec: Optional OutputSpec for controlling formatting (default: Atom37)
-      use_jax: If True, convert arrays to JAX arrays. If False, use NumPy.
+      file_path: Path to PDB file.
+      spec: Optional `OutputSpec` configuration.
+      use_jax: If True, return JAX arrays.
+      output_format_target: "mpnn" or "general".
 
   Returns:
-      Protein with parsed structure data
-
-  Raises:
-      ValueError: If parsing fails
+      A `Protein` dataclass containing the parsed structure.
 
   """
   if spec is None:
@@ -342,53 +351,36 @@ def parse_pdb_to_protein(
 def parse_structure(
   file_path: str | Path, spec=None, use_jax: bool = True, output_format_target: str | None = None
 ) -> Protein:
-  """Parse structures using the Rust backend.
+  """Parse a protein structure using the Rust extension.
 
-  This function uses the high-performance Rust extension to parse PDB/mmCIF files
-  and optionally compute topology, force field parameters, and atom types.
+  This is the main high-level API for loading structures in Proxide. It automatically
+  detects the file format (PDB/mmCIF) and uses the `oxidize` backend.
+
+  Process:
+      1.  **Format Detection**: Rust parser detects PDB/mmCIF/PQR/binary magic bytes.
+      2.  **Parsing**: Reads structure into Rust logic representation.
+      3.  **Correction**: Adds hydrogens, infers bonds, or parameterizes MD if requested in `spec`.
+      4.  **Conversion**: Returns a Python `Protein` object with JAX arrays.
 
   Args:
       file_path: Path to the structure file.
-      spec: Optional OutputSpec configuration object. If None, defaults are used.
-            The OutputSpec controls various processing steps:
-
-            - **force_field** (str): Path to force field XML or "gaff" for GAFF atom typing.
-            - **parameterize_md** (bool): If True, assign charges/radii from force field.
-            - **infer_bonds** (bool): If True, infer connectivity (needed for GAFF).
-            - **add_hydrogens** (bool): If True, add missing hydrogens.
-            - **compute_electrostatics** (bool): Compute electrostatic features.
-            - **include_hetatm** (bool): Include non-protein atoms.
-            - **remove_solvent** (bool): Remove water molecules.
-
-      use_jax: If True, returns JAX arrays. If False, returns NumPy arrays.
+      spec: Optional `OutputSpec` configuration. Controls force fields, hydrogen addition, etc.
+      use_jax: If True, return arrays as `jax.numpy.Array`. If False, use `numpy.ndarray`.
+      output_format_target: Formatting hint ("mpnn", "general").
 
   Returns:
-      Protein: A dataclass containing coordinates, topology, and optional features.
+      A `Protein` dataclass.
 
   Examples:
       **Basic Loading:**
+      >>> protein = parse_structure("1crn.pdb")
 
-      >>> from proxide.io import rust_wrapper
-      >>> protein = rust_wrapper.parse_structure("1crn.pdb")
-
-      **Getting GAFF Atom Types:**
-
-      >>> from proxide.io import rust_wrapper
-      >>> # Create spec requesting GAFF types and bond inference
-      >>> spec = rust_wrapper.OutputSpec()
-      >>> spec.force_field = "gaff"
-      >>> spec.infer_bonds = True  # Required for aromaticity detection
-      >>>
-      >>> system = rust_wrapper.parse_structure("ligand.pdb", spec=spec)
-      >>> print(system.atom_types)
-      ['c3', 'hc', 'n', ...]
-
-      **Full MD Parameterization:**
-
-      >>> spec.parameterize_md = True
-      >>> spec.force_field = "openff-2.0.0.xml"
-      >>> system = rust_wrapper.parse_structure("complex.pdb", spec=spec)
-      >>> print(system.charges)
+      **MD Parameterization:**
+      >>> from proxide import OutputSpec
+      >>> spec = OutputSpec(parameterize_md=True, force_field="protein.ff14SB.xml")
+      >>> protein = parse_structure("1crn.pdb", spec)
+      >>> protein.charges.shape
+      (327,)
 
   """
   return parse_pdb_to_protein(file_path, spec, use_jax, output_format_target)

@@ -10,20 +10,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
-import jax.numpy as jnp
 from flax.struct import dataclass
 
 if TYPE_CHECKING:
   from proxide.core.atomic_system import AtomicSystem
 
 from proxide.core.types import (
+  NeighborIndices,
   PerAtomChainIndex,
-  PerAtomResidueIndex,
   PhysicsFeatures,
   ProteinSequence,
   RBFFeatures,
-  ResidueMask,
   ResidueIndex,
+  ResidueMask,
 )
 
 
@@ -67,7 +66,7 @@ class MPNNBatch:
   chain_index: PerAtomChainIndex
   mask: ResidueMask
   rbf_features: RBFFeatures
-  neighbor_indices: jnp.ndarray
+  neighbor_indices: NeighborIndices
   physics_features: PhysicsFeatures | None = None
 
 
@@ -164,10 +163,8 @@ def project_to_openmm_system(system: AtomicSystem, spec: OutputSpec) -> Any:
   """
   try:
     from openmm import (
-      HarmonicAngleForce,
       HarmonicBondForce,
       NonbondedForce,
-      PeriodicTorsionForce,
       System,
     )
     from openmm import unit as u

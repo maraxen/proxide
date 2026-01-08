@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 from flax.struct import dataclass, field
+from jaxtyping import Float
+
+if TYPE_CHECKING:
+  from proxide.types import Charges, EnergyGrids, Epsilons, Radii, Scales, Sigmas
 
 
 @dataclass(frozen=True)
 class AtomTypeParams:
   """Parameters associated with atom types."""
 
-  charges: jnp.ndarray
-  sigmas: jnp.ndarray
-  epsilons: jnp.ndarray
-  radii: jnp.ndarray
-  scales: jnp.ndarray
+  charges: Charges
+  sigmas: Sigmas
+  epsilons: Epsilons
+  radii: Radii
+  scales: Scales
 
   # Metadata maps
   atom_key_to_id: dict[tuple[str, str], int] = field(pytree_node=False)
@@ -54,7 +58,7 @@ class DihedralPotentialParams:
 class CMAPParams:
   """Parameters for CMAP potentials."""
 
-  energy_grids: jnp.ndarray  # (n_maps, grid_size, grid_size)
+  energy_grids: EnergyGrids  # (n_maps, grid_size, grid_size)
   torsions: list[dict[str, Any]] = field(pytree_node=False)
 
 
@@ -94,5 +98,5 @@ class GAFFNonbondedParams:
 
   # Maps GAFF atom type (e.g., "ca", "c3") -> index
   type_to_index: dict[str, int] = field(pytree_node=False)
-  sigmas: jnp.ndarray  # (n_types,) in Angstroms
-  epsilons: jnp.ndarray  # (n_types,) in kcal/mol
+  sigmas: Float[jnp.ndarray, "n_types"]  # noqa: F821, UP037
+  epsilons: Float[jnp.ndarray, "n_types"]  # noqa: F821, UP037

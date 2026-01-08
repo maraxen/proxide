@@ -9,18 +9,20 @@ This module defines the hierarchical dataclasses for atomic systems:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 from flax.struct import dataclass
 
 if TYPE_CHECKING:
-  from proxide.core.containers import Protein
+  pass
 
 from proxide.core.types import (
   AngleParams,
   Angles,
   AtomMask,
+  AtomsMask,
   AtomTypes,
   BondParams,
   Bonds,
@@ -83,28 +85,28 @@ class MolecularTopology:
   cmap_indices: CmapIndices | None = None
 
   @property
-  def protein_mask(self) -> jnp.ndarray | None:
+  def protein_mask(self) -> AtomsMask | None:
     """Boolean mask for protein atoms (molecule_type == 0)."""
     if self.molecule_type is None:
       return None
     return self.molecule_type == 0
 
   @property
-  def ligand_mask(self) -> jnp.ndarray | None:
+  def ligand_mask(self) -> AtomsMask | None:
     """Boolean mask for ligand atoms (molecule_type == 1)."""
     if self.molecule_type is None:
       return None
     return self.molecule_type == 1
 
   @property
-  def solvent_mask(self) -> jnp.ndarray | None:
+  def solvent_mask(self) -> AtomsMask | None:
     """Boolean mask for solvent atoms (molecule_type == 2)."""
     if self.molecule_type is None:
       return None
     return self.molecule_type == 2
 
   @property
-  def ion_mask(self) -> jnp.ndarray | None:
+  def ion_mask(self) -> AtomsMask | None:
     """Boolean mask for ion atoms (molecule_type == 3)."""
     if self.molecule_type is None:
       return None
