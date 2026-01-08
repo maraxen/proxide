@@ -186,7 +186,7 @@ class TestTransformsExtended(parameterized.TestCase):
         self.assertIsNotNone(p.charges)
         
         # Verify calls
-        mock_ff_loader.load_force_field_from_hub.assert_called_with("ff14SB")
+        mock_ff_loader.load_force_field.assert_called_with("ff14SB")
         mock_md.parameterize_system.assert_called_once()
 
     def test_pad_protein(self):

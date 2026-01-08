@@ -35,11 +35,11 @@ from proxide._oxidize import (  # type: ignore[unresolved-import]
   # Structure parsing
   parse_pdb,
   parse_pqr,
-  parse_structure,
   parse_trr,
   # Trajectory parsing
   parse_xtc,
 )
+from proxide.io.parsing.rust import parse_structure
 
 __all__ = [
   # Structure parsing

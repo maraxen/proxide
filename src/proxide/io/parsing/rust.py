@@ -17,7 +17,12 @@ from jaxtyping import ArrayLike
 
 from proxide import _oxidize  # type: ignore[unresolved-import]
 from proxide._oxidize import OutputSpec  # type: ignore[unresolved-import]
-from proxide.core.atomic_system import AtomicSystem
+from proxide.core.atomic_system import (
+  AtomicConstants,
+  AtomicState,
+  AtomicSystem,
+  MolecularTopology,
+)
 from proxide.core.containers import Protein
 from proxide.io.parsing.registry import ParsingError, register_parser
 
@@ -40,12 +45,31 @@ def _convert_rust_dict_to_system(data: dict) -> AtomicSystem:
   atom_names = data.get("atom_names")
 
   return AtomicSystem(
-    coordinates=jnp.array(coords),
+    topology=MolecularTopology(
+      elements=data.get("elements"),
+      atom_names=atom_names,
+      molecule_type=jnp.array(data["molecule_type"])
+      if data.get("molecule_type") is not None
+      else None,
+      residue_index=jnp.array(data["residue_index"])
+      if data.get("residue_index") is not None
+      else None,
+      chain_index=jnp.array(data["chain_index"]) if data.get("chain_index") is not None else None,
+      bonds=jnp.array(data["bonds"]) if data.get("bonds") is not None else None,
+    ),
+    state=AtomicState(
+      coordinates=jnp.array(coords),
+      box_vectors=jnp.array(data["box_vectors"]) if data.get("box_vectors") is not None else None,
+    ),
+    constants=AtomicConstants(
+      charges=jnp.array(data["charges"]) if data.get("charges") is not None else None,
+      radii=jnp.array(data["radii"]) if data.get("radii") is not None else None,
+      sigmas=jnp.array(data["sigmas"]) if data.get("sigmas") is not None else None,
+      epsilons=jnp.array(data["epsilons"]) if data.get("epsilons") is not None else None,
+    )
+    if any(k in data for k in ["charges", "radii", "sigmas", "epsilons"])
+    else None,
     atom_mask=jnp.array(mask),
-    atom_names=atom_names,
-    charges=jnp.array(data["charges"]) if data.get("charges") is not None else None,
-    radii=jnp.array(data["radii"]) if data.get("radii") is not None else None,
-    # TODO: Populate res_ids, chain_ids, etc for to_protein support
   )
 
 
@@ -143,10 +167,10 @@ def load_rust(
             if mask.sum() > 0:
               new_coords = obj.coordinates[mask]
               new_aatype = obj.aatype[mask]
-              new_res_idx = obj.residue_index[mask]
-              new_chain_idx = obj.chain_index[mask]
-              new_mask = obj.mask[mask]
-              new_seq = obj.one_hot_sequence[mask]
+              new_res_idx = obj.residue_index[mask] if obj.residue_index is not None else None
+              new_chain_idx = obj.chain_index[mask] if obj.chain_index is not None else None
+              new_mask = obj.mask[mask] if obj.mask is not None else None
+              new_seq = obj.one_hot_sequence[mask] if obj.one_hot_sequence is not None else None
 
               # Handle full_coordinates / atom_mask slicing
               if new_coords.ndim == ATOM37_DIM:

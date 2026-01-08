@@ -11,14 +11,24 @@ import jax.numpy as jnp
 
 from proxide.physics.constants import MIN_DISTANCE
 from proxide.physics.electrostatics import compute_pairwise_displacements
+from proxide.types import (
+  Array,
+  ArrayLike,
+  BackboneCoordinates,
+  BackboneEpsilons,
+  BackboneSigmas,
+  Coordinates,
+  Epsilons,
+  Sigmas,
+)
 
 
 def combine_lj_parameters(
-  sigma_i: jax.Array,
-  sigma_j: jax.Array,
-  epsilon_i: jax.Array,
-  epsilon_j: jax.Array,
-) -> tuple[jax.Array, jax.Array]:
+  sigma_i: ArrayLike,
+  sigma_j: ArrayLike,
+  epsilon_i: ArrayLike,
+  epsilon_j: ArrayLike,
+) -> tuple[Array, Array]:
   r"""Combine Lennard-Jones parameters using Lorentz-Berthelot rules.
 
   Lorentz-Berthelot combining rules:
@@ -34,13 +44,13 @@ def combine_lj_parameters(
   These are the most common combining rules in molecular mechanics.
 
   Args:
-      sigma_i (jax.Array): LJ sigma parameters for atoms i, shape (n,) or scalar.
-      sigma_j (jax.Array): LJ sigma parameters for atoms j, shape (m,) or scalar.
-      epsilon_i (jax.Array): LJ epsilon parameters for atoms i, shape (n,) or scalar.
-      epsilon_j (jax.Array): LJ epsilon parameters for atoms j, shape (m,) or scalar.
+      sigma_i: LJ sigma parameters for atoms i, shape (n,) or scalar.
+      sigma_j: LJ sigma parameters for atoms j, shape (m,) or scalar.
+      epsilon_i: LJ epsilon parameters for atoms i, shape (n,) or scalar.
+      epsilon_j: LJ epsilon parameters for atoms j, shape (m,) or scalar.
 
   Returns:
-      tuple[jax.Array, jax.Array]: Tuple of (sigma_ij, epsilon_ij) combined parameters,
+      tuple[Array, Array]: Tuple of (sigma_ij, epsilon_ij) combined parameters,
       each of shape (n, m).
 
   Example:
@@ -62,24 +72,24 @@ def combine_lj_parameters(
 
 
 def broadcast_and_combine_lj_parameters(
-  sigma_i: jax.Array,
-  sigma_j: jax.Array,
-  epsilon_i: jax.Array,
-  epsilon_j: jax.Array,
-) -> tuple[jax.Array, jax.Array]:
+  sigma_i: ArrayLike,
+  sigma_j: ArrayLike,
+  epsilon_i: ArrayLike,
+  epsilon_j: ArrayLike,
+) -> tuple[Array, Array]:
   """Broadcast 1D parameters and combine for pairwise calculations.
 
   Convenience function that handles the common pattern of broadcasting
   1D parameter arrays to 2D and combining them using Lorentz-Berthelot rules.
 
   Args:
-      sigma_i (jax.Array): LJ sigma parameters for target atoms, shape (n,).
-      sigma_j (jax.Array): LJ sigma parameters for source atoms, shape (m,).
-      epsilon_i (jax.Array): LJ epsilon parameters for target atoms, shape (n,).
-      epsilon_j (jax.Array): LJ epsilon parameters for source atoms, shape (m,).
+      sigma_i: LJ sigma parameters for target atoms, shape (n,).
+      sigma_j: LJ sigma parameters for source atoms, shape (m,).
+      epsilon_i: LJ epsilon parameters for target atoms, shape (n,).
+      epsilon_j: LJ epsilon parameters for source atoms, shape (m,).
 
   Returns:
-      tuple[jax.Array, jax.Array]: Combined (sigma_ij, epsilon_ij), both shape (n, m).
+      tuple[Array, Array]: Combined (sigma_ij, epsilon_ij), both shape (n, m).
 
   Example:
       >>> sigma_i = jnp.array([3.5, 3.0])
@@ -102,17 +112,17 @@ def broadcast_and_combine_lj_parameters(
 
 
 def clamp_distances(
-  distances: jax.Array,
+  distances: ArrayLike,
   min_distance: float = MIN_DISTANCE,
-) -> jax.Array:
+) -> Array:
   """Clamp distances to a minimum value for numerical stability.
 
   Args:
-      distances (jax.Array): Pairwise distances between atoms, shape (n, m).
-      min_distance (float): Minimum distance to clamp to.
+      distances: Pairwise distances between atoms, shape (n, m).
+      min_distance: Minimum distance to clamp to.
 
   Returns:
-      jax.Array: Clamped distances, shape (n, m).
+      Array: Clamped distances, shape (n, m).
 
   Example:
       >>> distances = jnp.array([[0.5, 1.0], [2.0, 0.1]])
@@ -125,17 +135,17 @@ def clamp_distances(
   return jnp.maximum(distances, min_distance)
 
 
-def compute_inverse_powers(r: jax.Array, sigma: jax.Array) -> tuple[jax.Array, jax.Array]:
+def compute_inverse_powers(r: ArrayLike, sigma: ArrayLike) -> tuple[Array, Array]:
   r"""Compute $(\sigma/r)^6$ and $(\sigma/r)^{12}$.
 
   Computes the inverse power terms used in the Lennard-Jones potential.
 
   Args:
-      r (jax.Array): Pairwise distances, shape (n, m).
-      sigma (jax.Array): Combined LJ sigma parameters, shape (n, m).
+      r: Pairwise distances, shape (n, m).
+      sigma: Combined LJ sigma parameters, shape (n, m).
 
   Returns:
-      tuple[jax.Array, jax.Array]: Tuple of $(\sigma/r)^6$ and $(\sigma/r)^{12}$,
+      tuple[Array, Array]: Tuple of $(\sigma/r)^6$ and $(\sigma/r)^{12}$,
           each shape (n, m).
 
   Example:
@@ -153,10 +163,10 @@ def compute_inverse_powers(r: jax.Array, sigma: jax.Array) -> tuple[jax.Array, j
 
 
 def sigma_over_r(
-  r: jax.Array,
-  sigma: jax.Array,
+  r: ArrayLike,
+  sigma: ArrayLike,
   min_distance: float = MIN_DISTANCE,
-) -> tuple[jax.Array, jax.Array, jax.Array]:
+) -> tuple[Array, Array, Array]:
   r"""Compute $(\sigma/r)^6$ and $(\sigma/r)^{12}$ with clamping for numerical stability."""
   safe_distance = clamp_distances(r, min_distance)
   sigma_6, sigma_12 = compute_inverse_powers(safe_distance, sigma)
@@ -164,18 +174,18 @@ def sigma_over_r(
 
 
 def apply_self_exclusion(
-  values: jax.Array,
+  values: ArrayLike,
   *,
   exclude_self: bool,
-) -> jax.Array:
+) -> ArrayLike:
   """Zero out diagonal elements for self-interaction exclusion.
 
   Args:
-      values (jax.Array): Pairwise values (energies or forces), shape (n, m) or (n, m, d).
-      exclude_self (bool): Whether to exclude self-interactions.
+      values: Pairwise values (energies or forces), shape (n, m) or (n, m, d).
+      exclude_self: Whether to exclude self-interactions.
 
   Returns:
-      jax.Array: Values with diagonal zeroed if exclude_self=True and matrix is square.
+      ArrayLike: Values with diagonal zeroed if exclude_self=True and matrix is square.
 
   Note:
       Only applies masking if the first two dimensions are equal (square matrix).
@@ -197,11 +207,11 @@ def apply_self_exclusion(
 
 
 def compute_lj_energy_pairwise(
-  distances: jax.Array,
-  sigma_ij: jax.Array,
-  epsilon_ij: jax.Array,
+  distances: ArrayLike,
+  sigma_ij: ArrayLike,
+  epsilon_ij: ArrayLike,
   min_distance: float = MIN_DISTANCE,
-) -> jax.Array:
+) -> Array:
   r"""Compute Lennard-Jones energy for pairwise interactions.
 
   Implements the 12-6 Lennard-Jones potential:
@@ -215,13 +225,13 @@ def compute_lj_energy_pairwise(
   and the 6th power term represents long-range attraction (dispersion).
 
   Args:
-      distances (jax.Array): Pairwise distances between atoms, shape (n, m).
-      sigma_ij (jax.Array): Combined LJ sigma parameters, shape (n, m).
-      epsilon_ij (jax.Array): Combined LJ epsilon parameters, shape (n, m).
-      min_distance (float): Minimum distance for numerical stability.
+      distances: Pairwise distances between atoms, shape (n, m).
+      sigma_ij: Combined LJ sigma parameters, shape (n, m).
+      epsilon_ij: Combined LJ epsilon parameters, shape (n, m).
+      min_distance: Minimum distance for numerical stability.
 
   Returns:
-      jax.Array: LJ energy for each pair, shape (n, m).
+      Array: LJ energy for each pair, shape (n, m).
       Energies are in the same units as epsilon (typically kcal/mol).
 
   Example:
@@ -238,11 +248,11 @@ def compute_lj_energy_pairwise(
 
 
 def compute_lj_force_magnitude_pairwise(
-  distances: jax.Array,
-  sigma_ij: jax.Array,
-  epsilon_ij: jax.Array,
+  distances: ArrayLike,
+  sigma_ij: ArrayLike,
+  epsilon_ij: ArrayLike,
   min_distance: float = MIN_DISTANCE,
-) -> jax.Array:
+) -> Array:
   r"""Compute magnitude of Lennard-Jones force for pairwise interactions.
 
   The force is the negative derivative of the LJ potential:
@@ -268,13 +278,13 @@ def compute_lj_force_magnitude_pairwise(
   Positive force = repulsive, negative force = attractive.
 
   Args:
-      distances (jax.Array): Pairwise distances between atoms, shape (n, m).
-      sigma_ij (jax.Array): Combined LJ \\sigma parameters, shape (n, m).
-      epsilon_ij (jax.Array): Combined LJ \\varepsilon parameters, shape (n, m).
-      min_distance (float): Minimum distance for numerical stability.
+      distances: Pairwise distances between atoms, shape (n, m).
+      sigma_ij: Combined LJ \\sigma parameters, shape (n, m).
+      epsilon_ij: Combined LJ \\varepsilon parameters, shape (n, m).
+      min_distance: Minimum distance for numerical stability.
 
   Returns:
-      jax.Array: Force magnitudes for each pair, shape (n, m).
+      Array: Force magnitudes for each pair, shape (n, m).
       Forces are in units of \\varepsilon/distance (e.g., kcal/mol/Å).
 
   Example:
@@ -291,16 +301,16 @@ def compute_lj_force_magnitude_pairwise(
 
 @partial(jax.jit, static_argnames=("exclude_self",))
 def compute_lj_forces(
-  displacements: jax.Array,
-  distances: jax.Array,
-  sigma_i: jax.Array,
-  sigma_j: jax.Array,
-  epsilon_i: jax.Array,
-  epsilon_j: jax.Array,
+  displacements: ArrayLike,
+  distances: ArrayLike,
+  sigma_i: ArrayLike,
+  sigma_j: ArrayLike,
+  epsilon_i: ArrayLike,
+  epsilon_j: ArrayLike,
   min_distance: float = MIN_DISTANCE,
   *,
   exclude_self: bool = False,
-) -> jax.Array:
+) -> Array:
   """Compute Lennard-Jones force vectors at target positions.
 
   Computes the total LJ force at each target position (i) due to all
@@ -308,18 +318,18 @@ def compute_lj_forces(
   the displacement.
 
   Args:
-      displacements (jax.Array): Displacement vectors from targets to sources,
+      displacements: Displacement vectors from targets to sources,
           shape (n, m, 3).
-      distances (jax.Array): Distances between targets and sources, shape (n, m).
-      sigma_i (jax.Array): LJ sigma parameters for target atoms, shape (n,).
-      sigma_j (jax.Array): LJ sigma parameters for source atoms, shape (m,).
-      epsilon_i (jax.Array): LJ epsilon parameters for target atoms, shape (n,).
-      epsilon_j (jax.Array): LJ epsilon parameters for source atoms, shape (m,).
-      min_distance (float): Minimum distance for numerical stability.
-      exclude_self (bool): If True, zero out diagonal (self-interaction) terms.
+      distances: Distances between targets and sources, shape (n, m).
+      sigma_i: LJ sigma parameters for target atoms, shape (n,).
+      sigma_j: LJ sigma parameters for source atoms, shape (m,).
+      epsilon_i: LJ epsilon parameters for target atoms, shape (n,).
+      epsilon_j: LJ epsilon parameters for source atoms, shape (m,).
+      min_distance: Minimum distance for numerical stability.
+      exclude_self: If True, zero out diagonal (self-interaction) terms.
 
   Returns:
-      jax.Array: Force vectors at each target position, shape (n, 3).
+      Array: Force vectors at each target position, shape (n, 3).
       Forces are in units of epsilon/distance (e.g., kcal/mol/Å).
 
   Example:
@@ -361,33 +371,33 @@ def compute_lj_forces(
 
 
 def compute_lj_energy_at_positions(
-  _displacements: jax.Array,
-  distances: jax.Array,
-  sigma_i: jax.Array,
-  sigma_j: jax.Array,
-  epsilon_i: jax.Array,
-  epsilon_j: jax.Array,
+  _displacements: ArrayLike,
+  distances: ArrayLike,
+  sigma_i: ArrayLike,
+  sigma_j: ArrayLike,
+  epsilon_i: ArrayLike,
+  epsilon_j: ArrayLike,
   min_distance: float = MIN_DISTANCE,
   *,
   exclude_self: bool = False,
-) -> jax.Array:
+) -> Array:
   """Compute total Lennard-Jones energy at target positions.
 
   Sums the LJ energy contributions from all source atoms to each target atom.
 
   Args:
-      displacements (jax.Array): Displacement vectors from targets to sources,
+      displacements: Displacement vectors from targets to sources,
           shape (n, m, 3).
-      distances (jax.Array): Distances between targets and sources, shape (n, m).
-      sigma_i (jax.Array): LJ sigma parameters for target atoms, shape (n,).
-      sigma_j (jax.Array): LJ sigma parameters for source atoms, shape (m,).
-      epsilon_i (jax.Array): LJ epsilon parameters for target atoms, shape (n,).
-      epsilon_j (jax.Array): LJ epsilon parameters for source atoms, shape (m,).
-      min_distance (float): Minimum distance for numerical stability.
-      exclude_self (bool): If True, zero out diagonal (self-interaction) terms.
+      distances: Distances between targets and sources, shape (n, m).
+      sigma_i: LJ sigma parameters for target atoms, shape (n,).
+      sigma_j: LJ sigma parameters for source atoms, shape (m,).
+      epsilon_i: LJ epsilon parameters for target atoms, shape (n,).
+      epsilon_j: LJ epsilon parameters for source atoms, shape (m,).
+      min_distance: Minimum distance for numerical stability.
+      exclude_self: If True, zero out diagonal (self-interaction) terms.
 
   Returns:
-      jax.Array: Total LJ energy at each target position, shape (n,).
+      Array: Total LJ energy at each target position, shape (n,).
       Energies are in the same units as epsilon (typically kcal/mol).
 
   """
@@ -408,34 +418,34 @@ def compute_lj_energy_at_positions(
 
 
 def compute_lj_forces_at_backbone(
-  backbone_positions: jax.Array,
-  all_atom_positions: jax.Array,
-  backbone_sigmas: jax.Array,
-  backbone_epsilons: jax.Array,
-  all_atom_sigmas: jax.Array,
-  all_atom_epsilons: jax.Array,
-) -> jax.Array:
+  backbone_positions: BackboneCoordinates,
+  all_atom_positions: Coordinates,
+  backbone_sigmas: BackboneSigmas,
+  backbone_epsilons: BackboneEpsilons,
+  all_atom_sigmas: Sigmas,
+  all_atom_epsilons: Epsilons,
+) -> Array:
   """Compute Lennard-Jones forces at all five backbone atoms.
 
   Computes LJ forces at N, CA, C, O, and CB atoms for each residue.
   This matches the electrostatics interface for consistency.
 
   Args:
-      backbone_positions (jax.Array): Backbone atom positions [N, CA, C, O, CB]
+      backbone_positions: Backbone atom positions [N, CA, C, O, CB]
           per residue, shape (n_residues, 5, 3).
-      all_atom_positions (jax.Array): All atom positions (including sidechains),
+      all_atom_positions: All atom positions (including sidechains),
           shape (n_atoms, 3).
-      backbone_sigmas (jax.Array): LJ sigma parameters for backbone atoms,
+      backbone_sigmas: LJ sigma parameters for backbone atoms,
           shape (n_residues, 5).
-      backbone_epsilons (jax.Array): LJ epsilon parameters for backbone atoms,
+      backbone_epsilons: LJ epsilon parameters for backbone atoms,
           shape (n_residues, 5).
-      all_atom_sigmas (jax.Array): LJ sigma parameters for all atoms,
+      all_atom_sigmas: LJ sigma parameters for all atoms,
           shape (n_atoms,).
-      all_atom_epsilons (jax.Array): LJ epsilon parameters for all atoms,
+      all_atom_epsilons: LJ epsilon parameters for all atoms,
           shape (n_atoms,).
 
   Returns:
-      jax.Array: Force vectors at backbone atoms, shape (n_residues, 5, 3).
+      Array: Force vectors at backbone atoms, shape (n_residues, 5, 3).
       Forces are in units of epsilon/distance (e.g., kcal/mol/Å).
 
   Example:
@@ -463,7 +473,7 @@ def compute_lj_forces_at_backbone(
     all_atom_positions,
   )
 
-  forces_flat = cast(Callable[..., jax.Array], compute_lj_forces)(
+  forces_flat = cast(Callable[..., Array], compute_lj_forces)(
     displacements,
     distances,
     backbone_sigmas_flat,
@@ -476,37 +486,37 @@ def compute_lj_forces_at_backbone(
 
 
 def compute_noised_lj_forces_at_backbone(
-  backbone_positions: jax.Array,
-  all_atom_positions: jax.Array,
-  backbone_sigmas: jax.Array,
-  backbone_epsilons: jax.Array,
-  all_atom_sigmas: jax.Array,
-  all_atom_epsilons: jax.Array,
-  noise_scale: float | jax.Array,
-  key: jax.Array,
-) -> jax.Array:
+  backbone_positions: BackboneCoordinates,
+  all_atom_positions: Coordinates,
+  backbone_sigmas: BackboneSigmas,
+  backbone_epsilons: BackboneEpsilons,
+  all_atom_sigmas: Sigmas,
+  all_atom_epsilons: Epsilons,
+  noise_scale: float | ArrayLike,
+  key: Array,
+) -> Array:
   """Compute Lennard-Jones forces at all five backbone atoms with Gaussian noise.
 
   Same as `compute_lj_forces_at_backbone` but adds Gaussian noise to the forces.
 
   Args:
-      backbone_positions (jax.Array): Backbone atom positions [N, CA, C, O, CB]
+      backbone_positions: Backbone atom positions [N, CA, C, O, CB]
           per residue, shape (n_residues, 5, 3).
-      all_atom_positions (jax.Array): All atom positions (including sidechains),
+      all_atom_positions: All atom positions (including sidechains),
           shape (n_atoms, 3).
-      backbone_sigmas (jax.Array): LJ sigma parameters for backbone atoms,
+      backbone_sigmas: LJ sigma parameters for backbone atoms,
           shape (n_residues, 5).
-      backbone_epsilons (jax.Array): LJ epsilon parameters for backbone atoms,
+      backbone_epsilons: LJ epsilon parameters for backbone atoms,
           shape (n_residues, 5).
-      all_atom_sigmas (jax.Array): LJ sigma parameters for all atoms,
+      all_atom_sigmas: LJ sigma parameters for all atoms,
           shape (n_atoms,).
-      all_atom_epsilons (jax.Array): LJ epsilon parameters for all atoms,
+      all_atom_epsilons: LJ epsilon parameters for all atoms,
           shape (n_atoms,).
       noise_scale: Scale of Gaussian noise to add to forces.
       key: PRNG key for noise generation (required).
 
   Returns:
-      jax.Array: Force vectors at backbone atoms, shape (n_residues, 5, 3).
+      Array: Force vectors at backbone atoms, shape (n_residues, 5, 3).
       Forces are in units of epsilon/distance (e.g., kcal/mol/Å).
 
   """
@@ -524,30 +534,30 @@ def compute_noised_lj_forces_at_backbone(
 
 
 def compute_lj_energy_at_backbone(
-  backbone_positions: jax.Array,
-  all_atom_positions: jax.Array,
-  backbone_sigmas: jax.Array,
-  backbone_epsilons: jax.Array,
-  all_atom_sigmas: jax.Array,
-  all_atom_epsilons: jax.Array,
-) -> jax.Array:
+  backbone_positions: BackboneCoordinates,
+  all_atom_positions: Coordinates,
+  backbone_sigmas: BackboneSigmas,
+  backbone_epsilons: BackboneEpsilons,
+  all_atom_sigmas: Sigmas,
+  all_atom_epsilons: Epsilons,
+) -> Array:
   """Compute total Lennard-Jones energy at all five backbone atoms.
 
   Args:
-      backbone_positions (jax.Array): Backbone atom positions [N, CA, C, O, CB]
+      backbone_positions: Backbone atom positions [N, CA, C, O, CB]
           per residue, shape (n_residues, 5, 3).
-      all_atom_positions (jax.Array): All atom positions, shape (n_atoms, 3).
-      backbone_sigmas (jax.Array): LJ sigma parameters for backbone atoms,
+      all_atom_positions: All atom positions, shape (n_atoms, 3).
+      backbone_sigmas: LJ sigma parameters for backbone atoms,
           shape (n_residues, 5).
-      backbone_epsilons (jax.Array): LJ epsilon parameters for backbone atoms,
+      backbone_epsilons: LJ epsilon parameters for backbone atoms,
           shape (n_residues, 5).
-      all_atom_sigmas (jax.Array): LJ sigma parameters for all atoms,
+      all_atom_sigmas: LJ sigma parameters for all atoms,
           shape (n_atoms,).
-      all_atom_epsilons (jax.Array): LJ epsilon parameters for all atoms,
+      all_atom_epsilons: LJ epsilon parameters for all atoms,
           shape (n_atoms,).
 
   Returns:
-      jax.Array: LJ energy at each backbone atom, shape (n_residues, 5).
+      Array: LJ energy at each backbone atom, shape (n_residues, 5).
       Energies are in the same units as epsilon (typically kcal/mol).
 
   """

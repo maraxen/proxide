@@ -43,3 +43,10 @@ dist/
 # Data
 rcsb_data/
 mdcath_data/
+
+# Rust / Maturin
+/target
+/oxidize/target
+*.so
+*.dylib
+*.dll

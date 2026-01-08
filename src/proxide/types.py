@@ -60,6 +60,9 @@ Radii = Float[ArrayLike, "num_atoms"]
 Scales = Float[ArrayLike, "num_atoms"]
 EnergyGrids = Float[ArrayLike, "n_maps grid_size grid_size"]
 CmapGrid = Float[ArrayLike, "grid_size grid_size"]
+BackboneCharges = Float[ArrayLike, "num_residues 5"]
+BackboneSigmas = Float[ArrayLike, "num_residues 5"]
+BackboneEpsilons = Float[ArrayLike, "num_residues 5"]
 
 # Topology Types
 Bonds = Int[ArrayLike, "num_bonds 2"]
@@ -87,7 +90,14 @@ UreyBradleyBonds = Int[ArrayLike, "num_ub 2"]
 UreyBradleyParams = Float[ArrayLike, "num_ub 2"]
 
 # Alignment Types
+# Alignment Types
 InterproteinMapping = Int[ArrayLike, "num_pairs max_length 2"]
+
+# Projection Types
+ForceVectors = Float[ArrayLike, "num_residues 5 3"]
+BackboneFrame = Float[ArrayLike, "4 num_residues 3"]
+ProjectedFeatures = Float[ArrayLike, "num_residues 5"]
+ProjectedFeaturesPerAtom = Float[ArrayLike, "num_residues 25"]
 
 # aliases
 PRNGKey = PRNGKeyArray

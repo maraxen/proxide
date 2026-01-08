@@ -8,7 +8,8 @@ from proxide import parse_structure, OutputSpec, CoordFormat
 
 def test_coordinate_parity_1crn():
     """Verify that Rust parsed coordinates match Biotite coordinates exactly."""
-    pdb_path = "tests/data/1uao.pdb"
+    data_dir = Path(__file__).parent.parent / "data"
+    pdb_path = str(data_dir / "1uao.pdb")
     if not Path(pdb_path).exists():
         pytest.skip(f"Test file {pdb_path} not found")
 
@@ -64,7 +65,8 @@ def test_coordinate_parity_1crn():
 
 def test_residue_identity_parity():
     """Verify residue IDs and names match."""
-    pdb_path = "tests/data/1crn.pdb"
+    data_dir = Path(__file__).parent.parent / "data"
+    pdb_path = str(data_dir / "1crn.pdb")
     
     # Biotite
     pdb_file = pdb.PDBFile.read(pdb_path)
@@ -135,7 +137,8 @@ def test_residue_identity_parity():
 
 def test_atom37_parity():
     """Verify Atom37 coordinate format."""
-    pdb_path = "tests/data/1crn.pdb"
+    data_dir = Path(__file__).parent.parent / "data"
+    pdb_path = str(data_dir / "1crn.pdb")
     if not Path(pdb_path).exists():
         pytest.skip(f"Test file {pdb_path} not found")
 
@@ -167,7 +170,8 @@ def test_atom37_parity():
 
 def test_atom14_parity():
     """Verify Atom14 coordinate format."""
-    pdb_path = "tests/data/1crn.pdb"
+    data_dir = Path(__file__).parent.parent / "data"
+    pdb_path = str(data_dir / "1crn.pdb")
     if not Path(pdb_path).exists():
         pytest.skip(f"Test file {pdb_path} not found")
 
@@ -191,7 +195,8 @@ def test_atom14_parity():
 
 def test_backbone_parity():
     """Verify Backbone coordinate format."""
-    pdb_path = "tests/data/1crn.pdb"
+    data_dir = Path(__file__).parent.parent / "data"
+    pdb_path = str(data_dir / "1crn.pdb")
     if not Path(pdb_path).exists():
         pytest.skip(f"Test file {pdb_path} not found")
 
@@ -232,7 +237,8 @@ def test_backbone_parity():
 def test_mmcif_parsing_parity():
     """Verify mmCIF parsing against Biotite (if file exists)."""
     # Look for any .cif file in tests/data
-    cif_files = list(Path("tests/data").glob("*.cif")) + list(Path("tests/data").glob("*.mmcif"))
+    data_dir = Path(__file__).parent.parent / "data"
+    cif_files = list(data_dir.glob("*.cif")) + list(data_dir.glob("*.mmcif"))
     
     if not cif_files:
         pytest.skip("No .cif/.mmcif files found in tests/data")

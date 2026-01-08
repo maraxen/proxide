@@ -162,15 +162,16 @@ def project_to_openmm_system(system: AtomicSystem, spec: OutputSpec) -> Any:
 
   """
   try:
-    from openmm import (
+    from openmm import (  # type: ignore[unresolved-import]
       HarmonicBondForce,
       NonbondedForce,
+      Platform,
       System,
     )
-    from openmm import unit as u
+    from openmm import unit as u  # type: ignore[unresolved-import]
   except ImportError as e:
     raise ImportError(
-      "OpenMM is required. Install with: conda install -c conda-forge openmm",
+      "OpenMM is required for MD parameterization. Install with: micromamba install openmm"
     ) from e
 
   import numpy as np
@@ -274,7 +275,7 @@ def project_to_openmm_topology(system: AtomicSystem, spec: OutputSpec) -> Any:
 
   """
   try:
-    from openmm.app import Element, Topology
+    from openmm.app import Element, Topology  # type: ignore[unresolved-import]
   except ImportError as e:
     raise ImportError(
       "OpenMM is required. Install with: conda install -c conda-forge openmm",

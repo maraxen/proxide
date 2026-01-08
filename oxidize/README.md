@@ -1,19 +1,16 @@
 # Oxidize
 
-**Oxidize** is the high-performance Rust extension for Proxide, providing efficient structure parsing, hydrogen addition, and MD parameterization.
+**Oxidize** is the high-performance Rust extension for Proxide, providing efficient structure parsing, hydrogen addition, and MD parameterization. It is built and distributed as part of the `proxide` package.
 
-## Features
-
-- **Fast PDB/mmCIF Parsing**: Zero-copy parsing with minimal allocations
-- **Hydrogen Addition**: Geometric H placement via fragment library with configurable source selection
-- **MD Parameterization**: Force field assignment (AMBER ff19SB, GAFF)
-- **Trajectory Support**: XTC, DCD, TRR, and HDF5 formats
-- **Coordinate Formats**: Atom37, Atom14, Full, and BackboneOnly
+> [!NOTE]
+> This directory is a subdirectory of `proxide`. Build and install from the parent directory using `maturin develop` or `uv pip install .`
 
 ## Building
 
+From the `proxide` root directory:
+
 ```bash
-cd oxidize
+cd proxide
 maturin develop --release
 ```
 
