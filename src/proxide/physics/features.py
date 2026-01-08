@@ -24,7 +24,12 @@ if TYPE_CHECKING:
   from jaxtyping import Array, Float
 
   from proxide.core.containers import Protein
-  from proxide.types import ArrayLike, NodeFeatures, PRNGKey
+  from proxide.types import (
+    ArrayLike,
+    Float,
+    NodeFeatures,
+    PRNGKey,
+  )
 
 
 def _resolve_sigma(

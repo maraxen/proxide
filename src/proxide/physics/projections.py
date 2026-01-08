@@ -6,11 +6,20 @@ import jax
 import jax.numpy as jnp
 
 from proxide.chem.ordering import C_INDEX, CA_INDEX, CB_PDB_INDEX, N_INDEX
+from proxide.types import (
+  Array,
+  ArrayLike,
+  BackboneCoordinates,
+  BackboneFrame,
+  ForceVectors,
+  ProjectedFeatures,
+  ProjectedFeaturesPerAtom,
+)
 
 
 def compute_backbone_frame(
-  backbone_positions: jax.Array,
-) -> jax.Array:
+  backbone_positions: BackboneCoordinates,
+) -> BackboneFrame:
   """Compute local backbone coordinate frame for each residue.
 
   Defines four important unit vectors per residue:
@@ -40,20 +49,20 @@ def compute_backbone_frame(
 
   """
 
-  def get_atom(index: int) -> jax.Array:
+  def get_atom(index: int) -> ArrayLike:
     return backbone_positions[:, index, :]
 
-  def get_bond_vector(index_from: int, index_to: int) -> jax.Array:
+  def get_bond_vector(index_from: int, index_to: int) -> ArrayLike:
     return get_atom(index_to) - get_atom(index_from)
 
-  def normalize_bond_vector(vector: jax.Array) -> jax.Array:
+  def normalize_bond_vector(vector: ArrayLike) -> Array:
     norm = jnp.linalg.norm(vector, axis=-1, keepdims=True)
     return vector / norm
 
   def get_normal_plane_vector(
-    forward: jax.Array,
-    backward: jax.Array,
-  ) -> jax.Array:
+    forward: ArrayLike,
+    backward: ArrayLike,
+  ) -> Array:
     cross_product = jnp.cross(forward, backward, axis=-1)
     normal_norm = jnp.linalg.norm(cross_product, axis=-1, keepdims=True)
     forward_norm = jnp.linalg.norm(forward, axis=-1, keepdims=True)
@@ -72,10 +81,10 @@ def compute_backbone_frame(
 
 
 def project_forces_onto_backbone(
-  force_vectors: jax.Array,
-  backbone_positions: jax.Array,
+  force_vectors: ForceVectors,
+  backbone_positions: BackboneCoordinates,
   aggregation: str = "mean",
-) -> jax.Array:
+) -> ProjectedFeatures:
   """Project force vectors onto local backbone geometry.
 
   Computes five SE(3)-equivariant scalar features per residue by:
@@ -125,7 +134,7 @@ def project_forces_onto_backbone(
     backbone_positions,
   )
 
-  def project_residue(agg_force: jax.Array, residue_frames: jax.Array) -> jax.Array:
+  def project_residue(agg_force: ArrayLike, residue_frames: ArrayLike) -> Array:
     """Project aggregated force for one residue onto its 4 frame vectors.
 
     Args:
@@ -144,9 +153,9 @@ def project_forces_onto_backbone(
 
 
 def project_forces_onto_backbone_per_atom(
-  force_vectors: jax.Array,
-  backbone_positions: jax.Array,
-) -> jax.Array:
+  force_vectors: ForceVectors,
+  backbone_positions: BackboneCoordinates,
+) -> ProjectedFeaturesPerAtom:
   """Project forces at each backbone atom onto local frame (alternative approach).
 
   Projects forces at N, CA, C, O, CB separately onto the backbone frame.
@@ -169,7 +178,7 @@ def project_forces_onto_backbone_per_atom(
   """
   frames = compute_backbone_frame(backbone_positions)
 
-  def project_per_residue(force_vector: jax.Array, residue_frames: jax.Array) -> jax.Array:
+  def project_per_residue(force_vector: ArrayLike, residue_frames: ArrayLike) -> Array:
     """Project each backbone atom's force onto all frame vectors.
 
     Args:

@@ -17,7 +17,8 @@ def test_hydrogen_counts():
     # Create a peptide with all 20 amino acids
     # Using a known structure or constructing one would be better, 
     # but for now let's use a simple alignment test on 1CRN
-    pdb_path = "tests/data/1crn.pdb"
+    data_dir = Path(__file__).parent.parent / "data"
+    pdb_path = str(data_dir / "1crn.pdb")
     if not Path(pdb_path).exists():
         pytest.skip(f"Test file {pdb_path} not found")
         
@@ -101,7 +102,8 @@ def test_hydrogen_counts():
 
 def test_bond_lengths_geometry():
     """Check bond lengths of added hydrogens."""
-    pdb_path = "tests/data/1crn.pdb"
+    data_dir = Path(__file__).parent.parent / "data"
+    pdb_path = str(data_dir / "1crn.pdb")
     if not Path(pdb_path).exists():
         pytest.skip(f"Test file {pdb_path} not found")
 
@@ -180,7 +182,8 @@ def test_bond_lengths_geometry():
 
 def test_relaxation_consistency():
     """Verify relaxation produces valid structures."""
-    pdb_path = "tests/data/1crn.pdb"
+    data_dir = Path(__file__).parent.parent / "data"
+    pdb_path = str(data_dir / "1crn.pdb")
     
     # 1. Add H without relax
     spec_raw = OutputSpec(add_hydrogens=True, relax_hydrogens=False, coord_format=CoordFormat.Full)

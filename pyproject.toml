@@ -37,6 +37,7 @@ trajectories = [
     "mdtraj",
     "h5py",
     "biotite",
+    "tables",
 ]
 foldcomp = [
     "foldcomp",

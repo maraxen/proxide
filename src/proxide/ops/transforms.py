@@ -12,6 +12,7 @@ from typing import Any, TypeVar
 
 import jax
 import numpy as np
+from jaxtyping import ArrayLike
 
 from proxide import md
 from proxide.chem import residues as residue_constants
@@ -428,7 +429,7 @@ def _pad_protein(  # noqa: C901
     raise ValueError(msg)
 
   # Helper for residue-level padding (dim 0 = n_residues)
-  def pad_residue_array(arr: np.ndarray | None) -> np.ndarray | None:
+  def pad_residue_array(arr: ArrayLike | None) -> np.ndarray | None:
     if arr is None:
       return None
     arr = np.asarray(arr)
@@ -727,20 +728,33 @@ def _protein_batch_to_mpnn_batch(batch: Protein) -> MPNNBatch:
   """
   import jax.numpy as jnp
 
+  mask = jnp.asarray(batch.mask)
+  batch_size, n_res = mask.shape
+
+  rbf = batch.rbf_features
+  if rbf is not None:
+    rbf = jnp.asarray(rbf)
+  else:
+    rbf = jnp.zeros((batch_size, n_res, 30, 400))
+
+  neighbor_indices = batch.neighbor_indices
+  if neighbor_indices is not None:
+    neighbor_indices = jnp.asarray(neighbor_indices)
+  else:
+    neighbor_indices = jnp.zeros((batch_size, n_res, 30), dtype=jnp.int32)
+
+  phys = batch.physics_features
+  if phys is not None:
+    phys = jnp.asarray(phys)
+
   return MPNNBatch(
     aatype=jnp.asarray(batch.aatype),
     residue_index=jnp.asarray(batch.residue_index),
     chain_index=jnp.asarray(batch.chain_index),
-    mask=jnp.asarray(batch.mask),
-    rbf_features=jnp.asarray(batch.rbf_features)
-    if batch.rbf_features is not None
-    else jnp.zeros((batch.mask.shape[0], batch.mask.shape[1], 30, 400)),
-    neighbor_indices=jnp.asarray(batch.neighbor_indices)
-    if batch.neighbor_indices is not None
-    else jnp.zeros((batch.mask.shape[0], batch.mask.shape[1], 30), dtype=jnp.int32),
-    physics_features=jnp.asarray(batch.physics_features)
-    if batch.physics_features is not None
-    else None,
+    mask=mask,
+    rbf_features=rbf,
+    neighbor_indices=neighbor_indices,
+    physics_features=phys,
   )
 
 

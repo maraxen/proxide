@@ -11,12 +11,20 @@ import jax.numpy as jnp
 from jax_md import space
 
 from proxide.physics.constants import COULOMB_CONSTANT, MIN_DISTANCE
+from proxide.types import (
+  Array,
+  ArrayLike,
+  BackboneCharges,
+  BackboneCoordinates,
+  Charges,
+  Coordinates,
+)
 
 
 def compute_pairwise_displacements(
-  positions1: jax.Array,
-  positions2: jax.Array,
-) -> tuple[jax.Array, jax.Array]:
+  positions1: ArrayLike,
+  positions2: ArrayLike,
+) -> tuple[Array, Array]:
   """Compute pairwise displacements and distances between two sets of positions.
 
   Args:
@@ -45,15 +53,15 @@ def compute_pairwise_displacements(
 
 
 def compute_coulomb_potential(
-  target_positions: jax.Array,
-  source_positions: jax.Array,
-  target_charges: jax.Array,
-  source_charges: jax.Array,
+  target_positions: ArrayLike,
+  source_positions: ArrayLike,
+  target_charges: ArrayLike,
+  source_charges: ArrayLike,
   coulomb_constant: float = COULOMB_CONSTANT,
   min_distance: float = MIN_DISTANCE,
   *,
   exclude_self: bool = True,
-) -> jax.Array:
+) -> Array:
   """Compute total Coulomb potential energy: U = sum_i sum_j (k * q_i * q_j / r_ij).
 
   Args:
@@ -82,15 +90,15 @@ def compute_coulomb_potential(
 
 
 def compute_coulomb_forces_from_positions(
-  target_positions: jax.Array,
-  source_positions: jax.Array,
-  target_charges: jax.Array,
-  source_charges: jax.Array,
+  target_positions: ArrayLike,
+  source_positions: ArrayLike,
+  target_charges: ArrayLike,
+  source_charges: ArrayLike,
   coulomb_constant: float = COULOMB_CONSTANT,
   min_distance: float = MIN_DISTANCE,
   *,
   exclude_self: bool = True,
-) -> jax.Array:
+) -> Array:
   """Compute Coulomb forces as F_i = -∇_i U via automatic differentiation.
 
   Args:
@@ -122,15 +130,15 @@ def compute_coulomb_forces_from_positions(
 
 @partial(jax.jit, static_argnames=("exclude_self",))
 def compute_coulomb_forces(
-  displacements: jax.Array,
-  distances: jax.Array,
-  target_charges: jax.Array,
-  source_charges: jax.Array,
+  displacements: ArrayLike,
+  distances: ArrayLike,
+  target_charges: ArrayLike,
+  source_charges: ArrayLike,
   coulomb_constant: float = COULOMB_CONSTANT,
   min_distance: float = MIN_DISTANCE,
   *,
   exclude_self: bool = True,
-) -> jax.Array:
+) -> Array:
   """Compute Coulomb force vectors (manual calculation equivalent to -∇U).
 
   This function maintains backward compatibility with the existing API that takes
@@ -174,12 +182,12 @@ def compute_coulomb_forces(
 
 
 def compute_coulomb_forces_at_backbone(
-  backbone_positions: jax.Array,
-  all_atom_positions: jax.Array,
-  backbone_charges: jax.Array,
-  all_atom_charges: jax.Array,
+  backbone_positions: BackboneCoordinates,
+  all_atom_positions: Coordinates,
+  backbone_charges: BackboneCharges,
+  all_atom_charges: Charges,
   coulomb_constant: float = COULOMB_CONSTANT,
-) -> jax.Array:
+) -> Array:
   """Compute Coulomb forces at all five backbone atoms from all charges.
 
   Computes electrostatic forces at N, CA, C, O, and CB atoms for each residue.
@@ -228,7 +236,7 @@ def compute_coulomb_forces_at_backbone(
     all_atom_positions,
   )
 
-  forces_flat = cast(Callable[..., jax.Array], compute_coulomb_forces)(
+  forces_flat = cast(Callable[..., Array], compute_coulomb_forces)(
     displacements,
     distances,
     backbone_charges_flat,
@@ -241,14 +249,14 @@ def compute_coulomb_forces_at_backbone(
 
 
 def compute_noised_coulomb_forces_at_backbone(
-  backbone_positions: jax.Array,
-  all_atom_positions: jax.Array,
-  backbone_charges: jax.Array,
-  all_atom_charges: jax.Array,
-  noise_scale: float | jax.Array,
-  key: jax.Array,
+  backbone_positions: BackboneCoordinates,
+  all_atom_positions: Coordinates,
+  backbone_charges: BackboneCharges,
+  all_atom_charges: Charges,
+  noise_scale: float | ArrayLike,
+  key: Array,
   coulomb_constant: float = COULOMB_CONSTANT,
-) -> jax.Array:
+) -> Array:
   """Compute Coulomb forces at backbone atoms with Gaussian noise.
 
   Same as `compute_coulomb_forces_at_backbone` but adds Gaussian noise

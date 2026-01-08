@@ -184,7 +184,7 @@ class TestParseInput:
             tmp.write("hello")
             filepath = tmp.name
 
-        regex = r"Unsupported file format: None"
+        regex = r"Failed to infer file format for: .*"
         with pytest.raises(FormatNotSupportedError, match=regex):
             list(parse_input(filepath))
         pathlib.Path(filepath).unlink()

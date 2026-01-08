@@ -367,8 +367,8 @@ def needleman_wunsch_alignment(unroll_factor: int = 2, *, batch: bool = True) ->
   ninf = -1e30
 
   def prepare_rotated_data(
-    score_matrix: jax.Array,
-    masks: tuple[jax.Array, jax.Array],
+    score_matrix: ArrayLike,
+    masks: tuple[ArrayLike, ArrayLike],
     gap_penalty: float,
   ) -> dict:
     """Prepare the rotated data structure for Needleman-Wunsch alignment."""
