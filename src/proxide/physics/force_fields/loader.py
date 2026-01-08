@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -22,6 +22,9 @@ from proxide.physics.force_fields.components import (
   UreyBradleyParams,
   VirtualSiteParams,
 )
+
+if TYPE_CHECKING:
+  from proxide.types import Charges, EnergyGrids, Epsilons, Radii, Scales, Sigmas
 
 
 @dataclass(frozen=True)
@@ -53,27 +56,27 @@ class FullForceField:
   # --- Backward Compatibility Properties ---
 
   @property
-  def charges_by_id(self) -> jnp.ndarray:
+  def charges_by_id(self) -> Charges:
     return self.atom_params.charges
 
   @property
-  def sigmas_by_id(self) -> jnp.ndarray:
+  def sigmas_by_id(self) -> Sigmas:
     return self.atom_params.sigmas
 
   @property
-  def epsilons_by_id(self) -> jnp.ndarray:
+  def epsilons_by_id(self) -> Epsilons:
     return self.atom_params.epsilons
 
   @property
-  def radii_by_id(self) -> jnp.ndarray:
+  def radii_by_id(self) -> Radii:
     return self.atom_params.radii
 
   @property
-  def scales_by_id(self) -> jnp.ndarray:
+  def scales_by_id(self) -> Scales:
     return self.atom_params.scales
 
   @property
-  def cmap_energy_grids(self) -> jnp.ndarray:
+  def cmap_energy_grids(self) -> EnergyGrids:
     return self.cmap_params.energy_grids
 
   @property

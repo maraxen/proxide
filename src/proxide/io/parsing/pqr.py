@@ -6,7 +6,6 @@ used for electrostatics calculations (Poisson-Boltzmann, etc).
 """
 
 import logging
-import dataclasses
 import pathlib
 from collections.abc import Generator, Sequence
 from typing import IO, Any

@@ -63,26 +63,25 @@ def none_or_numpy(array: np.ndarray | None) -> np.ndarray | None:
 class Protein:
   """Residue-level protein structure representation.
 
-  This is the Atom37 format used by AlphaFold and related tools.
-  Each residue has up to 37 atom positions.
-
-  Note:
-    This class is separate from AtomicSystem (per-atom) by design.
-    For training, use MPNNBatch which contains pre-computed features.
-    For MD simulation, use AtomicSystem.
+  This class represents a protein structure in the 'Atom37' format (N_res, 37, 3),
+  commonly used in AlphaFold and protein design models. It also serves as a container
+  for derived features like physics parameters and geometric graphs.
 
   Attributes:
-    coordinates: Atom positions. Shape (N_res, 37, 3) for Atom37.
+    coordinates: Atom positions in Atom37 format. Shape (N_res, 37, 3).
     aatype: Amino acid type per residue (0-20). Shape (N_res,).
-    one_hot_sequence: One-hot encoded sequence. Shape (N_res, 21).
-    mask: Alpha carbon presence mask. Shape (N_res,).
     residue_index: PDB residue numbering. Shape (N_res,).
-    chain_index: Chain identifier per residue. Shape (N_res,).
+    chain_index: Chain identifier per residue (integer encoded). Shape (N_res,).
+    one_hot_sequence: One-hot encoded sequence. Shape (N_res, 21).
+    mask: Alpha carbon presence mask (1.0 for valid, 0.0 for padding). Shape (N_res,).
     atom_mask: Per-atom validity mask. Shape (N_res, 37).
-    dihedrals: Backbone dihedral angles. Shape (N_res, 3).
-    rbf_features: Pre-computed RBF features. Shape (N_res, K, F).
-    physics_features: Pre-computed physics features. Shape (N_res, F).
-    neighbor_indices: K-nearest neighbor indices. Shape (N_res, K).
+    dihedrals: Backbone dihedral angles (phi, psi, omega). Shape (N_res, 3).
+    rbf_features: Pre-computed Radial Basis Function features. Shape (N_res, K, F).
+    physics_features: Pre-computed physics/chemistry features. Shape (N_res, F).
+    neighbor_indices: Indices of K-nearest neighbors. Shape (N_res, K).
+    charges: Partial charges for MD (if parameterized). Shape (N_atoms,) or (N_res, 37).
+    sigmas: Lennard-Jones sigma parameters. Shape (N_atoms,) or (N_res, 37).
+    epsilons: Lennard-Jones epsilon parameters. Shape (N_atoms,) or (N_res, 37).
 
   """
 
@@ -139,16 +138,27 @@ class Protein:
   ) -> Protein:
     """Create a Protein instance directly from Rust parser output dictionary.
 
-    This is the preferred method when using the Rust parser, as it avoids
-    creating an intermediate ProteinTuple.
+    This method converts the dictionary output from `oxidize.parse_structure` into
+    a `Protein` dataclass, handling type conversion (JAX/NumPy), reshaping for Atom37,
+    and unit scaling for physics parameters.
+
+    Process:
+        1.  **Detection**: Determine format (Atom37 vs Flat) based on coordinate shape.
+        2.  **Conversion**: Convert all arrays to JAX or NumPy based on `use_jax`.
+        3.  **Scaling**: Convert units from MD standard (nm, kJ/mol) to Angstroms/kcal/mol.
+            -   Length: nm -> Angstrom (x10)
+            -   Energy: kJ/mol -> kcal/mol (x0.239)
+        4.  **Reshaping**: If Atom37, reshape coordinates (N, 37, 3) and masks.
+        5.  **Construction**: Populate the dataclass fields.
 
     Args:
-        rust_dict: Dictionary returned by oxidize.parse_structure()
-        source: Optional source file path for metadata
-        use_jax: If True, convert arrays to JAX arrays. If False, use NumPy.
+        rust_dict: Dictionary returned by `oxidize.parse_structure()`.
+        source: Optional source identifier (e.g., filename) for metadata.
+        use_jax: If True, convert arrays to `jax.numpy` arrays.
+                 If False, use `numpy` arrays.
 
     Returns:
-        Protein: The protein dataclass instance.
+        A formatted `Protein` dataclass instance.
 
     """
     num_residues = len(rust_dict["aatype"])
@@ -294,7 +304,6 @@ class Protein:
 
 
 # Keep AtomicSystem import for backward compat type hints
-from proxide.core.atomic_system import AtomicSystem  # noqa: E402
 
 ProteinStream = Generator[Protein, None, None]
 """Generator yielding Protein instances."""

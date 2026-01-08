@@ -1,137 +1,131 @@
-"""Type definitions for the PrxteinMPNN project."""
+"""Legacy type definitions for proxide, now redirected to proxide.types."""
 
 from __future__ import annotations
 
-from typing import Any
-
-from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, PyTree
-from optax import GradientTransformation
-
-NodeFeatures = Float[Array, "num_atoms num_features"]  # Node features
-EdgeFeatures = Float[Array, "num_atoms num_neighbors num_features"]  # Edge features
-Message = Float[Array, "num_atoms num_neighbors num_features"]  # Message passing features
-AtomicCoordinate = Float[Array, "3"]  # Atomic coordinates (x, y, z)
-NeighborIndices = Int[Array, "num_atoms num_neighbors"]  # Indices of neighboring nodes
-BackboneCoordinates = Float[AtomicCoordinate, "4 3"]  # Residue coordinates (x, y, z)
-StructureAtomicCoordinates = Float[
-  Array,
-  "num_residues num_atoms 3",
-]  # Atomic coordinates of the structure
-AtomMask = Int[Array, "num_residues num_atoms"]  # Masks for atoms in the structure
-AtomResidueIndex = Int[Array, "num_residues num_atoms"]  # Residue indices for atoms
-AtomChainIndex = Int[Array, "num_residues num_atoms"]  # Chain indices for atoms
-Parameters = Float[Array, "num_parameters"]  # Model parameters
-ModelParameters = PyTree[str, "P"]
-Model = Any | ModelParameters
-AlphaCarbonDistance = Float[Array, "num_atoms num_atoms"]  # Distances between alpha carbon atoms
-Distances = Float[Array, "num_atoms num_neighbors"]  # Distances between nodes
-AtomIndexPair = Int[Array, "2"]  # Pairs of atom indices for edges
-AttentionMask = Bool[Array, "num_atoms num_atoms"]  # Attention mask for nodes
-Logits = Float[Array, "num_residues num_classes"]  # Logits for classification
-DecodingOrder = Int[Array, "num_residues"]  # Order of residues for autoregressive decoding
-ProteinSequence = Int[Array, "num_residues"]  # Sequence of residues
-OneHotProteinSequence = Float[Array, "num_residues num_classes"]  # One-hot encoded protein sequence
-NodeEdgeFeatures = Float[
-  Array,
-  "num_atoms num_neighbors num_features",
-]  # Combined node and edge features
-SequenceEdgeFeatures = Float[
-  Array,
-  "num_residues num_neighbors num_features",
-]  # Sequence edge features
-AutoRegressiveMask = Bool[Array, "num_residues num_residues"]  # Mask for autoregressive decoding
-InputBias = Float[Array, "num_residues num_classes"]  # Input bias for classification
-InputLengths = Int[Array, "num_sequences"]  # Lengths of input sequences
-BFactors = Float[Array, "num_residues num_atom_types"]  # B-factors for residues
-ResidueIndex = Int[Array, "num_residues"]  # Index of residues in the structure
-ChainIndex = Int[Array, "num_residues"]  # Index of chains in the structure
-
-DecodingOrderInputs = tuple[PRNGKeyArray, int]
-DecodingOrderOutputs = tuple[DecodingOrder, PRNGKeyArray]
-CEELoss = Float[Array, ""]  # Cross-entropy loss
-SamplingHyperparameters = tuple[float | int | Array | GradientTransformation, ...]
-
-AlphaCarbonMask = Int[Array, "num_residues"]
-BackboneDihedrals = Float[Array, "num_residues 3"]  # Dihedral angles for backbone atoms
-BackboneNoise = Float[Array, "n"]  # Noise added to backbone coordinates
-BackboneAtomCoordinates = Float[Array, "num_residues 4 3"]  # Backbone atom coordinates
-
-Temperature = Float[Array, ""]  # Temperature for sampling
-CategoricalJacobian = Float[Array, "num_residues num_classes num_residues num_classes"]
-InterproteinMapping = Int[Array, "num_pairs max_length 2"]  # Mapping between protein pairs
-
-EnsembleData = (
-  Float[Array, "num_samples num_features"] | Float[Array, "n_batches n_samples n_features"]
+from proxide.types import (
+  AngleParams,
+  Angles,
+  AtomMask,
+  AtomsMask,
+  AtomTypes,
+  BackboneDihedrals,
+  BackboneIndices,
+  BondParams,
+  Bonds,
+  BoxVectors,
+  ChainIndex,
+  Charges,
+  CmapCoeffs,
+  CmapGrid,
+  CmapIndices,
+  CmapTorsions,
+  ConstrainedBondLengths,
+  ConstrainedBonds,
+  Coordinates,
+  DihedralParams,
+  Dihedrals,
+  DistanceMatrix,
+  EdgeFeatures,
+  Elements,
+  EnergyGrids,
+  Epsilons,
+  ExclusionMask,
+  ImproperParams,
+  Impropers,
+  InterproteinMapping,
+  Logits,
+  Masses,
+  ModelParameters,
+  MoleculeType,
+  NeighborIndices,
+  NodeEdgeFeatures,
+  NodeFeatures,
+  OneHotProteinSequence,
+  Parameters,
+  PerAtomChainIndex,
+  PerAtomResidueIndex,
+  PhysicsFeatures,
+  ProperDihedrals,
+  ProteinSequence,
+  PyTree,
+  Radii,
+  RBFFeatures,
+  ResidueAtomsCoordinates,
+  ResidueAtomsMask,
+  ResidueIndex,
+  ResidueMask,
+  Scalar,
+  ScalarFloat,
+  ScaleMatrix,
+  ScoreMatrix,
+  Sigmas,
+  UreyBradleyBonds,
+  UreyBradleyParams,
+  Velocities,
+  VirtualSiteDef,
+  VirtualSiteParams,
 )
-Centroids = Float[Array, "num_clusters num_features"]
-Labels = Int[Array, "num_samples"]
 
-Means = Float[Array, "n_components n_features"]
-Covariances = Float[Array, "n_components n_features n_features"]
-Weights = Float[Array, "n_components"]
-Responsibilities = Float[Array, "n_samples n_components"]
-Converged = Bool[Array, ""]
-LogLikelihood = Float[Array, ""]
-ComponentCounts = Int[Array, "n_components"]
-BIC = Float[Array, ""]
-PCAInputData = Float[Array, "num_samples num_features"]
-
-
-class TrainingMetrics(dict):
-  """Dictionary containing training metrics."""
-
-  loss: float
-  accuracy: float
-  perplexity: float
-  learning_rate: float
-
-
-# Missing types added
-Coordinates = Float[Array, "num_atoms 3"]
-# Elements = list[str]
-# Defined as Any typically or list, but AtomicSystem uses Any | None currently for elements
-Elements = Any
-MoleculeType = Int[Array, "num_atoms"]
-AtomTypes = Any  # list[str]
-Bonds = Int[Array, "num_bonds 2"]
-ProperDihedrals = Int[Array, "num_dihedrals 4"]
-Impropers = Int[Array, "num_impropers 4"]
-BondParams = Float[Array, "num_bonds 2"]
-AngleParams = Float[Array, "num_angles 2"]
-DihedralParams = Float[Array, "num_dihedrals 3"]
-ImproperParams = Float[Array, "num_impropers 3"]
-CmapIndices = Int[Array, "num_cmap 5"]
-CmapGrid = Float[Array, "grid_size grid_size"]
-Charges = Float[Array, "num_atoms"]
-Sigmas = Float[Array, "num_atoms"]
-Epsilons = Float[Array, "num_atoms"]
-Radii = Float[Array, "num_atoms"]
-
-# Per-atom topology types (for hierarchical AtomicSystem)
-PerAtomResidueIndex = Int[Array, "num_atoms"]
-"""Per-atom residue index. Shape (N_atoms,). Value is -1 for non-protein atoms."""
-
-PerAtomChainIndex = Int[Array, "num_atoms"]
-"""Per-atom chain index. Shape (N_atoms,). Value is -1 for non-protein atoms."""
-
-Masses = Float[Array, "num_atoms"]
-"""Per-atom masses in amu. Shape (N_atoms,)."""
-
-BoxVectors = Float[Array, "3 3"]
-"""Periodic box vectors. Shape (3, 3)."""
-
-Velocities = Float[Array, "num_atoms 3"]
-"""Per-atom velocities. Shape (N_atoms, 3)."""
-
-# MPNNBatch types (per-residue, training-ready)
-RBFFeatures = Float[Array, "num_residues num_neighbors num_rbf_features"]
-"""RBF distance features. Shape (N_res, K, F)."""
-
-PhysicsFeatures = Float[Array, "num_residues num_physics_features"]
-"""Combined physics features (electrostatics, vdW). Shape (N_res, F_phys)."""
-
-ResidueMask = Float[Array, "num_residues"]
-"""Per-residue validity mask. Shape (N_res,). 1.0=valid, 0.0=padding."""
-
-Angles = Int[Array, "num_angles 3"]
-"""Angle atom index triplets. Shape (N_angles, 3)."""
+__all__ = [
+  "AngleParams",
+  "Angles",
+  "AtomMask",
+  "AtomsMask",
+  "AtomTypes",
+  "BackboneDihedrals",
+  "BackboneIndices",
+  "BondParams",
+  "Bonds",
+  "BoxVectors",
+  "ChainIndex",
+  "Charges",
+  "CmapCoeffs",
+  "CmapGrid",
+  "CmapIndices",
+  "CmapTorsions",
+  "ConstrainedBondLengths",
+  "ConstrainedBonds",
+  "Coordinates",
+  "DihedralParams",
+  "Dihedrals",
+  "DistanceMatrix",
+  "EdgeFeatures",
+  "Elements",
+  "EnergyGrids",
+  "Epsilons",
+  "ExclusionMask",
+  "ImproperParams",
+  "Impropers",
+  "InterproteinMapping",
+  "Logits",
+  "Masses",
+  "ModelParameters",
+  "MoleculeType",
+  "NeighborIndices",
+  "NodeEdgeFeatures",
+  "NodeFeatures",
+  "OneHotProteinSequence",
+  "Parameters",
+  "PerAtomChainIndex",
+  "PerAtomResidueIndex",
+  "PhysicsFeatures",
+  "ProperDihedrals",
+  "ProteinSequence",
+  "PyTree",
+  "Radii",
+  "RBFFeatures",
+  "ResidueAtomsCoordinates",
+  "ResidueAtomsMask",
+  "ResidueIndex",
+  "ResidueMask",
+  "Scalar",
+  "ScalarFloat",
+  "ScaleMatrix",
+  "ScoreMatrix",
+  "Sigmas",
+  "UreyBradleyBonds",
+  "UreyBradleyParams",
+  "Velocities",
+  "VirtualSiteDef",
+  "VirtualSiteParams",
+]

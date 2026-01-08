@@ -7,8 +7,8 @@ import warnings
 from functools import cache
 from typing import TYPE_CHECKING, Any, Literal
 
-import numpy as np
 import jax.numpy as jnp
+import numpy as np
 
 from proxide.chem.conversion import string_to_protein_sequence
 from proxide.chem.residues import atom_order

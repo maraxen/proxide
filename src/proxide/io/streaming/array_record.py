@@ -1,19 +1,17 @@
 """Grain data source for loading preprocessed array_record files with physics features."""
 
 from __future__ import annotations
-from collections.abc import Sequence
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, SupportsIndex
 
 import grain.python as grain
+import jax.numpy as jnp
 import msgpack
 import msgpack_numpy as m
-import jax.numpy as jnp
-import numpy as np
 from array_record.python.array_record_module import (  # type: ignore[unresolved-import]
   ArrayRecordReader,
 )

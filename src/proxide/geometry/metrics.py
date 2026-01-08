@@ -11,10 +11,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-  import jax.numpy as jnp
+
+  from proxide.types import (
+    Coordinates,
+    DistanceMatrix,
+    Logits,
+    ResidueAtomsCoordinates,
+    ResidueAtomsMask,
+    ScalarFloat,
+  )
 
 
-def calculate_ca_distance_matrix(coordinates: jnp.ndarray) -> jnp.ndarray:
+def calculate_ca_distance_matrix(coordinates: Coordinates) -> DistanceMatrix:
   """Calculate pairwise distance matrix between C-alpha atoms.
 
   Computes the Euclidean distance between all pairs of C-alpha atoms in the
@@ -47,7 +55,7 @@ def calculate_ca_distance_matrix(coordinates: jnp.ndarray) -> jnp.ndarray:
   raise NotImplementedError(msg)
 
 
-def calculate_cb_distance_matrix(coordinates: jnp.ndarray) -> jnp.ndarray:
+def calculate_cb_distance_matrix(coordinates: Coordinates) -> DistanceMatrix:
   """Calculate pairwise distance matrix between C-beta atoms.
 
   Computes the Euclidean distance between all pairs of C-beta atoms (or C-alpha
@@ -80,9 +88,9 @@ def calculate_cb_distance_matrix(coordinates: jnp.ndarray) -> jnp.ndarray:
 
 
 def calculate_closest_atom_distance_matrix(
-  coordinates: jnp.ndarray,
-  atom_mask: jnp.ndarray,
-) -> jnp.ndarray:
+  coordinates: ResidueAtomsCoordinates,
+  atom_mask: ResidueAtomsMask,
+) -> DistanceMatrix:
   """Calculate pairwise distance matrix using closest atoms between residues.
 
   For each pair of residues, computes the minimum distance between any pair of
@@ -119,11 +127,11 @@ def calculate_closest_atom_distance_matrix(
 
 
 def calculate_rmsd(
-  coordinates1: jnp.ndarray,
-  coordinates2: jnp.ndarray,
+  coordinates1: Coordinates,
+  coordinates2: Coordinates,
   *,
   align: bool = True,
-) -> float:
+) -> ScalarFloat:
   """Calculate root-mean-square deviation (RMSD) between two structures.
 
   Computes the RMSD between corresponding atoms in two protein structures.
@@ -157,10 +165,10 @@ def calculate_rmsd(
 
 
 def calculate_tm_score(
-  coordinates1: jnp.ndarray,
-  coordinates2: jnp.ndarray,
+  coordinates1: Coordinates,
+  coordinates2: Coordinates,
   sequence_length: int,
-) -> float:
+) -> ScalarFloat:
   """Calculate TM-score between two protein structures.
 
   TM-score is a metric for measuring the similarity of protein structures.
@@ -195,9 +203,9 @@ def calculate_tm_score(
 
 
 def calculate_cosine_similarity(
-  features1: jnp.ndarray,
-  features2: jnp.ndarray,
-) -> float:
+  features1: Logits,
+  features2: Logits,
+) -> ScalarFloat:
   """Calculate cosine similarity between two feature vectors.
 
   Computes the cosine of the angle between two feature vectors, providing a

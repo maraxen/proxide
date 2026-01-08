@@ -7,7 +7,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
   from collections.abc import Callable
 
-  from proxide.core.types import OneHotProteinSequence, ProteinSequence
+  from jaxtyping import Bool
+
+  from proxide.types import (
+    ArrayLike,
+    InterproteinMapping,
+    OneHotProteinSequence,
+    ProteinSequence,
+    ScoreMatrix,
+  )
 
 
 import jax
@@ -27,9 +35,9 @@ def smith_waterman_no_gap(unroll_factor: int = 2, *, batch: bool = True) -> Call
   """
 
   def rotate_matrix(
-    score_matrix: jax.Array,
-    mask: jax.Array | None = None,
-  ) -> tuple[dict[str, jax.Array], tuple[jax.Array, jax.Array], tuple[jax.Array, jax.Array]]:
+    score_matrix: ScoreMatrix,
+    mask: Bool[ArrayLike, "N M"] | None = None,  # noqa: F722
+  ) -> tuple[dict[str, ArrayLike], tuple[ArrayLike, ArrayLike], tuple[ArrayLike, ArrayLike]]:
     """Rotate the score matrix for striped dynamic programming."""
     a, b = score_matrix.shape
     ar, br = jnp.arange(a)[::-1, None], jnp.arange(b)[None, :]
@@ -47,10 +55,10 @@ def smith_waterman_no_gap(unroll_factor: int = 2, *, batch: bool = True) -> Call
     return rotated_data, previous_scores, (i, j)
 
   def compute_scoring_matrix(
-    score_matrix: jax.Array,
-    masks: tuple[jax.Array, jax.Array],
+    score_matrix: ScoreMatrix,
+    masks: tuple[Bool[ArrayLike, "N"], Bool[ArrayLike, "M"]],  # noqa: UP037, F821
     temperature: float = 1.0,
-  ) -> jax.Array:
+  ) -> ArrayLike:
     """Compute the scoring matrix for Smith-Waterman alignment.
 
     Args:
@@ -68,17 +76,17 @@ def smith_waterman_no_gap(unroll_factor: int = 2, *, batch: bool = True) -> Call
       return temperature * jax.nn.logsumexp(values / temperature, axis)
 
     def _conditional_select(
-      condition: jax.Array,
-      true_value: jax.Array,
-      false_value: jax.Array,
-    ) -> jax.Array:
+      condition: ArrayLike,
+      true_value: ArrayLike,
+      false_value: ArrayLike,
+    ) -> ArrayLike:
       """Select values based on a boolean condition."""
       return condition * true_value + (1 - condition) * false_value
 
     def _scan_step(
-      previous_scores: tuple[jax.Array, jax.Array],
-      rotated_data: dict[str, jax.Array],
-    ) -> tuple:
+      previous_scores: tuple[ArrayLike, ArrayLike],
+      rotated_data: dict[str, ArrayLike],
+    ) -> tuple[tuple[ArrayLike, ArrayLike], ArrayLike]:
       """Perform a single step of the scan for computing the scoring matrix."""
       h_previous, h_current = previous_scores  # previous two rows of scoring (hij) mtx
       h_current_shifted = _conditional_select(
@@ -117,8 +125,8 @@ def smith_waterman(unroll_factor: int = 2, ninf: float = -1e30, *, batch: bool =
   """
 
   def _rotate_matrix(
-    score_matrix: jax.Array,
-  ) -> tuple[dict[str, jax.Array], tuple[jax.Array, jax.Array], tuple[jax.Array, jax.Array]]:
+    score_matrix: ScoreMatrix,
+  ) -> tuple[dict[str, ArrayLike], tuple[ArrayLike, ArrayLike], tuple[ArrayLike, ArrayLike]]:
     """Rotate the score matrix for striped dynamic programming."""
     a, b = score_matrix.shape
     ar, br = jnp.arange(a)[::-1, None], jnp.arange(b)[None, :]
@@ -132,11 +140,11 @@ def smith_waterman(unroll_factor: int = 2, ninf: float = -1e30, *, batch: bool =
     return rotated_data, previous_scores, (i, j)
 
   def _compute_scoring_matrix(
-    score_matrix: jax.Array,
-    masks: tuple[jax.Array, jax.Array],
+    score_matrix: ScoreMatrix,
+    masks: tuple[Bool[ArrayLike, "N"], Bool[ArrayLike, "M"]],  # noqa: UP037, F821
     gap: float = 0.0,
     temperature: float = 1.0,
-  ) -> jax.Array:
+  ) -> ArrayLike:
     """Compute the scoring matrix for Smith-Waterman alignment with gap penalty.
 
     Args:
@@ -151,10 +159,10 @@ def smith_waterman(unroll_factor: int = 2, ninf: float = -1e30, *, batch: bool =
     """
 
     def _soft_maximum(
-      values: jax.Array,
+      values: ArrayLike,
       axis: int | None = None,
-      mask: jax.Array | None = None,
-    ) -> jax.Array:
+      mask: ArrayLike | None = None,
+    ) -> ArrayLike:
       """Compute the soft maximum of values along a specified axis."""
       values = jnp.maximum(values, ninf)
       if mask is None:
@@ -257,12 +265,12 @@ def smith_waterman_affine(  # noqa: C901
     return rotated_data, previous_scores, (i, j)
 
   def _compute_scoring_matrix(
-    score_matrix: jax.Array,
-    masks: tuple[jax.Array, jax.Array],
+    score_matrix: ScoreMatrix,
+    masks: tuple[Bool[ArrayLike, "N"], Bool[ArrayLike, "M"]],  # noqa: UP037, F821
     gap: float = 0.0,
     open_penalty: float = 0.0,
     temperature: float = 1.0,
-  ) -> jax.Array:
+  ) -> ArrayLike:
     """Compute the scoring matrix for Smith-Waterman alignment with affine gap penalties."""
 
     def _soft_maximum(
@@ -416,11 +424,11 @@ def needleman_wunsch_alignment(unroll_factor: int = 2, *, batch: bool = True) ->
     }
 
   def compute_scoring_matrix(
-    score_matrix: jax.Array,
-    masks: tuple[jax.Array, jax.Array],
+    score_matrix: ScoreMatrix,
+    masks: tuple[Bool[ArrayLike, "N"], Bool[ArrayLike, "M"]],  # noqa: UP037, F821
     gap_penalty: float = 0.0,
     temperature: float = 1.0,
-  ) -> jax.Array:
+  ) -> ArrayLike:
     """Compute the scoring matrix for Needleman-Wunsch alignment."""
 
     def _logsumexp(
@@ -517,7 +525,7 @@ def align_sequences(
   gap_open: float = -1.0,
   gap_extend: float = -0.1,
   temp: float = 0.1,
-) -> jax.Array:
+) -> InterproteinMapping:
   """Generate cross-protein position mapping using batched sequence alignment.
 
   Creates a mapping array for cross-protein position comparisons using

@@ -11,8 +11,8 @@ import logging
 from collections.abc import Sequence
 from typing import Any, cast
 
-import numpy as np
 import jax.numpy as jnp
+import numpy as np
 
 # Biotite is still needed for MDTraj trajectory parsing
 from biotite.structure import (
