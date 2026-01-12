@@ -238,7 +238,7 @@ impl GaffParameters {
                 description: "S in thioether".to_string(),
                 mass: 32.06,
                 sigma: 0.356359,
-                epsilon: 1.046000,
+                epsilon: 1.046,
             },
         );
         atom_types.insert(
@@ -249,7 +249,7 @@ impl GaffParameters {
                 description: "S in thiol".to_string(),
                 mass: 32.06,
                 sigma: 0.356359,
-                epsilon: 1.046000,
+                epsilon: 1.046,
             },
         );
 
@@ -273,7 +273,7 @@ impl GaffParameters {
                 description: "Chlorine".to_string(),
                 mass: 35.45,
                 sigma: 0.347094,
-                epsilon: 1.108780,
+                epsilon: 1.108_78,
             },
         );
         atom_types.insert(
@@ -284,7 +284,7 @@ impl GaffParameters {
                 description: "Bromine".to_string(),
                 mass: 79.90,
                 sigma: 0.390180,
-                epsilon: 1.108780,
+                epsilon: 1.108_78,
             },
         );
 

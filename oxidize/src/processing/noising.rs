@@ -15,6 +15,7 @@ use rand::SeedableRng;
 /// * `coords` - Mutable slice of (N, 3) coordinates to modify in-place
 /// * `std` - Standard deviation of the Gaussian noise
 /// * `seed` - Random seed for reproducibility
+#[allow(dead_code)]
 pub fn gaussian_backbone_noise(coords: &mut [[f32; 3]], std: f32, seed: u64) {
     if std <= 0.0 {
         return;

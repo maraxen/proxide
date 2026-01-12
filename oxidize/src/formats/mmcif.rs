@@ -115,7 +115,7 @@ fn parse_cif_values(line: &str) -> Vec<&str> {
                     start = i + 1;
                 } else {
                     // Check if next char is whitespace or end
-                    if chars.peek().map_or(true, |(_, nc)| nc.is_whitespace()) {
+                    if chars.peek().is_none_or(|(_, nc)| nc.is_whitespace()) {
                         values.push(&line[start..i]);
                         in_single_quote = false;
                         last_end = i + 1;
@@ -126,12 +126,10 @@ fn parse_cif_values(line: &str) -> Vec<&str> {
                 if !in_double_quote {
                     in_double_quote = true;
                     start = i + 1;
-                } else {
-                    if chars.peek().map_or(true, |(_, nc)| nc.is_whitespace()) {
-                        values.push(&line[start..i]);
-                        in_double_quote = false;
-                        last_end = i + 1;
-                    }
+                } else if chars.peek().is_none_or(|(_, nc)| nc.is_whitespace()) {
+                    values.push(&line[start..i]);
+                    in_double_quote = false;
+                    last_end = i + 1;
                 }
             }
             ' ' | '\t' if !in_single_quote && !in_double_quote => {

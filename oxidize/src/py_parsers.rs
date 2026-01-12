@@ -1,3 +1,6 @@
+// TODO: Review allow attributes at a later point
+#![allow(clippy::useless_conversion, clippy::too_many_arguments)]
+
 use crate::processing::ProcessedStructure;
 use crate::spec::{CoordFormat, OutputSpec};
 use crate::{forcefield, formats, formatters, geometry, physics, processing, spec};
@@ -64,7 +67,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
     Python::with_gil(|py| {
         let spec = spec.unwrap_or_default();
         let target = spec::OutputFormatTarget::from_str(&spec.output_format_target)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
         // Check cache (only if features are simple)
         let should_cache = spec.enable_caching
@@ -78,7 +81,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
         if should_cache {
             let key = formatters::CacheKey::new(
                 &path,
-                spec.coord_format.clone(),
+                spec.coord_format,
                 spec.remove_solvent,
                 spec.include_hetatm,
             );
@@ -245,11 +248,10 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                     let mut all_coords = Vec::with_capacity(n_models * n_res * 37 * 3);
                     all_coords.extend_from_slice(&ref_formatted.coordinates);
 
-                    for i in 1..n_models {
-                        let m_raw = models_to_process[i];
+                    for (i, m_raw) in models_to_process.iter().enumerate().skip(1) {
                         // We must process each model to map atoms correctly
-                        let mut m_processed =
-                            ProcessedStructure::from_raw(m_raw.clone()).map_err(|e| {
+                        let mut m_processed = ProcessedStructure::from_raw((*m_raw).clone())
+                            .map_err(|e| {
                                 pyo3::exceptions::PyValueError::new_err(format!(
                                     "Processing model {} failed: {}",
                                     i + 1,
@@ -858,7 +860,7 @@ pub fn project_to_mpnn_batch(
             })?
         } else if path.ends_with(".fcz") {
             // FoldComp
-            let system = formats::foldcomp::read_foldcomp(&path).map_err(|e| {
+            let _system = formats::foldcomp::read_foldcomp(&path).map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("FoldComp parsing failed: {}", e))
             })?;
             // Convert AtomicSystem to RawAtomData

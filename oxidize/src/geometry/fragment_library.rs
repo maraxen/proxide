@@ -140,10 +140,10 @@ impl FragmentLibrary {
 
             // Heavy coords (9 floats = 36 bytes)
             let mut heavy_coords = [[0.0f32; 3]; 3];
-            for i in 0..3 {
-                for j in 0..3 {
+            for row in &mut heavy_coords {
+                for element in row {
                     let bytes = [data[pos], data[pos + 1], data[pos + 2], data[pos + 3]];
-                    heavy_coords[i][j] = f32::from_le_bytes(bytes);
+                    *element = f32::from_le_bytes(bytes);
                     pos += 4;
                 }
             }
@@ -152,9 +152,9 @@ impl FragmentLibrary {
             let mut hydrogen_coords = Vec::with_capacity(num_hydrogens);
             for _ in 0..num_hydrogens {
                 let mut coord = [0.0f32; 3];
-                for j in 0..3 {
+                for item in coord.iter_mut() {
                     let bytes = [data[pos], data[pos + 1], data[pos + 2], data[pos + 3]];
-                    coord[j] = f32::from_le_bytes(bytes);
+                    *item = f32::from_le_bytes(bytes);
                     pos += 4;
                 }
                 hydrogen_coords.push(coord);
@@ -271,6 +271,7 @@ pub fn rotate_point(point: &[f32; 3], rotation: &[[f32; 3]; 3]) -> [f32; 3] {
 /// * `element` - Central atom element
 /// * `charge` - Formal charge
 /// * `stereo` - Stereochemistry indicator
+///
 /// Calculate hydrogen positions for a single atom.
 ///
 /// # Arguments
@@ -302,9 +303,12 @@ pub fn calculate_hydrogen_positions(
 
     // Center the target heavy coords (translate so center is at origin)
     let mut centered_heavy: [[f32; 3]; 3] = [[0.0; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            centered_heavy[i][j] = heavy_coords[i][j] - center_coord[j];
+    for (target_row, ref_row) in centered_heavy.iter_mut().zip(heavy_coords.iter()) {
+        for (target_val, (ref_val, &center_val)) in target_row
+            .iter_mut()
+            .zip(ref_row.iter().zip(center_coord.iter()))
+        {
+            *target_val = *ref_val - center_val;
         }
     }
 
@@ -343,10 +347,11 @@ fn svd_3x3(a: &[[f32; 3]; 3]) -> ([[f32; 3]; 3], [f32; 3], [[f32; 3]; 3]) {
 
     // A^T × A to get V
     let mut ata = [[0.0f32; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
+    for (i, row) in ata.iter_mut().enumerate() {
+        for (j, val) in row.iter_mut().enumerate() {
+            #[allow(clippy::needless_range_loop)]
             for k in 0..3 {
-                ata[i][j] += a[k][i] * a[k][j];
+                *val += a[k][i] * a[k][j];
             }
         }
     }
@@ -375,6 +380,7 @@ fn svd_3x3(a: &[[f32; 3]; 3]) -> ([[f32; 3]; 3], [f32; 3], [[f32; 3]; 3]) {
 
     // Fix rank deficiency in U to ensure it's a valid rotation base
     let mut zero_cols = Vec::new();
+    #[allow(clippy::needless_range_loop)]
     for j in 0..3 {
         if s[j] <= 1e-10 {
             zero_cols.push(j);
@@ -445,6 +451,7 @@ fn jacobi_eigendecomposition(a: &[[f32; 3]; 3]) -> ([f32; 3], [[f32; 3]; 3]) {
     let mut v = [[0.0f32; 3]; 3]; // Eigenvectors
 
     // Initialize V as identity
+    #[allow(clippy::needless_range_loop)]
     for i in 0..3 {
         v[i][i] = 1.0;
     }
@@ -455,10 +462,10 @@ fn jacobi_eigendecomposition(a: &[[f32; 3]; 3]) -> ([f32; 3], [[f32; 3]; 3]) {
         let mut max_val = 0.0f32;
         let mut p = 0;
         let mut q = 1;
-        for i in 0..3 {
-            for j in (i + 1)..3 {
-                if d[i][j].abs() > max_val {
-                    max_val = d[i][j].abs();
+        for (i, row) in d.iter().enumerate() {
+            for (j, &val) in row.iter().enumerate().skip(i + 1) {
+                if val.abs() > max_val {
+                    max_val = val.abs();
                     p = i;
                     q = j;
                 }
@@ -488,6 +495,7 @@ fn jacobi_eigendecomposition(a: &[[f32; 3]; 3]) -> ([f32; 3], [[f32; 3]; 3]) {
         d[p][p] = dpp;
         d[q][q] = dqq;
 
+        #[allow(clippy::needless_range_loop)]
         for r in 0..3 {
             if r != p && r != q {
                 let dpr = c * d[p][r] - s * d[q][r];
@@ -500,6 +508,7 @@ fn jacobi_eigendecomposition(a: &[[f32; 3]; 3]) -> ([f32; 3], [[f32; 3]; 3]) {
         }
 
         // Apply rotation to V
+        #[allow(clippy::needless_range_loop)]
         for r in 0..3 {
             let vpr = c * v[r][p] - s * v[r][q];
             let vqr = s * v[r][p] + c * v[r][q];
@@ -548,6 +557,7 @@ mod tests {
         let rotation = kabsch_rotation(&coords, &coords);
 
         // Should be approximately identity
+        #[allow(clippy::needless_range_loop)]
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };

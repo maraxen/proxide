@@ -1,6 +1,9 @@
+// TODO: Review allow attributes at a later point
+#![allow(clippy::useless_conversion)]
+
+use crate::forcefield;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use crate::forcefield;
 
 /// Load a force field from an OpenMM-style XML file
 #[pyfunction]

@@ -165,7 +165,6 @@ def project_to_openmm_system(system: AtomicSystem, spec: OutputSpec) -> Any:
     from openmm import (  # type: ignore[unresolved-import]
       HarmonicBondForce,
       NonbondedForce,
-      Platform,
       System,
     )
     from openmm import unit as u  # type: ignore[unresolved-import]

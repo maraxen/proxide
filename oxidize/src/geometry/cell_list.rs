@@ -52,7 +52,7 @@ impl CellList {
         // Assign atoms to cells
         for (idx, coord) in coords.iter().enumerate() {
             let cell_idx = Self::coord_to_cell(coord, &min_coords, cell_size);
-            cells.entry(cell_idx).or_insert_with(Vec::new).push(idx);
+            cells.entry(cell_idx).or_default().push(idx);
         }
 
         Self {

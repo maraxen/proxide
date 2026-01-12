@@ -61,7 +61,7 @@ impl<R: Read> XdrReader<R> {
     }
 
     pub fn skip(&mut self, len: usize) -> Result<()> {
-        let mut buf = vec![0u8; 64];
+        let mut buf = [0u8; 64];
         let mut remaining = len;
         while remaining > 0 {
             let to_read = std::cmp::min(remaining, buf.len());

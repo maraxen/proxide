@@ -156,7 +156,7 @@ mod tests {
         // Create ALA with 5 atoms
         let mut raw = RawAtomData::with_capacity(5);
 
-        let atoms = vec![
+        let atoms = [
             ("N", 0.0, 0.0, 0.0),
             ("CA", 1.0, 0.0, 0.0),
             ("C", 2.0, 0.0, 0.0),

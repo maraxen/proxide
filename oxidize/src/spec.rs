@@ -155,6 +155,8 @@ pub struct OutputSpec {
     pub enable_caching: bool,
 }
 
+// TODO: Review allow attributes at a later point
+#[allow(clippy::too_many_arguments)]
 #[pymethods]
 impl OutputSpec {
     #[new]

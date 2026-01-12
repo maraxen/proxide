@@ -515,7 +515,7 @@ pub fn parameterize_molecule(
 
     let improper_params: Vec<[f32; 3]> = impropers_vec
         .iter()
-        .map(|_| [2.0, 3.14159, 10.0]) // Default: periodicity 2, phase π, k 10
+        .map(|_| [2.0, std::f32::consts::PI, 10.0]) // Default: periodicity 2, phase π, k 10
         .collect();
 
     // 1-4 pairs from dihedrals
@@ -549,12 +549,10 @@ fn lookup_bond<'a>(c1: &str, c2: &str, ff: &'a ForceField) -> Option<&'a Harmoni
     // Optimization: Store map (class1, class2) -> Param in ForceField
     // For now, linear search is okay or we'd duplicate build logic.
     // Actually FF struct "harmonic_bonds: Vec<HarmonicBondParam>".
-    for b in &ff.harmonic_bonds {
-        if (b.class1 == c1 && b.class2 == c2) || (b.class1 == c2 && b.class2 == c1) {
-            return Some(b);
-        }
-    }
-    None
+    ff.harmonic_bonds
+        .iter()
+        .find(|&b| (b.class1 == c1 && b.class2 == c2) || (b.class1 == c2 && b.class2 == c1))
+        .map(|v| v as _)
 }
 
 fn lookup_angle<'a>(
@@ -575,6 +573,7 @@ fn lookup_angle<'a>(
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lookup_proper<'a>(
     c1: &str,
     t1: &str,
@@ -592,7 +591,7 @@ fn lookup_proper<'a>(
     // Legacy logic: if d != "" and d != c and d != t -> fail.
 
     let matches = |def: &str, cls: &str, typ: &str| -> bool {
-        def == cls || def == typ || def == "X" || def == ""
+        def == cls || def == typ || def == "X" || def.is_empty()
     };
 
     let mut best_match: Option<&'a ProperTorsionParam> = None;
@@ -616,16 +615,16 @@ fn lookup_proper<'a>(
                 // Legacy: score = sum(1 for x in pc if x != "")
                 // In Rust, "X" is the wildcard.
                 let mut score = 0;
-                if t.class1 != "X" && t.class1 != "" {
+                if t.class1 != "X" && !t.class1.is_empty() {
                     score += 1;
                 }
-                if t.class2 != "X" && t.class2 != "" {
+                if t.class2 != "X" && !t.class2.is_empty() {
                     score += 1;
                 }
-                if t.class3 != "X" && t.class3 != "" {
+                if t.class3 != "X" && !t.class3.is_empty() {
                     score += 1;
                 }
-                if t.class4 != "X" && t.class4 != "" {
+                if t.class4 != "X" && !t.class4.is_empty() {
                     score += 1;
                 }
 
@@ -652,16 +651,16 @@ fn lookup_proper<'a>(
             // 1 matches 4, 4 matches 1
             if matches(&t.class1, c4, t4) && matches(&t.class4, c1, t1) {
                 let mut score = 0;
-                if t.class1 != "X" && t.class1 != "" {
+                if t.class1 != "X" && !t.class1.is_empty() {
                     score += 1;
                 }
-                if t.class2 != "X" && t.class2 != "" {
+                if t.class2 != "X" && !t.class2.is_empty() {
                     score += 1;
                 }
-                if t.class3 != "X" && t.class3 != "" {
+                if t.class3 != "X" && !t.class3.is_empty() {
                     score += 1;
                 }
-                if t.class4 != "X" && t.class4 != "" {
+                if t.class4 != "X" && !t.class4.is_empty() {
                     score += 1;
                 }
 
@@ -690,14 +689,10 @@ fn lookup_improper<'a>(
     // For simplicitly, let's assume Amber style: central is 3rd? Or 2nd?
     // Usually one is central.
     // For now, simple exact match or X scan.
-    for t in &ff.improper_torsions {
-        // TODO: Implement robust improper matching logic.
-        // This is a placeholder.
-        if t.class2 == c2 && t.class3 == c3 && t.class1 == c1 && t.class4 == c4 {
-            return Some(t);
-        }
-    }
-    None
+    ff.improper_torsions
+        .iter()
+        .find(|&t| t.class2 == c2 && t.class3 == c3 && t.class1 == c1 && t.class4 == c4)
+        .map(|v| v as _)
 }
 
 /// Build lookup map from atom type -> nonbonded params

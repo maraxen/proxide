@@ -1,3 +1,6 @@
+// TODO: Review allow attributes at a later point
+#![allow(clippy::useless_conversion)]
+
 use pyo3::prelude::*;
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
@@ -170,20 +173,17 @@ fn _fetch_with_retry(client: &Client, url: &str) -> Result<reqwest::blocking::Re
     let mut delay = std::time::Duration::from_secs(1);
 
     for i in 0..max_retries {
-        match client.get(url).send() {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    return Ok(resp);
-                } else if resp.status() == StatusCode::NOT_FOUND {
-                    return Err(format!("404 Not Found"));
-                }
-                // Determine if we should retry based on status code
-                // Generally 5xx errors are retryable
-                if !resp.status().is_server_error() {
-                    return Err(format!("Request failed with status: {}", resp.status()));
-                }
+        if let Ok(resp) = client.get(url).send() {
+            if resp.status().is_success() {
+                return Ok(resp);
+            } else if resp.status() == StatusCode::NOT_FOUND {
+                return Err("404 Not Found".to_string());
             }
-            Err(_) => {} // Network error, retry
+            // Determine if we should retry based on status code
+            // Generally 5xx errors are retryable
+            if !resp.status().is_server_error() {
+                return Err(format!("Request failed with status: {}", resp.status()));
+            }
         }
 
         if i < max_retries - 1 {

@@ -200,6 +200,7 @@ pub fn smith_waterman_affine(
 }
 
 /// Traceback for local alignment
+#[allow(clippy::too_many_arguments)]
 fn traceback_local(
     h: &[Vec<i32>],
     _e: &[Vec<i32>],
@@ -283,9 +284,11 @@ pub fn needleman_wunsch(seq_a: &[u8], seq_b: &[u8], gap_penalty: i32) -> Alignme
     let mut h = vec![vec![0i32; n + 1]; m + 1];
 
     // Initialize first row and column
+    #[allow(clippy::needless_range_loop)]
     for i in 0..=m {
         h[i][0] = -(i as i32 * gap_penalty);
     }
+    #[allow(clippy::needless_range_loop)]
     for j in 0..=n {
         h[0][j] = -(j as i32 * gap_penalty);
     }

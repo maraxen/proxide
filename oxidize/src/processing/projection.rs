@@ -37,15 +37,12 @@ pub struct MPNNBatchResult {
 pub enum ProjectionError {
     /// No protein atoms found in structure
     NoProteinAtoms,
-    /// Structure processing failed
-    ProcessingError(String),
 }
 
 impl std::fmt::Display for ProjectionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProjectionError::NoProteinAtoms => write!(f, "No protein atoms found in structure"),
-            ProjectionError::ProcessingError(s) => write!(f, "Processing error: {}", s),
         }
     }
 }
@@ -123,8 +120,9 @@ pub fn project_to_mpnn_batch(
             neighbor_indices.push(idx as i32);
         }
         // Pad if this residue has fewer neighbors
-        for _ in res_neighbors.len()..effective_k {
-            neighbor_indices.push(0);
+        let pad_count = effective_k - res_neighbors.len();
+        if pad_count > 0 {
+            neighbor_indices.extend(std::iter::repeat_n(0, pad_count));
         }
     }
 

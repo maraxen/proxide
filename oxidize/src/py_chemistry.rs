@@ -1,7 +1,10 @@
+// TODO: Review allow attributes at a later point
+#![allow(clippy::useless_conversion)]
+
+use crate::{chem, forcefield, physics};
+use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use numpy::{PyArray1, PyArray2, PyArrayMethods};
-use crate::{chem, forcefield, physics};
 
 /// Assign atomic masses based on atom names
 #[pyfunction]
@@ -36,7 +39,7 @@ pub fn assign_mbondi2_radii(atom_names: Vec<String>, bonds: Vec<[usize; 2]>) -> 
 
 /// Assign scaling factors for OBC2 GBSA calculation
 #[pyfunction]
-pub fn assign_obc2_scaling_factors(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
+pub fn assign_obc2_scaling_factors(atom_names: Vec<String>) -> Result<Vec<f32>, PyErr> {
     let factors = physics::gbsa::assign_obc2_scaling_factors(&atom_names);
     Ok(factors)
 }
@@ -46,7 +49,7 @@ pub fn assign_obc2_scaling_factors(atom_names: Vec<String>) -> PyResult<Vec<f32>
 pub fn get_water_model(name: String, rigid: bool) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         let model = physics::water::get_water_model(&name, rigid)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
         let dict = PyDict::new_bound(py);
         dict.set_item("name", &model.name)?;

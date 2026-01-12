@@ -1,5 +1,7 @@
+// TODO: Review allow attributes at a later point
+#![allow(clippy::useless_conversion)]
+
 //! Atomic System Architecture
-//! Matches Python's atomic_system.py structure
 
 use numpy::PyArrayMethods;
 use pyo3::prelude::*;

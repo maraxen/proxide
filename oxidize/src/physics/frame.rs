@@ -29,6 +29,7 @@ pub struct ProjectedForces {
 }
 
 impl ProjectedForces {
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_array(&self) -> [f32; 5] {
         [
             self.f_forward,
@@ -103,9 +104,9 @@ pub fn compute_c_beta(n: [f32; 3], ca: [f32; 3], c: [f32; 3]) -> [f32; 3] {
     let c_to_ca = sub(ca, c);
 
     // Constants from ProteinMPNN / JAX snippet
-    let f1 = -0.58273431;
-    let f2 = 0.56802827;
-    let f3 = -0.54067466;
+    let f1 = -0.582_734_3;
+    let f2 = 0.568_028_3;
+    let f3 = -0.540_674_7;
 
     // term1 = f1 * cross(n_to_ca, c_to_ca)
     let t1 = scale(cross(n_to_ca, c_to_ca), f1);
@@ -192,9 +193,7 @@ pub fn project_backbone_forces(
 
     let mut features = Vec::with_capacity(n_res * 5);
 
-    for (i, res_coords) in backbone_coords.iter().enumerate() {
-        let start = i * 5;
-        let res_forces_slice = &forces_flat[start..start + 5];
+    for (res_coords, res_forces_slice) in backbone_coords.iter().zip(forces_flat.chunks_exact(5)) {
         let mut res_forces = [[0.0; 3]; 5];
         res_forces.copy_from_slice(res_forces_slice);
 
