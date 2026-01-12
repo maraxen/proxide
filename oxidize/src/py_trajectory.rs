@@ -1,3 +1,6 @@
+// TODO: Review allow attributes at a later point
+#![allow(clippy::useless_conversion)]
+
 use crate::formats;
 use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;

@@ -9,6 +9,5 @@ pub mod projection;
 pub mod residues;
 
 pub use models::*;
-pub use noising::*;
 pub use projection::*;
 pub use residues::*;

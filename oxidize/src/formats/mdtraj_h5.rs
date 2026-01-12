@@ -6,6 +6,8 @@
 //! - /topology: Contains topology information
 //! - /time: (N_frames,) float64 - simulation times
 
+// TODO: Review allow attributes at a later point
+#![allow(clippy::type_complexity)]
 #![allow(dead_code)]
 
 #[cfg(feature = "mdcath")]
@@ -135,8 +137,7 @@ pub fn parse_mdtraj_h5_frame(path: &str, frame_idx: usize) -> Result<MdtrajFrame
         .dataset("time")
         .and_then(|ds| ds.read_raw::<f64>())
         .ok()
-        .map(|times| times.get(frame_idx).copied())
-        .flatten();
+        .and_then(|times| times.get(frame_idx).copied());
 
     Ok(MdtrajFrame {
         index: frame_idx,

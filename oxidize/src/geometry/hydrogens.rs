@@ -114,8 +114,7 @@ pub fn add_hydrogens(
 
     // 2. Identify terminal residues per chain
     let mut chain_min_max: HashMap<String, (i32, i32)> = HashMap::new();
-    for i in 0..n_original {
-        let chain = &structure.raw_atoms.chain_ids[i];
+    for (i, chain) in structure.raw_atoms.chain_ids.iter().enumerate() {
         let res_id = structure.raw_atoms.res_ids[i];
         let entry = chain_min_max
             .entry(chain.clone())
@@ -130,12 +129,12 @@ pub fn add_hydrogens(
 
     // 3. Prepare read-only data for parallel iteration
     // Extract all data needed for H calculation (avoids mutable borrow conflicts)
-    let elements: Vec<String> = structure.raw_atoms.elements.iter().cloned().collect();
+    let elements: Vec<String> = structure.raw_atoms.elements.to_vec();
     let coords: Vec<f32> = structure.raw_atoms.coords.clone();
-    let chain_ids: Vec<String> = structure.raw_atoms.chain_ids.iter().cloned().collect();
+    let chain_ids: Vec<String> = structure.raw_atoms.chain_ids.to_vec();
     let res_ids: Vec<i32> = structure.raw_atoms.res_ids.clone();
-    let res_names: Vec<String> = structure.raw_atoms.res_names.iter().cloned().collect();
-    let atom_names: Vec<String> = structure.raw_atoms.atom_names.iter().cloned().collect();
+    let res_names: Vec<String> = structure.raw_atoms.res_names.to_vec();
+    let atom_names: Vec<String> = structure.raw_atoms.atom_names.to_vec();
     let alt_locs: Vec<char> = structure.raw_atoms.alt_locs.clone();
     let insertion_codes: Vec<char> = structure.raw_atoms.insertion_codes.clone();
     let b_factors: Vec<f32> = structure.raw_atoms.b_factors.clone();
@@ -156,7 +155,6 @@ pub fn add_hydrogens(
         n_original
     );
     let h_positions: Vec<(usize, i32, Vec<[f32; 3]>)> = (0..n_original)
-        .into_iter()
         .filter_map(|i| {
             let element = elements[i].to_uppercase();
             if element == "H" {
@@ -226,8 +224,8 @@ pub fn add_hydrogens(
                     heavy_coords[2] = get_coords(i);
                 }
                 _ => {
-                    for j in 0..3 {
-                        heavy_coords[j] = get_coords(sorted_neighbors[j]);
+                    for (j, heavy_coord) in heavy_coords.iter_mut().enumerate() {
+                        *heavy_coord = get_coords(sorted_neighbors[j]);
                     }
                 }
             }
@@ -394,10 +392,10 @@ pub fn add_hydrogens_with_relax(
     );
 
     // Update structure coordinates from relaxed positions
-    for i in 0..n_atoms {
-        structure.raw_atoms.coords[i * 3] = coords[i][0];
-        structure.raw_atoms.coords[i * 3 + 1] = coords[i][1];
-        structure.raw_atoms.coords[i * 3 + 2] = coords[i][2];
+    for (i, coord) in coords.iter().enumerate() {
+        structure.raw_atoms.coords[i * 3] = coord[0];
+        structure.raw_atoms.coords[i * 3 + 1] = coord[1];
+        structure.raw_atoms.coords[i * 3 + 2] = coord[2];
     }
 
     log::info!(

@@ -1,7 +1,10 @@
+// TODO: Review allow attributes at a later point
+#![allow(clippy::useless_conversion)]
+
+use crate::formats;
+use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use numpy::{PyArray1, PyArrayMethods};
-use crate::formats;
 
 // =============================================================================
 // HDF5 Parsing Functions (feature-gated)
@@ -80,7 +83,11 @@ pub fn parse_mdcath_metadata(path: String) -> PyResult<PyObject> {
 /// Get list of replicas for a temperature in MDCATH file
 #[cfg(feature = "mdcath")]
 #[pyfunction]
-pub fn get_mdcath_replicas(path: String, domain_id: String, temperature: String) -> PyResult<PyObject> {
+pub fn get_mdcath_replicas(
+    path: String,
+    domain_id: String,
+    temperature: String,
+) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         let replicas =
             formats::mdcath_h5::get_replicas(&path, &domain_id, &temperature).map_err(|e| {

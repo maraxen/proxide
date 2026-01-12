@@ -26,7 +26,6 @@ if TYPE_CHECKING:
   from proxide.core.containers import Protein
   from proxide.types import (
     ArrayLike,
-    Float,
     NodeFeatures,
     PRNGKey,
   )

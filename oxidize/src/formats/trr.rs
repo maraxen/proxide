@@ -1,9 +1,13 @@
+// TODO: Review allow attributes at a later point
+#![allow(clippy::needless_range_loop)]
+
 //! Pure-Rust TRR trajectory format parser
 //!
 //! TRR is a binary format used by GROMACS.
 //! This implementation is pure-Rust and does not depend on chemfiles.
 
 use super::xdr::XdrReader;
+
 use std::fs::File;
 use std::io::BufReader;
 use thiserror::Error;

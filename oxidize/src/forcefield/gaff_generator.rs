@@ -1004,7 +1004,7 @@ impl GaffTemplateGenerator {
 
         // For each atom, look at all pairs of neighbors
         for (&center, neighbors) in &topology.adjacency {
-            let neighbor_list: Vec<usize> = neighbors.iter().copied().collect();
+            let neighbor_list: Vec<usize> = neighbors.to_vec();
             for i in 0..neighbor_list.len() {
                 for j in (i + 1)..neighbor_list.len() {
                     let a = neighbor_list[i];

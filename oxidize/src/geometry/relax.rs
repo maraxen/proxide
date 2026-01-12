@@ -343,6 +343,7 @@ impl EnergyMinimizer {
             .collect();
 
         // Update coordinates for accepted groups
+        #[allow(clippy::needless_range_loop)]
         for i in 0..self.prev_coords.len() {
             let group = self.groups[i];
             if group >= 0 && accept_mask[group as usize] {

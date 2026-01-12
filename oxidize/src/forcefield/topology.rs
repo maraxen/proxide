@@ -112,14 +112,8 @@ impl Topology {
         // Build adjacency list
         let mut adjacency: HashMap<usize, Vec<usize>> = HashMap::new();
         for bond in &bonds {
-            adjacency
-                .entry(bond.i)
-                .or_insert_with(Vec::new)
-                .push(bond.j);
-            adjacency
-                .entry(bond.j)
-                .or_insert_with(Vec::new)
-                .push(bond.i);
+            adjacency.entry(bond.i).or_default().push(bond.j);
+            adjacency.entry(bond.j).or_default().push(bond.i);
         }
 
         // Generate angles (i-j-k where i-j and j-k are bonds)
@@ -154,10 +148,8 @@ impl Topology {
                 _ => false,
             };
 
-            if possible_aromatic {
-                if self.is_in_ring(i, 6) {
-                    is_aromatic[i] = true;
-                }
+            if possible_aromatic && self.is_in_ring(i, 6) {
+                is_aromatic[i] = true;
             }
         }
         is_aromatic
@@ -376,6 +368,6 @@ mod tests {
         assert!(topo.bonds.len() >= 5);
 
         // Should have angles
-        assert!(topo.angles.len() > 0);
+        assert!(!topo.angles.is_empty());
     }
 }

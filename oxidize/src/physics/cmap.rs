@@ -53,9 +53,9 @@ fn gauss_solve(a: &mut [Vec<f64>], b: &mut [f64]) -> Vec<f64> {
         // Find pivot
         let mut max_row = k;
         let mut max_val = a[k][k].abs();
-        for i in (k + 1)..n {
-            if a[i][k].abs() > max_val {
-                max_val = a[i][k].abs();
+        for (i, row) in a.iter().enumerate().skip(k + 1) {
+            if row[k].abs() > max_val {
+                max_val = row[k].abs();
                 max_row = i;
             }
         }
@@ -70,6 +70,7 @@ fn gauss_solve(a: &mut [Vec<f64>], b: &mut [f64]) -> Vec<f64> {
                 continue;
             }
             let factor = a[i][k] / a[k][k];
+            #[allow(clippy::needless_range_loop)]
             for j in k..n {
                 a[i][j] -= factor * a[k][j];
             }
@@ -124,18 +125,14 @@ pub fn compute_bicubic_params(grid: &[Vec<f64>]) -> Vec<Vec<[f64; 4]>> {
     let mut fy = vec![vec![0.0; m]; n];
     for i in 0..n {
         let derivs = solve_periodic_spline_derivatives(&grid[i]);
-        for j in 0..m {
-            fy[i][j] = derivs[j];
-        }
+        fy[i][..m].copy_from_slice(&derivs[..m]);
     }
 
     // 3. fxy: Solve spline on fx along rows (d/dy of df/dx)
     let mut fxy = vec![vec![0.0; m]; n];
     for i in 0..n {
         let derivs = solve_periodic_spline_derivatives(&fx[i]);
-        for j in 0..m {
-            fxy[i][j] = derivs[j];
-        }
+        fxy[i][..m].copy_from_slice(&derivs[..m]);
     }
 
     // 4. Combine: f, fx, fy, fxy

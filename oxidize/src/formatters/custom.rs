@@ -199,8 +199,8 @@ mod tests {
 
         assert_eq!(formatted.aatype.len(), 1);
         assert_eq!(formatted.atoms_per_residue, 4);
-        assert_eq!(formatted.coordinates.len(), 1 * 4 * 3);
-        assert_eq!(formatted.atom_mask.len(), 1 * 4);
+        assert_eq!(formatted.coordinates.len(), 4 * 3);
+        assert_eq!(formatted.atom_mask.len(), 4);
 
         // All backbone atoms should be present
         for i in 0..4 {

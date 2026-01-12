@@ -53,6 +53,7 @@ pub const BACKBONE_PAIRS: [[usize; 2]; 25] = [
 /// Compute RBF centers (lazily computed)
 fn rbf_centers() -> [f32; RADIAL_BASES] {
     let mut centers = [0.0f32; RADIAL_BASES];
+    #[allow(clippy::needless_range_loop)]
     for i in 0..RADIAL_BASES {
         centers[i] = RBF_MIN + (RBF_MAX - RBF_MIN) * (i as f32) / (RADIAL_BASES as f32 - 1.0);
     }
@@ -93,7 +94,7 @@ pub fn compute_radial_basis(
         return Vec::new();
     }
 
-    let k = neighbor_indices.get(0).map(|v| v.len()).unwrap_or(0);
+    let k = neighbor_indices.first().map(|v| v.len()).unwrap_or(0);
     if k == 0 {
         return Vec::new();
     }
@@ -158,7 +159,7 @@ pub fn compute_radial_basis_with_shape(
     neighbor_indices: &[Vec<usize>],
 ) -> RBFResult {
     let n_res = backbone_coords.len();
-    let k = neighbor_indices.get(0).map(|v| v.len()).unwrap_or(0);
+    let k = neighbor_indices.first().map(|v| v.len()).unwrap_or(0);
     let features_dim = BACKBONE_PAIRS.len() * RADIAL_BASES;
 
     let features = compute_radial_basis(backbone_coords, neighbor_indices);

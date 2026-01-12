@@ -75,7 +75,7 @@ impl ProcessedStructure {
                 insertion_code: raw_atoms.insertion_codes[i],
             };
 
-            residue_atoms.entry(res_id).or_insert_with(Vec::new).push(i);
+            residue_atoms.entry(res_id).or_default().push(i);
         }
 
         // Sort residues by chain and residue number
@@ -291,7 +291,7 @@ impl ProcessedStructure {
                     }
                     let val = data[atom_idx];
                     match self.raw_atoms.atom_names[atom_idx].as_str() {
-                        "N" => values[i * 5 + 0] = val,
+                        "N" => values[i * 5] = val,
                         "CA" => values[i * 5 + 1] = val,
                         "C" => values[i * 5 + 2] = val,
                         "CB" => values[i * 5 + idx_cb] = val,
@@ -321,7 +321,7 @@ impl ProcessedStructure {
                     }
                     let val = data[atom_idx];
                     match self.raw_atoms.atom_names[atom_idx].as_str() {
-                        "N" => values[i * 5 + 0] = val,
+                        "N" => values[i * 5] = val,
                         "CA" => values[i * 5 + 1] = val,
                         "C" => values[i * 5 + 2] = val,
                         "CB" => values[i * 5 + idx_cb] = val,
@@ -349,7 +349,7 @@ impl ProcessedStructure {
                     }
                     let val = data[atom_idx];
                     match self.raw_atoms.atom_names[atom_idx].as_str() {
-                        "N" => values[i * 5 + 0] = val,
+                        "N" => values[i * 5] = val,
                         "CA" => values[i * 5 + 1] = val,
                         "C" => values[i * 5 + 2] = val,
                         "CB" => values[i * 5 + idx_cb] = val,

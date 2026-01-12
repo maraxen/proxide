@@ -65,7 +65,7 @@ fn tip3p() -> WaterModel {
         constraints: vec![
             ("O".to_string(), "H1".to_string(), 0.9572),
             ("O".to_string(), "H2".to_string(), 0.9572),
-            ("H1".to_string(), "H2".to_string(), 1.51390065),
+            ("H1".to_string(), "H2".to_string(), 1.513_900_6),
         ],
         has_virtual_sites: false,
     }
@@ -110,7 +110,7 @@ fn spce() -> WaterModel {
         constraints: vec![
             ("O".to_string(), "H1".to_string(), 1.0),
             ("O".to_string(), "H2".to_string(), 1.0),
-            ("H1".to_string(), "H2".to_string(), 1.63298086),
+            ("H1".to_string(), "H2".to_string(), 1.632_980_8),
         ],
         has_virtual_sites: false,
     }
@@ -161,7 +161,7 @@ fn tip4pew() -> WaterModel {
         constraints: vec![
             ("O".to_string(), "H1".to_string(), 0.9572),
             ("O".to_string(), "H2".to_string(), 0.9572),
-            ("H1".to_string(), "H2".to_string(), 1.51390065),
+            ("H1".to_string(), "H2".to_string(), 1.513_900_6),
         ],
         has_virtual_sites: true,
     }

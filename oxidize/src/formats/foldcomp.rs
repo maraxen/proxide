@@ -1,3 +1,6 @@
+// TODO: Review allow attributes at a later point
+#![allow(clippy::needless_range_loop, clippy::type_complexity)]
+
 use crate::physics::nerf::Nerf;
 use crate::structure::systems::AtomicSystem;
 use std::fs::File;
@@ -135,8 +138,7 @@ pub fn read_foldcomp_from_reader<R: Read + Seek>(reader: &mut R) -> std::io::Res
     }
 
     // Reconstruct
-    reconstruct(&header, &records, start_atoms)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    reconstruct(&header, &records, start_atoms).map_err(std::io::Error::other)
 }
 
 fn parse_atoms_from_bytes(bytes: &[u8; 36]) -> [[f32; 3]; 3] {
@@ -343,6 +345,7 @@ fn reconstruct(
     Ok(system)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_atom(
     coords: &mut Vec<f32>,
     names: &mut Vec<String>,
