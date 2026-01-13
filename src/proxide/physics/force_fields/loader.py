@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 from flax.struct import dataclass, field
 
-from proxide.io.parsing import rust as rw
+from proxide.io.parsing import backend as rw
 from proxide.physics.constants import DEFAULT_EPSILON, DEFAULT_SIGMA
 from proxide.physics.force_fields.components import (
   AnglePotentialParams,

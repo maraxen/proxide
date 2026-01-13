@@ -71,7 +71,7 @@ def load_structure(
   elif file_format == "pqr":
     from proxide.io.parsing import pqr  # noqa: F401
   elif file_format in ("pdb", "cif", "mmcif"):
-    from proxide.io.parsing import rust  # noqa: F401
+    from proxide.io.parsing import backend as rust  # noqa: F401
   elif file_format == "foldcomp":
     # Foldcomp might be in its own module or handled by rust
     pass
