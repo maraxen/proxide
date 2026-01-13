@@ -1,8 +1,4 @@
-"""Bridge utilities for MD simulations.
-
-This module provides utilities for preparing structures for MD simulations,
-bridging between the parsing layer and the JAX MD simulation layer.
-"""
+"""Chemical properties utilities."""
 
 from proxide import _oxidize
 

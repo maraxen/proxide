@@ -39,7 +39,7 @@ from proxide._oxidize import (  # type: ignore[unresolved-import]
   # Trajectory parsing
   parse_xtc,
 )
-from proxide.io.parsing.rust import parse_structure
+from proxide.io.parsing.backend import parse_structure
 
 __all__ = [
   # Structure parsing
