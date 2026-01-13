@@ -66,8 +66,9 @@ def _convert_rust_dict_to_system(data: dict) -> AtomicSystem:
       radii=jnp.array(data["radii"]) if data.get("radii") is not None else None,
       sigmas=jnp.array(data["sigmas"]) if data.get("sigmas") is not None else None,
       epsilons=jnp.array(data["epsilons"]) if data.get("epsilons") is not None else None,
+      masses=jnp.array(data["masses"]) if data.get("masses") is not None else None,
     )
-    if any(k in data for k in ["charges", "radii", "sigmas", "epsilons"])
+    if any(k in data for k in ["charges", "radii", "sigmas", "epsilons", "masses"])
     else None,
     atom_mask=jnp.array(mask),
   )
