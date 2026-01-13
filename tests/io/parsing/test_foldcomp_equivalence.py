@@ -1,7 +1,8 @@
 """Equivalence test: Compare Rust FoldComp reader vs original PDB file."""
-import pytest
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+import pytest
 
 # Test data paths
 # NOTE: These files are currently missing in the monorepo structure.

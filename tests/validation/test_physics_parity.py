@@ -6,9 +6,10 @@ Tests P1.3 objectives:
 - Dihedrals: Match MDTraj phi/psi/omega angles (1e-4 tolerance with f64)
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
 
 try:
     import mdtraj
@@ -16,8 +17,7 @@ try:
 except ImportError:
     MDTRAJ_AVAILABLE = False
 
-from proxide import parse_structure, OutputSpec, CoordFormat
-
+from proxide import CoordFormat, OutputSpec, parse_structure
 
 # =============================================================================
 # Dihedral Angle Tests
@@ -243,8 +243,8 @@ def test_rbf_output_shape():
 
 def test_bond_inference_parity_vs_biotite():
     """Compare inferred bonds against Biotite's BondList."""
-    from biotite.structure.io.pdb import PDBFile
     import biotite.structure as struc
+    from biotite.structure.io.pdb import PDBFile
     
     pdb_path = "tests/data/1uao.pdb"
     if not Path(pdb_path).exists():

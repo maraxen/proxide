@@ -9,6 +9,7 @@ import mdtraj as md
 import numpy as np
 import pytest
 from biotite.structure import AtomArray, AtomArrayStack
+
 PDB_1UBQ_STRING = """
 HEADER    CHROMOSOMAL PROTEIN                     02-JAN-87   1UBQ
 ATOM      1  N   MET A   1      27.340  24.430   2.614  1.00  9.67           N
@@ -25,13 +26,13 @@ END
 """
 PDB_STRING = PDB_1UBQ_STRING
 
+from proxide.core.containers import Protein
 from proxide.io.parsing import dispatch
 from proxide.io.parsing.dispatch import parse_input
 from proxide.io.parsing.registry import FormatNotSupportedError, ParsingError
 from proxide.io.parsing.structures import (
     ProcessedStructure,
 )
-from proxide.core.containers import Protein
 
 
 def test_determine_h5_structure_mdcath(mdcath_hdf5_file):

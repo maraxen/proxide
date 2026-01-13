@@ -1,7 +1,8 @@
-import pytest
-import numpy as np
-import tempfile
 import os
+import tempfile
+
+import numpy as np
+import pytest
 
 from proxide import _oxidize
 

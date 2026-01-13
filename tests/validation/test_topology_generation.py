@@ -4,11 +4,12 @@ Tests that Rust-generated topology (bonds, angles, dihedrals, impropers)
 is correct and consistent.
 """
 
-import numpy as np
-import pytest
 from pathlib import Path
 
-from proxide import parse_structure, OutputSpec, CoordFormat
+import numpy as np
+import pytest
+
+from proxide import CoordFormat, OutputSpec, parse_structure
 
 
 def test_topology_generation_basic():

@@ -7,23 +7,26 @@ Tests the complete Python → Rust → Python pipeline, including:
 - Capabilities API
 """
 
-import pytest
-import numpy as np
-from pathlib import Path
 import tempfile
 import warnings
+from pathlib import Path
+
+import numpy as np
+import pytest
 
 try:
     from proxide.io.parsing.rust import (
-        parse_pdb_to_protein as parse_pdb_rust,
-        parse_pdb_to_protein,
-        parse_pdb_raw_rust,
-        parse_mmcif_rust,
-        load_forcefield_rust,
-        is_rust_parser_available,
-        get_rust_capabilities,
-        RawAtomData,
         ForceFieldData,
+        RawAtomData,
+        get_rust_capabilities,
+        is_rust_parser_available,
+        load_forcefield_rust,
+        parse_mmcif_rust,
+        parse_pdb_raw_rust,
+        parse_pdb_to_protein,
+    )
+    from proxide.io.parsing.rust import (
+        parse_pdb_to_protein as parse_pdb_rust,
     )
     RUST_AVAILABLE = is_rust_parser_available()
 except ImportError:

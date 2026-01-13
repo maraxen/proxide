@@ -52,11 +52,9 @@ pub fn parse_pqr(path: String) -> PyResult<PyObject> {
 
 /// Parse a FoldComp file and return AtomicSystem
 #[pyfunction]
-pub fn parse_foldcomp(path: String) -> PyResult<crate::structure::systems::AtomicSystem> {
-    Python::with_gil(|_py| {
-        formats::foldcomp::read_foldcomp(&path).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("FoldComp parsing failed: {}", e))
-        })
+pub fn parse_foldcomp(path: String) -> Result<crate::structure::systems::AtomicSystem, PyErr> {
+    formats::foldcomp::read_foldcomp(&path).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("FoldComp parsing failed: {}", e))
     })
 }
 
@@ -958,25 +956,21 @@ impl FoldCompDatabase {
         Ok(FoldCompDatabase { inner: db })
     }
 
-    pub fn get(&self, id: u32) -> PyResult<crate::structure::systems::AtomicSystem> {
-        Python::with_gil(|_py| {
-            self.inner.get(id).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "Failed to retrieve ID {}: {}",
-                    id, e
-                ))
-            })
+    pub fn get(&self, id: u32) -> Result<crate::structure::systems::AtomicSystem, PyErr> {
+        self.inner.get(id).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Failed to retrieve ID {}: {}", id, e))
         })
     }
 
-    pub fn get_by_name(&self, name: String) -> PyResult<crate::structure::systems::AtomicSystem> {
-        Python::with_gil(|_py| {
-            self.inner.get_by_name(&name).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "Failed to retrieve entry {}: {}",
-                    name, e
-                ))
-            })
+    pub fn get_by_name(
+        &self,
+        name: String,
+    ) -> Result<crate::structure::systems::AtomicSystem, PyErr> {
+        self.inner.get_by_name(&name).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Failed to retrieve entry {}: {}",
+                name, e
+            ))
         })
     }
 

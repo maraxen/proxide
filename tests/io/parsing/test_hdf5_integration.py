@@ -4,22 +4,23 @@ Tests require 'mdcath' feature to be enabled when compiling Rust extension.
 Tests use synthetic HDF5 fixtures created with h5py.
 """
 
-import pytest
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+import pytest
 
 try:
     from proxide.io.parsing.rust_wrapper import (
-        parse_mdtraj_h5_metadata,
-        parse_mdtraj_h5_frame,
-        parse_mdcath_metadata,
+        MdcathData,
+        MdtrajH5Data,
         get_mdcath_replicas,
-        parse_mdcath_frame,
+        get_rust_capabilities,
         is_hdf5_support_available,
         is_rust_parser_available,
-        get_rust_capabilities,
-        MdtrajH5Data,
-        MdcathData,
+        parse_mdcath_frame,
+        parse_mdcath_metadata,
+        parse_mdtraj_h5_frame,
+        parse_mdtraj_h5_metadata,
     )
     RUST_AVAILABLE = is_rust_parser_available()
 except ImportError:

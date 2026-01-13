@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Test hydrogen addition integration."""
 
-import pytest
 from pathlib import Path
-from proxide import parse_structure, OutputSpec
+
+import pytest
+
+from proxide import OutputSpec, parse_structure
+
 
 def test_add_hydrogens_pipeline():
     """Test that add_hydrogens runs without crashing."""

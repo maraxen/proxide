@@ -15,9 +15,8 @@ use pyo3::types::PyDict;
 #[pyfunction]
 pub fn parse_mdtraj_h5_metadata(path: String) -> PyResult<PyObject> {
     Python::with_gil(|py| {
-        let result = formats::mdtraj_h5::parse_mdtraj_h5_metadata(&path).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("MDTraj H5 parsing failed: {}", e))
-        })?;
+        let result = formats::mdtraj_h5::parse_mdtraj_h5_metadata(&path)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         let dict = PyDict::new_bound(py);
         dict.set_item("num_frames", result.num_frames)?;
@@ -37,12 +36,8 @@ pub fn parse_mdtraj_h5_metadata(path: String) -> PyResult<PyObject> {
 #[pyfunction]
 pub fn parse_mdtraj_h5_frame(path: String, frame_idx: usize) -> PyResult<PyObject> {
     Python::with_gil(|py| {
-        let frame = formats::mdtraj_h5::parse_mdtraj_h5_frame(&path, frame_idx).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "MDTraj H5 frame parsing failed: {}",
-                e
-            ))
-        })?;
+        let frame = formats::mdtraj_h5::parse_mdtraj_h5_frame(&path, frame_idx)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         let dict = PyDict::new_bound(py);
         dict.set_item("index", frame.index)?;
@@ -65,9 +60,8 @@ pub fn parse_mdtraj_h5_frame(path: String, frame_idx: usize) -> PyResult<PyObjec
 #[pyfunction]
 pub fn parse_mdcath_metadata(path: String) -> PyResult<PyObject> {
     Python::with_gil(|py| {
-        let result = formats::mdcath_h5::parse_mdcath_metadata(&path).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("MDCATH H5 parsing failed: {}", e))
-        })?;
+        let result = formats::mdcath_h5::parse_mdcath_metadata(&path)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         let dict = PyDict::new_bound(py);
         dict.set_item("domain_id", &result.domain_id)?;
@@ -120,9 +114,7 @@ pub fn parse_mdcath_frame(
             &replica,
             frame_idx,
         )
-        .map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("MDCATH frame parsing failed: {}", e))
-        })?;
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         let dict = PyDict::new_bound(py);
         dict.set_item("temperature", &frame.temperature)?;

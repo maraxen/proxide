@@ -6,13 +6,13 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+from proxide.core.containers import Protein
 from proxide.physics.electrostatics import (
     compute_coulomb_forces,
     compute_coulomb_forces_at_backbone,
-    compute_pairwise_displacements,
     compute_noised_coulomb_forces_at_backbone,
+    compute_pairwise_displacements,
 )
-from proxide.core.containers import Protein
 
 
 @pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])

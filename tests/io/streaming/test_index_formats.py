@@ -1,9 +1,12 @@
 
 import json
-import pytest
-from unittest import mock
 from pathlib import Path
+from unittest import mock
+
+import pytest
+
 from proxide.io.streaming.array_record import ArrayRecordDataSource
+
 
 # Mock the ArrayRecordReader since we don't have actual .array_record files
 @pytest.fixture

@@ -5,10 +5,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from proxide.chem import residues as rc
+from proxide.core.containers import Protein
 from proxide.ops import transforms
 from proxide.ops.transforms import pad_and_collate_proteins
-from proxide.core.containers import Protein, Protein
-from proxide.chem import residues as rc
 
 
 class TestPadAndCollate:

@@ -1,18 +1,19 @@
 """Tests for the io.process module."""
 
 import pathlib
-from io import StringIO
 import unittest
+from io import StringIO
 from unittest.mock import Mock, patch
-from proxide.ops import processing
-from proxide.core.containers import Protein
-from proxide.io.parsing.structures import ProcessedStructure
 from unittest.mock import mock_open as mock_file_open
 
 import pytest
 import requests
 
+from proxide.core.containers import Protein
+from proxide.io.parsing.structures import ProcessedStructure
+from proxide.ops import processing
 from proxide.ops.processing import _resolve_inputs, frame_iterator_from_inputs
+
 
 class TestResolveInputs:
   """Tests for the _resolve_inputs function."""

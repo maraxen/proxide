@@ -16,16 +16,16 @@ from proxide.md.bridge.utils import assign_masses
 
 
 def parameterize_system(*args, **kwargs):  # noqa: ANN002, ANN003
-    """DEPRECATED: Use Rust-based parameterization via parse_structure."""
-    msg = (
-        "parameterize_system has been removed. "
-        "Use priox.io.parsing.rust.parse_structure with spec.parameterize_md=True."
-    )
-    raise NotImplementedError(msg)
+  """DEPRECATED: Use Rust-based parameterization via parse_structure."""
+  msg = (
+    "parameterize_system has been removed. "
+    "Use priox.io.parsing.rust.parse_structure with spec.parameterize_md=True."
+  )
+  raise NotImplementedError(msg)
 
 
 __all__ = [
-    "SystemParams",
-    "assign_masses",
-    "parameterize_system",
+  "SystemParams",
+  "assign_masses",
+  "parameterize_system",
 ]

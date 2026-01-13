@@ -1,9 +1,9 @@
 """Unit tests for residue constants."""
 
-import pytest
 from unittest.mock import mock_open, patch
 
 import numpy as np
+import pytest
 
 from proxide.chem import residues as rc
 

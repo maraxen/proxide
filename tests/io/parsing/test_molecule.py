@@ -10,7 +10,6 @@ import pytest
 
 from proxide.io.parsing.molecule import Molecule
 
-
 # Test MOL2 content (simplified benzene-like structure)
 BENZENE_MOL2 = """\
 @<TRIPOS>MOLECULE

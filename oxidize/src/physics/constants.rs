@@ -67,13 +67,13 @@ pub const DIELECTRIC_OFFSET: f32 = 0.009;
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_coulomb_constant() {
         // Should be close to standard literature value
         assert!((COULOMB_CONSTANT_KCAL - 332.0).abs() < 1.0);
     }
-    
+
     #[test]
     fn test_unit_conversions() {
         // Round trip conversion

@@ -9,17 +9,16 @@ Requires OpenMM to be installed: conda install -c conda-forge openmm
 
 from __future__ import annotations
 
-import pytest
-import numpy as np
 import jax.numpy as jnp
-
+import numpy as np
+import pytest
 
 # Check if OpenMM is available
 try:
     import openmm
+    from openmm import LangevinMiddleIntegrator
     from openmm import unit as u
     from openmm.app import Simulation
-    from openmm import LangevinMiddleIntegrator
 
     OPENMM_AVAILABLE = True
 except ImportError:

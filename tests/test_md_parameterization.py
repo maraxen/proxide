@@ -1,19 +1,19 @@
 """Test MD parameterization integration with force field."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
 
 # Skip if Rust extension not available
 pytest.importorskip("oxidize")
 
 from proxide.io.parsing.rust import (
-    parse_structure,
-    OutputSpec,
     MissingResidueMode,
+    OutputSpec,
     is_rust_parser_available,
+    parse_structure,
 )
-
 
 # Path to test data
 TEST_DATA_DIR = Path(__file__).parent.parent / "data"

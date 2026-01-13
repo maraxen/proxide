@@ -1,9 +1,11 @@
-import numpy as np
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
-from pathlib import Path
-from proxide import parse_structure, OutputSpec, CoordFormat
+
+from proxide import CoordFormat, OutputSpec, parse_structure
 
 # =============================================================================
 # JAX Reference Implementation

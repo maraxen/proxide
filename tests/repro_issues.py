@@ -1,11 +1,13 @@
 
-import unittest
-import tempfile
-import numpy as np
 import os
-from proxide.io.parsing import dispatch
-from proxide.core.containers import Protein
+import tempfile
+import unittest
+
+import numpy as np
+
 from proxide.core.atomic_system import AtomicSystem
+from proxide.core.containers import Protein
+from proxide.io.parsing import dispatch
 
 # Small PDB content with two chains
 PDB_CONTENT = """ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N

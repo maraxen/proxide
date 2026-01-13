@@ -1,10 +1,13 @@
 
-import pytest
-import numpy as np
-import biotite.structure.io.pdb as pdb
-import biotite.structure as struc
 from pathlib import Path
-from proxide import parse_structure, OutputSpec, CoordFormat
+
+import biotite.structure as struc
+import biotite.structure.io.pdb as pdb
+import numpy as np
+import pytest
+
+from proxide import CoordFormat, OutputSpec, parse_structure
+
 
 def test_coordinate_parity_1crn():
     """Verify that Rust parsed coordinates match Biotite coordinates exactly."""
