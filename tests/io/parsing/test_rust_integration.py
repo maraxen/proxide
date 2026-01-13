@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 try:
-    from proxide.io.parsing.rust import (
+    from proxide.io.parsing.backend import (
         ForceFieldData,
         RawAtomData,
         get_rust_capabilities,
@@ -25,7 +25,7 @@ try:
         parse_pdb_raw_rust,
         parse_pdb_to_protein,
     )
-    from proxide.io.parsing.rust import (
+    from proxide.io.parsing.backend import (
         parse_pdb_to_protein as parse_pdb_rust,
     )
     RUST_AVAILABLE = is_rust_parser_available()

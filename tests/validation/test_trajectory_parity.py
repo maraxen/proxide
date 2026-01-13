@@ -235,7 +235,7 @@ def test_hdf5_parsing_parity():
         traj = mdtraj.load(str(TRR_FILE), top=str(PDB_TOPOLOGY))
         traj.save(str(HDF5_FILE))
         
-    from proxide.io.parsing.rust import (
+    from proxide.io.parsing.backend import (
         is_hdf5_support_available,
         parse_mdtraj_h5_frame,
         parse_mdtraj_h5_metadata,

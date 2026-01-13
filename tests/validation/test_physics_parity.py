@@ -210,10 +210,10 @@ def test_rbf_output_shape():
     )
     result = parse_structure(pdb_path, spec)
     
-    assert "rbf_features" in result, "RBF features not in output"
+    assert result.rbf_features is not None, "RBF features not in output"
     
-    rbf = np.array(result["rbf_features"])
-    n_res = len(result["aatype"])
+    rbf = np.array(result.rbf_features)
+    n_res = len(result.aatype)
     
     # For multi-residue structures (1uao is large):
     # Expected shape: (N_res, min(K_neighbors, n_res-1), 400)
@@ -257,10 +257,10 @@ def test_bond_inference_parity_vs_biotite():
     )
     result = parse_structure(pdb_path, spec)
     
-    if "bonds" not in result:
+    if result.bonds is None:
         pytest.skip("Bonds not returned by Rust parser")
         
-    rust_bonds = np.array(result["bonds"]) # (M, 2) indices into global atom array
+    rust_bonds = np.array(result.bonds) # (M, 2) indices into global atom array
     
     # Biotite
     pdb_file = PDBFile.read(pdb_path)
@@ -319,9 +319,9 @@ def test_electrostatics_output_shape():
     result = parse_structure(pdb_path, spec)
     
     # If charges not present, this may be skipped
-    if "electrostatic_features" in result:
-        elec = np.array(result["electrostatic_features"])
-        n_res = len(result["aatype"])
+    if result.electrostatic_features is not None:
+        elec = np.array(result.electrostatic_features)
+        n_res = len(result.aatype)
         
         # Expected shape: (N_res, 5) for 5 backbone atoms
         expected_shape = (n_res, 5)
@@ -368,16 +368,16 @@ def test_all_physics_features_together():
     result = parse_structure(pdb_path, spec)
     
     # RBF should always be present when requested
-    assert "rbf_features" in result, "RBF not computed"
+    assert result.rbf_features is not None, "RBF not computed"
     
     # VdW features with default parameters
-    if "vdw_features" in result:
-        vdw = np.array(result["vdw_features"])
+    if result.vdw_features is not None:
+        vdw = np.array(result.vdw_features)
         print(f"VdW features shape: {vdw.shape}")
     
     # Bonds
-    if "bonds" in result:
-        bonds = np.array(result["bonds"])
+    if result.bonds is not None:
+        bonds = np.array(result.bonds)
         print(f"Bonds shape: {bonds.shape}")
         assert bonds.shape[1] == 2, "Bonds should be (N, 2)"
     
