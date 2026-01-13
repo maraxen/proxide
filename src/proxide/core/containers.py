@@ -127,6 +127,7 @@ class Protein:
   sigmas: Any | None = None
   epsilons: Any | None = None
   radii: Any | None = None
+  masses: Any | None = None
   atom_res_index: Any | None = None
 
   @classmethod
@@ -252,6 +253,7 @@ class Protein:
         chain_ids=rust_dict.get("unique_chain_ids") or (["A"] * len(rust_dict["chain_index"])),
         full_coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),
         full_atom_mask=convert(raw_mask, dtype=np.float32).flatten(),
+        masses=convert(rust_dict["masses"]) if rust_dict.get("masses") is not None else None,
       )
 
     # Flat format (Full)
@@ -300,6 +302,7 @@ class Protein:
       else None,
       format="Full",
       source=source,
+      masses=convert(rust_dict["masses"]) if rust_dict.get("masses") is not None else None,
     )
 
 
