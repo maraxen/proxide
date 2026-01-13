@@ -1,17 +1,18 @@
 """Tests for physics-based node features."""
+from dataclasses import fields
+
 import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from dataclasses import fields
 
+from proxide.core.atomic_system import AtomicSystem
+from proxide.core.containers import Protein
 from proxide.physics.features import (
     compute_electrostatic_features_batch,
     compute_electrostatic_node_features,
 )
-from proxide.core.containers import Protein
-from proxide.core.atomic_system import AtomicSystem
 
 
 def protein_to_dict(protein: Protein | AtomicSystem) -> dict:

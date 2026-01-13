@@ -1,7 +1,7 @@
 
 import jax.numpy as jnp
-import pytest
 import numpy as np
+import pytest
 
 from proxide.core.atomic_system import AtomicSystem
 

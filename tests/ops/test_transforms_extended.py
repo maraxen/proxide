@@ -3,15 +3,17 @@
 
 import unittest
 from unittest import mock
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from absl.testing import parameterized
 
-from proxide.core.containers import Protein, Protein
-from proxide.ops import transforms
 from proxide.chem import residues as residue_constants
+from proxide.core.containers import Protein
+from proxide.ops import transforms
+
 
 class TestTransformsExtended(parameterized.TestCase):
     
@@ -161,7 +163,7 @@ class TestTransformsExtended(parameterized.TestCase):
         """Test MD parameterization."""
         # Setup mocks
         mock_ff = mock.Mock()
-        mock_ff_loader.load_force_field_from_hub.return_value = mock_ff
+        mock_ff_loader.load_force_field.return_value = mock_ff
         
         mock_params = {
             "bonds": np.zeros((10, 2)),

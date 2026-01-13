@@ -13,7 +13,6 @@ if TYPE_CHECKING:
   from collections.abc import Sequence
 
 
-
 def _infer_format(path: pathlib.Path | None) -> str | None:
   """Infer file format from path suffix."""
   if path is None:

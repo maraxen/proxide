@@ -4,8 +4,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from proxide.geometry import transforms
 from proxide.chem import residues as rc
+from proxide.geometry import transforms
 from proxide.geometry.transforms import (
     apply_noise_to_coordinates,
     compute_backbone_coordinates,

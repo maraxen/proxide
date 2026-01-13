@@ -1,12 +1,15 @@
 
-import numpy as np
-import pytest
 from pathlib import Path
+
 import biotite
 import biotite.structure as struc
 import biotite.structure.io.pdb as pdb
 import hydride
-from proxide import parse_structure, OutputSpec, CoordFormat
+import numpy as np
+import pytest
+
+from proxide import CoordFormat, OutputSpec, parse_structure
+
 
 def atom_name_filter(name, atom_names):
     """Check if atom name exists in list."""

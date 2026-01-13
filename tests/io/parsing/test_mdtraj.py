@@ -1,12 +1,15 @@
 
+import pathlib
+
 import mdtraj as md
 import numpy as np
 import pytest
-import pathlib
+
+from proxide.chem import residues as rc
 from proxide.io.parsing import mdtraj
 from proxide.io.parsing.mdtraj import parse_mdtraj_to_processed_structure
 from proxide.io.parsing.structures import ProcessedStructure
-from proxide.chem import residues as rc
+
 
 def create_mock_mdtraj_file(path: pathlib.Path):
     # Create a topology with 2 chains

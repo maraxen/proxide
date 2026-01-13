@@ -160,88 +160,48 @@ pub struct OutputSpec {
 #[pymethods]
 impl OutputSpec {
     #[new]
-    #[pyo3(signature = (
-        coord_format=CoordFormat::Atom37,
-        output_format_target="general",
-        models=None,
-        chains=None,
-        remove_hetatm=false,
-        include_hetatm=false,
-        remove_solvent=true,
-        residue_range=None,
-        add_hydrogens=false,
-        hydrogen_source=HydrogenSource::ForceFieldFirst,
-        relax_hydrogens=false,
-        relax_max_iterations=None,
-        infer_bonds=false,
-        compute_rbf=false,
-        rbf_num_neighbors=30,
-        compute_electrostatics=false,
-        compute_vdw=false,
-        parameterize_md=false,
-        force_field=None,
-        auto_terminal_caps=true,
-        missing_residue_mode=MissingResidueMode::SkipWarn,
-        include_b_factors=false,
-        include_occupancy=false,
-        error_mode=ErrorMode::Warn,
-        enable_caching=false,
-    ))]
-    pub fn new(
-        coord_format: CoordFormat,
-        output_format_target: &str,
-        models: Option<Vec<usize>>,
-        chains: Option<Vec<String>>,
-        remove_hetatm: bool,
-        include_hetatm: bool,
-        remove_solvent: bool,
-        residue_range: Option<(i32, i32)>,
-        add_hydrogens: bool,
-        hydrogen_source: HydrogenSource,
-        relax_hydrogens: bool,
-        relax_max_iterations: Option<usize>,
-        infer_bonds: bool,
-        compute_rbf: bool,
-        rbf_num_neighbors: usize,
-        compute_electrostatics: bool,
-        compute_vdw: bool,
-        parameterize_md: bool,
-        force_field: Option<String>,
-        auto_terminal_caps: bool,
-        missing_residue_mode: MissingResidueMode,
-        include_b_factors: bool,
-        include_occupancy: bool,
-        error_mode: ErrorMode,
-        enable_caching: bool,
-    ) -> Self {
-        OutputSpec {
-            coord_format,
-            output_format_target: output_format_target.to_string(),
-            models,
-            chains,
-            remove_hetatm,
-            include_hetatm,
-            remove_solvent,
-            residue_range,
-            add_hydrogens,
-            hydrogen_source,
-            relax_hydrogens,
-            relax_max_iterations,
-            infer_bonds,
-            compute_rbf,
-            rbf_num_neighbors,
-            compute_electrostatics,
-            electrostatics_noise: None,
-            compute_vdw,
-            parameterize_md,
-            force_field,
-            auto_terminal_caps,
-            missing_residue_mode,
-            include_b_factors,
-            include_occupancy,
-            error_mode,
-            enable_caching,
+    #[pyo3(signature = (**kwargs))]
+    pub fn new(kwargs: Option<&Bound<'_, pyo3::types::PyDict>>) -> PyResult<Self> {
+        let mut spec = OutputSpec::default();
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs.iter() {
+                let key_str: &str = key.extract()?;
+                match key_str {
+                    "coord_format" => spec.coord_format = value.extract()?,
+                    "output_format_target" => spec.output_format_target = value.extract()?,
+                    "models" => spec.models = value.extract()?,
+                    "chains" => spec.chains = value.extract()?,
+                    "remove_hetatm" => spec.remove_hetatm = value.extract()?,
+                    "include_hetatm" => spec.include_hetatm = value.extract()?,
+                    "remove_solvent" => spec.remove_solvent = value.extract()?,
+                    "residue_range" => spec.residue_range = value.extract()?,
+                    "add_hydrogens" => spec.add_hydrogens = value.extract()?,
+                    "hydrogen_source" => spec.hydrogen_source = value.extract()?,
+                    "relax_hydrogens" => spec.relax_hydrogens = value.extract()?,
+                    "relax_max_iterations" => spec.relax_max_iterations = value.extract()?,
+                    "infer_bonds" => spec.infer_bonds = value.extract()?,
+                    "compute_rbf" => spec.compute_rbf = value.extract()?,
+                    "rbf_num_neighbors" => spec.rbf_num_neighbors = value.extract()?,
+                    "compute_electrostatics" => spec.compute_electrostatics = value.extract()?,
+                    "compute_vdw" => spec.compute_vdw = value.extract()?,
+                    "parameterize_md" => spec.parameterize_md = value.extract()?,
+                    "force_field" => spec.force_field = value.extract()?,
+                    "auto_terminal_caps" => spec.auto_terminal_caps = value.extract()?,
+                    "missing_residue_mode" => spec.missing_residue_mode = value.extract()?,
+                    "include_b_factors" => spec.include_b_factors = value.extract()?,
+                    "include_occupancy" => spec.include_occupancy = value.extract()?,
+                    "error_mode" => spec.error_mode = value.extract()?,
+                    "enable_caching" => spec.enable_caching = value.extract()?,
+                    _ => {
+                        return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                            "Unexpected keyword argument: {}",
+                            key_str
+                        )))
+                    }
+                }
+            }
         }
+        Ok(spec)
     }
 }
 

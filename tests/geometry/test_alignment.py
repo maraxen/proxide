@@ -4,8 +4,8 @@ import chex
 import jax.numpy as jnp
 import pytest
 
-from proxide.geometry import alignment
 from proxide.core.types import ProteinSequence
+from proxide.geometry import alignment
 from proxide.geometry.alignment import (
     align_sequences,
     needleman_wunsch_alignment,

@@ -3,9 +3,12 @@
 
 import unittest
 from unittest import mock
+
 import numpy as np
 import pytest
+
 from proxide.io.parsing import mappings
+
 
 class TestMappingsExtended(unittest.TestCase):
     

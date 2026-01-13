@@ -107,9 +107,8 @@ pub fn get_water_model(name: String, rigid: bool) -> PyResult<PyObject> {
 
 /// Compute bicubic interpolation parameters for CMAP
 #[pyfunction]
-pub fn compute_bicubic_params(grid: Vec<Vec<f64>>) -> PyResult<Vec<Vec<[f64; 4]>>> {
-    let params = physics::cmap::compute_bicubic_params(&grid);
-    Ok(params)
+pub fn compute_bicubic_params(grid: Vec<Vec<f64>>) -> Vec<Vec<[f64; 4]>> {
+    physics::cmap::compute_bicubic_params(&grid)
 }
 
 /// Parameterize a molecule using GAFF for ligands and small molecules

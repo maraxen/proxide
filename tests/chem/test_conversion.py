@@ -1,8 +1,9 @@
 """Unit tests for amino acid conversion functions in the prxteinmpnn.utils.aa_convert module."""
 
-import pytest
 import jax.numpy as jnp
 import numpy as np
+import pytest
+
 from proxide.chem import conversion as aa_convert
 from proxide.chem import residues as rc
 from proxide.core.types import ProteinSequence

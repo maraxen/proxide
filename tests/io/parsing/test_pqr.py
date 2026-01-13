@@ -4,12 +4,14 @@ These tests verify the Rust-based PQR parser which returns AtomicSystem objects.
 """
 
 import pathlib
-import pytest
+
 import numpy as np
+import pytest
+
+from proxide.core.atomic_system import AtomicSystem
 
 # Import the new functions
 from proxide.io.parsing.pqr import load_pqr, parse_pqr_rust
-from proxide.core.atomic_system import AtomicSystem
 
 TEST_PQR_PATH = pathlib.Path(__file__).parent.parent.parent / "data" / "1a00.pqr"
 

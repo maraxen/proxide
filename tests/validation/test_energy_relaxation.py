@@ -2,10 +2,12 @@
 Validation test for Hydrogen Addition, Energy Relaxation and GAFF Integration.
 """
 
-import pytest
-import numpy as np
-from pathlib import Path
 import os
+from pathlib import Path
+
+import numpy as np
+import pytest
+
 from proxide import _oxidize
 
 try:
@@ -15,8 +17,9 @@ try:
 except ImportError:
     OPENMM_AVAILABLE = False
 
-from proxide.io.parsing.rust import parse_structure, OutputSpec
 from proxide._oxidize import CoordFormat, ErrorMode
+
+from proxide.io.parsing.rust import OutputSpec, parse_structure
 
 TEST_DATA_DIR = Path("tests/data")
 

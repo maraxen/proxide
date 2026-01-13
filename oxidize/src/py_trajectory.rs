@@ -13,9 +13,8 @@ pub fn parse_xtc(path: String) -> PyResult<PyObject> {
         #[cfg(feature = "xtc")]
         {
             use formats::xtc::molly_impl::read_xtc_molly;
-            let traj = read_xtc_molly(&path).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("XTC parsing failed: {}", e))
-            })?;
+            let traj = read_xtc_molly(&path)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
             let dict = PyDict::new_bound(py);
             dict.set_item("num_frames", traj.num_frames)?;
@@ -56,9 +55,8 @@ pub fn parse_xtc(path: String) -> PyResult<PyObject> {
 pub fn parse_dcd(path: String) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         use formats::dcd::parse_dcd as read_dcd;
-        let traj = read_dcd(&path).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("DCD parsing failed: {}", e))
-        })?;
+        let traj =
+            read_dcd(&path).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         let dict = PyDict::new_bound(py);
         dict.set_item("num_frames", traj.num_frames)?;
@@ -106,9 +104,8 @@ pub fn parse_dcd(path: String) -> PyResult<PyObject> {
 pub fn parse_trr(path: String) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         use formats::trr::parse_trr as read_trr;
-        let traj = read_trr(&path).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("TRR parsing failed: {}", e))
-        })?;
+        let traj =
+            read_trr(&path).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         let dict = PyDict::new_bound(py);
         dict.set_item("num_frames", traj.num_frames)?;

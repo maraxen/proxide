@@ -7,8 +7,8 @@ from proxide.core.atomic_system import (
   AtomicConstants,
   AtomicState,
   AtomicSystem,
-  Molecule,
   MolecularTopology,
+  Molecule,
 )
 from proxide.core.containers import Protein
 

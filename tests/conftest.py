@@ -7,9 +7,9 @@ import jax.numpy as jnp
 import pytest
 from jax import random
 
-from proxide.io.parsing.dispatch import load_structure as parse_input
-from proxide.core.containers import Protein
 from proxide.core.atomic_system import AtomicSystem
+from proxide.core.containers import Protein
+from proxide.io.parsing.dispatch import load_structure as parse_input
 
 
 @pytest.fixture(scope="session")

@@ -114,9 +114,8 @@ impl AtomicSystem {
 
         // 1. Apply Noise
         let mut rng = StdRng::seed_from_u64(seed);
-        let normal = Normal::new(0.0, sigma).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Invalid sigma: {}", e))
-        })?;
+        let normal = Normal::new(0.0, sigma)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
         for x in new_system.coordinates.iter_mut() {
             *x += normal.sample(&mut rng);

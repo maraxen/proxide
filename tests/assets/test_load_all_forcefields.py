@@ -10,7 +10,6 @@ import pytest
 
 from proxide import _oxidize
 
-
 # Get the assets directory
 ASSETS_DIR = Path(__file__).parent.parent.parent / "src" / "proxide" / "assets"
 

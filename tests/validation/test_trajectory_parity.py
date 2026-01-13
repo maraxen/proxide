@@ -17,9 +17,10 @@ Note: These tests require trajectory test files and MDTraj installation.
 Tests are skipped gracefully when files are missing.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
 
 try:
     import mdtraj
@@ -234,7 +235,11 @@ def test_hdf5_parsing_parity():
         traj = mdtraj.load(str(TRR_FILE), top=str(PDB_TOPOLOGY))
         traj.save(str(HDF5_FILE))
         
-    from proxide.io.parsing.rust import is_hdf5_support_available, parse_mdtraj_h5_metadata, parse_mdtraj_h5_frame
+    from proxide.io.parsing.rust import (
+        is_hdf5_support_available,
+        parse_mdtraj_h5_frame,
+        parse_mdtraj_h5_metadata,
+    )
     
     if not is_hdf5_support_available():
         pytest.skip("HDF5 support not available (mdcath feature not compiled)")
@@ -274,7 +279,7 @@ def test_hdf5_parsing_parity():
 
 def test_all_trajectory_parsers_available():
     """Test that all trajectory parsers are at least importable."""
-    from proxide import parse_xtc, parse_dcd, parse_trr
+    from proxide import parse_dcd, parse_trr, parse_xtc
     assert callable(parse_xtc)
     assert callable(parse_dcd)
     assert callable(parse_trr)

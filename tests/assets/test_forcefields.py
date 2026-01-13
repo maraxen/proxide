@@ -5,18 +5,18 @@ import pytest
 
 from proxide.physics.force_fields import (
     FullForceField,
-    load_force_field,
     list_available_force_fields,
+    load_force_field,
 )
 from proxide.physics.force_fields.components import (
+    AnglePotentialParams,
     AtomTypeParams,
     BondPotentialParams,
-    AnglePotentialParams,
-    DihedralPotentialParams,
     CMAPParams,
+    DihedralPotentialParams,
+    NonbondedGlobalParams,
     UreyBradleyParams,
     VirtualSiteParams,
-    NonbondedGlobalParams,
 )
 
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import jax.numpy as jnp
 import pytest
 
-from proxide.geometry import metrics
 from proxide.chem import residues as rc
+from proxide.geometry import metrics
 from proxide.geometry.metrics import (
   calculate_ca_distance_matrix,
   calculate_cb_distance_matrix,

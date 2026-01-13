@@ -1,5 +1,6 @@
-import pytest
 import jax.numpy as jnp
+import pytest
+
 
 @pytest.fixture
 def backbone_positions_single_residue():
