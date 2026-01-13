@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 
 # Skip if Rust extension not available
-pytest.importorskip("oxidize")
+pytest.importorskip("proxide._oxidize")
 
-from proxide.io.parsing.rust import (
-    MissingResidueMode,
+from proxide import MissingResidueMode
+from proxide.io.parsing.backend import (
     OutputSpec,
     is_rust_parser_available,
     parse_structure,
@@ -54,7 +54,7 @@ END
         )
         
         # Parse with parameterization
-        import proxide_rs
+        from proxide import _oxidize
         result = _oxidize.parse_structure(str(simple_pdb), spec)
         
         # Check that charges were assigned
@@ -84,7 +84,7 @@ END
             force_field=str(FF_XML_PATH),
         )
         
-        import proxide_rs
+        from proxide import _oxidize
         result = _oxidize.parse_structure(str(simple_pdb), spec)
         
         charges = result["charges"]

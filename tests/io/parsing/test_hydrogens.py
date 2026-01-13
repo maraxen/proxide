@@ -27,17 +27,17 @@ def test_add_hydrogens_pipeline():
     result_on = parse_structure(str(pdb_path), spec_on)
     
     # Check that we got results
-    assert "coordinates" in result_on, f"Missing coordinates key. Keys: {list(result_on.keys())}"
+    assert result_on.coordinates is not None, f"Missing coordinates"
     
     # Test with hydrogens OFF
     spec_off = OutputSpec(add_hydrogens=False)
     result_off = parse_structure(str(pdb_path), spec_off)
     
-    assert "coordinates" in result_off
+    assert result_off.coordinates is not None
     
     print(f"Test passed!")
-    print(f"  With add_hydrogens=True: coordinates shape = {result_on['coordinates'].shape}")
-    print(f"  With add_hydrogens=False: coordinates shape = {result_off['coordinates'].shape}")
+    print(f"  With add_hydrogens=True: coordinates shape = {result_on.coordinates.shape}")
+    print(f"  With add_hydrogens=False: coordinates shape = {result_off.coordinates.shape}")
     
     # Clean up
     pdb_path.unlink()

@@ -19,7 +19,7 @@ except ImportError:
 
 from proxide._oxidize import CoordFormat, ErrorMode
 
-from proxide.io.parsing.rust import OutputSpec, parse_structure
+from proxide.io.parsing.backend import OutputSpec, parse_structure
 
 TEST_DATA_DIR = Path("tests/data")
 

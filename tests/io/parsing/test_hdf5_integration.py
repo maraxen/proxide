@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 try:
-    from proxide.io.parsing.rust_wrapper import (
+    from proxide.io.parsing.backend import (
         MdcathData,
         MdtrajH5Data,
         get_mdcath_replicas,

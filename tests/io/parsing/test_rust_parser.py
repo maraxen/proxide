@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 
 try:
-    from proxide.io.parsing.rust import is_rust_parser_available
-    from proxide.io.parsing.rust import parse_pdb_to_protein as parse_pdb_rust
+    from proxide.io.parsing.backend import is_rust_parser_available
+    from proxide.io.parsing.backend import parse_pdb_to_protein as parse_pdb_rust
     RUST_AVAILABLE = is_rust_parser_available()
 except ImportError:
     RUST_AVAILABLE = False
