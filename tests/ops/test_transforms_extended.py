@@ -157,39 +157,11 @@ class TestTransformsExtended(parameterized.TestCase):
         args, kwargs = mock_compute.call_args
         self.assertEqual(kwargs["noise_scale"], 0.1)
 
-    @mock.patch("proxide.ops.transforms.md")
-    @mock.patch("proxide.ops.transforms.force_fields")
-    def test_apply_md_parameterization(self, mock_ff_loader, mock_md):
-        """Test MD parameterization."""
-        # Setup mocks
-        mock_ff = mock.Mock()
-        mock_ff_loader.load_force_field.return_value = mock_ff
-        
-        mock_params = {
-            "bonds": np.zeros((10, 2)),
-            "bond_params": np.zeros((10, 2)),
-            "angles": np.zeros((10, 3)),
-            "angle_params": np.zeros((10, 2)),
-            "backbone_indices": np.zeros((10,)),
-            "exclusion_mask": np.zeros((10, 10)),
-            "charges": np.zeros((10,)),
-            "sigmas": np.zeros((10,)),
-            "epsilons": np.zeros((10,)),
-        }
-        mock_md.parameterize_system.return_value = mock_params
-        
+    def test_apply_md_parameterization(self):
+        """Test MD parameterization raises NotImplementedError."""
         elements = [self.protein_tuple]
-        updated = transforms._apply_md_parameterization(elements, use_md=True)
-        
-        self.assertEqual(len(updated), 1)
-        p = updated[0]
-        
-        self.assertIsNotNone(p.bonds)
-        self.assertIsNotNone(p.charges)
-        
-        # Verify calls
-        mock_ff_loader.load_force_field.assert_called_with("ff14SB")
-        mock_md.parameterize_system.assert_called_once()
+        with self.assertRaisesRegex(NotImplementedError, "no longer supported"):
+            transforms._apply_md_parameterization(elements, use_md=True)
 
     def test_pad_protein(self):
         """Test protein padding."""

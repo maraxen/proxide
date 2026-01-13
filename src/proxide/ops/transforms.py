@@ -14,12 +14,10 @@ import jax
 import numpy as np
 from jaxtyping import ArrayLike
 
-from proxide import md
-from proxide.chem import residues as residue_constants
+# from proxide import md  # Removed legacy md module
 from proxide.core.containers import Protein
 from proxide.core.projector import MPNNBatch
 from proxide.physics.features import compute_electrostatic_node_features
-from proxide.physics.force_fields import loader as force_fields
 
 _MAX_TRIES = 5
 
@@ -350,50 +348,16 @@ def _apply_md_parameterization(
   if not use_md:
     return elements
 
-  # Load force field (cached)
-  ff = force_fields.load_force_field("ff14SB")
+  if not use_md:
+    return elements
 
-  # Get residue names map
-  # residue_constants.restypes is list of 20 AA.
-  # We need to handle 'X' or others?
-  # parameterize_system expects 3-letter codes.
-  # residue_constants.restype_1to3 map.
-
-  updated_elements = []
-  for p in elements:
-    # Convert aatype to residue names
-    res_names = []
-    for aa in p.aatype:
-      if aa < len(residue_constants.restypes):
-        res_1 = residue_constants.restypes[aa]
-        res_3 = residue_constants.restype_1to3.get(res_1, "UNK")
-      else:
-        res_3 = "UNK"
-      res_names.append(res_3)
-
-    # Construct atom_names list
-    atom_names = []
-    for res_name in res_names:
-      atoms = residue_constants.residue_atoms.get(res_name, [])
-      atom_names.extend(atoms)
-
-    params = md.parameterize_system(ff, res_names, atom_names)
-
-    # Convert JAX arrays to numpy and populate ProteinTuple
-    p_new = p.replace(  # type: ignore[attr-defined]
-      bonds=np.array(params["bonds"]),
-      bond_params=np.array(params["bond_params"]),
-      angles=np.array(params["angles"]),
-      angle_params=np.array(params["angle_params"]),
-      backbone_indices=np.array(params["backbone_indices"]),
-      exclusion_mask=np.array(params["exclusion_mask"]),
-      charges=np.array(params["charges"]),
-      sigmas=np.array(params["sigmas"]),
-      epsilons=np.array(params["epsilons"]),
-    )
-    updated_elements.append(p_new)
-
-  return updated_elements
+  # Legacy MD parameterization via Python is removed.
+  # Use Rust-based parsing (proxide.io.parsing.backend) to get parameterized input.
+  msg = (
+    "In-memory MD parameterization via 'use_md=True' is no longer supported. "
+    "Parse with parameterize_md=True instead."
+  )
+  raise NotImplementedError(msg)
 
 
 def _pad_protein(  # noqa: C901
