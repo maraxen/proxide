@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import jax.numpy as jnp
 import numpy as np
+from flax import struct
 from flax.struct import dataclass
 
 from proxide.chem.residues import atom_order
@@ -128,6 +129,24 @@ class Protein:
   epsilons: Any | None = None
   radii: Any | None = None
   masses: Any | None = None
+
+  # MD parameters
+  constrained_bonds: Any | None = None
+  constrained_bond_lengths: Any | None = None
+  gbsa_scales: Any | None = None
+  scaled_radii: Any | None = None
+  urey_bradley_bonds: Any | None = None
+  urey_bradley_params: Any | None = None
+  cmap_torsions: Any | None = None
+  cmap_energy_grids: Any | None = None
+  cmap_indices: Any | None = None
+  virtual_site_def: Any | None = None
+  virtual_site_params: Any | None = None
+  coulomb14scale: Any | None = struct.field(default=None, pytree_node=False)
+  lj14scale: Any | None = struct.field(default=None, pytree_node=False)
+
+  scale_matrix_vdw: Any | None = None
+  scale_matrix_elec: Any | None = None
   atom_res_index: Any | None = None
 
   @classmethod
@@ -254,6 +273,35 @@ class Protein:
         full_coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),
         full_atom_mask=convert(raw_mask, dtype=np.float32).flatten(),
         masses=convert(rust_dict["masses"]) if rust_dict.get("masses") is not None else None,
+        constrained_bonds=convert(rust_dict.get("constrained_bonds"))
+        if rust_dict.get("constrained_bonds") is not None
+        else None,
+        constrained_bond_lengths=convert_params(
+          rust_dict.get("constrained_bond_lengths"), "length"
+        ),
+        gbsa_scales=convert(rust_dict.get("gbsa_scales"))
+        if rust_dict.get("gbsa_scales") is not None
+        else None,
+        scaled_radii=convert_params(rust_dict.get("scaled_radii"), "length"),
+        urey_bradley_bonds=convert(rust_dict.get("urey_bradley_bonds"))
+        if rust_dict.get("urey_bradley_bonds") is not None
+        else None,
+        urey_bradley_params=convert_params(rust_dict.get("urey_bradley_params"), "bond"),
+        cmap_torsions=convert(rust_dict.get("cmap_torsions"))
+        if rust_dict.get("cmap_torsions") is not None
+        else None,
+        cmap_energy_grids=convert_params(rust_dict.get("cmap_energy_grids"), "energy"),
+        cmap_indices=convert(rust_dict.get("cmap_indices"))
+        if rust_dict.get("cmap_indices") is not None
+        else None,
+        virtual_site_def=convert(rust_dict.get("virtual_site_def"))
+        if rust_dict.get("virtual_site_def") is not None
+        else None,
+        virtual_site_params=convert(rust_dict.get("virtual_site_params"))
+        if rust_dict.get("virtual_site_params") is not None
+        else None,
+        coulomb14scale=rust_dict.get("coulomb14scale"),
+        lj14scale=rust_dict.get("lj14scale"),
       )
 
     # Flat format (Full)
@@ -262,21 +310,36 @@ class Protein:
     if elements is None and atom_names is not None:
       elements = [name[0].upper() if name else "C" for name in atom_names]
 
+    # Slice parameters if they are padded (Match Atom37 count but format is Full)
+    mask = convert(raw_mask, dtype=bool).flatten()
+    n_atoms = mask.sum()
+
+    def _maybe_slice(val, unit=None, dtype=None):
+      if val is None:
+        return None
+      if unit:
+        val = convert_params(val, unit)
+      else:
+        val = convert(val, dtype=dtype)
+      if val is not None and val.shape[0] > n_atoms and val.shape[0] == len(mask):
+        return val[mask]
+      return val
+
     return cls(
-      coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),
-      full_coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),
+      coordinates=_maybe_slice(raw_coords.reshape(-1, 3)),
+      full_coordinates=_maybe_slice(raw_coords.reshape(-1, 3)),
       aatype=convert(rust_dict["aatype"], dtype=np.int8),
       one_hot_sequence=convert(np.eye(21)[rust_dict["aatype"]]),
       mask=convert(np.ones(num_residues), dtype=np.float32),
-      residue_index=convert(rust_dict["residue_index"], dtype=np.int32),
-      chain_index=convert(rust_dict["chain_index"], dtype=np.int32),
-      atom_mask=convert(raw_mask, dtype=np.float32),
+      residue_index=_maybe_slice(rust_dict["residue_index"], dtype=np.int32),
+      chain_index=_maybe_slice(rust_dict["chain_index"], dtype=np.int32),
+      atom_mask=_maybe_slice(raw_mask, dtype=np.float32),
       elements=elements,
       atom_names=atom_names,
-      charges=convert(rust_dict["charges"]) if rust_dict.get("charges") is not None else None,
-      radii=convert_params(rust_dict.get("radii") or rust_dict.get("gbsa_radii"), "length"),
-      sigmas=convert_params(rust_dict.get("sigmas"), "length"),
-      epsilons=convert_params(rust_dict.get("epsilons"), "energy"),
+      charges=_maybe_slice(rust_dict.get("charges")),
+      radii=_maybe_slice(rust_dict.get("radii") or rust_dict.get("gbsa_radii"), "length"),
+      sigmas=_maybe_slice(rust_dict.get("sigmas"), "length"),
+      epsilons=_maybe_slice(rust_dict.get("epsilons"), "energy"),
       molecule_type=convert(rust_dict["molecule_type"])
       if rust_dict.get("molecule_type") is not None
       else None,
@@ -302,7 +365,38 @@ class Protein:
       else None,
       format="Full",
       source=source,
-      masses=convert(rust_dict["masses"]) if rust_dict.get("masses") is not None else None,
+      masses=_maybe_slice(rust_dict.get("masses")),
+      constrained_bonds=convert(rust_dict.get("constrained_bonds"))
+      if rust_dict.get("constrained_bonds") is not None
+      else None,
+      constrained_bond_lengths=convert_params(rust_dict.get("constrained_bond_lengths"), "length"),
+      gbsa_scales=_maybe_slice(rust_dict.get("gbsa_scales")),
+      scaled_radii=_maybe_slice(rust_dict.get("scaled_radii"), "length"),
+      urey_bradley_bonds=convert(rust_dict.get("urey_bradley_bonds"))
+      if rust_dict.get("urey_bradley_bonds") is not None
+      else None,
+      urey_bradley_params=convert_params(rust_dict.get("urey_bradley_params"), "bond"),
+      cmap_torsions=convert(rust_dict.get("cmap_torsions"))
+      if rust_dict.get("cmap_torsions") is not None
+      else None,
+      cmap_energy_grids=convert_params(rust_dict.get("cmap_energy_grids"), "energy"),
+      cmap_indices=convert(rust_dict.get("cmap_indices"))
+      if rust_dict.get("cmap_indices") is not None
+      else None,
+      virtual_site_def=convert(rust_dict.get("virtual_site_def"))
+      if rust_dict.get("virtual_site_def") is not None
+      else None,
+      virtual_site_params=convert(rust_dict.get("virtual_site_params"))
+      if rust_dict.get("virtual_site_params") is not None
+      else None,
+      coulomb14scale=rust_dict.get("coulomb14scale"),
+      lj14scale=rust_dict.get("lj14scale"),
+      scale_matrix_vdw=convert(rust_dict.get("scale_matrix_vdw"))
+      if rust_dict.get("scale_matrix_vdw") is not None
+      else None,
+      scale_matrix_elec=convert(rust_dict.get("scale_matrix_elec"))
+      if rust_dict.get("scale_matrix_elec") is not None
+      else None,
     )
 
 
