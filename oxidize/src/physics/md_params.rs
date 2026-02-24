@@ -190,6 +190,32 @@ pub fn parameterize_structure(
                         if options.missing_mode == MissingResidueMode::Fail {
                             return Err(ParamError::MissingTemplate(res_info.res_name.clone()));
                         }
+                        // Apply element-based LJ fallbacks even for skipped residues
+                        // to prevent sigma=0 which causes LJ singularity in MD
+                        for atom_idx in
+                            res_info.start_atom..(res_info.start_atom + res_info.num_atoms)
+                        {
+                            let element = &processed.raw_atoms.elements[atom_idx];
+                            let (fb_sigma, fb_epsilon) =
+                                match element.to_uppercase().as_str() {
+                                    "H" => (0.1069, 0.065),
+                                    "C" => (0.34, 0.36),
+                                    "N" => (0.325, 0.71),
+                                    "O" => (0.296, 0.88),
+                                    "S" => (0.356, 1.04),
+                                    _ => (
+                                        crate::physics::constants::DEFAULT_SIGMA,
+                                        crate::physics::constants::DEFAULT_EPSILON,
+                                    ),
+                                };
+                            sigmas[atom_idx] = fb_sigma;
+                            epsilons[atom_idx] = fb_epsilon;
+                        }
+                        log::debug!(
+                            "Applied element-based LJ fallbacks for skipped residue {} ({} atoms)",
+                            res_info.res_name,
+                            res_info.num_atoms
+                        );
                         num_skipped += res_info.num_atoms;
                         continue;
                     }
