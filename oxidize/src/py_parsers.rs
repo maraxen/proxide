@@ -804,6 +804,18 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                     .set_item("pairs_14", arr.reshape((params.pairs_14.len(), 2)).unwrap())?;
             }
 
+            if !params.exception_14_params.is_empty() {
+                let mut flat = Vec::with_capacity(params.exception_14_params.len() * 3);
+                for x in &params.exception_14_params {
+                    flat.extend_from_slice(x);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item(
+                    "exception_14_params",
+                    arr.reshape((params.exception_14_params.len(), 3)).unwrap(),
+                )?;
+            }
+
             if !params.cmap_torsions.is_empty() {
                 let mut flat = Vec::with_capacity(params.cmap_torsions.len() * 5);
                 for x in &params.cmap_torsions {
@@ -823,13 +835,13 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
 
             if !params.cmap_grids.is_empty() {
                 // CMAP energy grids: (N_maps, grid_size, grid_size)
-                // Convert kJ/mol (force field) to kcal/mol (prolix) by dividing by 4.184
+                // Pass raw kJ/mol values. Python OutputSpec handles unit conversion to kcal/mol.
                 let n_maps = params.cmap_grids.len();
                 let grid_size = params.cmap_grids[0].size;
                 let mut flat = Vec::with_capacity(n_maps * grid_size * grid_size);
                 for grid in &params.cmap_grids {
                     for val in &grid.energies {
-                        flat.push((*val / 4.184) as f32);
+                        flat.push(*val as f32);
                     }
                 }
                 let arr = PyArray1::from_slice_bound(py, &flat);

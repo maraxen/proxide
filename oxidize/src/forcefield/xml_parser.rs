@@ -69,7 +69,7 @@ fn parse_xml_reader<R: std::io::BufRead>(
                 b"HarmonicBondForce" => parse_harmonic_bonds(&mut xml_reader, &mut ff)?,
                 b"HarmonicAngleForce" => parse_harmonic_angles(&mut xml_reader, &mut ff)?,
                 b"PeriodicTorsionForce" => parse_periodic_torsions(&mut xml_reader, &mut ff)?,
-                b"NonbondedForce" => parse_nonbonded(&mut xml_reader, &mut ff)?,
+                b"NonbondedForce" => parse_nonbonded(&mut xml_reader, &mut ff, e)?,
                 b"GBSAOBCForce" => parse_gbsa_obc(&mut xml_reader, &mut ff)?,
                 b"CMAPTorsionForce" => parse_cmap(&mut xml_reader, &mut ff)?,
                 b"AmoebaMultipoleForce" | b"MultipoleForce" => {
@@ -469,7 +469,11 @@ fn parse_torsion_element(
 fn parse_nonbonded<R: std::io::BufRead>(
     reader: &mut Reader<R>,
     ff: &mut ForceField,
+    e: &BytesStart,
 ) -> Result<(), ParseError> {
+    ff.lj14scale = get_attr_f32_opt(e, b"lj14scale").unwrap_or(0.5);
+    ff.coulomb14scale = get_attr_f32_opt(e, b"coulomb14scale").unwrap_or(0.833333);
+
     let mut buf = Vec::new();
 
     loop {
@@ -486,6 +490,15 @@ fn parse_nonbonded<R: std::io::BufRead>(
                 ff.nonbonded_params.push(NonbondedParam {
                     atom_type,
                     charge,
+                    sigma: get_attr_f32(e, b"sigma")?,
+                    epsilon: get_attr_f32(e, b"epsilon")?,
+                });
+            }
+            Ok(Event::Empty(ref e)) if e.name().as_ref() == b"Exception" => {
+                ff.exceptions.push(NonbondedException {
+                    type1: get_attr(e, b"type1")?,
+                    type2: get_attr(e, b"type2")?,
+                    charge_prod: get_attr_f32(e, b"chargeProd")?,
                     sigma: get_attr_f32(e, b"sigma")?,
                     epsilon: get_attr_f32(e, b"epsilon")?,
                 });

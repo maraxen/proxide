@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::forcefield::{
     ForceField, GBSAOBCParam, HarmonicAngleParam, HarmonicBondParam, ImproperTorsionParam,
-    NonbondedParam, ProperTorsionParam, ResidueTemplate, Topology,
+    NonbondedException, NonbondedParam, ProperTorsionParam, ResidueTemplate, Topology,
 };
 use crate::processing::ProcessedStructure;
 
@@ -87,7 +87,8 @@ pub struct MDParameters {
 
     /// 1-4 Pairs for scaling (atom1, atom2)
     pub pairs_14: Vec<[usize; 2]>,
-    // 1-4 Separation scaling factors (lj_scale, coulomb_scale) - usually global but can be per-pair
+    /// Per-pair 1-4 exception parameters: (chargeProd, sigma, epsilon)
+    pub exception_14_params: Vec<[f32; 3]>,
 
     // --- CMAP ---
     /// CMAP torsions as [atom1, atom2, atom3, atom4, atom5]
@@ -251,8 +252,18 @@ pub fn parameterize_structure(
         for atom_idx in res_info.start_atom..(res_info.start_atom + res_info.num_atoms) {
             let atom_name = &processed.raw_atoms.atom_names[atom_idx];
 
-            // Find matching template atom
-            if let Some(template_atom) = template_atoms.get(atom_name.as_str()) {
+            // Find matching template atom (with PDB naming alias fallback)
+            let template_atom_opt = template_atoms.get(atom_name.as_str())
+                .or_else(|| {
+                    // PDBFixer names N-terminal H as "H", but AMBER templates use "H1"
+                    match atom_name.as_str() {
+                        "H" => template_atoms.get("H1"),
+                        "H1" => template_atoms.get("H"),
+                        _ => None,
+                    }
+                });
+
+            if let Some(template_atom) = template_atom_opt {
                 // Assign charge from template
                 charges[atom_idx] = template_atom.charge.unwrap_or(0.0);
                 atom_types[atom_idx] = template_atom.atom_type.clone();
@@ -266,38 +277,41 @@ pub fn parameterize_structure(
                 atom_classes[atom_idx] = atom_class.clone();
 
                 // Look up LJ params by atom type, then fallback to class
-                // This handles CMAP-specific types (e.g., "cmap-TYR-N") that have
-                // a class (e.g., "protein-N") with nonbonded params.
+                let mut nb_found = false;
                 if let Some(nb) = nonbonded_map.get(&template_atom.atom_type) {
                     sigmas[atom_idx] = nb.sigma;
                     epsilons[atom_idx] = nb.epsilon;
+                    nb_found = true;
                 } else if let Some(nb) = nonbonded_map.get(&atom_class) {
-                    // Fallback to class-based lookup
                     sigmas[atom_idx] = nb.sigma;
                     epsilons[atom_idx] = nb.epsilon;
+                    nb_found = true;
                 }
 
-                // Look up GBSA params if available (same fallback logic)
+                if !nb_found {
+                    log::warn!(
+                        "No nonbonded parameters for atom {} (type: {}, class: {}) in res {}.",
+                        atom_name, template_atom.atom_type, atom_class, template_name
+                    );
+                }
+
+                // Look up GBSA params if available
                 if has_gbsa {
                     if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
-                        if let Some(ref mut r) = radii {
-                            r[atom_idx] = gbsa.radius;
-                        }
-                        if let Some(ref mut s) = scales {
-                            s[atom_idx] = gbsa.scale;
-                        }
+                        if let Some(ref mut r) = radii { r[atom_idx] = gbsa.radius; }
+                        if let Some(ref mut s) = scales { s[atom_idx] = gbsa.scale; }
                     } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
-                        // Fallback to class-based lookup
-                        if let Some(ref mut r) = radii {
-                            r[atom_idx] = gbsa.radius;
-                        }
-                        if let Some(ref mut s) = scales {
-                            s[atom_idx] = gbsa.scale;
-                        }
+                        if let Some(ref mut r) = radii { r[atom_idx] = gbsa.radius; }
+                        if let Some(ref mut s) = scales { s[atom_idx] = gbsa.scale; }
                     }
                 }
 
-                local_to_global.insert(atom_name, atom_idx);
+                local_to_global.insert(atom_name.as_str(), atom_idx);
+                // Also register the template atom name if it differs from PDB name
+                // (e.g. PDB "H" → template "H1") so template bonds resolve correctly
+                if template_atom.name.as_str() != atom_name.as_str() {
+                    local_to_global.insert(template_atom.name.as_str(), atom_idx);
+                }
                 num_parameterized += 1;
             } else {
                 num_skipped += 1;
@@ -400,9 +414,8 @@ pub fn parameterize_structure(
         }
     }
 
-    // Assign Proper Dihedral Params
-    // Assign Proper Dihedral Params
-    // Assign Proper Dihedral Params
+    // Assign Proper Dihedral Params and 1-4 Pairs
+    let mut exception_14_params = Vec::new();
     for dih in &proper_topology {
         if let Some(params) = lookup_proper(
             &atom_classes[dih.i],
@@ -423,9 +436,32 @@ pub fn parameterize_structure(
                 }
             }
         }
-        // If lookup fails or all terms are 0, we imply skipping this torsion
 
+        let mut exception_map: HashMap<(String, String), &NonbondedException> = HashMap::new();
+        for exc in &ff.exceptions {
+            exception_map.insert((exc.type1.clone(), exc.type2.clone()), exc);
+            exception_map.insert((exc.type2.clone(), exc.type1.clone()), exc);
+        }
+
+        // Add 1-4 pair and compute scaling exceptions
         pairs_14.push([dih.i, dih.l]);
+        
+        // Use force field defined scaling as primary defaults
+        let (lj14scale, coulomb14scale) = (ff.lj14scale, ff.coulomb14scale);
+
+        // Check for specific exception override
+        let override_params = exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
+
+        let (charge_prod, sigma, epsilon) = if let Some(exc) = override_params {
+            (exc.charge_prod, exc.sigma, exc.epsilon)
+        } else {
+            let charge_prod = charges[dih.i] * charges[dih.l] * coulomb14scale;
+            let sigma = (sigmas[dih.i] + sigmas[dih.l]) / 2.0;
+            let epsilon = (epsilons[dih.i] * epsilons[dih.l]).sqrt() * lj14scale;
+            (charge_prod, sigma, epsilon)
+        };
+        
+        exception_14_params.push([charge_prod, sigma, epsilon]);
     }
 
     // Assign Improper Params
@@ -523,6 +559,7 @@ pub fn parameterize_structure(
         impropers: impropers_vec,
         improper_params,
         pairs_14,
+        exception_14_params,
         cmap_torsions,
         cmap_map_indices,
         cmap_grids,
@@ -644,6 +681,7 @@ pub fn parameterize_molecule(
         impropers: impropers_vec,
         improper_params,
         pairs_14,
+        exception_14_params: Vec::new(), // GAFF exceptions not handled yet
         cmap_torsions: Vec::new(),
         cmap_map_indices: Vec::new(),
         cmap_grids: Vec::new(),

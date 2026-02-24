@@ -103,6 +103,9 @@ ProjectedFeaturesPerAtom = Float[ArrayLike, "num_residues 25"]
 PRNGKey = PRNGKeyArray
 
 
+Exception14Params = Float[ArrayLike, "num_14 3"]
+
+
 class SystemParams(TypedDict):
   """Parameters for a JAX MD system."""
 
@@ -134,3 +137,4 @@ class SystemParams(TypedDict):
   urey_bradley_params: UreyBradleyParams  # (N_ub, 2) [d, k]
   virtual_site_def: VirtualSiteDef  # (N_vs, 4) [vs_idx, parent1, parent2, parent3]
   virtual_site_params: VirtualSiteParams  # (N_vs, 12)
+  exception_14_params: Exception14Params  # (N_14, 3) [chargeProd, sigma, epsilon]
