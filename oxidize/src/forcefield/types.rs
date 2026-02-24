@@ -132,6 +132,21 @@ pub struct NonbondedParam {
     pub epsilon: f32,
 }
 
+/// Nonbonded 1-4 exception parameters (overrides scaling)
+#[derive(Debug, Clone)]
+pub struct NonbondedException {
+    /// Atom type 1
+    pub type1: String,
+    /// Atom type 2
+    pub type2: String,
+    /// Charge product in elementary charge units squared
+    pub charge_prod: f32,
+    /// LJ sigma in nm
+    pub sigma: f32,
+    /// LJ epsilon in kJ/mol
+    pub epsilon: f32,
+}
+
 /// GBSA-OBC implicit solvent parameters
 #[derive(Debug, Clone)]
 pub struct GBSAOBCParam {
@@ -204,6 +219,13 @@ pub struct ForceField {
     /// GBSA-OBC implicit solvent parameters
     pub gbsa_obc_params: Vec<GBSAOBCParam>,
 
+    /// Nonbonded exceptions (1-4 overrides)
+    pub exceptions: Vec<NonbondedException>,
+
+    /// Global 1-4 scaling factors
+    pub lj14scale: f32,
+    pub coulomb14scale: f32,
+
     /// CMAP correction data (optional)
     pub cmap_data: Option<CMAPData>,
 
@@ -228,6 +250,9 @@ impl ForceField {
             improper_torsions: Vec::new(),
             nonbonded_params: Vec::new(),
             gbsa_obc_params: Vec::new(),
+            exceptions: Vec::new(),
+            lj14scale: 0.5,           // Default AMBER
+            coulomb14scale: 0.833333, // Default AMBER
             cmap_data: None,
             atom_type_map: HashMap::new(),
             residue_map: HashMap::new(),

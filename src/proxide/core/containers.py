@@ -142,6 +142,8 @@ class Protein:
   cmap_indices: Any | None = None
   virtual_site_def: Any | None = None
   virtual_site_params: Any | None = None
+  pairs_14: Any | None = None
+  exception_14_params: Any | None = None
   coulomb14scale: Any | None = struct.field(default=None, pytree_node=False)
   lj14scale: Any | None = struct.field(default=None, pytree_node=False)
 
@@ -389,6 +391,8 @@ class Protein:
       virtual_site_params=convert(rust_dict.get("virtual_site_params"))
       if rust_dict.get("virtual_site_params") is not None
       else None,
+      pairs_14=convert(rust_dict.get("pairs_14"), dtype=np.int32),
+      exception_14_params=convert_params(rust_dict.get("exception_14_params"), "exception"),
       coulomb14scale=rust_dict.get("coulomb14scale"),
       lj14scale=rust_dict.get("lj14scale"),
       scale_matrix_vdw=convert(rust_dict.get("scale_matrix_vdw"))
