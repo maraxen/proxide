@@ -89,6 +89,13 @@ pub struct MDParameters {
     pub pairs_14: Vec<[usize; 2]>,
     // 1-4 Separation scaling factors (lj_scale, coulomb_scale) - usually global but can be per-pair
 
+    // --- CMAP ---
+    /// CMAP torsions as [atom1, atom2, atom3, atom4, atom5]
+    pub cmap_torsions: Vec<[usize; 5]>,
+    /// CMAP map indices into cmap_grids
+    pub cmap_map_indices: Vec<usize>,
+    /// CMAP energy grids
+    pub cmap_grids: Vec<crate::forcefield::CMAPGrid>,
     // We'll assume global for now, handled by OpenMM, but we list the pairs.
 }
 
@@ -156,6 +163,15 @@ pub fn parameterize_structure(
     let mut improper_params = Vec::new();
     let mut pairs_14 = Vec::new();
 
+    // CMAP
+    let mut cmap_torsions = Vec::new();
+    let mut cmap_map_indices = Vec::new();
+    let cmap_grids = if let Some(cmap_data) = &ff.cmap_data {
+        cmap_data.maps.clone()
+    } else {
+        Vec::new()
+    };
+
     // Mapping from (class1, class2) -> BondParam
     // We need atom classes for lookup, so let's store them
     let mut atom_classes = vec![String::new(); n_atoms];
@@ -196,18 +212,17 @@ pub fn parameterize_structure(
                             res_info.start_atom..(res_info.start_atom + res_info.num_atoms)
                         {
                             let element = &processed.raw_atoms.elements[atom_idx];
-                            let (fb_sigma, fb_epsilon) =
-                                match element.to_uppercase().as_str() {
-                                    "H" => (0.1069, 0.065),
-                                    "C" => (0.34, 0.36),
-                                    "N" => (0.325, 0.71),
-                                    "O" => (0.296, 0.88),
-                                    "S" => (0.356, 1.04),
-                                    _ => (
-                                        crate::physics::constants::DEFAULT_SIGMA,
-                                        crate::physics::constants::DEFAULT_EPSILON,
-                                    ),
-                                };
+                            let (fb_sigma, fb_epsilon) = match element.to_uppercase().as_str() {
+                                "H" => (0.1069, 0.065),
+                                "C" => (0.34, 0.36),
+                                "N" => (0.325, 0.71),
+                                "O" => (0.296, 0.88),
+                                "S" => (0.356, 1.04),
+                                _ => (
+                                    crate::physics::constants::DEFAULT_SIGMA,
+                                    crate::physics::constants::DEFAULT_EPSILON,
+                                ),
+                            };
                             sigmas[atom_idx] = fb_sigma;
                             epsilons[atom_idx] = fb_epsilon;
                         }
@@ -429,6 +444,67 @@ pub fn parameterize_structure(
         }
     }
 
+    // --- CMAP Second-Pass Extraction ---
+    if let Some(cmap_data) = &ff.cmap_data {
+        for i in 0..n_residues {
+            // CMAP term is across consecutive residues: res_i and res_{i+1}
+            // Typically L-alanine: [C_{i-1}, N_i, CA_i, C_i, N_{i+1}]
+            if i == 0 || i + 1 >= n_residues {
+                continue;
+            }
+
+            let res_prev = &processed.residue_info[i - 1];
+            let res_curr = &processed.residue_info[i];
+            let res_next = &processed.residue_info[i + 1];
+
+            // Helper to find atom within residue range
+            let find_atom = |ri: &crate::processing::ResidueInfo, name: &str| -> Option<usize> {
+                for atom_idx in ri.start_atom..(ri.start_atom + ri.num_atoms) {
+                    if processed.raw_atoms.atom_names[atom_idx] == name {
+                        return Some(atom_idx);
+                    }
+                }
+                None
+            };
+
+            // Find backbone atoms for CMAP
+            if let (
+                Some(idx1), // C_{i-1}
+                Some(idx2), // N_i
+                Some(idx3), // CA_i
+                Some(idx4), // C_i
+                Some(idx5), // N_{i+1}
+            ) = (
+                find_atom(res_prev, "C"),
+                find_atom(res_curr, "N"),
+                find_atom(res_curr, "CA"),
+                find_atom(res_curr, "C"),
+                find_atom(res_next, "N"),
+            ) {
+                // Check if this quintuplet matches any CMAP torsion definition
+                let c1 = &atom_classes[idx1];
+                let t2 = &atom_types[idx2];
+                let t3 = &atom_types[idx3];
+                let t4 = &atom_types[idx4];
+                let c5 = &atom_classes[idx5];
+
+                for torsion in &cmap_data.torsions {
+                    // OpenMM XML: class1, type2, type3, type4, class5
+                    if torsion.class1 == *c1
+                        && torsion.type2 == *t2
+                        && torsion.type3 == *t3
+                        && torsion.type4 == *t4
+                        && torsion.class5 == *c5
+                    {
+                        cmap_torsions.push([idx1, idx2, idx3, idx4, idx5]);
+                        cmap_map_indices.push(torsion.map_index);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     Ok(MDParameters {
         charges,
         sigmas,
@@ -447,6 +523,9 @@ pub fn parameterize_structure(
         impropers: impropers_vec,
         improper_params,
         pairs_14,
+        cmap_torsions,
+        cmap_map_indices,
+        cmap_grids,
     })
 }
 
@@ -565,6 +644,9 @@ pub fn parameterize_molecule(
         impropers: impropers_vec,
         improper_params,
         pairs_14,
+        cmap_torsions: Vec::new(),
+        cmap_map_indices: Vec::new(),
+        cmap_grids: Vec::new(),
     })
 }
 
