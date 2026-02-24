@@ -145,9 +145,10 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             // Infer bonds if not provided
             let mut bonds_for_h = geometry::topology::infer_bonds(&all_coords, all_elements, 1.3);
 
-            eprintln!(
-                "[OXIDIZE DEBUG] Calling add_hydrogens_with_relax. relax={}, max_iter={:?}",
-                spec.relax_hydrogens, spec.relax_max_iterations
+            log::debug!(
+                "Calling add_hydrogens_with_relax. relax={}, max_iter={:?}",
+                spec.relax_hydrogens,
+                spec.relax_max_iterations
             );
             let num_h_added = geometry::hydrogens::add_hydrogens_with_relax(
                 &mut processed,
@@ -801,6 +802,41 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                 let arr = PyArray1::from_slice_bound(py, &flat);
                 dict_bound
                     .set_item("pairs_14", arr.reshape((params.pairs_14.len(), 2)).unwrap())?;
+            }
+
+            if !params.cmap_torsions.is_empty() {
+                let mut flat = Vec::with_capacity(params.cmap_torsions.len() * 5);
+                for x in &params.cmap_torsions {
+                    flat.extend_from_slice(x);
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item(
+                    "cmap_torsions",
+                    arr.reshape((params.cmap_torsions.len(), 5)).unwrap(),
+                )?;
+            }
+
+            if !params.cmap_map_indices.is_empty() {
+                let arr = PyArray1::from_slice_bound(py, &params.cmap_map_indices);
+                dict_bound.set_item("cmap_indices", arr)?;
+            }
+
+            if !params.cmap_grids.is_empty() {
+                // CMAP energy grids: (N_maps, grid_size, grid_size)
+                // Convert kJ/mol (force field) to kcal/mol (prolix) by dividing by 4.184
+                let n_maps = params.cmap_grids.len();
+                let grid_size = params.cmap_grids[0].size;
+                let mut flat = Vec::with_capacity(n_maps * grid_size * grid_size);
+                for grid in &params.cmap_grids {
+                    for val in &grid.energies {
+                        flat.push((*val / 4.184) as f32);
+                    }
+                }
+                let arr = PyArray1::from_slice_bound(py, &flat);
+                dict_bound.set_item(
+                    "cmap_energy_grids",
+                    arr.reshape((n_maps, grid_size, grid_size)).unwrap(),
+                )?;
             }
 
             let atom_types: Vec<&str> = params.atom_types.iter().map(|s| s.as_str()).collect();

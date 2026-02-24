@@ -23,29 +23,24 @@ static FRAGMENT_LIBRARY: OnceCell<FragmentLibrary> = OnceCell::new();
 /// Initialize the fragment library. Call this at module initialization time.
 /// This avoids lazy initialization which can deadlock with Python's GIL.
 pub fn init_fragment_library() {
-    eprintln!("[OXIDIZE H] init_fragment_library: starting...");
+    log::debug!("init_fragment_library: starting...");
     let _ = FRAGMENT_LIBRARY.get_or_init(|| {
-        eprintln!(
-            "[OXIDIZE H] init_fragment_library: parsing binary ({} bytes)...",
+        log::debug!(
+            "init_fragment_library: parsing binary ({} bytes)...",
             FRAGMENTS_BIN.len()
         );
         match FragmentLibrary::from_binary(FRAGMENTS_BIN) {
             Ok(lib) => {
-                eprintln!(
-                    "[OXIDIZE H] init_fragment_library: loaded {} entries",
-                    lib.len()
-                );
                 log::info!("Loaded fragment library with {} entries", lib.len());
                 lib
             }
             Err(e) => {
-                eprintln!("[OXIDIZE H] init_fragment_library: FAILED - {}", e);
                 log::warn!("Failed to parse embedded fragment library: {}", e);
                 FragmentLibrary::new()
             }
         }
     });
-    eprintln!("[OXIDIZE H] init_fragment_library: done");
+    log::debug!("init_fragment_library: done");
 }
 
 /// Get the fragment library reference.
@@ -55,7 +50,7 @@ fn get_fragment_library() -> &'static FragmentLibrary {
     // Use get() to avoid blocking - library should be initialized at module load
     FRAGMENT_LIBRARY.get().unwrap_or_else(|| {
         // Fallback: This should never happen if init_fragment_library() was called
-        eprintln!("[OXIDIZE H] WARNING: Fragment library not initialized, returning empty library");
+        log::warn!("WARNING: Fragment library not initialized, returning empty library");
         // Return a static empty library as last resort
         static EMPTY: once_cell::sync::OnceCell<FragmentLibrary> = once_cell::sync::OnceCell::new();
         EMPTY.get_or_init(FragmentLibrary::new)
@@ -101,7 +96,6 @@ pub fn add_hydrogens(
     let n_original = structure.raw_atoms.num_atoms;
 
     // 1. Build adjacency list for efficient neighbor lookup
-    eprintln!("[OXIDIZE H] Step 1: Building adjacency list...");
     log::debug!("add_hydrogens: building adjacency list...");
     let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); n_original];
     for bond in bonds.iter() {
@@ -146,10 +140,6 @@ pub fn add_hydrogens(
 
     // 4. Calculate hydrogen positions for each heavy atom (sequential to avoid GIL deadlock)
     // Returns: Vec<(parent_idx, res_id, Vec<[f32; 3]>)>
-    eprintln!(
-        "[OXIDIZE H] Step 4: Calculating H positions for {} atoms...",
-        n_original
-    );
     log::debug!(
         "add_hydrogens: starting H position calculation for {} atoms...",
         n_original
@@ -251,10 +241,6 @@ pub fn add_hydrogens(
         })
         .collect();
 
-    eprintln!(
-        "[OXIDIZE H] Step 4 done: calculated {} H placement sites",
-        h_positions.len()
-    );
     log::debug!(
         "add_hydrogens: calculated {} H placement sites",
         h_positions.len()

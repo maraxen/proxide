@@ -59,7 +59,8 @@ fn parse_atom_line(line: &str) -> Option<AtomRecord> {
             // Infer from atom name (first character)
             line[12..16]
                 .trim()
-                .chars().next()
+                .chars()
+                .next()
                 .map(|c| c.to_string())
                 .unwrap_or_default()
         },
