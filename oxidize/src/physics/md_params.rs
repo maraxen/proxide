@@ -3,7 +3,7 @@
 //! This module uses parsed force field data to assign charges, LJ parameters,
 //! and GBSA radii to atoms in a ProcessedStructure.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 use crate::forcefield::{
@@ -414,10 +414,19 @@ pub fn parameterize_structure(
         }
     }
 
+    // Build nonbonded exception map once, before the loop
+    let mut exception_map: HashMap<(String, String), &NonbondedException> = HashMap::new();
+    for exc in &ff.exceptions {
+        exception_map.insert((exc.type1.clone(), exc.type2.clone()), exc);
+        exception_map.insert((exc.type2.clone(), exc.type1.clone()), exc);
+    }
+
     // Assign Proper Dihedral Params and 1-4 Pairs
     let mut exception_14_params = Vec::new();
+    let mut seen_14_pairs = HashSet::new();
+
     for dih in &proper_topology {
-        if let Some(params) = lookup_proper(
+        let matches = lookup_proper_all(
             &atom_classes[dih.i],
             &atom_types[dih.i],
             &atom_classes[dih.j],
@@ -427,7 +436,9 @@ pub fn parameterize_structure(
             &atom_classes[dih.l],
             &atom_types[dih.l],
             ff,
-        ) {
+        );
+
+        for params in matches {
             for term in &params.terms {
                 // Filter out small k values to avoid phantom topology, matching Legacy behavior
                 if term.k.abs() > 1e-6 {
@@ -437,42 +448,41 @@ pub fn parameterize_structure(
             }
         }
 
-        let mut exception_map: HashMap<(String, String), &NonbondedException> = HashMap::new();
-        for exc in &ff.exceptions {
-            exception_map.insert((exc.type1.clone(), exc.type2.clone()), exc);
-            exception_map.insert((exc.type2.clone(), exc.type1.clone()), exc);
+        // Add 1-4 pair and compute scaling exceptions (only once per unique topology dihedral)
+        let pair_key = if dih.i < dih.l { (dih.i, dih.l) } else { (dih.l, dih.i) };
+        if !seen_14_pairs.contains(&pair_key) {
+            seen_14_pairs.insert(pair_key);
+            pairs_14.push([dih.i, dih.l]);
+            
+            // Use force field defined scaling as primary defaults
+            let (lj14scale, coulomb14scale) = (ff.lj14scale, ff.coulomb14scale);
+
+            // Check for specific exception override
+            let override_params = exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
+
+            let (charge_prod, sigma, epsilon) = if let Some(exc) = override_params {
+                (exc.charge_prod, exc.sigma, exc.epsilon)
+            } else {
+                let charge_prod = charges[dih.i] * charges[dih.l] * coulomb14scale;
+                let sigma = (sigmas[dih.i] + sigmas[dih.l]) / 2.0;
+                let epsilon = (epsilons[dih.i] * epsilons[dih.l]).sqrt() * lj14scale;
+                (charge_prod, sigma, epsilon)
+            };
+            
+            exception_14_params.push([charge_prod, sigma, epsilon]);
         }
-
-        // Add 1-4 pair and compute scaling exceptions
-        pairs_14.push([dih.i, dih.l]);
-        
-        // Use force field defined scaling as primary defaults
-        let (lj14scale, coulomb14scale) = (ff.lj14scale, ff.coulomb14scale);
-
-        // Check for specific exception override
-        let override_params = exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
-
-        let (charge_prod, sigma, epsilon) = if let Some(exc) = override_params {
-            (exc.charge_prod, exc.sigma, exc.epsilon)
-        } else {
-            let charge_prod = charges[dih.i] * charges[dih.l] * coulomb14scale;
-            let sigma = (sigmas[dih.i] + sigmas[dih.l]) / 2.0;
-            let epsilon = (epsilons[dih.i] * epsilons[dih.l]).sqrt() * lj14scale;
-            (charge_prod, sigma, epsilon)
-        };
-        
-        exception_14_params.push([charge_prod, sigma, epsilon]);
     }
 
     // Assign Improper Params
     for imp in &improper_topology {
-        if let Some(params) = lookup_improper(
-            &atom_classes[imp.i],
-            &atom_classes[imp.j],
-            &atom_classes[imp.k],
-            &atom_classes[imp.l],
+        let matches = lookup_improper(
+            &atom_classes[imp.i], &atom_types[imp.i],
+            &atom_classes[imp.j], &atom_types[imp.j],
+            &atom_classes[imp.k], &atom_types[imp.k],
+            &atom_classes[imp.l], &atom_types[imp.l],
             ff,
-        ) {
+        );
+        for params in matches {
             for term in &params.terms {
                 impropers_vec.push([imp.i, imp.j, imp.k, imp.l]);
                 improper_params.push([term.periodicity as f32, term.phase, term.k]);
@@ -719,8 +729,12 @@ fn lookup_angle<'a>(
     None
 }
 
+fn matches(def: &str, cls: &str, typ: &str) -> bool {
+    def == cls || def == typ || def == "X" || def.is_empty()
+}
+
 #[allow(clippy::too_many_arguments)]
-fn lookup_proper<'a>(
+fn lookup_proper_all<'a>(
     c1: &str,
     t1: &str,
     c2: &str,
@@ -730,115 +744,97 @@ fn lookup_proper<'a>(
     c4: &str,
     t4: &str,
     ff: &'a ForceField,
-) -> Option<&'a ProperTorsionParam> {
+) -> Vec<&'a ProperTorsionParam> {
     // Try c1-c2-c3-c4, c4-c3-c2-c1
     // Matches if definition (d) equals class (c) OR type (t).
     // Also wildcards "X" or "" (empty)
     // Legacy logic: if d != "" and d != c and d != t -> fail.
 
-    let matches = |def: &str, cls: &str, typ: &str| -> bool {
-        def == cls || def == typ || def == "X" || def.is_empty()
-    };
-
-    let mut best_match: Option<&'a ProperTorsionParam> = None;
+    let mut best_matches: Vec<&'a ProperTorsionParam> = Vec::new();
     let mut best_score = -1;
 
     for t in &ff.proper_torsions {
-        // Forward check: (2,3) must match (2,3)
-        let fwd_center = matches(&t.class2, c2, t2) && matches(&t.class3, c3, t3);
-        // Reverse check: (2,3) match (3,2)
-        let rev_center = matches(&t.class2, c3, t3) && matches(&t.class3, c2, t2);
+        // Forward match?
+        let fwd_match = matches(&t.class2, c2, t2)
+            && matches(&t.class3, c3, t3)
+            && matches(&t.class1, c1, t1)
+            && matches(&t.class4, c4, t4);
 
-        if !fwd_center && !rev_center {
-            continue;
-        }
+        // Reverse match?
+        let rev_match = matches(&t.class2, c3, t3)
+            && matches(&t.class3, c2, t2)
+            && matches(&t.class1, c4, t4)
+            && matches(&t.class4, c1, t1);
 
-        // Check Forward Path
-        if fwd_center {
-            // Check 1 and 4
-            if matches(&t.class1, c1, t1) && matches(&t.class4, c4, t4) {
-                // Score = number of non-empty/non-X matches
-                // Legacy: score = sum(1 for x in pc if x != "")
-                // In Rust, "X" is the wildcard.
-                let mut score = 0;
-                if t.class1 != "X" && !t.class1.is_empty() {
-                    score += 1;
-                }
-                if t.class2 != "X" && !t.class2.is_empty() {
-                    score += 1;
-                }
-                if t.class3 != "X" && !t.class3.is_empty() {
-                    score += 1;
-                }
-                if t.class4 != "X" && !t.class4.is_empty() {
-                    score += 1;
-                }
-
-                if score > best_score {
-                    best_match = Some(t);
-                    best_score = score;
-                }
-                // Determine preference if scores equal?
-                // Legacy accumulates terms if equal.
-                // Rust struct currently returns reference to ONE param definition (which contains a list of terms).
-                // If there are multiple SEPARATE definitions with same score, Legacy merges them.
-                // Rust ForceField struct stores them separately?
-                // If so, we might miss terms if we only pick one definition.
-                // But usually standard FFs group terms in one block.
-                // EXCEPT if defined in different places.
-                // Assuming standard XML parsing grouped them.
-                // If not, we might need logic change.
-                // NOTE: For now, assume parity with "best match wins".
+        if fwd_match || rev_match {
+            // Score = number of non-empty/non-X matches
+            let mut score = 0;
+            if t.class1 != "X" && !t.class1.is_empty() {
+                score += 1;
             }
-        }
+            if t.class2 != "X" && !t.class2.is_empty() {
+                score += 1;
+            }
+            if t.class3 != "X" && !t.class3.is_empty() {
+                score += 1;
+            }
+            if t.class4 != "X" && !t.class4.is_empty() {
+                score += 1;
+            }
 
-        // Check Reverse Path
-        if rev_center {
-            // 1 matches 4, 4 matches 1
-            if matches(&t.class1, c4, t4) && matches(&t.class4, c1, t1) {
-                let mut score = 0;
-                if t.class1 != "X" && !t.class1.is_empty() {
-                    score += 1;
-                }
-                if t.class2 != "X" && !t.class2.is_empty() {
-                    score += 1;
-                }
-                if t.class3 != "X" && !t.class3.is_empty() {
-                    score += 1;
-                }
-                if t.class4 != "X" && !t.class4.is_empty() {
-                    score += 1;
-                }
-
-                if score > best_score {
-                    best_match = Some(t);
-                    best_score = score;
-                }
+            if score > best_score {
+                best_matches.clear();
+                best_matches.push(t);
+                best_score = score;
+            } else if score == best_score {
+                best_matches.push(t);
             }
         }
     }
-    best_match
+    best_matches
 }
 
 fn lookup_improper<'a>(
-    c1: &str,
-    c2: &str,
-    c3: &str,
-    c4: &str,
+    c1: &str, t1: &str,
+    c_center: &str, t_center: &str,
+    c3: &str, t3: &str,
+    c4: &str, t4: &str,
     ff: &'a ForceField,
-) -> Option<&'a ImproperTorsionParam> {
-    // Central atom is c2.
-    // Impropers are tricky. definition is c1-c2-c3-c4 with c3 central? Or c2?
-    // In our Topology::new_improper, center is j (second atom in list i-j-k-l).
-    // In Amber/OpenMM XML: <Improper class1="C" class2="N" class3="CT" class4="N" ... />
-    // Ordering varies (central atom position).
-    // For simplicitly, let's assume Amber style: central is 3rd? Or 2nd?
-    // Usually one is central.
-    // For now, simple exact match or X scan.
-    ff.improper_torsions
-        .iter()
-        .find(|&t| t.class2 == c2 && t.class3 == c3 && t.class1 == c1 && t.class4 == c4)
-        .map(|v| v as _)
+) -> Vec<&'a ImproperTorsionParam> {
+    // Matches if atoms match (any permutation? No, typically central is fixed)
+    // Amber XML convention: central atom is usually indexed in a specific spot.
+    // In our Topology::generate_improper_dihedrals, j is central.
+    // In Amber ff19SB XML (OpenMM style): central atom is class3.
+    
+    let mut matches_vec = Vec::new();
+    for t in &ff.improper_torsions {
+        // 1. Central atom must match t.class3
+        if !matches(&t.class3, c_center, t_center) {
+            continue;
+        }
+
+        // 2. The other 3 atoms (c1, c3, c4) must match t.class1, t.class2, t.class4 in ANY order.
+        let def_others = vec![&t.class1, &t.class2, &t.class4];
+        let target_others = vec![(c1, t1), (c3, t3), (c4, t4)];
+        
+        // Simple greedy match for the 3 others
+        let mut matched_count = 0;
+        let mut def_used = [false; 3];
+        for (tc, tt) in target_others {
+            for i in 0..3 {
+                if !def_used[i] && matches(def_others[i], tc, tt) {
+                    def_used[i] = true;
+                    matched_count += 1;
+                    break;
+                }
+            }
+        }
+
+        if matched_count == 3 {
+             matches_vec.push(t);
+        }
+    }
+    matches_vec
 }
 
 /// Build lookup map from atom type -> nonbonded params
