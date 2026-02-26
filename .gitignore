@@ -50,3 +50,4 @@ mdcath_data/
 *.so
 *.dylib
 *.dll
+target/
