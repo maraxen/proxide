@@ -136,6 +136,15 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             pyo3::exceptions::PyValueError::new_err(format!("Structure processing failed: {}", e))
         })?;
 
+        // Normalize protonation states based on local topology and pH
+        crate::processing::protonation::determine_protonation_states(
+            &mut processed,
+            spec.ph.unwrap_or(7.0),
+        )
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Protonation logic failed: {}", e))
+        })?;
+
         // 4. Add Hydrogens / Infer Bonds on Reference
         if spec.add_hydrogens {
             log::debug!("Adding hydrogens to reference model...");
@@ -257,6 +266,20 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                                     e
                                 ))
                             })?;
+
+                        // Normalize protonation states based on local topology and pH
+                        crate::processing::protonation::determine_protonation_states(
+                            &mut m_processed,
+                            spec.ph.unwrap_or(7.0),
+                        )
+                        .map_err(|e| {
+                            pyo3::exceptions::PyValueError::new_err(format!(
+                                "Protonation logic failed for model {}: {}",
+                                i + 1,
+                                e
+                            ))
+                        })?;
+
 
                         if spec.add_hydrogens {
                             // Re-infer for consistent H addition
@@ -924,9 +947,15 @@ pub fn project_to_mpnn_batch(
         let filtered = processing::filter_models(&raw_data_all, &model_ids, &[first_model]);
 
         // 3. Process structure
-        let structure = ProcessedStructure::from_raw(filtered).map_err(|e| {
+        let mut structure = ProcessedStructure::from_raw(filtered).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Structure processing failed: {}", e))
         })?;
+
+        // Normalize protonation states
+        let default_ph = 7.0; // PDB default
+        crate::processing::protonation::determine_protonation_states(&mut structure, default_ph)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Protonation logic failed: {}", e)))?;
+
 
         // 4. Project to MPNNBatch
         let result = processing::project_to_mpnn_batch(
