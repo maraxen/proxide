@@ -59,7 +59,7 @@ pub fn get_bond_order(res_name: &str, atom1: &str, atom2: &str) -> u8 {
         "ARG" => {
             return 4; // Treat as aromatic/resonant within the group
         }
-        "HIS" => {
+        "HIS" | "HIE" | "HID" | "HIP" => {
             // Imidazole ring: Aromatic
             if is_ring_atom_his(a) && is_ring_atom_his(b) {
                 return 4;

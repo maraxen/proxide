@@ -140,6 +140,10 @@ pub struct OutputSpec {
     #[pyo3(get, set)]
     pub missing_residue_mode: MissingResidueMode,
 
+    // Environment
+    #[pyo3(get, set)]
+    pub ph: Option<f32>,
+
     // Optional fields
     #[pyo3(get, set)]
     pub include_b_factors: bool,
@@ -188,6 +192,7 @@ impl OutputSpec {
                     "force_field" => spec.force_field = value.extract()?,
                     "auto_terminal_caps" => spec.auto_terminal_caps = value.extract()?,
                     "missing_residue_mode" => spec.missing_residue_mode = value.extract()?,
+                    "ph" => spec.ph = value.extract()?,
                     "include_b_factors" => spec.include_b_factors = value.extract()?,
                     "include_occupancy" => spec.include_occupancy = value.extract()?,
                     "error_mode" => spec.error_mode = value.extract()?,
@@ -230,6 +235,7 @@ impl Default for OutputSpec {
             force_field: None,
             auto_terminal_caps: true,
             missing_residue_mode: MissingResidueMode::SkipWarn,
+            ph: Some(7.0),
             include_b_factors: false,
             include_occupancy: false,
             error_mode: ErrorMode::Warn,

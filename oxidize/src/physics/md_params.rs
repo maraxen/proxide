@@ -893,12 +893,18 @@ fn _find_closest_template<'a>(
     // A more sophisticated version would score by atom overlap
 
     // Try adding/removing common suffixes
-    let variants = [
+    let mut variants = vec![
         res_info.res_name.clone(),
         res_info.res_name.to_uppercase(),
         format!("N{}", res_info.res_name),
         format!("C{}", res_info.res_name),
     ];
+
+    if res_info.res_name == "HIS" {
+        variants.push("HIE".to_string());
+        variants.push("HID".to_string());
+        variants.push("HIP".to_string());
+    }
 
     for name in &variants {
         if let Some(template) = ff.get_residue(name) {

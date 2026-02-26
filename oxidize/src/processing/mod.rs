@@ -6,6 +6,7 @@
 pub mod models;
 pub mod noising;
 pub mod projection;
+pub mod protonation;
 pub mod residues;
 
 pub use models::*;

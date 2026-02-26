@@ -113,7 +113,7 @@ impl ProcessedStructure {
 
                 // Map residue name to type index
                 let res_type = resname_to_idx
-                    .get(res_name.as_str())
+                    .get(&res_name.clone())
                     .copied()
                     .unwrap_or(UNK_RESTYPE_INDEX);
 
