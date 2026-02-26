@@ -51,3 +51,6 @@ mdcath_data/
 *.dylib
 *.dll
 target/
+
+# Compiled extensions (maturin build artifacts)
+*.abi3.so
