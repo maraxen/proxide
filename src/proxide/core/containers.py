@@ -391,8 +391,12 @@ class Protein:
       virtual_site_params=convert(rust_dict.get("virtual_site_params"))
       if rust_dict.get("virtual_site_params") is not None
       else None,
-      pairs_14=convert(rust_dict.get("pairs_14"), dtype=np.int32),
-      exception_14_params=convert_params(rust_dict.get("exception_14_params"), "exception"),
+      pairs_14=convert(rust_dict.get("pairs_14"), dtype=np.int32)
+      if rust_dict.get("pairs_14") is not None
+      else None,
+      exception_14_params=convert_params(rust_dict.get("exception_14_params"), "exception")
+      if rust_dict.get("exception_14_params") is not None
+      else None,
       coulomb14scale=rust_dict.get("coulomb14scale"),
       lj14scale=rust_dict.get("lj14scale"),
       scale_matrix_vdw=convert(rust_dict.get("scale_matrix_vdw"))

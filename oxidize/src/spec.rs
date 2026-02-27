@@ -58,10 +58,10 @@ pub enum ErrorMode {
 #[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MissingResidueMode {
-    /// Skip residue and log warning (default)
-    #[default]
+    /// Skip residue and log warning
     SkipWarn,
     /// Fail with error
+    #[default]
     Fail,
     /// Try GAFF fallback (future - not implemented)
     GaffFallback,
@@ -234,7 +234,7 @@ impl Default for OutputSpec {
             parameterize_md: false,
             force_field: None,
             auto_terminal_caps: true,
-            missing_residue_mode: MissingResidueMode::SkipWarn,
+            missing_residue_mode: MissingResidueMode::Fail,
             ph: Some(7.0),
             include_b_factors: false,
             include_occupancy: false,
