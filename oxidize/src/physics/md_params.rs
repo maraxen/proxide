@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::forcefield::{
     ForceField, GBSAOBCParam, HarmonicAngleParam, HarmonicBondParam, ImproperTorsionParam,
-    NonbondedException, NonbondedParam, ProperTorsionParam, ResidueTemplate, Topology,
+    NonbondedException, NonbondedParam, ProperTorsionParam, Topology,
 };
 use crate::processing::ProcessedStructure;
 
@@ -205,7 +205,13 @@ pub fn parameterize_structure(
                     Some(t) => t,
                     None => {
                         if options.missing_mode == MissingResidueMode::Fail {
-                            return Err(ParamError::MissingTemplate(res_info.res_name.clone()));
+                            let alts = find_template_alternatives(&res_info.res_name, ff);
+                            let msg = if alts.is_empty() {
+                                format!("\"{}\". No obvious alternatives found in force field.", res_info.res_name)
+                            } else {
+                                format!("\"{}\". Ambiguous protonation state or naming detected. Supported alternatives in force field: {}. Please specify protonation state or rename prior to parameterization.", res_info.res_name, alts.join(", "))
+                            };
+                            return Err(ParamError::MissingTemplate(msg));
                         }
                         // Apply element-based LJ fallbacks even for skipped residues
                         // to prevent sigma=0 which causes LJ singularity in MD
@@ -884,35 +890,29 @@ fn get_terminal_template_name(
     base_name.to_string()
 }
 
-/// Find the closest matching template based on shared atom names
-fn _find_closest_template<'a>(
-    res_info: &crate::processing::ResidueInfo,
-    ff: &'a ForceField,
-) -> Option<&'a ResidueTemplate> {
-    // This is a simplified version - we just try common variants
-    // A more sophisticated version would score by atom overlap
-
-    // Try adding/removing common suffixes
+/// Find alternative template names for actionable error messages
+fn find_template_alternatives(res_name: &str, ff: &ForceField) -> Vec<String> {
+    let mut alternatives = Vec::new();
     let mut variants = vec![
-        res_info.res_name.clone(),
-        res_info.res_name.to_uppercase(),
-        format!("N{}", res_info.res_name),
-        format!("C{}", res_info.res_name),
+        res_name.to_string(),
+        res_name.to_uppercase(),
+        format!("N{}", res_name),
+        format!("C{}", res_name),
     ];
 
-    if res_info.res_name == "HIS" {
+    if res_name.to_uppercase() == "HIS" {
         variants.push("HIE".to_string());
         variants.push("HID".to_string());
         variants.push("HIP".to_string());
     }
 
     for name in &variants {
-        if let Some(template) = ff.get_residue(name) {
-            return Some(template);
+        if ff.get_residue(name).is_some() && !alternatives.contains(name) {
+            alternatives.push(name.clone());
         }
     }
 
-    None
+    alternatives
 }
 
 #[cfg(test)]
