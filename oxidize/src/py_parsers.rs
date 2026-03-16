@@ -172,8 +172,25 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
 
             log::debug!("Added {} hydrogens to reference model", num_h_added);
 
-            // Note: ProcessedStructure was updated in-place, no need to reassign
-            let _ = processed; // Keep processed in scope (no-op, updated in place)
+            // Rebuild topology: H atoms are appended at the END of the atom list,
+            // making residue_info ranges non-contiguous. rebuild_topology re-sorts
+            // atoms by (chain, residue_id) so each residue's atoms are contiguous
+            // again, which is required for parameterization to find all atoms.
+            if num_h_added > 0 {
+                log::debug!("Rebuilding topology for contiguous residue ranges...");
+                let (rebuilt, rebuilt_bonds) =
+                    crate::processing::residues::rebuild_topology(processed, bonds_for_h)
+                        .map_err(|e| {
+                            pyo3::exceptions::PyValueError::new_err(format!(
+                                "Topology rebuild after H addition failed: {}",
+                                e
+                            ))
+                        })?;
+                processed = rebuilt;
+                // bonds_for_h is consumed by rebuild; the rebuilt bonds aren't needed
+                // further since parameterization infers bonds from templates.
+                let _ = rebuilt_bonds;
+            }
         } else if spec.infer_bonds {
             // Bonds will be inferred later in section "Topology" if needed
         }

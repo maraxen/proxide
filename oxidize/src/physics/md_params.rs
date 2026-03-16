@@ -254,7 +254,12 @@ pub fn parameterize_structure(
 
         let mut local_to_global: HashMap<&str, usize> = HashMap::new();
 
-        // Assign parameters to each atom in residue
+        // Track which template atoms have been claimed (for H fallback)
+        let mut claimed_template_atoms: HashSet<&str> = HashSet::new();
+        // Collect unmatched H atoms for second-pass connectivity fallback
+        let mut unmatched_h_indices: Vec<usize> = Vec::new();
+
+        // === PASS 1: Exact name match + static aliases ===
         for atom_idx in res_info.start_atom..(res_info.start_atom + res_info.num_atoms) {
             let atom_name = &processed.raw_atoms.atom_names[atom_idx];
 
@@ -313,6 +318,7 @@ pub fn parameterize_structure(
                 }
 
                 local_to_global.insert(atom_name.as_str(), atom_idx);
+                claimed_template_atoms.insert(template_atom.name.as_str());
                 // Also register the template atom name if it differs from PDB name
                 // (e.g. PDB "H" → template "H1") so template bonds resolve correctly
                 if template_atom.name.as_str() != atom_name.as_str() {
@@ -320,7 +326,149 @@ pub fn parameterize_structure(
                 }
                 num_parameterized += 1;
             } else {
-                num_skipped += 1;
+                // Check if this is a hydrogen — defer to connectivity-based pass 2
+                let element = &processed.raw_atoms.elements[atom_idx];
+                if element.eq_ignore_ascii_case("H") {
+                    unmatched_h_indices.push(atom_idx);
+                } else {
+                    num_skipped += 1;
+                }
+            }
+        }
+
+        // === PASS 2: Connectivity-based H fallback ===
+        // For each unmatched H (generically named H1, H2, ... by Proxide),
+        // find the nearest matched heavy atom in the same residue by coordinate
+        // distance, then assign an unclaimed template H bonded to the
+        // corresponding template heavy atom.
+        if !unmatched_h_indices.is_empty() {
+            // Build template bond adjacency: heavy_atom_name -> [H_atom_names bonded to it]
+            let mut template_h_by_parent: HashMap<&str, Vec<&str>> = HashMap::new();
+            for (name1, name2) in &template.bonds {
+                let a1_is_h = template_atoms.get(name1.as_str())
+                    .and_then(|ta| ff.get_atom_type(&ta.atom_type))
+                    .map(|at| at.element.eq_ignore_ascii_case("H"))
+                    .unwrap_or(name1.starts_with('H') && name1 != "HG" /* edge: HG in CYS is on S */);
+                let a2_is_h = template_atoms.get(name2.as_str())
+                    .and_then(|ta| ff.get_atom_type(&ta.atom_type))
+                    .map(|at| at.element.eq_ignore_ascii_case("H"))
+                    .unwrap_or(name2.starts_with('H'));
+
+                if a1_is_h && !a2_is_h {
+                    template_h_by_parent.entry(name2.as_str()).or_default().push(name1.as_str());
+                } else if a2_is_h && !a1_is_h {
+                    template_h_by_parent.entry(name1.as_str()).or_default().push(name2.as_str());
+                }
+            }
+
+            // Collect matched heavy atoms in this residue: (global_idx, template_name)
+            let res_heavy_atoms: Vec<(usize, &str)> = local_to_global
+                .iter()
+                .filter(|(_, &gidx)| {
+                    gidx >= res_info.start_atom && gidx < res_info.start_atom + res_info.num_atoms
+                        && !processed.raw_atoms.elements[gidx].eq_ignore_ascii_case("H")
+                })
+                .map(|(&tname, &gidx)| (gidx, tname))
+                .collect();
+
+            for &h_idx in &unmatched_h_indices {
+                // Find nearest heavy atom by Euclidean distance
+                let hx = processed.raw_atoms.coords[h_idx * 3];
+                let hy = processed.raw_atoms.coords[h_idx * 3 + 1];
+                let hz = processed.raw_atoms.coords[h_idx * 3 + 2];
+
+                let mut best_heavy: Option<&str> = None;
+                let mut best_dist = f32::MAX;
+
+                for &(heavy_idx, tname) in &res_heavy_atoms {
+                    let dx = hx - processed.raw_atoms.coords[heavy_idx * 3];
+                    let dy = hy - processed.raw_atoms.coords[heavy_idx * 3 + 1];
+                    let dz = hz - processed.raw_atoms.coords[heavy_idx * 3 + 2];
+                    let dist = dx * dx + dy * dy + dz * dz;
+                    if dist < best_dist {
+                        best_dist = dist;
+                        best_heavy = Some(tname);
+                    }
+                }
+
+                // Sanity: typical C-H bond ~1.09Å, N-H ~1.01Å; reject if > 1.5Å
+                if best_dist > 2.25 { // 1.5^2
+                    log::warn!(
+                        "H fallback: nearest heavy atom too far ({:.2}Å) for {} in res {}, skipping",
+                        best_dist.sqrt(), processed.raw_atoms.atom_names[h_idx], template_name
+                    );
+                    num_skipped += 1;
+                    continue;
+                }
+
+                if let Some(parent_name) = best_heavy {
+                    // Find an unclaimed template H bonded to this parent
+                    let assigned = if let Some(h_candidates) = template_h_by_parent.get(parent_name) {
+                        let mut found = false;
+                        for &h_template_name in h_candidates {
+                            if !claimed_template_atoms.contains(h_template_name) {
+                                if let Some(template_atom) = template_atoms.get(h_template_name) {
+                                    // Assign parameters from this template H
+                                    charges[h_idx] = template_atom.charge.unwrap_or(0.0);
+                                    atom_types[h_idx] = template_atom.atom_type.clone();
+
+                                    let atom_class = if let Some(at) = ff.get_atom_type(&template_atom.atom_type) {
+                                        at.class.clone()
+                                    } else {
+                                        template_atom.atom_type.clone()
+                                    };
+                                    atom_classes[h_idx] = atom_class.clone();
+
+                                    if let Some(nb) = nonbonded_map.get(&template_atom.atom_type) {
+                                        sigmas[h_idx] = nb.sigma;
+                                        epsilons[h_idx] = nb.epsilon;
+                                    } else if let Some(nb) = nonbonded_map.get(&atom_class) {
+                                        sigmas[h_idx] = nb.sigma;
+                                        epsilons[h_idx] = nb.epsilon;
+                                    }
+
+                                    if has_gbsa {
+                                        if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
+                                            if let Some(ref mut r) = radii { r[h_idx] = gbsa.radius; }
+                                            if let Some(ref mut s) = scales { s[h_idx] = gbsa.scale; }
+                                        } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
+                                            if let Some(ref mut r) = radii { r[h_idx] = gbsa.radius; }
+                                            if let Some(ref mut s) = scales { s[h_idx] = gbsa.scale; }
+                                        }
+                                    }
+
+                                    let input_name = processed.raw_atoms.atom_names[h_idx].as_str();
+                                    // Use leaked string for stable lifetime in local_to_global
+                                    let leaked: &'static str = Box::leak(input_name.to_string().into_boxed_str());
+                                    local_to_global.insert(leaked, h_idx);
+                                    local_to_global.insert(h_template_name, h_idx);
+                                    claimed_template_atoms.insert(h_template_name);
+                                    num_parameterized += 1;
+                                    found = true;
+
+                                    log::debug!(
+                                        "H fallback: {} → {} (parent {}) in res {}",
+                                        input_name, h_template_name, parent_name, template_name,
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+                        found
+                    } else {
+                        false
+                    };
+
+                    if !assigned {
+                        log::debug!(
+                            "H fallback: no unclaimed template H for parent {} (atom {} in res {})",
+                            parent_name, processed.raw_atoms.atom_names[h_idx], template_name
+                        );
+                        num_skipped += 1;
+                    }
+                } else {
+                    num_skipped += 1;
+                }
             }
         }
 
