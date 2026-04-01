@@ -15,6 +15,10 @@ pub mod mdcath_h5;
 #[cfg(feature = "mdcath")]
 pub mod mdtraj_h5;
 
+// MDCompress formats (feature-gated)
+#[cfg(feature = "mdc")]
+pub mod mdc;
+
 // Re-export for convenience
 #[cfg(feature = "mdcath")]
 #[allow(unused_imports)]

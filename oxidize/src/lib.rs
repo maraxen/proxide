@@ -51,6 +51,7 @@ fn _oxidize(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_trajectory::parse_xtc, m)?)?;
     m.add_function(wrap_pyfunction!(py_trajectory::parse_dcd, m)?)?;
     m.add_function(wrap_pyfunction!(py_trajectory::parse_trr, m)?)?;
+    m.add_function(wrap_pyfunction!(py_trajectory::parse_mdc, m)?)?;
 
     // HDF5 parsing functions (from py_hdf5)
     m.add_function(wrap_pyfunction!(py_hdf5::parse_mdtraj_h5_metadata, m)?)?;

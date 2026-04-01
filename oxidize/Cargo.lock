@@ -954,6 +954,7 @@ dependencies = [
  "rand_distr",
  "rayon",
  "reqwest",
+ "rust_mdc",
  "thiserror",
 ]
 
@@ -1331,6 +1332,13 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rust_mdc"
+version = "0.1.0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

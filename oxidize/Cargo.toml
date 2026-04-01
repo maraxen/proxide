@@ -53,6 +53,9 @@ molly = "0.4.0"
 # Using hdf5-metno fork which supports HDF5 1.14+
 hdf5 = { package = "hdf5-metno", version = "0.11", optional = true }
 
+# MDCompress support (optional, requires C++ linker)
+rust_mdc = { path = "../../external/mdcompress/rust_mdc", optional = true }
+
 # HTTP Client for fetching
 # Use rustls to avoid OpenSSL dependency on Linux environments without pkg-config
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "rustls-tls"] }
@@ -63,8 +66,10 @@ default = ["xtc", "mdcath"]
 xtc = []
 # mdCATH support using HDF5
 mdcath = ["hdf5"]
+# MDCompress support using C-bridge
+mdc = ["rust_mdc"]
 # Aggregated features
-full = ["xtc", "mdcath"]
+full = ["xtc", "mdcath", "mdc"]
 
 [profile.release]
 lto = true
