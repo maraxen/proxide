@@ -26,7 +26,7 @@ def _infer_format(path: pathlib.Path | None) -> str | None:
     return "pqr"
   if suffix in (".fcz", ".foldcomp"):
     return "foldcomp"
-  if suffix in (".dcd", ".xtc", ".h5", ".hdf5"):
+  if suffix in (".dcd", ".xtc", ".mdc", ".h5", ".hdf5"):
     # Could be mdtraj or mdcath (handled inside mdtraj parser or check here if needed)
     # Assuming mdtraj for dispatch purposes, let parser handle specific HDF5 types if needed
     return "mdtraj"
@@ -70,7 +70,7 @@ def load_structure(
     from proxide.io.parsing import mdtraj  # noqa: F401
   elif file_format == "pqr":
     from proxide.io.parsing import pqr  # noqa: F401
-  elif file_format in ("pdb", "cif", "mmcif"):
+  elif file_format in ("pdb", "cif", "mmcif") or file_format == "mdc":
     from proxide.io.parsing import backend as rust  # noqa: F401
   elif file_format == "foldcomp":
     # Foldcomp might be in its own module or handled by rust

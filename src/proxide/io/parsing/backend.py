@@ -412,6 +412,7 @@ def parse_structure(
 
 
 parse_xtc = getattr(_oxidize, "parse_xtc", None)
+parse_mdc = getattr(_oxidize, "parse_mdc", None)
 
 
 def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
@@ -536,6 +537,27 @@ def parse_xtc_rust(file_path: str | Path) -> dict[str, ArrayLike]:
     raise ImportError("parse_xtc not found in _oxidize. Ensure 'trajectories' feature is enabled.")
 
   return parse_xtc(str(file_path))
+
+
+@register_parser(["mdc"])
+def parse_mdc_rust(file_path: str | Path) -> dict[str, ArrayLike]:
+  """Parse an MDC trajectory file using the Rust extension.
+
+  Args:
+      file_path: Path to MDC file
+
+  Returns:
+      Dictionary with 'coordinates', 'times', 'num_frames', 'num_atoms'
+
+  Raises:
+      ImportError: If trajectory feature not available
+      ValueError: If parsing fails
+
+  """
+  if parse_mdc is None:
+    raise ImportError("parse_mdc not found in _oxidize. Ensure 'mdc' feature is enabled.")
+
+  return parse_mdc(str(file_path))
 
 
 # =============================================================================
@@ -725,6 +747,7 @@ def get_rust_capabilities() -> dict[str, bool]:
     "parse_structure": hasattr(_oxidize, "parse_structure"),
     "load_forcefield": hasattr(_oxidize, "load_forcefield"),
     "parse_xtc": hasattr(_oxidize, "parse_xtc"),
+    "parse_mdc": hasattr(_oxidize, "parse_mdc"),
     "parse_mdtraj_h5": hasattr(_oxidize, "parse_mdtraj_h5_metadata"),
     "parse_mdcath": hasattr(_oxidize, "parse_mdcath_metadata"),
     "atomic_system_types": hasattr(_oxidize, "AtomicSystem"),
