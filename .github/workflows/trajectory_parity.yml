@@ -24,7 +24,7 @@ jobs:
           
       - name: Build Rust extension
         run: |
-          cd oxidize
+          cd crates/proxide_py
           # Build with new pure-Rust features enabled
           maturin develop --release --features full
           
