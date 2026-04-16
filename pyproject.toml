@@ -33,6 +33,17 @@ molecules = [
     "rdkit",
     # "openff-toolkit", # TODO: Fix resolution on Python 3.13/Linux
 ]
+# JAX/Equinox partial charges (bundled weights; no PyTorch/DGL at inference).
+# Private repo: use SSH or authenticate HTTPS (see README) when installing from CI.
+espaloma = [
+    "expaloma @ git+https://github.com/maraxen/expaloma.git",
+    "rdkit",
+]
+# Legacy OpenFF Toolkit wrapper (still uses upstream espaloma_charge).
+espaloma-openff = [
+    "espaloma_charge>=0.0.8",
+    "openff-toolkit",
+]
 trajectories = [
     "mdtraj",
     "h5py",
@@ -77,6 +88,7 @@ include = [
 [tool.pytest.ini_options]
 markers = [
     "smoke: marks tests as smoke tests (fast and critical)",
+    "espaloma: needs expaloma (JAX) + rdkit; run with pytest -m espaloma",
 ]
 
 [tool.ruff]

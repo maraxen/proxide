@@ -69,6 +69,35 @@ jobs:
           source .venv/bin/activate
           pytest
 
+  # Espaloma JAX charges (private git dep: GITHUB_TOKEN must have read access to maraxen/expaloma).
+  test-espaloma:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Create virtual environment
+        run: uv venv
+      - name: Install with espaloma extra
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          source .venv/bin/activate
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+          uv pip install -e ".[dev,espaloma]"
+      - name: Run Espaloma-marked tests
+        run: |
+          source .venv/bin/activate
+          pytest -m espaloma tests/chem/test_partial_charges.py -v
+
   # Multi-platform wheel builds for releases
   # Consolidated from oxidize/.github/workflows/CI.yml
   build-wheels-linux:
