@@ -13,9 +13,10 @@ mod py_forcefield;
 mod py_hdf5;
 mod py_parsers;
 mod py_trajectory;
+mod py_stream;
 
 // Internal re-exports of core modules
-pub(crate) use proxide_rs::{chem, forcefield, formats, formatters, geometry, physics, processing, spec, structure};
+pub(crate) use proxide_rs::{chem, forcefield, formats, formatters, geometry, physics, processing, spec};
 
 // Import wrapper types
 use bindings::atomic_system::PyAtomicSystem;
@@ -87,6 +88,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Chemistry utilities (from py_chemistry)
     m.add_function(wrap_pyfunction!(py_chemistry::assign_masses, m)?)?;
+    m.add_function(wrap_pyfunction!(py_chemistry::assign_espaloma_charges, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::assign_gaff_atom_types, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::assign_mbondi2_radii, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::assign_obc2_scaling_factors, m)?)?;
@@ -109,6 +111,10 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fetch_md_cath, m)?)?;
     m.add_function(wrap_pyfunction!(fetch_afdb, m)?)?;
     m.add_function(wrap_pyfunction!(fetch_foldcomp_database, m)?)?;
+
+    // Streaming support
+    m.add_class::<py_stream::PyTrajectoryIterator>()?;
+    m.add_class::<py_stream::PyDcdWriter>()?;
 
     Ok(())
 }

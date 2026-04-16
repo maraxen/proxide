@@ -2,6 +2,7 @@
 #![allow(clippy::useless_conversion)]
 
 use crate::{chem, forcefield, physics};
+use nalgebra::DMatrix;
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -192,6 +193,64 @@ pub fn parameterize_molecule(
     }
 
     Ok(dict.into_py(py))
+}
+
+/// Assign partial charges using the native Rust Expaloma engine.
+///
+/// This implementation is GIL-free and uses nalgebra for inference.
+#[pyfunction]
+#[pyo3(signature = (features, senders, receivers, segment_ids, num_graphs, total_charges))]
+pub fn assign_espaloma_charges(
+    py: Python<'_>,
+    features: PyObject,     // (n_atoms, 116)
+    senders: Vec<u32>,
+    receivers: Vec<u32>,
+    segment_ids: Vec<u32>,
+    num_graphs: usize,
+    total_charges: Vec<f32>,
+) -> PyResult<PyObject> {
+    let feat_array = features.bind(py).downcast::<PyArray2<f32>>()
+        .map_err(|_| pyo3::exceptions::PyTypeError::new_err("features must be a 2D float32 numpy array"))?;
+    
+    let binding = feat_array.readonly();
+    let feat_view = binding.as_array();
+    
+    // Check dimensions
+    if feat_view.shape()[1] != chem::inference::FEATURE_UNITS {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "features must have {} columns, got {}", 
+            chem::inference::FEATURE_UNITS, 
+            feat_view.shape()[1]
+        )));
+    }
+
+    // Convert ndarray view to nalgebra DMatrix
+    let n_atoms = feat_view.shape()[0];
+    let mut x = DMatrix::zeros(n_atoms, chem::inference::FEATURE_UNITS);
+    for i in 0..n_atoms {
+        for j in 0..chem::inference::FEATURE_UNITS {
+            x[(i, j)] = feat_view[[i, j]];
+        }
+    }
+
+    // Load weights (lazy static or similar would be better, but for now we parse from embedded bytes)
+    // In a production scenario, we'd cache this.
+    let weights = chem::inference::EspalomaWeights::from_bytes(chem::inference::EMBEDDED_WEIGHTS);
+
+    // Release GIL and run inference
+    let charges = py.allow_threads(|| {
+        chem::inference::infer_charges(
+            &weights,
+            &x,
+            &senders,
+            &receivers,
+            &segment_ids,
+            num_graphs,
+            &total_charges,
+        )
+    });
+
+    Ok(PyArray1::from_vec_bound(py, charges).into_py(py))
 }
 
 fn extract_coords(py: Python<'_>, obj: &PyObject) -> PyResult<Vec<[f32; 3]>> {

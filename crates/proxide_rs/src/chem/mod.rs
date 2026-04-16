@@ -1,6 +1,7 @@
 //! Chemistry module for protein structures
 
 pub mod bonds;
+pub mod inference;
 pub mod masses;
 pub mod residues;
 

@@ -46,6 +46,7 @@ hdf5 = { workspace = true, optional = true }
 
 # HTTP Client (Required)
 reqwest = { workspace = true }
+bytemuck = "1.25.0"
 
 [features]
 default = ["xtc", "mdcath"]
