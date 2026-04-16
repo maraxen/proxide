@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
   from jaxtyping import Bool
 
-  from proxide.types import (
+  from proxide.core.types import (
     ArrayLike,
     InterproteinMapping,
     OneHotProteinSequence,

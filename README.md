@@ -1,6 +1,6 @@
 # Proxide
 
-**Proxide** is a high-performance library for Protein I/O and Physics bridging in JAX. It combines a flexible Python/JAX frontend with a highly optimized Rust backend (`oxidize`) to provide fast structure parsing, force field parameterization, and seamless integration with JAX MD.
+**Proxide** is a high-performance library for Protein I/O and Physics bridging in JAX. It combines a flexible Python/JAX frontend with a highly optimized Rust backend (`_proxider`) to provide fast structure parsing, force field parameterization, and seamless integration with JAX MD.
 
 **NOTE**: This is a research library in active development.
 
@@ -41,7 +41,7 @@ uv pip install .
 uv pip install -e ".[dev]"
 ```
 
-The installation process will automatically compile the Rust `oxidize` extension using `maturin`.
+The installation process will automatically compile the Rust `_proxider` extension using `maturin`.
 
 ### Optional: Espaloma Charge (ML partial charges)
 
@@ -136,7 +136,7 @@ The migration to a Rust backend has yielded significant performance improvements
 
 If you are migrating from older versions of Proxide:
 
-1. **Biotite Removal**: Direct dependency on `biotite` for parsing has been removed. All parsing is now handled by `oxidize`.
+1. **Biotite Removal**: Direct dependency on `biotite` for parsing has been removed. All parsing is now handled by `_proxider`.
 2. **API Changes**:
     - `proxide.io.parsing.biotite` -> `proxide.parse_structure`
     - `proxide.physics.force_fields` -> `proxide.load_forcefield`

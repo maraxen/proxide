@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from proxide.chem.ordering import C_INDEX, CA_INDEX, CB_PDB_INDEX, N_INDEX
-from proxide.types import (
+from proxide.core.types import (
   Array,
   ArrayLike,
   BackboneCoordinates,
