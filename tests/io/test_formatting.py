@@ -4,7 +4,7 @@ import tempfile
 import numpy as np
 import pytest
 
-from proxide import _oxidize
+from proxide import _proxider
 
 PDB_CONTENT = """ATOM      1  N   ALA A   1      -0.525   1.362   0.000  1.00  0.00           N
 ATOM      2  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00           C
@@ -25,9 +25,9 @@ def pdb_file():
             os.remove(path)
 
 def test_format_atom37(pdb_file):
-    spec = _oxidize.OutputSpec()
-    spec.coord_format = _oxidize.CoordFormat.Atom37
-    result = _oxidize.parse_structure(pdb_file, spec)
+    spec = _proxider.OutputSpec()
+    spec.coord_format = _proxider.CoordFormat.Atom37
+    result = _proxider.parse_structure(pdb_file, spec)
     
     # Check basic fields
     assert "coordinates" in result
@@ -39,18 +39,18 @@ def test_format_atom37(pdb_file):
     assert result["atom_mask"].shape == (37,)
 
 def test_format_atom14(pdb_file):
-    spec = _oxidize.OutputSpec()
-    spec.coord_format = _oxidize.CoordFormat.Atom14
-    result = _oxidize.parse_structure(pdb_file, spec)
+    spec = _proxider.OutputSpec()
+    spec.coord_format = _proxider.CoordFormat.Atom14
+    result = _proxider.parse_structure(pdb_file, spec)
     
     coords = result["coordinates"]
     # 1 * 14 * 3 = 42
     assert coords.shape == (42,)
 
 def test_format_backbone(pdb_file):
-    spec = _oxidize.OutputSpec()
-    spec.coord_format = _oxidize.CoordFormat.BackboneOnly
-    result = _oxidize.parse_structure(pdb_file, spec)
+    spec = _proxider.OutputSpec()
+    spec.coord_format = _proxider.CoordFormat.BackboneOnly
+    result = _proxider.parse_structure(pdb_file, spec)
     
     coords = result["coordinates"]
     # 1 * 4 * 3 = 12
@@ -62,9 +62,9 @@ def test_format_backbone(pdb_file):
     assert np.all(mask == 1.0)
 
 def test_format_full(pdb_file):
-    spec = _oxidize.OutputSpec()
-    spec.coord_format = _oxidize.CoordFormat.Full
-    result = _oxidize.parse_structure(pdb_file, spec)
+    spec = _proxider.OutputSpec()
+    spec.coord_format = _proxider.CoordFormat.Full
+    result = _proxider.parse_structure(pdb_file, spec)
     
     assert "coord_shape" in result
     shape = result["coord_shape"] # (N_atoms, 3, 1) for flat format
@@ -83,15 +83,15 @@ def test_format_full(pdb_file):
 
 def test_caching(pdb_file):
     # Enable caching
-    spec = _oxidize.OutputSpec()
+    spec = _proxider.OutputSpec()
     spec.enable_caching = True
-    spec.coord_format = _oxidize.CoordFormat.Atom37
+    spec.coord_format = _proxider.CoordFormat.Atom37
     
     # First call
-    res1 = _oxidize.parse_structure(pdb_file, spec)
+    res1 = _proxider.parse_structure(pdb_file, spec)
     
     # Second call
-    res2 = _oxidize.parse_structure(pdb_file, spec)
+    res2 = _proxider.parse_structure(pdb_file, spec)
     
     assert np.allclose(res1["coordinates"], res2["coordinates"])
     

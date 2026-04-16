@@ -72,11 +72,11 @@ def compute_rbf_features_rust(
     Protein with rbf_features and neighbor_indices populated.
   """
   try:
-    from proxide import _oxidize
+    from proxide import _proxider
   except ImportError:
     # Fall back gracefully if Rust extension not available
     warnings.warn(
-      "Rust _oxidize extension not available, skipping RBF precomputation",
+      "Rust _proxider extension not available, skipping RBF precomputation",
       stacklevel=2,
     )
     return protein
@@ -93,7 +93,7 @@ def compute_rbf_features_rust(
 
   try:
     # Call Rust projection
-    result = _oxidize.project_to_mpnn_batch(
+    result = _proxider.project_to_mpnn_batch(
       source_path,
       num_neighbors,
       noise_std,

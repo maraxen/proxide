@@ -1,12 +1,12 @@
 """Proxide: Protein I/O and processing utilities for JAX.
 
 Proxide is a high-performance library that combines a Python/JAX frontend with a
-Rust backend (`oxidize`) for fast protein I/O, force field parameterization,
+Rust backend (`_proxider`) for fast protein I/O, force field parameterization,
 and seamless integration with JAX MD.
 """
 
 # Re-export Rust extension functions for unified API
-from proxide._oxidize import (  # type: ignore[unresolved-import]
+from proxide._proxider import (  # type: ignore[unresolved-import]
   AtomicSystem,
   CoordFormat,
   ErrorMode,

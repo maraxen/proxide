@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import ArrayLike
 
-from proxide import _oxidize
+from proxide import _proxider
 from proxide.core.atomic_system import AtomicSystem
 from proxide.io.parsing.registry import ParsingError, register_parser
 
@@ -38,7 +38,7 @@ def parse_pqr_rust(file_path: str | pathlib.Path) -> dict[str, ArrayLike]:
 
   """
   path = str(file_path) if isinstance(file_path, pathlib.Path) else file_path
-  return _oxidize.parse_pqr(path)
+  return _proxider.parse_pqr(path)
 
 
 def _convert_rust_pqr_to_system(

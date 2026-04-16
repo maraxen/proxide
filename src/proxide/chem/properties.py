@@ -1,6 +1,6 @@
 """Chemical properties utilities."""
 
-from proxide import _oxidize
+from proxide import _proxider
 
 
 def assign_masses(atom_names: list[str]) -> list[float]:
@@ -15,4 +15,4 @@ def assign_masses(atom_names: list[str]) -> list[float]:
       List of masses in amu.
 
   """
-  return _oxidize.assign_masses(atom_names)
+  return _proxider.assign_masses(atom_names)

@@ -137,13 +137,13 @@ def project_to_mpnn(system: AtomicSystem, spec: OutputSpec) -> MPNNBatch:
 
   Note:
     For best performance, use the Rust backend via:
-    proxide._oxidize.project_to_mpnn_batch()
+    proxide._proxider.project_to_mpnn_batch()
 
   """
   # TODO: Implement full projection logic
   # For now, this is a placeholder that will be implemented with Rust backend
   raise NotImplementedError(
-    "project_to_mpnn requires Rust backend. Use proxide._oxidize.project_to_mpnn_batch() directly."
+    "project_to_mpnn requires Rust backend. Use proxide._proxider.project_to_mpnn_batch() directly."
   )
 
 

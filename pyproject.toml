@@ -23,7 +23,13 @@ dependencies = [
     "equinox",
     "jaxtyping",
     "array_record",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "tqdm>=4.66.0",
 ]
+
+[project.scripts]
+proxide = "proxide.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/maraxen/proxide"
@@ -51,7 +57,6 @@ espaloma = [
 # Legacy OpenFF Toolkit wrapper (still uses upstream espaloma_charge).
 espaloma-openff = [
     "espaloma_charge>=0.0.8",
-    "openff-toolkit",
 ]
 trajectories = [
     "mdtraj",
@@ -84,11 +89,11 @@ dev = [
 
 [tool.maturin]
 # Path to the Rust crate
-manifest-path = "oxidize/Cargo.toml"
+manifest-path = "crates/proxide_py/Cargo.toml"
 # Python source directory
 python-source = "src"
-# The compiled Rust module name (import proxide._oxidize)
-module-name = "proxide._oxidize"
+# The compiled Rust module name (import proxide._proxider)
+module-name = "proxide._proxider"
 # Include Python package files
 include = [
     "src/proxide/**/*",

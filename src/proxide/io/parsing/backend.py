@@ -1,6 +1,6 @@
 """Python wrapper for Rust parsing extension.
 
-This module provides a high-level interface to the oxidize Rust extension,
+This module provides a high-level interface to the _proxider Rust extension,
 handling data conversion and maintaining API compatibility with existing parsers.
 """
 
@@ -15,8 +15,8 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import ArrayLike
 
-from proxide import _oxidize  # type: ignore[unresolved-import]
-from proxide._oxidize import OutputSpec  # type: ignore[unresolved-import]
+from proxide import _proxider  # type: ignore[unresolved-import]
+from proxide._proxider import OutputSpec  # type: ignore[unresolved-import]
 from proxide.core.atomic_system import (
   AtomicConstants,
   AtomicState,
@@ -96,7 +96,7 @@ def load_rust(
   Process:
       1.  **Preparation**: Resolve file path (handling file-like objects if needed).
       2.  **Configuration**: Build `OutputSpec` from arguments (hydrogens, MD params).
-      3.  **Parsing**: call `_oxidize.parse_structure` (Rust).
+      3.  **Parsing**: call `_proxider.parse_structure` (Rust).
       4.  **Conversion**: Convert Rust output dict to `Protein` dataclass.
       5.  **Filtering**: Apply chain filtering if `chain_id` is specified.
 
@@ -151,7 +151,7 @@ def load_rust(
       else:
         path_str = str(file_path)
 
-      result_dict = _oxidize.parse_structure(path_str, spec)
+      result_dict = _proxider.parse_structure(path_str, spec)
       obj = Protein.from_rust_dict(result_dict, source=path_str if tmp_path is None else "<stream>")
 
       if chain_id:
@@ -369,7 +369,7 @@ def parse_pdb_to_protein(
   if spec is None:
     spec = OutputSpec()
 
-  result = _oxidize.parse_structure(str(file_path), spec)
+  result = _proxider.parse_structure(str(file_path), spec)
   return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
 
 
@@ -379,7 +379,7 @@ def parse_structure(
   """Parse a protein structure using the Rust extension.
 
   This is the main high-level API for loading structures in Proxide. It automatically
-  detects the file format (PDB/mmCIF) and uses the `oxidize` backend.
+  detects the file format (PDB/mmCIF) and uses the `_proxider` backend.
 
   Process:
       1.  **Format Detection**: Rust parser detects PDB/mmCIF/PQR/binary magic bytes.
@@ -411,8 +411,8 @@ def parse_structure(
   return parse_pdb_to_protein(file_path, spec, use_jax, output_format_target)
 
 
-parse_xtc = getattr(_oxidize, "parse_xtc", None)
-parse_mdc = getattr(_oxidize, "parse_mdc", None)
+parse_xtc = getattr(_proxider, "parse_xtc", None)
+parse_mdc = getattr(_proxider, "parse_mdc", None)
 
 
 def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
@@ -431,7 +431,7 @@ def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
       ValueError: If parsing fails
 
   """
-  result = _oxidize.parse_pdb(str(file_path))
+  result = _proxider.parse_pdb(str(file_path))
 
   return RawAtomData(
     num_atoms=result["num_atoms"],
@@ -459,7 +459,7 @@ def parse_mmcif_rust(file_path: str | Path) -> RawAtomData:
       ValueError: If parsing fails
 
   """
-  result = _oxidize.parse_mmcif(str(file_path))
+  result = _proxider.parse_mmcif(str(file_path))
 
   return RawAtomData(
     num_atoms=result["num_atoms"],
@@ -493,7 +493,7 @@ def load_forcefield_rust(file_path: str | Path) -> ForceFieldData:
       >>> print(f"ALA has {len(ala['atoms'])} atoms")
 
   """
-  result = _oxidize.load_forcefield(str(file_path))
+  result = _proxider.load_forcefield(str(file_path))
 
   return ForceFieldData(
     name=result.get("name", ""),
@@ -534,7 +534,7 @@ def parse_xtc_rust(file_path: str | Path) -> dict[str, ArrayLike]:
 
   """
   if parse_xtc is None:
-    raise ImportError("parse_xtc not found in _oxidize. Ensure 'trajectories' feature is enabled.")
+    raise ImportError("parse_xtc not found in _proxider. Ensure 'trajectories' feature is enabled.")
 
   return parse_xtc(str(file_path))
 
@@ -555,7 +555,7 @@ def parse_mdc_rust(file_path: str | Path) -> dict[str, ArrayLike]:
 
   """
   if parse_mdc is None:
-    raise ImportError("parse_mdc not found in _oxidize. Ensure 'mdc' feature is enabled.")
+    raise ImportError("parse_mdc not found in _proxider. Ensure 'mdc' feature is enabled.")
 
   return parse_mdc(str(file_path))
 
@@ -579,10 +579,10 @@ def parse_mdtraj_h5_metadata(file_path: str | Path) -> MdtrajH5Data:
       ValueError: If parsing fails
 
   """
-  if not hasattr(_oxidize, "parse_mdtraj_h5_metadata"):
+  if not hasattr(_proxider, "parse_mdtraj_h5_metadata"):
     raise ImportError("HDF5 support not available. Rebuild with: maturin develop --features mdcath")
 
-  result = _oxidize.parse_mdtraj_h5_metadata(str(file_path))
+  result = _proxider.parse_mdtraj_h5_metadata(str(file_path))
 
   return MdtrajH5Data(
     num_frames=result["num_frames"],
@@ -614,7 +614,7 @@ def parse_mdtraj_h5_frame(file_path: str | Path, frame_idx: int = 0) -> RawAtomD
   metadata = parse_mdtraj_h5_metadata(file_path)
 
   # Get frame coordinates
-  frame_result = _oxidize.parse_mdtraj_h5_frame(str(file_path), frame_idx)
+  frame_result = _proxider.parse_mdtraj_h5_frame(str(file_path), frame_idx)
 
   return RawAtomData(
     num_atoms=metadata.num_atoms,
@@ -643,10 +643,10 @@ def parse_mdcath_metadata(file_path: str | Path) -> MdcathData:
       ValueError: If parsing fails
 
   """
-  if not hasattr(_oxidize, "parse_mdcath_metadata"):
+  if not hasattr(_proxider, "parse_mdcath_metadata"):
     raise ImportError("HDF5 support not available. Rebuild with: maturin develop --features mdcath")
 
-  result = _oxidize.parse_mdcath_metadata(str(file_path))
+  result = _proxider.parse_mdcath_metadata(str(file_path))
 
   return MdcathData(
     domain_id=result["domain_id"],
@@ -669,7 +669,7 @@ def get_mdcath_replicas(file_path: str | Path, domain_id: str, temperature: str)
       List of replica identifiers
 
   """
-  return _oxidize.get_mdcath_replicas(str(file_path), domain_id, temperature)
+  return _proxider.get_mdcath_replicas(str(file_path), domain_id, temperature)
 
 
 def parse_mdcath_frame(
@@ -696,7 +696,7 @@ def parse_mdcath_frame(
       ValueError: If parsing fails
 
   """
-  return _oxidize.parse_mdcath_frame(str(file_path), domain_id, temperature, replica, frame_idx)
+  return _proxider.parse_mdcath_frame(str(file_path), domain_id, temperature, replica, frame_idx)
 
 
 def is_hdf5_support_available() -> bool:
@@ -707,12 +707,12 @@ def is_hdf5_support_available() -> bool:
 
   """
   # Check if the function exists
-  if not hasattr(_oxidize, "parse_mdtraj_h5_metadata"):
+  if not hasattr(_proxider, "parse_mdtraj_h5_metadata"):
     return False
 
   # Try to call the function - it raises ImportError if feature not enabled
   try:
-    _oxidize.parse_mdtraj_h5_metadata("/nonexistent")
+    _proxider.parse_mdtraj_h5_metadata("/nonexistent")
   except ImportError:
     return False
   except ValueError:
@@ -729,7 +729,7 @@ def is_hdf5_support_available() -> bool:
 def is_rust_parser_available() -> bool:
   """Check if Rust parser is available.
 
-  Always returns True since oxidize is now a hard dependency.
+  Always returns True since _proxider is now a hard dependency.
   """
   return True
 
@@ -742,13 +742,13 @@ def get_rust_capabilities() -> dict[str, bool]:
 
   """
   return {
-    "parse_pdb": hasattr(_oxidize, "parse_pdb"),
-    "parse_mmcif": hasattr(_oxidize, "parse_mmcif"),
-    "parse_structure": hasattr(_oxidize, "parse_structure"),
-    "load_forcefield": hasattr(_oxidize, "load_forcefield"),
-    "parse_xtc": hasattr(_oxidize, "parse_xtc"),
-    "parse_mdc": hasattr(_oxidize, "parse_mdc"),
-    "parse_mdtraj_h5": hasattr(_oxidize, "parse_mdtraj_h5_metadata"),
-    "parse_mdcath": hasattr(_oxidize, "parse_mdcath_metadata"),
-    "atomic_system_types": hasattr(_oxidize, "AtomicSystem"),
+    "parse_pdb": hasattr(_proxider, "parse_pdb"),
+    "parse_mmcif": hasattr(_proxider, "parse_mmcif"),
+    "parse_structure": hasattr(_proxider, "parse_structure"),
+    "load_forcefield": hasattr(_proxider, "load_forcefield"),
+    "parse_xtc": hasattr(_proxider, "parse_xtc"),
+    "parse_mdc": hasattr(_proxider, "parse_mdc"),
+    "parse_mdtraj_h5": hasattr(_proxider, "parse_mdtraj_h5_metadata"),
+    "parse_mdcath": hasattr(_proxider, "parse_mdcath_metadata"),
+    "atomic_system_types": hasattr(_proxider, "AtomicSystem"),
   }
