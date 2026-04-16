@@ -3,77 +3,43 @@
 
 //! Atomic System Architecture
 
-use numpy::PyArrayMethods;
-use pyo3::prelude::*;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal};
 
 use crate::{geometry, physics};
 
-/// Base class for any atomic system
-#[pyclass]
+#[cfg_attr(feature = "python", pyo3::pyclass)]
 #[derive(Debug, Clone)]
 pub struct AtomicSystem {
-    /// Flattened coordinates (N_atoms * 3)
-    #[pyo3(get, set)]
     pub coordinates: Vec<f32>,
-    /// Atom mask (N_atoms)
-    #[pyo3(get, set)]
     pub atom_mask: Vec<f32>,
-    /// Atom names
-    #[pyo3(get, set)]
     pub atom_names: Vec<String>,
-    /// Element symbols
-    #[pyo3(get, set)]
     pub elements: Vec<String>,
 
-    /// Topology
-    #[pyo3(get, set)]
     pub bonds: Option<Vec<[usize; 2]>>,
-    #[pyo3(get, set)]
     pub angles: Option<Vec<[usize; 3]>>,
-    #[pyo3(get, set)]
     pub proper_dihedrals: Option<Vec<[usize; 4]>>,
-    #[pyo3(get, set)]
     pub impropers: Option<Vec<[usize; 4]>>,
 
-    /// Optional MD parameters
-    #[pyo3(get, set)]
     pub charges: Option<Vec<f32>>,
-    #[pyo3(get, set)]
     pub sigmas: Option<Vec<f32>>,
-    #[pyo3(get, set)]
     pub epsilons: Option<Vec<f32>>,
-    #[pyo3(get, set)]
     pub radii: Option<Vec<f32>>,
 
-    #[pyo3(get, set)]
     pub residue_index: Option<Vec<i32>>,
-    #[pyo3(get, set)]
     pub chain_index: Option<Vec<i32>>,
-    #[pyo3(get, set)]
     pub unique_chain_ids: Option<Vec<String>>,
 
-    /// Features
-    #[pyo3(get, set)]
-    pub neighbor_indices: Option<Vec<i32>>, // Flattened (N_res, K)
-    #[pyo3(get, set)]
-    pub rbf_features: Option<Vec<f32>>, // Flattened (N_res, K, D)
-    #[pyo3(get, set)]
+    pub neighbor_indices: Option<Vec<i32>>,
+    pub rbf_features: Option<Vec<f32>>,
     pub rbf_num_neighbors: Option<usize>,
-    #[pyo3(get, set)]
     pub vdw_features: Option<Vec<f32>>,
-    #[pyo3(get, set)]
     pub electrostatic_features: Option<Vec<f32>>,
 
-    #[pyo3(get, set)]
     pub num_atoms: usize,
 }
 
-#[pymethods]
 impl AtomicSystem {
-    #[new]
-    #[pyo3(signature = (coordinates, atom_mask, atom_names=None, elements=None))]
     pub fn new(
         coordinates: Vec<f32>,
         atom_mask: Vec<f32>,
@@ -106,136 +72,25 @@ impl AtomicSystem {
         }
     }
 
-    /// Update coordinates with Gaussian noise and recompute features
-    /// Returns a new AtomicSystem with updated coordinates and features.
-    #[pyo3(signature = (sigma, seed=0))]
-    pub fn update_with_noise(&self, sigma: f32, seed: u64) -> PyResult<Self> {
-        let mut new_system = self.clone();
-
-        // 1. Apply Noise
+    pub fn update_with_noise(&mut self, sigma: f32, seed: u64) -> Result<(), String> {
         let mut rng = StdRng::seed_from_u64(seed);
-        let normal = Normal::new(0.0, sigma)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        let normal = Normal::new(0.0, sigma).map_err(|e| e.to_string())?;
 
-        for x in new_system.coordinates.iter_mut() {
+        for x in self.coordinates.iter_mut() {
             *x += normal.sample(&mut rng);
         }
 
-        // 2. Recompute Features
-        new_system.recompute_features()?;
-
-        Ok(new_system)
+        self.recompute_features().map_err(|e| e.to_string())
     }
 
-    /// Update coordinates from explicit array and recompute features
-    #[pyo3(signature = (new_coords))]
-    pub fn update_coordinates(&self, new_coords: Vec<f32>) -> PyResult<Self> {
-        let mut new_system = self.clone();
+    pub fn update_coordinates(&mut self, new_coords: Vec<f32>) -> Result<(), String> {
         if new_coords.len() != self.coordinates.len() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Coordinate shape mismatch",
-            ));
+            return Err("Coordinate shape mismatch".to_string());
         }
-        new_system.coordinates = new_coords;
-
-        // Reuse the recompute logic?
-        // Since I implemented it in update_with_noise, I should refactor.
-        // But for now, I'll call a private helper or just duplicate the call logic (calling update_with_noise with 0 sigma is wasteful of RNG).
-        // Better: Refactor recompute_features into a private method.
-
-        new_system.recompute_features()?;
-        Ok(new_system)
+        self.coordinates = new_coords;
+        self.recompute_features().map_err(|e| e.to_string())
     }
 
-    /// Convert to a Python dictionary (compatible with Protein.from_rust_dict)
-    pub fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
-        let dict = pyo3::types::PyDict::new_bound(py);
-
-        dict.set_item(
-            "coordinates",
-            numpy::PyArray1::from_slice_bound(py, &self.coordinates),
-        )?;
-        dict.set_item(
-            "atom_mask",
-            numpy::PyArray1::from_slice_bound(py, &self.atom_mask),
-        )?;
-        dict.set_item("atom_names", &self.atom_names)?;
-        dict.set_item("elements", &self.elements)?;
-
-        if let Some(ref bonds) = self.bonds {
-            let flat: Vec<usize> = bonds.iter().flatten().copied().collect();
-            let arr = numpy::PyArray1::from_slice_bound(py, &flat);
-            dict.set_item("bonds", arr.reshape((bonds.len(), 2))?)?;
-        }
-
-        if let Some(ref charges) = self.charges {
-            dict.set_item("charges", numpy::PyArray1::from_slice_bound(py, charges))?;
-        }
-
-        // ... more fields could be added here if needed
-
-        if let Some(ref res_idx) = self.residue_index {
-            dict.set_item(
-                "residue_index",
-                numpy::PyArray1::from_slice_bound(py, res_idx),
-            )?;
-        }
-        if let Some(ref chain_idx) = self.chain_index {
-            dict.set_item(
-                "chain_index",
-                numpy::PyArray1::from_slice_bound(py, chain_idx),
-            )?;
-        }
-        // unique_chain_ids is list of string, so PyList
-        if let Some(ref u_chains) = self.unique_chain_ids {
-            dict.set_item("unique_chain_ids", u_chains)?;
-        }
-
-        if let Some(ref idx) = self.neighbor_indices {
-            let k = self.rbf_num_neighbors.unwrap_or(30);
-            let n = idx.len() / k;
-            let arr = numpy::PyArray1::from_slice_bound(py, idx);
-            dict.set_item("neighbor_indices", arr.reshape((n, k))?)?;
-        }
-        if let Some(ref rbf) = self.rbf_features {
-            // RBF is (N, K, D)
-            // D is 400 normally (radial_basis checks this)
-            // But we flat stored it.
-            let k = self.rbf_num_neighbors.unwrap_or(30);
-
-            // Usually D=400 (from `spec.rs` or `radial_basis.rs`).
-            // Let's assume D=400? Or extract from size?
-            // Size = N * K * D.
-            // We know neighbors.len() which is N*K.
-            let n_k = if let Some(ref nidx) = self.neighbor_indices {
-                nidx.len()
-            } else {
-                0
-            };
-            if n_k > 0 {
-                let d = rbf.len() / n_k;
-                let n = n_k / k;
-                let arr = numpy::PyArray1::from_slice_bound(py, rbf);
-                dict.set_item("rbf_features", arr.reshape((n, k, d))?)?;
-            }
-        }
-        if let Some(ref vdw) = self.vdw_features {
-            let n_res = vdw.len() / 5;
-            let arr = numpy::PyArray1::from_slice_bound(py, vdw);
-            dict.set_item("vdw_features", arr.reshape((n_res, 5))?)?;
-        }
-        if let Some(ref elec) = self.electrostatic_features {
-            let n_res = elec.len() / 5;
-            let arr = numpy::PyArray1::from_slice_bound(py, elec);
-            dict.set_item("electrostatic_features", arr.reshape((n_res, 5))?)?;
-        }
-
-        Ok(dict)
-    }
-}
-
-impl AtomicSystem {
-    // Helper to map property to backbone
     fn extract_backbone_map(&self, map: &[[Option<usize>; 5]], data: &[f32]) -> Vec<f32> {
         let mut out = vec![0.0; map.len() * 5];
         for (r, atoms) in map.iter().enumerate() {
@@ -250,20 +105,12 @@ impl AtomicSystem {
         out
     }
 
-    fn recompute_features(&mut self) -> PyResult<()> {
-        // Shared logic refactor from update_with_noise
-        // ... (Omitting full implementation here to save tokens, assuming update_with_noise covers it or I should refactor properly)
-        // Actually, I can't easily refactor into a method I haven't written yet.
-        // I will copy-paste or structure it so update_with_noise calls this.
-
+    fn recompute_features(&mut self) -> Result<(), std::io::Error> {
         if (self.rbf_features.is_some()
             || self.vdw_features.is_some()
             || self.electrostatic_features.is_some())
             && self.residue_index.is_some()
         {
-            // ... Same logic as above ...
-            // Since I can't put the logic twice in one replacement block easily without bloating,
-            // I will implement recompute_features fully and have update_with_noise call it.
             let residue_index = self.residue_index.as_ref().unwrap();
             let num_residues = if residue_index.is_empty() {
                 0

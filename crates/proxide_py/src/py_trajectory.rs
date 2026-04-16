@@ -166,46 +166,11 @@ pub fn parse_trr(path: String) -> PyResult<PyObject> {
     })
 }
 
-/// Parse an MDC trajectory file using the rust_mdc bridge
+/// MDCompress (MDC) trajectory parsing — disabled (no rust_mdc / external mdcompress in this build).
 #[pyfunction]
 pub fn parse_mdc(path: String) -> PyResult<PyObject> {
-    Python::with_gil(|py| {
-        #[cfg(feature = "mdc")]
-        {
-            use formats::mdc::read_mdc;
-            let traj = read_mdc(&path)
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-
-            let dict = PyDict::new_bound(py);
-            dict.set_item("num_frames", traj.num_frames)?;
-            dict.set_item("num_atoms", traj.num_atoms)?;
-
-            // Convert times to NumPy
-            let times = PyArray1::from_slice_bound(py, &traj.times);
-            dict.set_item("times", times)?;
-
-            // Combine all coords into (N_frames, N_atoms, 3)
-            let mut flat_coords = Vec::with_capacity(traj.num_frames * traj.num_atoms * 3);
-            for frame_coords in &traj.coords {
-                flat_coords.extend_from_slice(frame_coords);
-            }
-            let coords_array = PyArray1::from_slice_bound(py, &flat_coords);
-            let shape = (traj.num_frames, traj.num_atoms, 3);
-            let coords_reshaped = coords_array.reshape(shape).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("Failed to reshape coords: {}", e))
-            })?;
-
-            dict.set_item("coordinates", coords_reshaped)?;
-
-            Ok(dict.into_py(py))
-        }
-
-        #[cfg(not(feature = "mdc"))]
-        {
-            let _ = path;
-            Err(pyo3::exceptions::PyImportError::new_err(
-                "MDC support requires compiling with 'mdc' feature.",
-            ))
-        }
-    })
+    let _ = path;
+    Err(pyo3::exceptions::PyImportError::new_err(
+        "MDC (MDCompress) support is disabled in this build.",
+    ))
 }

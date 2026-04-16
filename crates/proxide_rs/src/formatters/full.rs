@@ -96,49 +96,6 @@ impl FullFormatter {
 }
 
 impl FormattedFull {
-    /// Convert to Python dictionary
-    pub fn to_py_dict(&self, py: pyo3::Python) -> pyo3::PyResult<pyo3::PyObject> {
-        use numpy::PyArray1;
-        use pyo3::prelude::*;
-        use pyo3::types::PyDict;
-
-        let dict = PyDict::new_bound(py);
-
-        // Convert to NumPy arrays
-        dict.set_item(
-            "coordinates",
-            PyArray1::from_vec_bound(py, self.coordinates.clone()),
-        )?;
-        dict.set_item(
-            "atom_mask",
-            PyArray1::from_vec_bound(py, self.atom_mask.clone()),
-        )?;
-        dict.set_item("aatype", PyArray1::from_vec_bound(py, self.aatype.clone()))?;
-        dict.set_item(
-            "residue_index",
-            PyArray1::from_vec_bound(py, self.residue_index.clone()),
-        )?;
-        dict.set_item(
-            "chain_index",
-            PyArray1::from_vec_bound(py, self.chain_index.clone()),
-        )?;
-        dict.set_item(
-            "atom_residue_ids",
-            PyArray1::from_vec_bound(py, self.atom_residue_ids.clone()),
-        )?;
-
-        // Atom names as Python list
-        let atom_names_list: Vec<&str> = self.atom_names.iter().map(|s| s.as_str()).collect();
-        dict.set_item("atom_names", atom_names_list)?;
-
-        // Shape info
-        dict.set_item(
-            "coord_shape",
-            (self.coord_shape.0, self.coord_shape.1, self.coord_shape.2),
-        )?;
-
-        Ok(dict.into())
-    }
 }
 
 #[cfg(test)]

@@ -64,43 +64,26 @@ pub struct CachedStructure {
 }
 
 impl CachedStructure {
-    /// Convert to Python dictionary
-    pub fn to_py_dict(&self, py: pyo3::Python) -> pyo3::PyResult<pyo3::PyObject> {
-        use numpy::PyArray1;
-        use pyo3::prelude::*;
-        use pyo3::types::PyDict;
-
-        let dict = PyDict::new_bound(py);
-
-        // Convert to NumPy arrays (zero-copy when possible)
-        dict.set_item(
-            "coordinates",
-            PyArray1::from_vec_bound(py, self.coordinates.clone()),
-        )?;
-        dict.set_item(
-            "atom_mask",
-            PyArray1::from_vec_bound(py, self.atom_mask.clone()),
-        )?;
-        dict.set_item("aatype", PyArray1::from_vec_bound(py, self.aatype.clone()))?;
-        dict.set_item(
-            "residue_index",
-            PyArray1::from_vec_bound(py, self.residue_index.clone()),
-        )?;
-        dict.set_item(
-            "chain_index",
-            PyArray1::from_vec_bound(py, self.chain_index.clone()),
-        )?;
-
-        if let Some(ref names) = self.atom_names {
-            let atom_names_list: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
-            dict.set_item("atom_names", atom_names_list)?;
+    pub fn new(
+        coordinates: Vec<f32>,
+        atom_mask: Vec<f32>,
+        aatype: Vec<i8>,
+        residue_index: Vec<i32>,
+        chain_index: Vec<i32>,
+        num_residues: usize,
+        atom_names: Option<Vec<String>>,
+        coord_shape: Option<(usize, usize, usize)>,
+    ) -> Self {
+        Self {
+            coordinates,
+            atom_mask,
+            aatype,
+            residue_index,
+            chain_index,
+            _num_residues: num_residues,
+            atom_names,
+            coord_shape,
         }
-
-        if let Some(shape) = self.coord_shape {
-            dict.set_item("coord_shape", shape)?;
-        }
-
-        Ok(dict.into())
     }
 }
 

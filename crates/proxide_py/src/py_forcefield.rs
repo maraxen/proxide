@@ -9,7 +9,9 @@ use pyo3::types::PyDict;
 #[pyfunction]
 pub fn load_forcefield(path: String) -> PyResult<PyObject> {
     Python::with_gil(|py| {
-        let ff = forcefield::parse_forcefield_xml(&path).map_err(|e| {
+        let ff = py.allow_threads(|| {
+            forcefield::parse_forcefield_xml(&path)
+        }).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Force field parsing failed: {}", e))
         })?;
 
