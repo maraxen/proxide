@@ -88,17 +88,17 @@ print('hello')
 
 ```bash
 # Build with maturin (installs into current venv)
-timeout 180 cd oxidize && maturin develop --release
+timeout 180 cd _proxider && maturin develop --release
 
 # Run Rust tests only
-timeout 60 cd oxidize && cargo test --lib
+timeout 60 cd _proxider && cargo test --lib
 ```
 
 ### Testing
 
 ```bash
 # Test the Rust extension from Python
-timeout 30 uv run python -c "import oxidize; print(oxidize)"
+timeout 30 uv run python -c "import _proxider; print(_proxider)"
 ```
 
 ## Environment

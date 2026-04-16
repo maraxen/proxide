@@ -2,7 +2,7 @@
 
 **Last Updated:** 2025-12-13
 
-This walkthrough covers the main features of the `oxidize` Rust extension and how to use them effectively.
+This walkthrough covers the main features of the `_proxider` Rust extension and how to use them effectively.
 
 ---
 
@@ -24,10 +24,10 @@ This walkthrough covers the main features of the `oxidize` Rust extension and ho
 ```bash
 # Build the Rust extension in development mode
 cd /path/to/proxide
-uv run maturin develop --release -m oxidize/Cargo.toml
+uv run maturin develop --release -m _proxider/Cargo.toml
 
 # Verify installation
-uv run python -c "import oxidize; print('oxidize installed!')"
+uv run python -c "import _proxider; print('_proxider installed!')"
 ```
 
 ---
@@ -37,10 +37,10 @@ uv run python -c "import oxidize; print('oxidize installed!')"
 ### Basic PDB/mmCIF Parsing
 
 ```python
-import oxidize
+import _proxider
 
 # Create output specification
-spec = oxidize.OutputSpec()
+spec = _proxider.OutputSpec()
 spec.infer_bonds = True  # Infer bonds from distances
 
 # Parse structure
@@ -55,9 +55,9 @@ print(f"Bonds: {len(result['bonds'])}")
 ### With MD Parameterization
 
 ```python
-import oxidize
+import _proxider
 
-spec = oxidize.OutputSpec()
+spec = _proxider.OutputSpec()
 spec.parameterize_md = True
 spec.force_field = "path/to/protein.ff14SB.xml"
 spec.infer_bonds = True
@@ -73,9 +73,9 @@ print(f"Dihedrals: {len(result['dihedrals'])}")
 ### Adding Hydrogens
 
 ```python
-import oxidize
+import _proxider
 
-spec = oxidize.OutputSpec()
+spec = _proxider.OutputSpec()
 spec.add_hydrogens = True  # Add missing hydrogens
 spec.relax_hydrogens = True  # Energy-minimize hydrogen positions
 
@@ -89,11 +89,11 @@ result = priox_rs.parse_structure("protein.pdb", spec)
 PQR files contain atomic charges and radii for electrostatics calculations.
 
 ```python
-import oxidize
+import _proxider
 from proxide.io.parsing.pqr import load_pqr
 
 # Direct Rust access
-data = oxidize.parse_pqr("structure.pqr")
+data = _proxider.parse_pqr("structure.pqr")
 print(f"Atoms: {data['num_atoms']}")
 print(f"Charges: {data['charges'][:5]}")
 print(f"Radii: {data['radii'][:5]}")
@@ -112,18 +112,18 @@ print(f"Charges: {system.charges.shape}")
 The Rust extension provides fragment-based hydrogen placement with optional energy relaxation.
 
 ```python
-import oxidize
+import _proxider
 
 # Option 1: During parsing
-spec = oxidize.OutputSpec()
+spec = _proxider.OutputSpec()
 spec.add_hydrogens = True
 
-result = oxidize.parse_structure("protein.pdb", spec)
+result = _proxider.parse_structure("protein.pdb", spec)
 
 # Option 2: Standalone function
 # (if you have raw atom data already)
-# raw_data = oxidize.parse_pdb("protein.pdb")
-# with_hydrogens = oxidize.add_hydrogens(raw_data)
+# raw_data = _proxider.parse_pdb("protein.pdb")
+# with_hydrogens = _proxider.add_hydrogens(raw_data)
 ```
 
 ### With Energy Relaxation
@@ -131,13 +131,13 @@ result = oxidize.parse_structure("protein.pdb", spec)
 Energy relaxation improves hydrogen geometry using a quick energy minimization.
 
 ```python
-import oxidize
+import _proxider
 
-spec = oxidize.OutputSpec()
+spec = _proxider.OutputSpec()
 spec.add_hydrogens = True
 spec.relax_hydrogens = True  # OpenMM-based relaxation
 
-result = oxidize.parse_structure("protein.pdb", spec)
+result = _proxider.parse_structure("protein.pdb", spec)
 ```
 
 ---
@@ -147,10 +147,10 @@ result = oxidize.parse_structure("protein.pdb", spec)
 Load OpenMM-compatible force field XML files and assign parameters.
 
 ```python
-import oxidize
+import _proxider
 
 # Load force field
-ff = oxidize.load_forcefield("path/to/protein.ff14SB.xml")
+ff = _proxider.load_forcefield("path/to/protein.ff14SB.xml")
 
 # Access parameters
 print(f"Atom types: {len(ff['atoms'])}")
@@ -178,10 +178,10 @@ sigma, epsilon = ff.get_lj_params("ALA", "CA")
 Assign atomic masses based on element type.
 
 ```python
-import oxidize
+import _proxider
 
 # Rust implementation (fast)
-masses = oxidize.assign_masses(["N", "CA", "C", "O", "H"])
+masses = _proxider.assign_masses(["N", "CA", "C", "O", "H"])
 print(f"Masses: {masses}")
 # Output: [14.007, 12.011, 12.011, 15.999, 1.008]
 
@@ -201,7 +201,7 @@ from proxide.core.containers import Protein
 
 # Parse with parameterization
 protein = Protein.from_rust_dict(
-    oxidize.parse_structure("protein.pdb", spec)
+    _proxider.parse_structure("protein.pdb", spec)
 )
 
 # Convert to OpenMM
@@ -230,26 +230,26 @@ simulation.minimizeEnergy()
 ### GBSA Radii and Scaling
 
 ```python
-import oxidize
+import _proxider
 
 elements = ["N", "C", "C", "O", "H"]
 atom_names = ["N", "CA", "C", "O", "H"]
 charges = [0.0, 0.1, -0.1, 0.0, 0.0]
 
 # Assign mbondi2 radii
-radii = oxidize.assign_mbondi2_radii(elements, atom_names, charges)
+radii = _proxider.assign_mbondi2_radii(elements, atom_names, charges)
 
 # Assign OBC2 scaling factors
-scaling = oxidize.assign_obc2_scaling_factors(elements)
+scaling = _proxider.assign_obc2_scaling_factors(elements)
 ```
 
 ### Water Models
 
 ```python
-import oxidize
+import _proxider
 
 # Get TIP3P water model parameters
-water = oxidize.get_water_model("tip3p")
+water = _proxider.get_water_model("tip3p")
 print(f"O charge: {water['o_charge']}")
 print(f"H charge: {water['h_charge']}")
 print(f"O-H distance: {water['oh_distance']}")
@@ -258,11 +258,11 @@ print(f"O-H distance: {water['oh_distance']}")
 ### CMAP Backbone Corrections
 
 ```python
-import oxidize
+import _proxider
 
 # Compute bicubic interpolation parameters for CMAP grid
 grid_1d = [...]  # Energy values on phi-psi grid
-coefficients = oxidize.compute_bicubic_params(grid_1d)
+coefficients = _proxider.compute_bicubic_params(grid_1d)
 ```
 
 ---
