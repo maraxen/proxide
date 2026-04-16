@@ -299,3 +299,142 @@ pub struct DcdTrajectory {
     pub coords: Vec<Vec<f32>>,
     pub unit_cells: Option<Vec<[f64; 6]>>,
 }
+
+pub struct DcdWriter {
+    file: File,
+    pub n_atoms: usize,
+    pub n_frames: usize,
+    pub has_unit_cell: bool,
+}
+
+impl DcdWriter {
+    pub fn create<P: AsRef<std::path::Path>>(
+        path: P,
+        n_atoms: usize,
+        delta: f32,
+        has_unit_cell: bool,
+    ) -> Result<Self, DcdError> {
+        let mut file = File::create(path)?;
+
+        // Header block (84 bytes)
+        let mut header = [0u8; 84];
+        header[0..4].copy_from_slice(b"CORD");
+        // NSET (0 for now, will update later)
+        header[4..8].copy_from_slice(&0i32.to_le_bytes());
+        // ISTRT (0)
+        header[8..12].copy_from_slice(&0i32.to_le_bytes());
+        // NSAVC (1)
+        header[12..16].copy_from_slice(&1i32.to_le_bytes());
+        // NSTEP (0)
+        header[16..20].copy_from_slice(&0i32.to_le_bytes());
+        // NFREE (0)
+        header[24..28].copy_from_slice(&0i32.to_le_bytes());
+        // DELTA (f32)
+        header[36..40].copy_from_slice(&delta.to_le_bytes());
+        // UNIT CELL FLAG
+        header[40..44].copy_from_slice(&(if has_unit_cell { 1i32 } else { 0i32 }).to_le_bytes());
+        // CHARMM version (24)
+        header[76..80].copy_from_slice(&24i32.to_le_bytes());
+
+        // Header start record
+        file.write_all(&84i32.to_le_bytes())?;
+        file.write_all(&header)?;
+        file.write_all(&84i32.to_le_bytes())?;
+
+        // Title block (Empty for now)
+        file.write_all(&80i32.to_le_bytes())?;
+        file.write_all(&[0u8; 80])?;
+        file.write_all(&80i32.to_le_bytes())?;
+
+        // NATOM block
+        file.write_all(&4i32.to_le_bytes())?;
+        file.write_all(&(n_atoms as i32).to_le_bytes())?;
+        file.write_all(&4i32.to_le_bytes())?;
+
+        Ok(DcdWriter {
+            file,
+            n_atoms,
+            n_frames: 0,
+            has_unit_cell,
+        })
+    }
+
+    pub fn write_frame(&mut self, coords: &[f32], unit_cell: Option<&[f64; 6]>) -> Result<(), DcdError> {
+        if coords.len() != self.n_atoms * 3 {
+            return Err(DcdError::InvalidFormat(format!(
+                "Expected {} coordinates, got {}",
+                self.n_atoms * 3,
+                coords.len()
+            )));
+        }
+
+        // Write unit cell if needed
+        if self.has_unit_cell {
+            if let Some(cell) = unit_cell {
+                file_write_record(&mut self.file, |f| {
+                    // Traditional order: [A, cos(gamma), B, cos(beta), cos(alpha), C]
+                    let vals = [
+                        cell[0],
+                        (cell[5].to_radians()).cos(),
+                        cell[1],
+                        (cell[4].to_radians()).cos(),
+                        (cell[3].to_radians()).cos(),
+                        cell[2],
+                    ];
+                    for val in vals {
+                        f.write_all(&val.to_le_bytes())?;
+                    }
+                    Ok(())
+                })?;
+            } else {
+                // Write zeros
+                file_write_record(&mut self.file, |f| {
+                    f.write_all(&[0u8; 48])?;
+                    Ok(())
+                })?;
+            }
+        }
+
+        // Write X, Y, Z axes
+        for axis in 0..3 {
+            file_write_record(&mut self.file, |f| {
+                for i in 0..self.n_atoms {
+                    f.write_all(&coords[i * 3 + axis].to_le_bytes())?;
+                }
+                Ok(())
+            })?;
+        }
+
+        self.n_frames += 1;
+        Ok(())
+    }
+
+    /// Update the frame count in the header before closing
+    pub fn finalize(&mut self) -> Result<(), DcdError> {
+        self.file.seek(SeekFrom::Start(8))?; // Move to NSET
+        self.file.write_all(&(self.n_frames as i32).to_le_bytes())?;
+        Ok(())
+    }
+}
+
+fn file_write_record<F>(file: &mut File, mut write_fn: F) -> Result<(), DcdError>
+where
+    F: FnMut(&mut File) -> Result<(), DcdError>,
+{
+    let start_pos = file.stream_position()?;
+    file.write_all(&0i32.to_le_bytes())?; // Placeholder for length
+
+    write_fn(file)?;
+
+    let end_pos = file.stream_position()?;
+    let length = (end_pos - start_pos - 4) as i32;
+
+    file.seek(SeekFrom::Start(start_pos))?;
+    file.write_all(&length.to_le_bytes())?;
+    file.seek(SeekFrom::Start(end_pos))?;
+    file.write_all(&length.to_le_bytes())?;
+
+    Ok(())
+}
+
+use std::io::Write;

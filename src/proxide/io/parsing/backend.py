@@ -415,6 +415,37 @@ parse_xtc = getattr(_proxider, "parse_xtc", None)
 parse_mdc = getattr(_proxider, "parse_mdc", None)
 
 
+def iterload(file_path: str | Path, chunk_size: int = 100):
+  """Stream a trajectory file in chunks.
+
+  Args:
+      file_path: Path to the trajectory file (.xtc, .dcd)
+      chunk_size: Number of frames per chunk
+
+  Yields:
+      Dictionaries containing 'coordinates' (chunk_size, N, 3) and metadata.
+  """
+  from proxide._proxider import PyTrajectoryIterator  # type: ignore
+
+  # Note: currently only supports DCD efficiently. XTC is pending.
+  iterator = PyTrajectoryIterator(str(file_path), chunk_size)
+  yield from iterator
+
+
+def write_dcd(file_path: str | Path, n_atoms: int, delta: float = 1.0, has_unit_cell: bool = False):
+  """Establish a streaming DCD writer.
+
+  Args:
+      file_path: Path to output DCD file
+      n_atoms: Number of atoms
+      delta: Time step
+      has_unit_cell: Whether to include unit cell data
+  """
+  from proxide._proxider import PyDcdWriter  # type: ignore
+
+  return PyDcdWriter(str(file_path), n_atoms, delta, has_unit_cell)
+
+
 def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
   """Parse a PDB file and return raw atom data (low-level).
 
@@ -580,7 +611,11 @@ def parse_mdtraj_h5_metadata(file_path: str | Path) -> MdtrajH5Data:
 
   """
   if not hasattr(_proxider, "parse_mdtraj_h5_metadata"):
-    raise ImportError("HDF5 support not available. Rebuild with: maturin develop --features mdcath")
+    raise ImportError(
+      "HDF5/MDTRAJ support not available in this build of Proxide. "
+      "This often happens on Windows/macOS where HDF5 dependencies are complex. "
+      "Please use the Linux 'full' build or convert your trajectory to XTC/DCD format."
+    )
 
   result = _proxider.parse_mdtraj_h5_metadata(str(file_path))
 
@@ -644,7 +679,11 @@ def parse_mdcath_metadata(file_path: str | Path) -> MdcathData:
 
   """
   if not hasattr(_proxider, "parse_mdcath_metadata"):
-    raise ImportError("HDF5 support not available. Rebuild with: maturin develop --features mdcath")
+    raise ImportError(
+      "MDCATH support not available in this build of Proxide. "
+      "This is currently a Linux-only feature (requires HDF5). "
+      "Please use the Linux 'full' build or contact support for help with your platform."
+    )
 
   result = _proxider.parse_mdcath_metadata(str(file_path))
 

@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::PyDict;
 use numpy::{PyArray1, PyArrayMethods};
 use proxide_rs::structure::RawAtomData;
 use proxide_rs::formatters::cache::CachedStructure;
