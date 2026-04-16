@@ -160,7 +160,7 @@ class Protein:
   ) -> Protein:
     """Create a Protein instance directly from Rust parser output dictionary.
 
-    This method converts the dictionary output from `oxidize.parse_structure` into
+    This method converts the dictionary output from `_proxider.parse_structure` into
     a `Protein` dataclass, handling type conversion (JAX/NumPy), reshaping for Atom37,
     and unit scaling for physics parameters.
 
@@ -174,7 +174,7 @@ class Protein:
         5.  **Construction**: Populate the dataclass fields.
 
     Args:
-        rust_dict: Dictionary returned by `oxidize.parse_structure()`.
+        rust_dict: Dictionary returned by `_proxider.parse_structure()`.
         source: Optional source identifier (e.g., filename) for metadata.
         use_jax: If True, convert arrays to `jax.numpy` arrays.
                  If False, use `numpy` arrays.

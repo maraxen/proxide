@@ -1,5 +1,5 @@
 import numpy as np
-from proxide._oxidize import assign_gaff_atom_types
+from proxide.__proxider import assign_gaff_atom_types
 
 
 def test_benzene_aromaticity():

@@ -1,6 +1,6 @@
 import os
 
-from proxide._oxidize import CoordFormat, OutputSpec, parse_structure
+from proxide.__proxider import CoordFormat, OutputSpec, parse_structure
 
 
 def test_gaff_integration():
