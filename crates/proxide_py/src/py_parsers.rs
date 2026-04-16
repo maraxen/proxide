@@ -4,10 +4,14 @@
 use crate::processing::ProcessedStructure;
 use crate::spec::{CoordFormat, OutputSpec};
 use crate::{forcefield, formats, formatters, geometry, physics, processing, spec};
+use crate::bindings::atomic_system::PyAtomicSystem;
+use crate::bindings::spec::PyOutputSpec;
+use crate::bindings::conversion::ToPyDict;
 use numpy::PyArray1;
 use numpy::PyArrayMethods;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
+use log;
 
 /// Parse a PDB file and return raw atom data (low-level)
 /// Returns first model only for backward compatibility.
@@ -52,8 +56,10 @@ pub fn parse_pqr(path: String) -> PyResult<PyObject> {
 
 /// Parse a FoldComp file and return AtomicSystem
 #[pyfunction]
-pub fn parse_foldcomp(path: String) -> Result<crate::structure::systems::AtomicSystem, PyErr> {
-    formats::foldcomp::read_foldcomp(&path).map_err(|e| {
+pub fn parse_foldcomp(path: String) -> Result<PyAtomicSystem, PyErr> {
+    formats::foldcomp::read_foldcomp(&path).map(
+        PyAtomicSystem::from_core
+    ).map_err(|e| {
         pyo3::exceptions::PyValueError::new_err(format!("FoldComp parsing failed: {}", e))
     })
 }
@@ -61,11 +67,10 @@ pub fn parse_foldcomp(path: String) -> Result<crate::structure::systems::AtomicS
 /// Parse a structure file (PDB/mmCIF) into a format suitable for the Protein class.
 #[pyfunction]
 #[pyo3(signature = (path, spec=None))]
-pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObject> {
-    Python::with_gil(|py| {
-        let spec = spec.unwrap_or_default();
-        let target = spec::OutputFormatTarget::from_str(&spec.output_format_target)
-            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+pub fn parse_structure(py: Python, path: String, spec: Option<Bound<'_, PyOutputSpec>>) -> PyResult<PyObject> {
+    let spec = spec.map(|s| s.borrow().inner.clone()).unwrap_or_default();
+    let target = spec::OutputFormatTarget::from_str(&spec.output_format_target)
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
         // Check cache (only if features are simple)
         let should_cache = spec.enable_caching
@@ -85,18 +90,18 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             );
             if let Some(cached) = formatters::get_cached(&key) {
                 log::debug!("Cache hit for {}", path);
-                return cached.to_py_dict(py);
+                return cached.to_py_dict(py).map(|d| d.into_py(py));
             }
         }
 
         // 1. Parse PDB or mmCIF
         let (raw_data_all, model_ids) = py.allow_threads(|| {
             if path.ends_with(".cif") || path.ends_with(".mmcif") {
-                formats::mmcif::parse_mmcif_file(&path)
+                formats::mmcif::parse_mmcif_file(&path).map_err(|e| e.to_string())
             } else {
-                formats::pdb::parse_pdb_file(&path)
+                formats::pdb::parse_pdb_file(&path).map_err(|e| e.to_string())
             }
-        }).map_err(|e| {
+        }).map_err(|e: String| {
             pyo3::exceptions::PyValueError::new_err(format!("Structure parsing failed: {}", e))
         })?;
 
@@ -348,7 +353,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
                     let shaped = flat_array.reshape((n_models, n_res, 37, 3)).map_err(|e| {
                         pyo3::exceptions::PyValueError::new_err(format!("Reshape failed: {}", e))
                     })?;
-                    let dict_bound = dict.downcast_bound::<PyDict>(py).unwrap();
+                    let dict_bound = &dict;
                     dict_bound.set_item("coordinates", shaped)?;
                 }
 
@@ -423,9 +428,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
         }
 
         // Downcast to PyDict to add more fields
-        let dict_bound = dict.downcast_bound::<PyDict>(py).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("Failed to downcast to dict: {}", e))
-        })?;
+        let dict_bound = &dict;
 
         // --- Chain Information ---
         // Expose unique chain IDs corresponding to chain_index
@@ -914,8 +917,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             }
         }
 
-        Ok(dict.into_py(py))
-    })
+    Ok(dict.into_py(py))
 }
 
 /// Project a parsed structure to MPNNBatch format for training
@@ -931,6 +933,7 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
 #[pyfunction]
 #[pyo3(signature = (path, num_neighbors=30, noise_std=None, noise_seed=0, compute_physics=false))]
 pub fn project_to_mpnn_batch(
+    py: Python,
     path: String,
     num_neighbors: usize,
     noise_std: Option<f32>,
@@ -939,8 +942,6 @@ pub fn project_to_mpnn_batch(
 ) -> PyResult<PyObject> {
     use numpy::PyArray1;
     use numpy::PyArrayMethods;
-
-    Python::with_gil(|py| {
         // 1. Parse the structure
         let (raw_data_all, model_ids) = if path.ends_with(".cif") || path.ends_with(".mmcif") {
             formats::mmcif::parse_mmcif_file(&path).map_err(|e| {
@@ -1033,7 +1034,6 @@ pub fn project_to_mpnn_batch(
         dict.set_item("n_neighbors", result.n_neighbors)?;
 
         Ok(dict.into_py(py))
-    })
 }
 
 /// FoldComp Database accessor
@@ -1052,8 +1052,8 @@ impl FoldCompDatabase {
         Ok(FoldCompDatabase { inner: db })
     }
 
-    pub fn get(&self, id: u32) -> Result<crate::structure::systems::AtomicSystem, PyErr> {
-        self.inner.get(id).map_err(|e| {
+    pub fn get(&self, id: u32) -> PyResult<PyAtomicSystem> {
+        self.inner.get(id).map(PyAtomicSystem::from_core).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Failed to retrieve ID {}: {}", id, e))
         })
     }
@@ -1061,8 +1061,8 @@ impl FoldCompDatabase {
     pub fn get_by_name(
         &self,
         name: String,
-    ) -> Result<crate::structure::systems::AtomicSystem, PyErr> {
-        self.inner.get_by_name(&name).map_err(|e| {
+    ) -> PyResult<PyAtomicSystem> {
+        self.inner.get_by_name(&name).map(PyAtomicSystem::from_core).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!(
                 "Failed to retrieve entry {}: {}",
                 name, e

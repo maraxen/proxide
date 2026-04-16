@@ -4,6 +4,8 @@ use pyo3::wrap_pyfunction;
 // Import the wrapper modules
 mod bindings {
     pub mod atomic_system;
+    pub mod spec;
+    pub mod conversion;
 }
 
 mod py_chemistry;
@@ -12,9 +14,44 @@ mod py_hdf5;
 mod py_parsers;
 mod py_trajectory;
 
-// Import core types
-use proxide_rs::spec::{CoordFormat, ErrorMode, HydrogenSource, MissingResidueMode, OutputSpec};
+// Internal re-exports of core modules
+pub(crate) use proxide_rs::{chem, forcefield, formats, formatters, geometry, physics, processing, spec, structure};
+
+// Import wrapper types
 use bindings::atomic_system::PyAtomicSystem;
+use bindings::spec::{PyCoordFormat, PyErrorMode, PyHydrogenSource, PyMissingResidueMode, PyOutputSpec};
+
+/// Wrapper for proxide_rs::io::fetching::fetch_rcsb
+#[pyfunction]
+#[pyo3(signature = (id, output_dir = ".cache", format_type = "cif"))]
+fn fetch_rcsb(id: &str, output_dir: &str, format_type: &str) -> PyResult<String> {
+    proxide_rs::io::fetching::fetch_rcsb(id, output_dir, format_type)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+}
+
+/// Wrapper for proxide_rs::io::fetching::fetch_md_cath
+#[pyfunction]
+#[pyo3(signature = (id, output_dir = ".cache"))]
+fn fetch_md_cath(id: &str, output_dir: &str) -> PyResult<String> {
+    proxide_rs::io::fetching::fetch_md_cath(id, output_dir)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+}
+
+/// Wrapper for proxide_rs::io::fetching::fetch_afdb
+#[pyfunction]
+#[pyo3(signature = (id, output_dir = ".cache", version = 4))]
+fn fetch_afdb(id: &str, output_dir: &str, version: u32) -> PyResult<String> {
+    proxide_rs::io::fetching::fetch_afdb(id, output_dir, version)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+}
+
+/// Wrapper for proxide_rs::io::fetching::fetch_foldcomp_database
+#[pyfunction]
+#[pyo3(signature = (db_name, output_dir = ".cache", download_chunks = 1))]
+fn fetch_foldcomp_database(db_name: &str, output_dir: &str, download_chunks: usize) -> PyResult<String> {
+    proxide_rs::io::fetching::fetch_foldcomp_database(db_name, output_dir, download_chunks)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+}
 
 /// Python module
 #[pymodule]
@@ -57,21 +94,21 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_chemistry::compute_bicubic_params, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::parameterize_molecule, m)?)?;
 
-    // Register Python wrappers and core types
+    // Register Python wrappers
     m.add_class::<PyAtomicSystem>()?;
-    m.add_class::<OutputSpec>()?;
-    m.add_class::<CoordFormat>()?;
-    m.add_class::<ErrorMode>()?;
-    m.add_class::<MissingResidueMode>()?;
-    m.add_class::<HydrogenSource>()?;
+    m.add_class::<PyOutputSpec>()?;
+    m.add_class::<PyCoordFormat>()?;
+    m.add_class::<PyErrorMode>()?;
+    m.add_class::<PyMissingResidueMode>()?;
+    m.add_class::<PyHydrogenSource>()?;
 
     m.add_class::<py_parsers::FoldCompDatabase>()?;
 
-    // Fetching functions
-    m.add_function(wrap_pyfunction!(proxide_rs::io::fetching::fetch_rcsb, m)?)?;
-    m.add_function(wrap_pyfunction!(proxide_rs::io::fetching::fetch_md_cath, m)?)?;
-    m.add_function(wrap_pyfunction!(proxide_rs::io::fetching::fetch_afdb, m)?)?;
-    m.add_function(wrap_pyfunction!(proxide_rs::io::fetching::fetch_foldcomp_database, m)?)?;
+    // Fetching functions (using wrappers)
+    m.add_function(wrap_pyfunction!(fetch_rcsb, m)?)?;
+    m.add_function(wrap_pyfunction!(fetch_md_cath, m)?)?;
+    m.add_function(wrap_pyfunction!(fetch_afdb, m)?)?;
+    m.add_function(wrap_pyfunction!(fetch_foldcomp_database, m)?)?;
 
     Ok(())
 }
