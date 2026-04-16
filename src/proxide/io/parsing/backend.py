@@ -415,8 +415,40 @@ parse_xtc = getattr(_proxider, "parse_xtc", None)
 parse_mdc = getattr(_proxider, "parse_mdc", None)
 
 
-def iterload(file_path: str | Path, chunk_size: int = 100):
+class TrajectoryStream:
   """Stream a trajectory file in chunks.
+
+  This class acts as a high-performance wrapper around the native Rust `PyTrajectoryIterator`.
+  It reads coordinate frames efficiently without bringing the entire array into memory at once.
+
+  Attributes:
+      file_path (str | Path): Path to the trajectory file.
+      chunk_size (int): Number of frames loaded per chunk.
+  """
+
+  def __init__(self, file_path: str | Path, chunk_size: int = 100):
+    """Initialize a streaming reader for trajectory files.
+
+    Args:
+        file_path: Path to the trajectory file (.xtc, .dcd).
+        chunk_size: Number of frames per chunk.
+    """
+    from proxide._proxider import PyTrajectoryIterator  # type: ignore
+
+    self.file_path = file_path
+    self.chunk_size = chunk_size
+    self._iterator = PyTrajectoryIterator(str(file_path), chunk_size)
+
+  def __iter__(self):
+    """Yield chunks containing 'coordinates' and tracking metadata."""
+    yield from self._iterator
+
+def iterload(file_path: str | Path, chunk_size: int = 100):
+  """Stream a trajectory file in chunks (Legacy alias).
+  
+  .. warning::
+      This function is an alias for :class:`TrajectoryStream`. Use the class
+      for type hinting and a cleaner API.
 
   Args:
       file_path: Path to the trajectory file (.xtc, .dcd)
@@ -425,11 +457,7 @@ def iterload(file_path: str | Path, chunk_size: int = 100):
   Yields:
       Dictionaries containing 'coordinates' (chunk_size, N, 3) and metadata.
   """
-  from proxide._proxider import PyTrajectoryIterator  # type: ignore
-
-  # Note: currently only supports DCD efficiently. XTC is pending.
-  iterator = PyTrajectoryIterator(str(file_path), chunk_size)
-  yield from iterator
+  yield from TrajectoryStream(file_path, chunk_size)
 
 
 def write_dcd(file_path: str | Path, n_atoms: int, delta: float = 1.0, has_unit_cell: bool = False):

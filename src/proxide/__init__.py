@@ -42,6 +42,7 @@ from proxide._proxider import (  # type: ignore[unresolved-import]
   parse_xtc,
 )
 from proxide.io.parsing.backend import (
+  TrajectoryStream,
   iterload,
   parse_structure,
   write_dcd,
@@ -64,6 +65,7 @@ __all__ = [
   "parse_xtc",
   "parse_dcd",
   "parse_trr",
+  "TrajectoryStream",
   # HDF5
   "parse_mdtraj_h5_metadata",
   "parse_mdtraj_h5_frame",
