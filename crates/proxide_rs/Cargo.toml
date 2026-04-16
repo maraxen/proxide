@@ -41,9 +41,6 @@ rand_distr.workspace = true
 # Pure Rust XTC reader
 molly.workspace = true
 
-# Python bindings (Optional)
-pyo3 = { workspace = true, optional = true }
-
 # HDF5 (Optional)
 hdf5 = { workspace = true, optional = true }
 
@@ -52,10 +49,9 @@ reqwest = { workspace = true }
 
 [features]
 default = ["xtc", "mdcath"]
-python = ["pyo3"]
 xtc = []
 mdcath = ["hdf5"]
-full = ["xtc", "mdcath", "python"]
+full = ["xtc", "mdcath"]
 
 [profile.release]
 lto = true
