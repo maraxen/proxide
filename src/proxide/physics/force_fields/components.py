@@ -9,7 +9,7 @@ from flax.struct import dataclass, field
 from jaxtyping import Float
 
 if TYPE_CHECKING:
-  from proxide.types import Charges, EnergyGrids, Epsilons, Radii, Scales, Sigmas
+  from proxide.core.types import Charges, EnergyGrids, Epsilons, Radii, Scales, Sigmas
 
 
 @dataclass(frozen=True)

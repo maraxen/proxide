@@ -24,7 +24,7 @@ from proxide.physics.force_fields.components import (
 )
 
 if TYPE_CHECKING:
-  from proxide.types import Charges, EnergyGrids, Epsilons, Radii, Scales, Sigmas
+  from proxide.core.types import Charges, EnergyGrids, Epsilons, Radii, Scales, Sigmas
 
 
 @dataclass(frozen=True)

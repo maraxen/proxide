@@ -24,7 +24,7 @@ if TYPE_CHECKING:
   from jaxtyping import Array, Float
 
   from proxide.core.containers import Protein
-  from proxide.types import (
+  from proxide.core.types import (
     ArrayLike,
     NodeFeatures,
     PRNGKey,

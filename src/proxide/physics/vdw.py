@@ -11,7 +11,7 @@ import jax.numpy as jnp
 
 from proxide.physics.constants import MIN_DISTANCE
 from proxide.physics.electrostatics import compute_pairwise_displacements
-from proxide.types import (
+from proxide.core.types import (
   Array,
   ArrayLike,
   BackboneCoordinates,

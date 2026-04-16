@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
 
-  from proxide.types import (
+  from proxide.core.types import (
     Coordinates,
     DistanceMatrix,
     Logits,

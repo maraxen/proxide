@@ -8,7 +8,6 @@ use rand_distr::{Distribution, Normal};
 
 use crate::{geometry, physics};
 
-#[cfg_attr(feature = "python", pyo3::pyclass)]
 #[derive(Debug, Clone)]
 pub struct AtomicSystem {
     pub coordinates: Vec<f32>,

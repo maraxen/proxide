@@ -1076,6 +1076,8 @@ dependencies = [
 name = "proxide_py"
 version = "0.1.0"
 dependencies = [
+ "log",
+ "nalgebra",
  "numpy",
  "proxide_rs",
  "pyo3",
@@ -1086,6 +1088,7 @@ dependencies = [
 name = "proxide_rs"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "flate2",
  "hdf5-metno",
  "lazy_static",
@@ -1095,7 +1098,6 @@ dependencies = [
  "nalgebra",
  "nom",
  "once_cell",
- "pyo3",
  "quick-xml",
  "rand",
  "rand_distr",
