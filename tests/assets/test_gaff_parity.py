@@ -24,7 +24,7 @@ except ImportError:
     HAS_OPENMMFORCEFIELDS = False
 
 try:
-    from proxide import _oxidize
+    from proxide import _proxider
     
     HAS_OXIDIZE_RS = True
 except ImportError:
@@ -88,11 +88,11 @@ def get_antechamber_atom_types(smiles: str) -> list[str]:
 def get_proxide_atom_types(smiles: str) -> list[str]:
     """Get GAFF atom types using Proxide (Rust)."""
     if not HAS_OXIDIZE_RS:
-        raise ImportError("oxidize not installed")
+        raise ImportError("_proxider not installed")
 
 
 @pytest.mark.skipif(not HAS_OPENMMFORCEFIELDS, reason="openmmforcefields not installed")
-@pytest.mark.skipif(not HAS_OXIDIZE_RS, reason="oxidize not installed")
+@pytest.mark.skipif(not HAS_OXIDIZE_RS, reason="_proxider not installed")
 class TestGaffParityWithAntechamber:
     """Tests comparing our GAFF typing with antechamber."""
 
@@ -209,7 +209,7 @@ class TestGaffTemplateGeneratorReference:
         assert "o" in types  # carbonyl oxygen
 
 
-@pytest.mark.skipif(not HAS_OXIDIZE_RS, reason="oxidize not installed")
+@pytest.mark.skipif(not HAS_OXIDIZE_RS, reason="_proxider not installed")
 class TestGaffTopologyInference:
     """Test that bond inference matches GAFF requirements."""
     

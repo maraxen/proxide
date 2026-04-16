@@ -326,9 +326,9 @@ class Molecule:
     This will assign GAFF atom types and LJ parameters.
     Charges currently default to zero unless set manually.
     """
-    from proxide import _oxidize
+    from proxide import _proxider
 
-    params = _oxidize.parameterize_molecule(
+    params = _proxider.parameterize_molecule(
       self.positions,
       self.elements,
       bond_tolerance=bond_tolerance,
@@ -361,8 +361,9 @@ class Molecule:
     mol = Chem.RWMol()
 
     # Add atoms
-    for elem in self.elements:
+    for i, elem in enumerate(self.elements):
       atom = Chem.Atom(elem)
+      atom.SetAtomMapNum(i + 1)
       mol.AddAtom(atom)
 
     # Add bonds

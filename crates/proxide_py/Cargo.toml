@@ -1,0 +1,17 @@
+[package]
+name = "proxide_py"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Python bindings for proxide_rs"
+license.workspace = true
+
+[lib]
+name = "_proxider"
+crate-type = ["cdylib"]
+
+[dependencies]
+proxide_rs = { workspace = true, features = ["python"] }
+pyo3 = { workspace = true }
+numpy = { workspace = true }
+pyo3-log = { workspace = true }

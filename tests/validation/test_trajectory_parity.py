@@ -52,7 +52,7 @@ HDF5_FILE = TRAJ_DATA_DIR / "test.h5"
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 def test_xtc_frame_coordinates_vs_mdtraj():
     """Compare XTC frame coordinates against MDTraj using pure-Rust molly parser."""
-    from proxide import _oxidize
+    from proxide import _proxider
 
     # Try multiple common paths for test files
     xtc_file = TRAJ_DATA_DIR / "frame0.xtc"
@@ -69,9 +69,9 @@ def test_xtc_frame_coordinates_vs_mdtraj():
     if not xtc_file.exists() or not pdb_file.exists():
         pytest.skip(f"XTC test files not available (checked {xtc_file})")
 
-    # Parse with oxidize (pure-Rust molly)
+    # Parse with _proxider (pure-Rust molly)
     try:
-        result = _oxidize.parse_xtc(str(xtc_file))
+        result = _proxider.parse_xtc(str(xtc_file))
     except Exception as e:
         if "requires compiling with" in str(e):
             pytest.skip("xtc feature not enabled")
@@ -112,7 +112,7 @@ def test_xtc_import_available():
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 def test_dcd_frame_coordinates_vs_mdtraj():
     """Compare DCD frame coordinates against MDTraj."""
-    from proxide import _oxidize
+    from proxide import _proxider
     
     dcd_file = TRAJ_DATA_DIR / "frame0.dcd"
     pdb_file = TRAJ_DATA_DIR / "frame0.pdb"
@@ -123,8 +123,8 @@ def test_dcd_frame_coordinates_vs_mdtraj():
     if not dcd_file.exists() or not pdb_file.exists():
         pytest.skip(f"DCD test files not available (checked {dcd_file} and {pdb_file})")
     
-    # Parse with oxidize (pure-Rust)
-    result = _oxidize.parse_dcd(str(dcd_file))
+    # Parse with _proxider (pure-Rust)
+    result = _proxider.parse_dcd(str(dcd_file))
     priox_coords = result["coordinates"]  # Already in Angstroms
     
     # Parse with MDTraj
@@ -170,7 +170,7 @@ def test_dcd_import_available():
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 def test_trr_frame_coordinates_vs_mdtraj():
     """Compare TRR frame coordinates against MDTraj."""
-    from proxide import _oxidize
+    from proxide import _proxider
     
     trr_file = TRAJ_DATA_DIR / "frame0.trr"
     pdb_file = TRAJ_DATA_DIR / "frame0.pdb"
@@ -181,8 +181,8 @@ def test_trr_frame_coordinates_vs_mdtraj():
     if not trr_file.exists() or not pdb_file.exists():
         pytest.skip(f"TRR test files not available (checked {trr_file} and {pdb_file})")
     
-    # Parse with oxidize (pure-Rust)
-    result = _oxidize.parse_trr(str(trr_file))
+    # Parse with _proxider (pure-Rust)
+    result = _proxider.parse_trr(str(trr_file))
     priox_coords = result["coordinates"]  # Already in Angstroms
     
     # Parse with MDTraj

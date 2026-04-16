@@ -7,7 +7,7 @@ import pytest
 # Test data paths
 # NOTE: These files are currently missing in the monorepo structure.
 # P3.2 goal will involve restoring/regenerating them.
-TEST_DIR = Path(__file__).parent.parent.parent.parent / "proxide" / "oxidize" / "foldcomp" / "test"
+TEST_DIR = Path(__file__).parent.parent.parent.parent / "proxide" / "_proxider" / "foldcomp" / "test"
 FCZ_PATH = TEST_DIR / "test_af.fcz"
 PDB_PATH = TEST_DIR / "test_af.pdb"
 EXAMPLE_DB = TEST_DIR / "example_db"
@@ -15,9 +15,9 @@ EXAMPLE_DB = TEST_DIR / "example_db"
 
 @pytest.fixture
 def rust_system():
-    """Load structure using Rust oxidize parser."""
-    import proxide._oxidize as _oxidize
-    return _oxidize.parse_foldcomp(str(FCZ_PATH))
+    """Load structure using Rust _proxider parser."""
+    import proxide._proxider as _proxider
+    return _proxider.parse_foldcomp(str(FCZ_PATH))
 
 
 @pytest.fixture  
@@ -72,9 +72,9 @@ def test_foldcomp_atom_count(rust_system):
 @pytest.mark.skipif(not EXAMPLE_DB.exists(), reason="example_db not found")
 def test_foldcomp_database_open():
     """Test FoldCompDatabase can open the example database."""
-    import proxide._oxidize as _oxidize
+    import proxide._proxider as _proxider
     
-    db = _oxidize.FoldCompDatabase(str(EXAMPLE_DB))
+    db = _proxider.FoldCompDatabase(str(EXAMPLE_DB))
     assert len(db) > 0, "Database should have entries"
     print(f"Database contains {len(db)} entries")
 
@@ -82,9 +82,9 @@ def test_foldcomp_database_open():
 @pytest.mark.skipif(not EXAMPLE_DB.exists(), reason="example_db not found")  
 def test_foldcomp_database_get():
     """Test retrieving an entry from the database."""
-    import proxide._oxidize as _oxidize
+    import proxide._proxider as _proxider
     
-    db = _oxidize.FoldCompDatabase(str(EXAMPLE_DB))
+    db = _proxider.FoldCompDatabase(str(EXAMPLE_DB))
     
     # Try to get first entry - read index to find a valid ID
     # We'll try with name "d1asha_" which is in the test fixtures
@@ -97,10 +97,10 @@ def test_foldcomp_database_get():
 @pytest.mark.skipif(not FCZ_PATH.exists(), reason="foldcomp test fcz not found")
 def test_benchmark_rust_foldcomp(rust_system, benchmark):
     """Benchmark Rust FoldComp parsing speed."""
-    import proxide._oxidize as _oxidize
+    import proxide._proxider as _proxider
     
     def parse():
-        return _oxidize.parse_foldcomp(str(FCZ_PATH))
+        return _proxider.parse_foldcomp(str(FCZ_PATH))
     
     result = benchmark(parse)
     assert len(result.coordinates) > 0

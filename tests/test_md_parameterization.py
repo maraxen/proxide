@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 # Skip if Rust extension not available
-pytest.importorskip("proxide._oxidize")
+pytest.importorskip("proxide._proxider")
 
 from proxide import MissingResidueMode
 from proxide.io.parsing.backend import (
@@ -54,8 +54,8 @@ END
         )
         
         # Parse with parameterization
-        from proxide import _oxidize
-        result = _oxidize.parse_structure(str(simple_pdb), spec)
+        from proxide import _proxider
+        result = _proxider.parse_structure(str(simple_pdb), spec)
         
         # Check that charges were assigned
         assert "charges" in result, "Missing charges in result"
@@ -84,8 +84,8 @@ END
             force_field=str(FF_XML_PATH),
         )
         
-        from proxide import _oxidize
-        result = _oxidize.parse_structure(str(simple_pdb), spec)
+        from proxide import _proxider
+        result = _proxider.parse_structure(str(simple_pdb), spec)
         
         charges = result["charges"]
         
@@ -99,8 +99,8 @@ END
 
     def test_no_parameterization_by_default(self, simple_pdb):
         """Test that parameterization is disabled by default."""
-        from proxide import _oxidize
-        result = _oxidize.parse_structure(str(simple_pdb))
+        from proxide import _proxider
+        result = _proxider.parse_structure(str(simple_pdb))
         
         # Should not have MD params when not requested
         assert "charges" not in result or result.get("charges") is None
@@ -115,8 +115,8 @@ END
             # force_field not set
         )
     
-        from proxide import _oxidize
-        result = _oxidize.parse_structure(str(simple_pdb), spec)
+        from proxide import _proxider
+        result = _proxider.parse_structure(str(simple_pdb), spec)
         
         # Should complete without error, but no charges assigned
         assert "charges" not in result or result.get("charges") is None

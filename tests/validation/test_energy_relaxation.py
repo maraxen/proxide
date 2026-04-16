@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from proxide import _oxidize
+from proxide import _proxider
 
 try:
     import openmm
@@ -17,7 +17,7 @@ try:
 except ImportError:
     OPENMM_AVAILABLE = False
 
-from proxide._oxidize import CoordFormat, ErrorMode
+from proxide._proxider import CoordFormat, ErrorMode
 
 from proxide.io.parsing.backend import OutputSpec, parse_structure
 

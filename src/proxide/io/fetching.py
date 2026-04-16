@@ -1,6 +1,6 @@
 """Fetching utilities backed by the Rust extension."""
 
-from proxide import _oxidize
+from proxide import _proxider
 
 
 def fetch_rcsb(pdb_id: str, output_dir: str = ".", format_type: str = "mmcif") -> str:
@@ -14,7 +14,7 @@ def fetch_rcsb(pdb_id: str, output_dir: str = ".", format_type: str = "mmcif") -
   Returns:
       Path to the downloaded file.
   """
-  return _oxidize.fetch_rcsb(pdb_id, output_dir, format_type)
+  return _proxider.fetch_rcsb(pdb_id, output_dir, format_type)
 
 
 def fetch_md_cath(md_cath_id: str, output_dir: str = ".") -> str:
@@ -27,7 +27,7 @@ def fetch_md_cath(md_cath_id: str, output_dir: str = ".") -> str:
   Returns:
       Path to the downloaded file.
   """
-  return _oxidize.fetch_md_cath(md_cath_id, output_dir)
+  return _proxider.fetch_md_cath(md_cath_id, output_dir)
 
 
 def fetch_afdb(uniprot_id: str, output_dir: str = ".", version: int = 4) -> str:
@@ -41,4 +41,4 @@ def fetch_afdb(uniprot_id: str, output_dir: str = ".", version: int = 4) -> str:
   Returns:
       Path to the downloaded file.
   """
-  return _oxidize.fetch_afdb(uniprot_id, output_dir, version)
+  return _proxider.fetch_afdb(uniprot_id, output_dir, version)
