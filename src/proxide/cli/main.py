@@ -286,6 +286,36 @@ def parameterize(
 
 
 @app.command()
+def charges(
+  input: str = typer.Argument(..., help="Input molecule file (MOL2, SDF)"),
+  backend: str = typer.Option("rust", "--backend", "-b", help="Backend for computation: 'rust' or 'jax'"),
+):
+  """Assign partial charges via Expaloma AM1-BCC surrogate."""
+  from proxide.io.parsing.molecule import Molecule
+  from proxide.chem.partial_charges import assign_espaloma_charges_from_proxide_molecule
+
+  try:
+    with console.status(f"[bold green]Assigning charges using backend: {backend}..."):
+      if input.lower().endswith(".mol2"):
+        mol = Molecule.from_mol2(input)
+      elif input.lower().endswith(".sdf"):
+        mol = Molecule.from_sdf(input)
+      else:
+        console.print("[red]Error: Supported molecule formats are .mol2 and .sdf[/red]")
+        raise typer.Exit(1)
+        
+      start = time.perf_counter()
+      q = assign_espaloma_charges_from_proxide_molecule(mol, backend=backend)
+      elapsed = time.perf_counter() - start
+      
+    console.print(f"[bold green]✓[/bold green] Assigned {len(q)} partial charges in [cyan]{elapsed*1000:.2f} ms[/cyan]")
+    
+  except Exception as e:
+    console.print(f"[red]Charge assignment failed: {e}[/red]")
+    raise typer.Exit(1)
+
+
+@app.command()
 def version():
   """Print the version of Proxide."""
   console.print(f"Proxide [bold cyan]{__version__}[/bold cyan]")

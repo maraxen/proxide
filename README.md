@@ -117,18 +117,35 @@ traj_data = parse_xtc("path/to/trajectory.xtc")
 coords = traj_data["coordinates"]  # (N_frames, N_atoms, 3)
 ```
 
+### Fast Partial Charges (Espaloma)
+
+Proxide provides access to high-performance Expaloma graph-neural-network inference for charge assignment using native Rust embedded weights:
+
+```bash
+# Assign charges with the fast Rust backend
+proxide charges molecule.sdf --backend rust
+```
+
 ---
 
 ## ⚡ Performance
 
 The migration to a Rust backend has yielded significant performance improvements compared to the pure Python implementation:
 
-| Operation | Speedup |
-|:----------|:--------|
-| **PDB Parsing** | **25x** |
-| **mmCIF Parsing** | **25x** |
-| **Topology Generation** | **50x** |
-| **Force Field Loading** | **10x** |
+| Operation | Speedup | Example Metric |
+|:----------|:--------|:---------------|
+| **PDB Parsing** | **25x** | - |
+| **mmCIF Parsing** | **25x** | - |
+| **Topology Generation** | **50x** | - |
+| **Force Field Loading** | **10x** | - |
+| **Espaloma Inference** | **7.5x**| 13.6ms (JAX) ➔ 1.8ms (Rust) |
+
+---
+
+## 🚀 Deployment & CI/CD
+
+Proxide uses **Maturin** to seamlessly build Python wheels and publish them to PyPI. To publish `proxide` releases securely without secrets, we utilize [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC).
+Do **not** configure a `PYPI_API_TOKEN` GitHub Secret. Instead, create a Trusted Publisher in the PyPI dashboard bound to this repository to allow `.github/workflows/publish.yml` to authenticate.
 
 ---
 
