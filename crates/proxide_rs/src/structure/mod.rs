@@ -7,8 +7,6 @@
 
 #![allow(dead_code)]
 
-use numpy::PyArray1;
-use pyo3::prelude::*;
 
 pub mod systems;
 // Note: systems module is available but not re-exported to avoid unused import warnings
@@ -149,58 +147,8 @@ impl RawAtomData {
 
         self.num_atoms += 1;
     }
-
-    /// Convert to Python dictionary with NumPy arrays
-    pub fn to_py_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let dict = pyo3::types::PyDict::new_bound(py);
-
-        // Coordinates as flat array
-        dict.set_item("coords", PyArray1::from_slice_bound(py, &self.coords))?;
-        dict.set_item("num_atoms", self.num_atoms)?;
-
-        // String fields as Python lists
-        let atom_names_list: Vec<&str> = self.atom_names.iter().map(|s| s.as_str()).collect();
-        dict.set_item("atom_names", atom_names_list)?;
-
-        let elements_list: Vec<&str> = self.elements.iter().map(|s| s.as_str()).collect();
-        dict.set_item("elements", elements_list)?;
-
-        let res_names_list: Vec<&str> = self.res_names.iter().map(|s| s.as_str()).collect();
-        dict.set_item("res_names", res_names_list)?;
-
-        let chain_ids_list: Vec<&str> = self.chain_ids.iter().map(|s| s.as_str()).collect();
-        dict.set_item("chain_ids", chain_ids_list)?;
-
-        // Numeric arrays
-        dict.set_item(
-            "serial_numbers",
-            PyArray1::from_slice_bound(py, &self.serial_numbers),
-        )?;
-        dict.set_item("res_ids", PyArray1::from_slice_bound(py, &self.res_ids))?;
-        dict.set_item("b_factors", PyArray1::from_slice_bound(py, &self.b_factors))?;
-        dict.set_item("occupancy", PyArray1::from_slice_bound(py, &self.occupancy))?;
-
-        // Character fields as strings
-        let alt_locs_list: Vec<String> = self.alt_locs.iter().map(|c| c.to_string()).collect();
-        dict.set_item("alt_locs", alt_locs_list)?;
-
-        let insertion_codes_list: Vec<String> =
-            self.insertion_codes.iter().map(|c| c.to_string()).collect();
-        dict.set_item("insertion_codes", insertion_codes_list)?;
-
-        // Optional fields
-        if let Some(ref charges) = self.charges {
-            dict.set_item("charges", PyArray1::from_slice_bound(py, charges))?;
-        }
-
-        if let Some(ref radii) = self.radii {
-            dict.set_item("radii", PyArray1::from_slice_bound(py, radii))?;
-        }
-
-        // Return as AtomicSystem compatible dict
-        Ok(dict.into_any())
-    }
 }
+
 
 impl Default for RawAtomData {
     fn default() -> Self {

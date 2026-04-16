@@ -1,0 +1,64 @@
+[package]
+name = "proxide_rs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "High-performance Rust parsing core for protein structures"
+license.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+# Parsing utilities
+nom.workspace = true
+quick-xml.workspace = true
+
+# Compression and I/O
+flate2.workspace = true
+memmap2.workspace = true
+
+# Parallelism
+rayon.workspace = true
+
+# Logging
+log.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Lazy initialization
+lazy_static.workspace = true
+once_cell.workspace = true
+
+# Linear algebra
+nalgebra.workspace = true
+
+# Random number generation
+rand.workspace = true
+rand_distr.workspace = true
+
+# Pure Rust XTC reader
+molly.workspace = true
+
+# Python bindings (Optional)
+pyo3 = { workspace = true, optional = true }
+
+# HDF5 (Optional)
+hdf5 = { workspace = true, optional = true }
+
+# HTTP Client (Required)
+reqwest = { workspace = true }
+
+[features]
+default = ["xtc", "mdcath"]
+python = ["pyo3"]
+xtc = []
+mdcath = ["hdf5"]
+full = ["xtc", "mdcath", "python"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true

@@ -90,15 +90,15 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
         }
 
         // 1. Parse PDB or mmCIF
-        let (raw_data_all, model_ids) = if path.ends_with(".cif") || path.ends_with(".mmcif") {
-            formats::mmcif::parse_mmcif_file(&path).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("mmCIF parsing failed: {}", e))
-            })?
-        } else {
-            formats::pdb::parse_pdb_file(&path).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!("PDB parsing failed: {}", e))
-            })?
-        };
+        let (raw_data_all, model_ids) = py.allow_threads(|| {
+            if path.ends_with(".cif") || path.ends_with(".mmcif") {
+                formats::mmcif::parse_mmcif_file(&path)
+            } else {
+                formats::pdb::parse_pdb_file(&path)
+            }
+        }).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Structure parsing failed: {}", e))
+        })?;
 
         // 2. Identify and Filter Models
         let split_data = processing::models::split_by_model(&raw_data_all, &model_ids);
@@ -204,7 +204,9 @@ pub fn parse_structure(path: String, spec: Option<OutputSpec>) -> PyResult<PyObj
             if let Some(ref ff_path) = spec.force_field {
                 log::debug!("Parameterizing structure with {}", ff_path);
 
-                let ff = forcefield::parse_forcefield_xml(ff_path).map_err(|e| {
+                let ff = py.allow_threads(|| {
+                    forcefield::parse_forcefield_xml(ff_path)
+                }).map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!(
                         "Force field parsing failed: {}",
                         e

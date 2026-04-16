@@ -108,38 +108,6 @@ impl Atom37Formatter {
     }
 }
 
-impl FormattedAtom37 {
-    /// Convert to Python dictionary
-    pub fn to_py_dict(&self, py: pyo3::Python) -> pyo3::PyResult<pyo3::PyObject> {
-        use numpy::PyArray1;
-        use pyo3::prelude::*;
-        use pyo3::types::PyDict;
-
-        let dict = PyDict::new_bound(py);
-
-        // Convert to NumPy arrays (zero-copy when possible)
-        dict.set_item(
-            "coordinates",
-            PyArray1::from_vec_bound(py, self.coordinates.clone()),
-        )?;
-        dict.set_item(
-            "atom_mask",
-            PyArray1::from_vec_bound(py, self.atom_mask.clone()),
-        )?;
-        dict.set_item("aatype", PyArray1::from_vec_bound(py, self.aatype.clone()))?;
-        dict.set_item(
-            "residue_index",
-            PyArray1::from_vec_bound(py, self.residue_index.clone()),
-        )?;
-        dict.set_item(
-            "chain_index",
-            PyArray1::from_vec_bound(py, self.chain_index.clone()),
-        )?;
-
-        Ok(dict.into())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
