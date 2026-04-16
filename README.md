@@ -45,13 +45,15 @@ The installation process will automatically compile the Rust `oxidize` extension
 
 ### Optional: Espaloma Charge (ML partial charges)
 
-Inference uses the JAX/Equinox port [`expaloma`](https://github.com/maraxen/expaloma) (bundled weights; no PyTorch/DGL at runtime). The dependency is declared as a **Git URL**; for a **private** repository, authenticate HTTPS (PAT with `repo` scope) or use SSH:
+Inference uses the JAX/Equinox port [`expaloma`](https://github.com/maraxen/expaloma) (bundled weights; no PyTorch/DGL at runtime). The **`[espaloma]`** extra pulls **`expaloma`** from **PyPI** (and `rdkit`).
 
 ```bash
-# HTTPS: Git will prompt or use credential helper
-git config --global url."https://oauth2:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
 uv pip install -e ".[espaloma]"
-# or install from a local checkout:
+```
+
+For **local development** against an editable `expaloma` checkout, use a path override (e.g. `uv.sources` in your workspace) or:
+
+```bash
 uv pip install -e ../expaloma
 uv pip install -e ".[dev]"
 ```

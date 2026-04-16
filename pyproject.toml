@@ -7,6 +7,10 @@ name = "proxide"
 version = "0.1.0"
 description = "Protein I/O for JAX with high-performance Rust backend"
 readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Marielle Russo", email = "67157875+maraxen@users.noreply.github.com" },
+]
 requires-python = ">=3.11"
 dependencies = [
     "jax",
@@ -20,6 +24,11 @@ dependencies = [
     "jaxtyping",
     "array_record",
 ]
+
+[project.urls]
+Homepage = "https://github.com/maraxen/proxide"
+Repository = "https://github.com/maraxen/proxide"
+Issues = "https://github.com/maraxen/proxide/issues"
 
 [project.optional-dependencies]
 cuda = ["jax[cuda12]"]
@@ -36,7 +45,7 @@ molecules = [
 # JAX/Equinox partial charges (bundled weights; no PyTorch/DGL at inference).
 # Private repo: use SSH or authenticate HTTPS (see README) when installing from CI.
 espaloma = [
-    "expaloma @ git+https://github.com/maraxen/expaloma.git",
+    "expaloma>=0.1.0",
     "rdkit",
 ]
 # Legacy OpenFF Toolkit wrapper (still uses upstream espaloma_charge).
