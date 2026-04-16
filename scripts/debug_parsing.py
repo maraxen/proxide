@@ -1,7 +1,7 @@
 import os  # os is used for os.unlink, so it must be kept.
 import tempfile
 
-from proxide._oxidize import OutputSpec
+from proxide.__proxider import OutputSpec
 
 from proxide.io.parsing import pqr as pqr_parser
 from proxide.io.parsing import rust as rust_parser
@@ -25,7 +25,7 @@ def debug_rust_dict():
 
   try:
     spec = OutputSpec()
-    data = rust_parser._oxidize.parse_structure(tmp_name, spec)
+    data = rust_parser.__proxider.parse_structure(tmp_name, spec)
     print("Rust Dict Keys:", data.keys())
     if "chain_ids" in data:
       print("chain_ids:", data["chain_ids"])

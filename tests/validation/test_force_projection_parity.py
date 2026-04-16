@@ -92,7 +92,7 @@ def test_force_projection_parity(pdb_id):
     # Mapping Atom37 to [N, CA, C, CB, O]:
     # N: 0, CA: 1, C: 2, CB: 3, O: 4
     # Wait, check Atom37 indexes in Oxidize.
-    # In oxidize/src/formatters/atom37.rs:
+    # In _proxider/src/formatters/atom37.rs:
     # 0: N, 1: CA, 2: C, 3: O, 4: CB
     # Ah! Rust uses O=3, CB=4. My JAX code above used CB=3, O=4. 
     # Let me adjust the JAX code to match Rust's O=3, CB=4.
