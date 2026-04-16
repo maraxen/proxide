@@ -59,3 +59,23 @@ pub mod molly_impl {
         })
     }
 }
+
+/// XTC trajectory file writer stub
+pub struct XtcWriter {
+    // TODO: Implement XTC writing with XDR encoding and lossy compression.
+    // This requires a pure-Rust XDR implementation and the XTC compression algorithm.
+}
+
+impl XtcWriter {
+    /// Create a new XTC writer
+    pub fn create<P: AsRef<std::path::Path>>(_path: P) -> Result<Self, Box<dyn std::error::Error>> {
+        // TODO: Implement file creation and header writing
+        Err("XTC writing is not yet implemented. Use DCD or NPZ for trajectory output.".into())
+    }
+
+    /// Write a single frame to the XTC file
+    pub fn write_frame(&mut self, _time: f32, _coords: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
+        // TODO: Implement frame compression and XDR writing
+        Err("XTC writing is not yet implemented.".into())
+    }
+}

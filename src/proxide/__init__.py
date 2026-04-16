@@ -5,6 +5,8 @@ Rust backend (`_proxider`) for fast protein I/O, force field parameterization,
 and seamless integration with JAX MD.
 """
 
+__version__ = "0.1.0"
+
 # Re-export Rust extension functions for unified API
 from proxide._proxider import (  # type: ignore[unresolved-import]
   AtomicSystem,
@@ -39,7 +41,16 @@ from proxide._proxider import (  # type: ignore[unresolved-import]
   # Trajectory parsing
   parse_xtc,
 )
-from proxide.io.parsing.backend import parse_structure
+from proxide.io.parsing.backend import (
+  iterload,
+  parse_structure,
+  write_dcd,
+)
+from proxide.io.fetching import (
+  fetch_rcsb,
+  fetch_afdb,
+  fetch_foldcomp_database,
+)
 
 __all__ = [
   # Structure parsing
@@ -74,4 +85,10 @@ __all__ = [
   "MissingResidueMode",
   "HydrogenSource",
   "AtomicSystem",
+  "iterload",
+  "write_dcd",
+  # Fetching
+  "fetch_rcsb",
+  "fetch_afdb",
+  "fetch_foldcomp_database",
 ]

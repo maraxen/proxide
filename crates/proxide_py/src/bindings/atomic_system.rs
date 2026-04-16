@@ -24,13 +24,11 @@ impl PyAtomicSystem {
 
     #[getter]
     fn get_coordinates(&self, py: Python) -> PyObject {
-        use numpy::PyArrayMethods;
         numpy::PyArray1::from_vec_bound(py, self.inner.coordinates.clone()).into_any().unbind()
     }
 
     #[getter]
     fn get_atom_mask(&self, py: Python) -> PyObject {
-        use numpy::PyArrayMethods;
         numpy::PyArray1::from_vec_bound(py, self.inner.atom_mask.clone()).into_any().unbind()
     }
 

@@ -2,7 +2,7 @@
 #![allow(clippy::useless_conversion, clippy::too_many_arguments)]
 
 use crate::processing::ProcessedStructure;
-use crate::spec::{CoordFormat, OutputSpec};
+use crate::spec::CoordFormat;
 use crate::{forcefield, formats, formatters, geometry, physics, processing, spec};
 use crate::bindings::atomic_system::PyAtomicSystem;
 use crate::bindings::spec::PyOutputSpec;
@@ -10,7 +10,6 @@ use crate::bindings::conversion::ToPyDict;
 use numpy::PyArray1;
 use numpy::PyArrayMethods;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
 use log;
 
 /// Parse a PDB file and return raw atom data (low-level)
