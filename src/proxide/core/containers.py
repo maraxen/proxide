@@ -194,6 +194,12 @@ class Protein:
       or (raw_coords.ndim == 1 and raw_coords.size == num_residues * 37 * 3)
     )
 
+    is_atom14 = (
+      (raw_coords.ndim == 3 and raw_coords.shape[1] == 14)
+      or (raw_coords.ndim == 2 and raw_coords.size == num_residues * 14 * 3)
+      or (raw_coords.ndim == 1 and raw_coords.size == num_residues * 14 * 3)
+    )
+
     def convert(x: Any, dtype: Any = None) -> Any:
       if use_jax:
         return jnp.asarray(x, dtype=dtype)
@@ -223,10 +229,16 @@ class Protein:
         return jnp.asarray(arr)
       return arr
 
-    if is_atom37:
-      coordinates = raw_coords.reshape(num_residues, 37, 3)
-      atom_mask_2d = raw_mask.reshape(num_residues, 37)
-      mask_ca = atom_mask_2d[:, atom_order["CA"]]
+    if is_atom37 or is_atom14:
+      n_slots = 37 if is_atom37 else 14
+      coordinates = raw_coords.reshape(num_residues, n_slots, 3)
+      atom_mask_2d = raw_mask.reshape(num_residues, n_slots)
+      
+      if is_atom37:
+        mask_ca = atom_mask_2d[:, atom_order["CA"]]
+      else:
+        # For Atom14, CA is also usually at index 1
+        mask_ca = atom_mask_2d[:, 1]
 
       return cls(
         coordinates=convert(coordinates, dtype=np.float32),

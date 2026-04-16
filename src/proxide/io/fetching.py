@@ -42,3 +42,17 @@ def fetch_afdb(uniprot_id: str, output_dir: str = ".", version: int = 4) -> str:
       Path to the downloaded file.
   """
   return _proxider.fetch_afdb(uniprot_id, output_dir, version)
+
+
+def fetch_foldcomp_database(db_name: str, output_dir: str = ".", download_chunks: int = 1) -> str:
+  """Fetch a FoldComp database.
+
+  Args:
+      db_name: Name of the database (e.g., "afdb_swissprot").
+      output_dir: Directory to save the database.
+      download_chunks: Number of chunks to download in parallel.
+
+  Returns:
+      Path to the downloaded database directory.
+  """
+  return _proxider.fetch_foldcomp_database(db_name, output_dir, download_chunks)
