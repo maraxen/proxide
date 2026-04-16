@@ -43,6 +43,27 @@ uv pip install -e ".[dev]"
 
 The installation process will automatically compile the Rust `oxidize` extension using `maturin`.
 
+### Optional: Espaloma Charge (ML partial charges)
+
+Inference uses the JAX/Equinox port [`expaloma`](https://github.com/maraxen/expaloma) (bundled weights; no PyTorch/DGL at runtime). The dependency is declared as a **Git URL**; for a **private** repository, authenticate HTTPS (PAT with `repo` scope) or use SSH:
+
+```bash
+# HTTPS: Git will prompt or use credential helper
+git config --global url."https://oauth2:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+uv pip install -e ".[espaloma]"
+# or install from a local checkout:
+uv pip install -e ../expaloma
+uv pip install -e ".[dev]"
+```
+
+**OpenFF toolkit wrapper** (legacy upstream `espaloma_charge`): `uv pip install -e ".[espaloma-openff]"`.
+
+API: `proxide.chem.partial_charges` (`assign_espaloma_charges_rdkit`, etc.). Validation uses **golden** vectors under `tests/data/espaloma_golden/`; refresh those files when bumping `expaloma`.
+
+```bash
+pytest -m espaloma
+```
+
 ---
 
 ## 🛠️ Usage
