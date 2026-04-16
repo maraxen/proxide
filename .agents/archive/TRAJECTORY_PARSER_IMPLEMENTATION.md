@@ -107,7 +107,7 @@ DCD is a simpler format and should be implemented first.
 #### New Files
 
 ```
-oxidize/src/formats/dcd_pure.rs    [NEW]
+_proxider/src/formats/dcd_pure.rs    [NEW]
 ```
 
 #### API Design
@@ -147,8 +147,8 @@ TRR requires XDR decoding, which can be implemented using:
 #### New Files
 
 ```
-oxidize/src/formats/xdr.rs         [NEW] - XDR decoder utilities
-oxidize/src/formats/trr_pure.rs    [NEW] - TRR parser
+_proxider/src/formats/xdr.rs         [NEW] - XDR decoder utilities
+_proxider/src/formats/trr_pure.rs    [NEW] - TRR parser
 ```
 
 #### API Design
@@ -251,7 +251,7 @@ if __name__ == "__main__":
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj required")
 def test_dcd_frame_coordinates_vs_mdtraj():
     """Compare DCD frame coordinates against MDTraj."""
-    from proxide import _oxidize
+    from proxide import __proxider
     
     dcd_file = Path("tests/data/trajectories/test.dcd")
     pdb_file = Path("tests/data/1crn.pdb")
@@ -260,7 +260,7 @@ def test_dcd_frame_coordinates_vs_mdtraj():
         pytest.skip("Test DCD file not available")
     
     # Parse with Rust
-    result = _oxidize.parse_dcd(str(dcd_file))
+    result = __proxider.parse_dcd(str(dcd_file))
     rust_coords = result["coordinates"]  # Angstroms
     
     # Parse with MDTraj
@@ -334,7 +334,7 @@ jobs:
           
       - name: Build Rust extension
         run: |
-          cd oxidize
+          cd _proxider
           # Build with new features enabled (when they exist)
           maturin develop --release --features dcd-pure,trr-pure
           
@@ -352,7 +352,7 @@ jobs:
 Add new Cargo features for the pure-Rust parsers:
 
 ```toml
-# oxidize/Cargo.toml
+# _proxider/Cargo.toml
 [features]
 default = []
 dcd-pure = []           # Pure-Rust DCD parser

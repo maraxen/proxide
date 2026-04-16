@@ -284,14 +284,14 @@ tests/data/
 # tests/validation/test_parity.py
 
 import numpy as np
-import oxidize
+import _proxider
 import biotite.structure.io.pdb as pdb
 import mdtraj
 
 def test_coordinate_parity():
     """Verify Rust coordinates match Biotite and original priox."""
     # Rust
-    rust_result = oxidize.parse_structure("tests/data/pdb/1crn.pdb", spec)
+    rust_result = _proxider.parse_structure("tests/data/pdb/1crn.pdb", spec)
     
     # Biotite reference
     pdb_file = pdb.PDBFile.read("tests/data/pdb/1crn.pdb")
@@ -325,7 +325,7 @@ def benchmark_parsing():
     assert_coordinates_match(rust_result, original_priox_result)
     
     # Then benchmark
-    rust_time = timeit(oxidize.parse_structure, ...)
+    rust_time = timeit(_proxider.parse_structure, ...)
     python_time = timeit(original_priox_parse, ...)
     
     print(f"Rust: {rust_time:.3f}s, Python: {python_time:.3f}s")

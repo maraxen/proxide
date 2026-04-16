@@ -1,13 +1,13 @@
 # Python Removal & Oxidize Replacement Plan
 
 **Status:** Final Documentation - December 2025  
-**Goal:** Complete removal of deprecated Python logic in favor of the `oxidize` Rust backend
+**Goal:** Complete removal of deprecated Python logic in favor of the `_proxider` Rust backend
 
 ---
 
 ## Executive Summary
 
-This document finalizes the migration from Python-based implementations to the `oxidize` Rust extension. The migration has been substantially completed, with only intentional Python code remaining (JAX-based ML features, high-level APIs, and trajectory parsing with legacy format support).
+This document finalizes the migration from Python-based implementations to the `_proxider` Rust extension. The migration has been substantially completed, with only intentional Python code remaining (JAX-based ML features, high-level APIs, and trajectory parsing with legacy format support).
 
 ### Architecture Overview
 
@@ -22,7 +22,7 @@ This document finalizes the migration from Python-based implementations to the `
 └────────────────────────────┬────────────────────────────────────────┘
                              │ PyO3 bindings
 ┌────────────────────────────▼────────────────────────────────────────┐
-│                         oxidize (Rust)                              │
+│                         _proxider (Rust)                              │
 ├─────────────────────────────────────────────────────────────────────┤
 │ Parsing     │ Force Fields  │ Geometry      │ Physics Params        │
 │ PDB/mmCIF   │ OpenMM XML    │ bond inference│ MD parameterization   │
@@ -39,35 +39,35 @@ This document finalizes the migration from Python-based implementations to the `
 
 | Component | Old Python | New Rust | Status |
 |-----------|------------|----------|--------|
-| PDB parsing | `biotite.py` | `oxidize.parse_pdb()`, `oxidize.parse_structure()` | ✅ Removed |
-| mmCIF parsing | `biotite.py` | `oxidize.parse_mmcif()` | ✅ Removed |
-| PQR parsing | Python PQR parser | `oxidize.parse_pqr()` | ✅ Removed |
+| PDB parsing | `biotite.py` | `_proxider.parse_pdb()`, `_proxider.parse_structure()` | ✅ Removed |
+| mmCIF parsing | `biotite.py` | `_proxider.parse_mmcif()` | ✅ Removed |
+| PQR parsing | Python PQR parser | `_proxider.parse_pqr()` | ✅ Removed |
 | Multi-model handling | Python filtering | Rust `OutputSpec.models` | ✅ Complete |
 
 ### 2. Force Field & MD Parameterization
 
 | Component | Old Python | New Rust | Status |
 |-----------|------------|----------|--------|
-| OpenMM XML loading | Python XML parsing | `oxidize.load_forcefield()` | ✅ Removed |
+| OpenMM XML loading | Python XML parsing | `_proxider.load_forcefield()` | ✅ Removed |
 | Bond/angle inference | `core.py` | Rust `Topology::from_coords()` | ✅ Removed |
-| GAFF atom typing | Python GAFF | `oxidize.assign_gaff_atom_types()` | ✅ Removed |
+| GAFF atom typing | Python GAFF | `_proxider.assign_gaff_atom_types()` | ✅ Removed |
 | MD parameterization | `complex.py`, `ligand.py` | `OutputSpec.parameterize_md` | ✅ Removed |
 
 ### 3. Physics Parameterization
 
 | Component | Old Python | New Rust | Status |
 |-----------|------------|----------|--------|
-| GBSA radii | `gbsa.py` | `oxidize.assign_mbondi2_radii()` | ✅ Removed |
-| OBC2 scaling | `gbsa.py` | `oxidize.assign_obc2_scaling_factors()` | ✅ Removed |
-| Water models | `water.py` | `oxidize.get_water_model()` | ✅ Removed |
-| CMAP bicubic | `cmap.py` | `oxidize.compute_bicubic_params()` | ✅ Removed |
-| Molecule parameterization | `ligand.py` | `oxidize.parameterize_molecule()` | ✅ Removed |
+| GBSA radii | `gbsa.py` | `_proxider.assign_mbondi2_radii()` | ✅ Removed |
+| OBC2 scaling | `gbsa.py` | `_proxider.assign_obc2_scaling_factors()` | ✅ Removed |
+| Water models | `water.py` | `_proxider.get_water_model()` | ✅ Removed |
+| CMAP bicubic | `cmap.py` | `_proxider.compute_bicubic_params()` | ✅ Removed |
+| Molecule parameterization | `ligand.py` | `_proxider.parameterize_molecule()` | ✅ Removed |
 
 ### 4. Chemistry Utilities
 
 | Component | Old Python | New Rust | Status |
 |-----------|------------|----------|--------|
-| Mass assignment | Python mass lookup | `oxidize.assign_masses()` | ✅ Removed |
+| Mass assignment | Python mass lookup | `_proxider.assign_masses()` | ✅ Removed |
 | Element inference | Multiple modules | Rust `chem::masses` | ✅ Complete |
 | Physics utils | `physics_utils.py` | Inlined defaults | ✅ Deleted |
 
@@ -101,7 +101,7 @@ The following Python modules are **intentionally retained** and should NOT be mi
 | `geometry/transforms.py` | Coordinate transforms | JAX-compatible for training |
 | `geometry/metrics.py` | RMSD, TM-score | JAX for batched evaluation |
 
-**Rationale:** The Rust `oxidize/src/physics/` modules (electrostatics.rs, vdw.rs) exist for CPU-based validation and parameter computation, but the Python/JAX versions are used for:
+**Rationale:** The Rust `_proxider/src/physics/` modules (electrostatics.rs, vdw.rs) exist for CPU-based validation and parameter computation, but the Python/JAX versions are used for:
 
 - Backpropagation through physics during training
 - GPU-accelerated batch processing
@@ -137,19 +137,19 @@ The following files have been deleted:
 
 ```text
 DELETED Files (Phase 4-7):
-├── src/proxide/md/gbsa.py          ─→ oxidize.assign_mbondi2_radii()
-├── src/proxide/md/water.py         ─→ oxidize.get_water_model()
-├── src/proxide/md/cmap.py          ─→ oxidize.compute_bicubic_params()
+├── src/proxide/md/gbsa.py          ─→ _proxider.assign_mbondi2_radii()
+├── src/proxide/md/water.py         ─→ _proxider.get_water_model()
+├── src/proxide/md/cmap.py          ─→ _proxider.compute_bicubic_params()
 ├── src/proxide/md/complex.py       ─→ Merged into AtomicSystem
-├── src/proxide/md/ligand.py        ─→ oxidize.parameterize_molecule()
-├── src/proxide/io/parsing/biotite.py ─→ oxidize.parse_structure()
+├── src/proxide/md/ligand.py        ─→ _proxider.parameterize_molecule()
+├── src/proxide/io/parsing/biotite.py ─→ _proxider.parse_structure()
 ├── src/proxide/io/parsing/core.py    ─→ Rust formatters/topology
 └── src/proxide/io/parsing/physics_utils.py ─→ Inlined in utils.py
 ```
 
 ---
 
-## Rust Extension (oxidize) Capability Summary
+## Rust Extension (_proxider) Capability Summary
 
 ### Parsing Functions
 
@@ -221,8 +221,8 @@ from priox.physics.force_fields import load_ff14sb
 ff = load_ff14sb()
 
 # NEW: Rust force field loading
-import oxidize
-ff = oxidize.load_forcefield("path/to/protein.ff14SB.xml")
+import _proxider
+ff = _proxider.load_forcefield("path/to/protein.ff14SB.xml")
 ```
 
 ```python
@@ -253,14 +253,14 @@ protein = parse_structure("structure.pdb", spec)
 ### 2. Documentation Updates
 
 - [ ] Update `docs/` with current API
-- [ ] Add oxidize function reference
+- [ ] Add _proxider function reference
 - [ ] Document JAX physics modules
 
 ### 3. Test Suite Cleanup
 
 - [ ] Remove tests for deleted Python modules
 - [ ] Update tests expecting Python fallbacks
-- [ ] Add coverage for new oxidize functions
+- [ ] Add coverage for new _proxider functions
 
 ---
 
@@ -315,7 +315,7 @@ src/proxide/
 **Rust Modules:**
 
 ```
-oxidize/src/
+_proxider/src/
 ├── lib.rs                # PyO3 module
 ├── spec.rs               # OutputSpec
 ├── structure/            # AtomicSystem
@@ -331,14 +331,14 @@ oxidize/src/
 
 ## Conclusion
 
-The `proxide` library has successfully migrated all appropriate functionality to the `oxidize` Rust backend while preserving Python/JAX code where it provides unique value (GPU acceleration, autodiff, ML framework integration).
+The `proxide` library has successfully migrated all appropriate functionality to the `_proxider` Rust backend while preserving Python/JAX code where it provides unique value (GPU acceleration, autodiff, ML framework integration).
 
 **Current State:**
 
 - ✅ All parsing operations use Rust
 - ✅ All force field/MD parameterization uses Rust  
 - ✅ All chemistry utilities use Rust
-- ✅ Python fallback logic removed (oxidize is required)
+- ✅ Python fallback logic removed (_proxider is required)
 - ✅ JAX physics retained for ML workflows
 - ✅ High-level API maintained in Python for ergonomics
 
