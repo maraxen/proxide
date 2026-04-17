@@ -17,10 +17,16 @@ fn validate_id(id: &str) -> Result<(), String> {
     if id.is_empty() {
         return Err("ID cannot be empty".to_string());
     }
-    if id.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+    if id
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    {
         Ok(())
     } else {
-        Err(format!("Invalid ID: '{}'. Only alphanumeric characters, underscores, and hyphens are allowed.", id))
+        Err(format!(
+            "Invalid ID: '{}'. Only alphanumeric characters, underscores, and hyphens are allowed.",
+            id
+        ))
     }
 }
 
@@ -98,7 +104,10 @@ pub fn fetch_md_cath(md_cath_id: &str, output_dir: &str) -> Result<String, Strin
     }
 
     if md_cath_id.len() < 3 {
-        return Err(format!("Invalid MD-CATH ID: '{}'. ID must be at least 3 characters long for subdir sharding.", md_cath_id));
+        return Err(format!(
+            "Invalid MD-CATH ID: '{}'. ID must be at least 3 characters long for subdir sharding.",
+            md_cath_id
+        ));
     }
     let subdirs = &md_cath_id[1..3];
     let url = format!("{}{}/{}.h5", MDCATH_URL_BASE, subdirs, md_cath_id);
@@ -106,10 +115,7 @@ pub fn fetch_md_cath(md_cath_id: &str, output_dir: &str) -> Result<String, Strin
     let client = Client::new();
     match _download_file(&client, &url, &target_path) {
         Ok(_) => Ok(target_path.to_string_lossy().to_string()),
-        Err(e) => Err(format!(
-            "Failed to fetch MD-CATH {}: {}",
-            md_cath_id, e
-        )),
+        Err(e) => Err(format!("Failed to fetch MD-CATH {}: {}", md_cath_id, e)),
     }
 }
 
@@ -133,10 +139,7 @@ pub fn fetch_afdb(uniprot_id: &str, output_dir: &str, version: u32) -> Result<St
 
     match _download_file(&client, &url, &target_path) {
         Ok(_) => Ok(target_path.to_string_lossy().to_string()),
-        Err(e) => Err(format!(
-            "Failed to fetch AFDB {}: {}",
-            uniprot_id, e
-        )),
+        Err(e) => Err(format!("Failed to fetch AFDB {}: {}", uniprot_id, e)),
     }
 }
 
@@ -208,21 +211,15 @@ pub fn fetch_foldcomp_database(
 
         let tmp_path = target_path.with_extension("tmp");
         {
-            let mut file = File::create(&tmp_path).map_err(|e| {
-                format!("Failed to create tmp file: {}", e)
-            })?;
+            let mut file =
+                File::create(&tmp_path).map_err(|e| format!("Failed to create tmp file: {}", e))?;
 
-            _download_file_to_writer(&client, &url, &mut file).map_err(|e| {
-                format!(
-                    "Failed to download {}: {}",
-                    filename, e
-                )
-            })?;
+            _download_file_to_writer(&client, &url, &mut file)
+                .map_err(|e| format!("Failed to download {}: {}", filename, e))?;
         }
 
-        std::fs::rename(&tmp_path, &target_path).map_err(|e| {
-            format!("Failed to rename tmp file: {}", e)
-        })?;
+        std::fs::rename(&tmp_path, &target_path)
+            .map_err(|e| format!("Failed to rename tmp file: {}", e))?;
     }
 
     Ok(output_path.to_string_lossy().to_string())

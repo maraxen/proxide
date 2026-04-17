@@ -7,7 +7,6 @@
 
 #![allow(dead_code)]
 
-
 pub mod systems;
 // Note: systems module is available but not re-exported to avoid unused import warnings
 // Use structure::systems::* directly if needed
@@ -148,7 +147,6 @@ impl RawAtomData {
         self.num_atoms += 1;
     }
 }
-
 
 impl Default for RawAtomData {
     fn default() -> Self {

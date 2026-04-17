@@ -1,5 +1,5 @@
-use crate::processing::residues::ProcessedStructure;
 use crate::geometry::cell_list::CellList;
+use crate::processing::residues::ProcessedStructure;
 
 /// Normalizes a single residue's name across both the ResidueInfo and its constituent RawAtoms
 fn rename_residue(processed: &mut ProcessedStructure, res_idx: usize, new_name: &str) {
@@ -17,11 +17,11 @@ pub fn determine_protonation_states(
     processed: &mut ProcessedStructure,
     ph: f32,
 ) -> Result<(), String> {
-    
     // Check if we even need to bother with topology checks
-    let has_titratable = processed.residue_info.iter().any(|r| {
-        matches!(r.res_name.as_str(), "HIS" | "CYS" | "ASP" | "GLU" | "LYS")
-    });
+    let has_titratable = processed
+        .residue_info
+        .iter()
+        .any(|r| matches!(r.res_name.as_str(), "HIS" | "CYS" | "ASP" | "GLU" | "LYS"));
 
     if !has_titratable {
         return Ok(());
@@ -77,10 +77,14 @@ pub fn determine_protonation_states(
                     let mut is_disulfide = false;
                     for nb in neighbors {
                         // Ensure it's not the same atom and not in the same residue
-                        if nb < res_info.start_atom || nb >= res_info.start_atom + res_info.num_atoms {
+                        if nb < res_info.start_atom
+                            || nb >= res_info.start_atom + res_info.num_atoms
+                        {
                             let dist_sq = distance_sq(&all_coords[sg], &all_coords[nb]);
                             // Ensure it's another Sulfur (or at least heavy atom for general bridging, but typically another CYS SG)
-                            if dist_sq < max_dist_sq && processed.raw_atoms.elements[nb].to_uppercase() == "S" {
+                            if dist_sq < max_dist_sq
+                                && processed.raw_atoms.elements[nb].to_uppercase() == "S"
+                            {
                                 is_disulfide = true;
                                 break;
                             }
@@ -94,7 +98,8 @@ pub fn determine_protonation_states(
             }
             "HIS" => {
                 // HIS determination is the most complex
-                let result = determine_histidine_state(res_info, processed, &all_coords, &cell_list, ph);
+                let result =
+                    determine_histidine_state(res_info, processed, &all_coords, &cell_list, ph);
                 updates.push((res_idx, result));
             }
             _ => {}
@@ -107,7 +112,11 @@ pub fn determine_protonation_states(
     }
 
     if modifications > 0 {
-        log::debug!("Normalized {} titratable residues based on pH {}", modifications, ph);
+        log::debug!(
+            "Normalized {} titratable residues based on pH {}",
+            modifications,
+            ph
+        );
     }
 
     Ok(())
@@ -181,8 +190,22 @@ fn determine_histidine_state(
     let vec_out_ne2 = add_vec(&sub_vec(p_ne2, p_ce1), &sub_vec(p_ne2, p_cd2));
     let h_ne2_pred = add_vec(p_ne2, &scale_to(vec_out_ne2, 0.1));
 
-    let nd1_forms_hbond = check_h_bond(p_nd1, &h_nd1_pred, cell_list, all_coords, processed, res_info);
-    let ne2_forms_hbond = check_h_bond(p_ne2, &h_ne2_pred, cell_list, all_coords, processed, res_info);
+    let nd1_forms_hbond = check_h_bond(
+        p_nd1,
+        &h_nd1_pred,
+        cell_list,
+        all_coords,
+        processed,
+        res_info,
+    );
+    let ne2_forms_hbond = check_h_bond(
+        p_ne2,
+        &h_ne2_pred,
+        cell_list,
+        all_coords,
+        processed,
+        res_info,
+    );
 
     // If only one forms an H-bond, choose it. Otherwise, HIE is the generic default base.
     if ne2_forms_hbond && !nd1_forms_hbond {
@@ -218,7 +241,7 @@ fn check_h_bond(
             // Check Angle: angle between (Donor -> H) and (Donor -> Acceptor)
             // It should be small (OpenMM uses < 50 deg D-H-A, meaning H is between Donor and Acceptor)
             // Let's implement Donor-H-Acceptor angle > 130 deg (or < 50 deg for Donor-Acceptor to Donor-H)
-            
+
             let vec_dh = sub_vec(h_pred_pos, donor_pos);
             let vec_da = sub_vec(acceptor_pos, donor_pos);
 
@@ -266,7 +289,7 @@ fn dot_product(a: &[f32; 3], b: &[f32; 3]) -> f32 {
 
 #[inline]
 fn scale_to(v: [f32; 3], target_mag: f32) -> [f32; 3] {
-    let mag = (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt();
+    let mag = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
     if mag > 0.0 {
         let scale = target_mag / mag;
         [v[0] * scale, v[1] * scale, v[2] * scale]
@@ -284,25 +307,81 @@ mod tests {
         let mut raw = RawAtomData::with_capacity(10);
         // ASP
         raw.add_atom(AtomRecord {
-            serial: 1, atom_name: "CA".to_string(), alt_loc: ' ', res_name: "ASP".to_string(), chain_id: "A".to_string(), res_seq: 1, i_code: ' ',
-            x: 0.0, y: 0.0, z: 0.0, occupancy: 1.0, temp_factor: 0.0, element: "C".to_string(), charge: None, radius: None, is_hetatm: false,
+            serial: 1,
+            atom_name: "CA".to_string(),
+            alt_loc: ' ',
+            res_name: "ASP".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            i_code: ' ',
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            element: "C".to_string(),
+            charge: None,
+            radius: None,
+            is_hetatm: false,
         });
         // LYS
         raw.add_atom(AtomRecord {
-            serial: 2, atom_name: "CA".to_string(), alt_loc: ' ', res_name: "LYS".to_string(), chain_id: "A".to_string(), res_seq: 2, i_code: ' ',
-            x: 10.0, y: 0.0, z: 0.0, occupancy: 1.0, temp_factor: 0.0, element: "C".to_string(), charge: None, radius: None, is_hetatm: false,
+            serial: 2,
+            atom_name: "CA".to_string(),
+            alt_loc: ' ',
+            res_name: "LYS".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 2,
+            i_code: ' ',
+            x: 10.0,
+            y: 0.0,
+            z: 0.0,
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            element: "C".to_string(),
+            charge: None,
+            radius: None,
+            is_hetatm: false,
         });
         // CYS 1
         raw.add_atom(AtomRecord {
-            serial: 3, atom_name: "SG".to_string(), alt_loc: ' ', res_name: "CYS".to_string(), chain_id: "A".to_string(), res_seq: 3, i_code: ' ',
-            x: 20.0, y: 0.0, z: 0.0, occupancy: 1.0, temp_factor: 0.0, element: "S".to_string(), charge: None, radius: None, is_hetatm: false,
+            serial: 3,
+            atom_name: "SG".to_string(),
+            alt_loc: ' ',
+            res_name: "CYS".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 3,
+            i_code: ' ',
+            x: 20.0,
+            y: 0.0,
+            z: 0.0,
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            element: "S".to_string(),
+            charge: None,
+            radius: None,
+            is_hetatm: false,
         });
         // CYS 2 (close to CYS 1 SG)
         raw.add_atom(AtomRecord {
-            serial: 4, atom_name: "SG".to_string(), alt_loc: ' ', res_name: "CYS".to_string(), chain_id: "A".to_string(), res_seq: 4, i_code: ' ',
-            x: 20.2, y: 0.0, z: 0.0, occupancy: 1.0, temp_factor: 0.0, element: "S".to_string(), charge: None, radius: None, is_hetatm: false,
+            serial: 4,
+            atom_name: "SG".to_string(),
+            alt_loc: ' ',
+            res_name: "CYS".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 4,
+            i_code: ' ',
+            x: 20.2,
+            y: 0.0,
+            z: 0.0,
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            element: "S".to_string(),
+            charge: None,
+            radius: None,
+            is_hetatm: false,
         });
-        
+
         ProcessedStructure::from_raw(raw).unwrap()
     }
 
@@ -341,12 +420,40 @@ mod tests {
         // Test HID, HIE, HIP overrides based on existing H atoms
         let mut raw = RawAtomData::with_capacity(10);
         raw.add_atom(AtomRecord {
-            serial: 1, atom_name: "ND1".to_string(), alt_loc: ' ', res_name: "HIS".to_string(), chain_id: "A".to_string(), res_seq: 1, i_code: ' ',
-            x: 0.0, y: 0.0, z: 0.0, occupancy: 1.0, temp_factor: 0.0, element: "N".to_string(), charge: None, radius: None, is_hetatm: false,
+            serial: 1,
+            atom_name: "ND1".to_string(),
+            alt_loc: ' ',
+            res_name: "HIS".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            i_code: ' ',
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            element: "N".to_string(),
+            charge: None,
+            radius: None,
+            is_hetatm: false,
         });
         raw.add_atom(AtomRecord {
-            serial: 2, atom_name: "HD1".to_string(), alt_loc: ' ', res_name: "HIS".to_string(), chain_id: "A".to_string(), res_seq: 1, i_code: ' ',
-            x: 0.0, y: 0.0, z: 1.0, occupancy: 1.0, temp_factor: 0.0, element: "H".to_string(), charge: None, radius: None, is_hetatm: false,
+            serial: 2,
+            atom_name: "HD1".to_string(),
+            alt_loc: ' ',
+            res_name: "HIS".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            i_code: ' ',
+            x: 0.0,
+            y: 0.0,
+            z: 1.0,
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            element: "H".to_string(),
+            charge: None,
+            radius: None,
+            is_hetatm: false,
         });
         let mut p = ProcessedStructure::from_raw(raw).unwrap();
         determine_protonation_states(&mut p, 7.0).unwrap();
@@ -354,12 +461,40 @@ mod tests {
 
         let mut raw = RawAtomData::with_capacity(10);
         raw.add_atom(AtomRecord {
-            serial: 1, atom_name: "NE2".to_string(), alt_loc: ' ', res_name: "HIS".to_string(), chain_id: "A".to_string(), res_seq: 1, i_code: ' ',
-            x: 0.0, y: 0.0, z: 0.0, occupancy: 1.0, temp_factor: 0.0, element: "N".to_string(), charge: None, radius: None, is_hetatm: false,
+            serial: 1,
+            atom_name: "NE2".to_string(),
+            alt_loc: ' ',
+            res_name: "HIS".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            i_code: ' ',
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            element: "N".to_string(),
+            charge: None,
+            radius: None,
+            is_hetatm: false,
         });
         raw.add_atom(AtomRecord {
-            serial: 2, atom_name: "HE2".to_string(), alt_loc: ' ', res_name: "HIS".to_string(), chain_id: "A".to_string(), res_seq: 1, i_code: ' ',
-            x: 0.0, y: 0.0, z: 1.0, occupancy: 1.0, temp_factor: 0.0, element: "H".to_string(), charge: None, radius: None, is_hetatm: false,
+            serial: 2,
+            atom_name: "HE2".to_string(),
+            alt_loc: ' ',
+            res_name: "HIS".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            i_code: ' ',
+            x: 0.0,
+            y: 0.0,
+            z: 1.0,
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            element: "H".to_string(),
+            charge: None,
+            radius: None,
+            is_hetatm: false,
         });
         let mut p = ProcessedStructure::from_raw(raw).unwrap();
         determine_protonation_states(&mut p, 7.0).unwrap();
@@ -370,7 +505,7 @@ mod tests {
     fn test_his_h_bond_scoring() {
         // Build a HIS ring
         let mut raw = RawAtomData::with_capacity(10);
-        
+
         let cg = [0.0, 0.0, 0.0];
         let nd1 = [-1.0, 1.0, 0.0];
         let ce1 = [0.0, 2.0, 0.0];
@@ -385,23 +520,58 @@ mod tests {
         let oxygen = [2.5, 1.75, 0.0];
 
         for (i, (name, coord, el)) in [
-            ("CG", cg, "C"), ("ND1", nd1, "N"), ("CE1", ce1, "C"), ("NE2", ne2, "N"), ("CD2", cd2, "C"),
-        ].iter().enumerate() {
+            ("CG", cg, "C"),
+            ("ND1", nd1, "N"),
+            ("CE1", ce1, "C"),
+            ("NE2", ne2, "N"),
+            ("CD2", cd2, "C"),
+        ]
+        .iter()
+        .enumerate()
+        {
             raw.add_atom(AtomRecord {
-                serial: i as i32 + 1, atom_name: name.to_string(), alt_loc: ' ', res_name: "HIS".to_string(), chain_id: "A".to_string(), res_seq: 1, i_code: ' ',
-                x: coord[0], y: coord[1], z: coord[2], occupancy: 1.0, temp_factor: 0.0, element: el.to_string(), charge: None, radius: None, is_hetatm: false,
+                serial: i as i32 + 1,
+                atom_name: name.to_string(),
+                alt_loc: ' ',
+                res_name: "HIS".to_string(),
+                chain_id: "A".to_string(),
+                res_seq: 1,
+                i_code: ' ',
+                x: coord[0],
+                y: coord[1],
+                z: coord[2],
+                occupancy: 1.0,
+                temp_factor: 0.0,
+                element: el.to_string(),
+                charge: None,
+                radius: None,
+                is_hetatm: false,
             });
         }
-        
+
         // Add O in another residue
         raw.add_atom(AtomRecord {
-            serial: 10, atom_name: "O".to_string(), alt_loc: ' ', res_name: "HOH".to_string(), chain_id: "W".to_string(), res_seq: 2, i_code: ' ',
-            x: oxygen[0], y: oxygen[1], z: oxygen[2], occupancy: 1.0, temp_factor: 0.0, element: "O".to_string(), charge: None, radius: None, is_hetatm: true,
+            serial: 10,
+            atom_name: "O".to_string(),
+            alt_loc: ' ',
+            res_name: "HOH".to_string(),
+            chain_id: "W".to_string(),
+            res_seq: 2,
+            i_code: ' ',
+            x: oxygen[0],
+            y: oxygen[1],
+            z: oxygen[2],
+            occupancy: 1.0,
+            temp_factor: 0.0,
+            element: "O".to_string(),
+            charge: None,
+            radius: None,
+            is_hetatm: true,
         });
 
         let mut p = ProcessedStructure::from_raw(raw).unwrap();
         determine_protonation_states(&mut p, 7.0).unwrap();
-        
+
         // Since O is matched to NE2 but not ND1, we expect HIE
         assert_eq!(p.residue_info[0].res_name, "HIE");
     }

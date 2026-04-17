@@ -99,7 +99,6 @@ impl Atom14Formatter {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

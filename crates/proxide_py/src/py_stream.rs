@@ -16,7 +16,8 @@ impl PyTrajectoryIterator {
     #[new]
     pub fn new(path: &str, chunk_size: usize) -> PyResult<Self> {
         let path_obj = Path::new(path);
-        let ext = path_obj.extension()
+        let ext = path_obj
+            .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_lowercase();
@@ -31,7 +32,10 @@ impl PyTrajectoryIterator {
                 chunk_size,
             })
         } else {
-            Err(pyo3::exceptions::PyValueError::new_err(format!("Unsupported or pending trajectory extension: {}", ext)))
+            Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unsupported or pending trajectory extension: {}",
+                ext
+            )))
         }
     }
 
@@ -67,9 +71,9 @@ impl PyTrajectoryIterator {
         let array = PyArray1::from_slice_bound(py, &frames_coords)
             .reshape(shape)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-        
+
         dict.set_item("coordinates", array)?;
-        
+
         Ok(Some(dict.into_py(py)))
     }
 }

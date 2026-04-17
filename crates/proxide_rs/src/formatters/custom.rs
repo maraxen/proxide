@@ -107,8 +107,7 @@ impl CustomFormatter {
     }
 }
 
-impl FormattedCustom {
-}
+impl FormattedCustom {}
 
 #[cfg(test)]
 mod tests {
