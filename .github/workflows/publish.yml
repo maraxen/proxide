@@ -24,6 +24,10 @@ jobs:
           python-version: 3.x
       - name: Build wheels (Full)
         uses: PyO3/maturin-action@v1
+        env:
+          # For aarch64 cross-compile: tell ring where ARM architecture features are
+          RUSTFLAGS: '-C target-feature=+v8a'
+          RING_PREGENERATE_ASM: 1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter --features full
