@@ -31,7 +31,7 @@ use bindings::spec::{
 #[pyo3(signature = (id, output_dir = ".cache", format_type = "cif"))]
 fn fetch_rcsb(id: &str, output_dir: &str, format_type: &str) -> PyResult<String> {
     proxide_rs::io::fetching::fetch_rcsb(id, output_dir, format_type)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+        .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
 }
 
 /// Wrapper for proxide_rs::io::fetching::fetch_md_cath
@@ -39,7 +39,7 @@ fn fetch_rcsb(id: &str, output_dir: &str, format_type: &str) -> PyResult<String>
 #[pyo3(signature = (id, output_dir = ".cache"))]
 fn fetch_md_cath(id: &str, output_dir: &str) -> PyResult<String> {
     proxide_rs::io::fetching::fetch_md_cath(id, output_dir)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+        .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
 }
 
 /// Wrapper for proxide_rs::io::fetching::fetch_afdb
@@ -47,7 +47,7 @@ fn fetch_md_cath(id: &str, output_dir: &str) -> PyResult<String> {
 #[pyo3(signature = (id, output_dir = ".cache", version = 4))]
 fn fetch_afdb(id: &str, output_dir: &str, version: u32) -> PyResult<String> {
     proxide_rs::io::fetching::fetch_afdb(id, output_dir, version)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+        .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
 }
 
 /// Wrapper for proxide_rs::io::fetching::fetch_foldcomp_database
@@ -59,7 +59,7 @@ fn fetch_foldcomp_database(
     download_chunks: usize,
 ) -> PyResult<String> {
     proxide_rs::io::fetching::fetch_foldcomp_database(db_name, output_dir, download_chunks)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+        .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
 }
 
 /// Python module

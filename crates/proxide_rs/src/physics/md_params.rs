@@ -1023,7 +1023,7 @@ fn lookup_improper<'a>(
         }
 
         // 2. The other 3 atoms (c1, c3, c4) must match t.class1, t.class2, t.class4 in ANY order.
-        let def_others = vec![&t.class1, &t.class2, &t.class4];
+        let def_others = [&t.class1, &t.class2, &t.class4];
         let target_others = vec![(c1, t1), (c3, t3), (c4, t4)];
 
         // Simple greedy match for the 3 others
