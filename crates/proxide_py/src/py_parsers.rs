@@ -875,7 +875,7 @@ pub fn parse_structure(
             let mut flat = Vec::with_capacity(n_maps * grid_size * grid_size);
             for grid in &params.cmap_grids {
                 for val in &grid.energies {
-                    flat.push((*val));
+                    flat.push(*val);
                 }
             }
             let arr = PyArray1::from_slice_bound(py, &flat);
