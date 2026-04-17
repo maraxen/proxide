@@ -72,16 +72,20 @@ else
     echo "⚠️  WARNING: ARM cross-compile flags not found in publish.yml"
 fi
 
+if grep -q 'CFLAGS_aarch64_unknown_linux_gnu:.*__ARM_ARCH=8' .github/workflows/publish.yml; then
+    echo "   ✓ __ARM_ARCH define configured for ring assembly"
+else
+    echo "⚠️  WARNING: __ARM_ARCH define not found; ring may fail on aarch64"
+fi
+
 if grep -q 'CXXFLAGS_aarch64_unknown_linux_gnu' .github/workflows/publish.yml; then
     echo "   ✓ ARM C++ cross-compile flags configured"
 fi
 
 if grep -q 'before-script-linux:' .github/workflows/publish.yml; then
-    if grep -A5 'before-script-linux:' .github/workflows/publish.yml | grep -q 'hdf5'; then
-        echo "   ⚠️  WARNING: before-script-linux still has HDF5 install (not needed)"
-    else
-        echo "   ✓ before-script-linux configured (minimal, no HDF5 install)"
-    fi
+    echo "   ⚠️  WARNING: before-script-linux is set; ensure it has no env-specific assumptions"
+else
+    echo "   ✓ No before-script-linux (cleaner and less fragile)"
 fi
 
 echo ""
@@ -101,4 +105,3 @@ echo "  2. Tag release: git tag -a vX.Y.Z"
 echo "  3. Push tags: git push origin --tags"
 echo "  4. Monitor: gh run list --workflow publish.yml"
 echo ""
-
