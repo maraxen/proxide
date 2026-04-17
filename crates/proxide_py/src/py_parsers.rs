@@ -7,7 +7,6 @@ use crate::bindings::spec::PyOutputSpec;
 use crate::processing::ProcessedStructure;
 use crate::spec::CoordFormat;
 use crate::{forcefield, formats, formatters, geometry, physics, processing, spec};
-use log;
 use numpy::PyArray1;
 use numpy::PyArrayMethods;
 use pyo3::prelude::*;
@@ -876,7 +875,7 @@ pub fn parse_structure(
             let mut flat = Vec::with_capacity(n_maps * grid_size * grid_size);
             for grid in &params.cmap_grids {
                 for val in &grid.energies {
-                    flat.push(*val as f32);
+                    flat.push((*val));
                 }
             }
             let arr = PyArray1::from_slice_bound(py, &flat);
