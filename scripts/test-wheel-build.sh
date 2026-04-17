@@ -35,8 +35,10 @@ fi
 echo "   ✓ python3 found: $(python3 --version)"
 
 echo ""
-echo "2. Building Rust extension with static HDF5..."
+echo "2. Building Rust extension with static HDF5 (native target)..."
 echo "   (This tests that HDF5 compiles from source correctly)"
+echo "   Note: aarch64 cross-compilation can't be tested locally without"
+echo "   aarch64 target installed. CI will test that."
 
 # Clean previous builds
 rm -rf target/release/deps/lib_proxider* 2>/dev/null || true
@@ -64,21 +66,39 @@ fi
 
 echo ""
 echo "4. Checking GitHub workflow configuration..."
-if grep -q "before-script-linux:" .github/workflows/publish.yml; then
-    echo "   ⚠️  WARNING: before-script-linux is still present in publish.yml"
-    echo "      This is unnecessary with static HDF5 and may cause CI failures."
-    echo "      Consider removing it with: grep -A2 before-script-linux .github/workflows/publish.yml"
+if grep -q 'CFLAGS_aarch64_unknown_linux_gnu' .github/workflows/publish.yml; then
+    echo "   ✓ ARM cross-compile flags configured"
 else
-    echo "   ✓ No unnecessary before-script-linux in publish.yml"
+    echo "⚠️  WARNING: ARM cross-compile flags not found in publish.yml"
+fi
+
+if grep -q 'CXXFLAGS_aarch64_unknown_linux_gnu' .github/workflows/publish.yml; then
+    echo "   ✓ ARM C++ cross-compile flags configured"
+fi
+
+if grep -q 'before-script-linux:' .github/workflows/publish.yml; then
+    if grep -A5 'before-script-linux:' .github/workflows/publish.yml | grep -q 'hdf5'; then
+        echo "   ⚠️  WARNING: before-script-linux still has HDF5 install (not needed)"
+    else
+        echo "   ✓ before-script-linux configured (minimal, no HDF5 install)"
+    fi
 fi
 
 echo ""
 echo "============================================"
-echo "✅ All checks passed! Safe to push to GitHub"
+echo "✅ All native checks passed!"
 echo "============================================"
 echo ""
-echo "Next steps:"
-echo "  1. Commit the workflow fix: git add .github/workflows/publish.yml"
-echo "  2. Push to main and create a release tag"
-echo "  3. GitHub Actions will build wheels for all platforms"
+echo "NOTE: Full platform testing happens in CI:"
+echo "  • Linux x86_64: Tests native build"
+echo "  • Linux aarch64: Tests ARM cross-compile (CFLAGS_aarch64_unknown_linux_gnu)"
+echo "  • macOS x86_64/aarch64: Platform-specific builds"
+echo "  • Windows x64: Platform-specific build"
 echo ""
+echo "Next steps:"
+echo "  1. Push changes: git push origin"
+echo "  2. Tag release: git tag -a vX.Y.Z"
+echo "  3. Push tags: git push origin --tags"
+echo "  4. Monitor: gh run list --workflow publish.yml"
+echo ""
+

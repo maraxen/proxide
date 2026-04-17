@@ -25,14 +25,22 @@ jobs:
       - name: Build wheels (Full)
         uses: PyO3/maturin-action@v1
         env:
-          # For aarch64 cross-compile: tell ring where ARM architecture features are
-          RUSTFLAGS: '-C target-feature=+v8a'
-          RING_PREGENERATE_ASM: 1
+          # For aarch64 cross-compile: C compiler flags for ARM assembler
+          CFLAGS_aarch64_unknown_linux_gnu: '-march=armv8-a'
+          CXXFLAGS_aarch64_unknown_linux_gnu: '-march=armv8-a'
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter --features full
           sccache: 'true'
           manylinux: auto
+          before-script-linux: |
+            # Only need build tools, not system HDF5 (it's compiled statically)
+            # For cross-compile to aarch64, ensure we have ARM toolchain
+            if [ "$TARGET" = "aarch64" ]; then
+              yum install -y binutils-devel gcc-aarch64-linux-gnu || \
+              apt-get install -y binutils-dev g++-aarch64-linux-gnu || \
+              true
+            fi
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
