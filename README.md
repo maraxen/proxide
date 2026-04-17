@@ -173,6 +173,22 @@ uv run pytest
 uv run pytest -m smoke
 ```
 
+### Building Wheels Locally
+
+Before pushing a release to GitHub, test the wheel build locally to catch platform-specific issues early:
+
+```bash
+# Test the build locally (validates HDF5 static compilation and workflow config)
+bash scripts/test-wheel-build.sh
+
+# This will:
+# 1. Check build prerequisites (cargo, rustc, python3)
+# 2. Build the Rust extension with static HDF5 compilation
+# 3. Verify the GitHub workflow is correctly configured
+```
+
+**Note**: The Rust extension uses static HDF5 compilation via the `hdf5-metno` crate with the `static` feature enabled. This means HDF5 is compiled from source during the build and included in the binary, eliminating platform-specific library dependencies.
+
 ### Linting and Typing
 
 ```bash
