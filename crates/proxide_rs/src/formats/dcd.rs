@@ -359,7 +359,11 @@ impl DcdWriter {
         })
     }
 
-    pub fn write_frame(&mut self, coords: &[f32], unit_cell: Option<&[f64; 6]>) -> Result<(), DcdError> {
+    pub fn write_frame(
+        &mut self,
+        coords: &[f32],
+        unit_cell: Option<&[f64; 6]>,
+    ) -> Result<(), DcdError> {
         if coords.len() != self.n_atoms * 3 {
             return Err(DcdError::InvalidFormat(format!(
                 "Expected {} coordinates, got {}",

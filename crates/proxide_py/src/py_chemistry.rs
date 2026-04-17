@@ -202,24 +202,25 @@ pub fn parameterize_molecule(
 #[pyo3(signature = (features, senders, receivers, segment_ids, num_graphs, total_charges))]
 pub fn assign_espaloma_charges(
     py: Python<'_>,
-    features: PyObject,     // (n_atoms, 116)
+    features: PyObject, // (n_atoms, 116)
     senders: Vec<u32>,
     receivers: Vec<u32>,
     segment_ids: Vec<u32>,
     num_graphs: usize,
     total_charges: Vec<f32>,
 ) -> PyResult<PyObject> {
-    let feat_array = features.bind(py).downcast::<PyArray2<f32>>()
-        .map_err(|_| pyo3::exceptions::PyTypeError::new_err("features must be a 2D float32 numpy array"))?;
-    
+    let feat_array = features.bind(py).downcast::<PyArray2<f32>>().map_err(|_| {
+        pyo3::exceptions::PyTypeError::new_err("features must be a 2D float32 numpy array")
+    })?;
+
     let binding = feat_array.readonly();
     let feat_view = binding.as_array();
-    
+
     // Check dimensions
     if feat_view.shape()[1] != chem::inference::FEATURE_UNITS {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "features must have {} columns, got {}", 
-            chem::inference::FEATURE_UNITS, 
+            "features must have {} columns, got {}",
+            chem::inference::FEATURE_UNITS,
             feat_view.shape()[1]
         )));
     }

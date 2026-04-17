@@ -207,7 +207,10 @@ pub fn parameterize_structure(
                         if options.missing_mode == MissingResidueMode::Fail {
                             let alts = find_template_alternatives(&res_info.res_name, ff);
                             let msg = if alts.is_empty() {
-                                format!("\"{}\". No obvious alternatives found in force field.", res_info.res_name)
+                                format!(
+                                    "\"{}\". No obvious alternatives found in force field.",
+                                    res_info.res_name
+                                )
                             } else {
                                 format!("\"{}\". Ambiguous protonation state or naming detected. Supported alternatives in force field: {}. Please specify protonation state or rename prior to parameterization.", res_info.res_name, alts.join(", "))
                             };
@@ -264,15 +267,14 @@ pub fn parameterize_structure(
             let atom_name = &processed.raw_atoms.atom_names[atom_idx];
 
             // Find matching template atom (with PDB naming alias fallback)
-            let template_atom_opt = template_atoms.get(atom_name.as_str())
-                .or_else(|| {
-                    // PDBFixer names N-terminal H as "H", but AMBER templates use "H1"
-                    match atom_name.as_str() {
-                        "H" => template_atoms.get("H1"),
-                        "H1" => template_atoms.get("H"),
-                        _ => None,
-                    }
-                });
+            let template_atom_opt = template_atoms.get(atom_name.as_str()).or_else(|| {
+                // PDBFixer names N-terminal H as "H", but AMBER templates use "H1"
+                match atom_name.as_str() {
+                    "H" => template_atoms.get("H1"),
+                    "H1" => template_atoms.get("H"),
+                    _ => None,
+                }
+            });
 
             if let Some(template_atom) = template_atom_opt {
                 // Assign charge from template
@@ -302,18 +304,29 @@ pub fn parameterize_structure(
                 if !nb_found {
                     log::warn!(
                         "No nonbonded parameters for atom {} (type: {}, class: {}) in res {}.",
-                        atom_name, template_atom.atom_type, atom_class, template_name
+                        atom_name,
+                        template_atom.atom_type,
+                        atom_class,
+                        template_name
                     );
                 }
 
                 // Look up GBSA params if available
                 if has_gbsa {
                     if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
-                        if let Some(ref mut r) = radii { r[atom_idx] = gbsa.radius; }
-                        if let Some(ref mut s) = scales { s[atom_idx] = gbsa.scale; }
+                        if let Some(ref mut r) = radii {
+                            r[atom_idx] = gbsa.radius;
+                        }
+                        if let Some(ref mut s) = scales {
+                            s[atom_idx] = gbsa.scale;
+                        }
                     } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
-                        if let Some(ref mut r) = radii { r[atom_idx] = gbsa.radius; }
-                        if let Some(ref mut s) = scales { s[atom_idx] = gbsa.scale; }
+                        if let Some(ref mut r) = radii {
+                            r[atom_idx] = gbsa.radius;
+                        }
+                        if let Some(ref mut s) = scales {
+                            s[atom_idx] = gbsa.scale;
+                        }
                     }
                 }
 
@@ -345,19 +358,29 @@ pub fn parameterize_structure(
             // Build template bond adjacency: heavy_atom_name -> [H_atom_names bonded to it]
             let mut template_h_by_parent: HashMap<&str, Vec<&str>> = HashMap::new();
             for (name1, name2) in &template.bonds {
-                let a1_is_h = template_atoms.get(name1.as_str())
+                let a1_is_h = template_atoms
+                    .get(name1.as_str())
                     .and_then(|ta| ff.get_atom_type(&ta.atom_type))
                     .map(|at| at.element.eq_ignore_ascii_case("H"))
-                    .unwrap_or(name1.starts_with('H') && name1 != "HG" /* edge: HG in CYS is on S */);
-                let a2_is_h = template_atoms.get(name2.as_str())
+                    .unwrap_or(
+                        name1.starts_with('H') && name1 != "HG", /* edge: HG in CYS is on S */
+                    );
+                let a2_is_h = template_atoms
+                    .get(name2.as_str())
                     .and_then(|ta| ff.get_atom_type(&ta.atom_type))
                     .map(|at| at.element.eq_ignore_ascii_case("H"))
                     .unwrap_or(name2.starts_with('H'));
 
                 if a1_is_h && !a2_is_h {
-                    template_h_by_parent.entry(name2.as_str()).or_default().push(name1.as_str());
+                    template_h_by_parent
+                        .entry(name2.as_str())
+                        .or_default()
+                        .push(name1.as_str());
                 } else if a2_is_h && !a1_is_h {
-                    template_h_by_parent.entry(name1.as_str()).or_default().push(name2.as_str());
+                    template_h_by_parent
+                        .entry(name1.as_str())
+                        .or_default()
+                        .push(name2.as_str());
                 }
             }
 
@@ -365,7 +388,8 @@ pub fn parameterize_structure(
             let res_heavy_atoms: Vec<(usize, &str)> = local_to_global
                 .iter()
                 .filter(|(_, &gidx)| {
-                    gidx >= res_info.start_atom && gidx < res_info.start_atom + res_info.num_atoms
+                    gidx >= res_info.start_atom
+                        && gidx < res_info.start_atom + res_info.num_atoms
                         && !processed.raw_atoms.elements[gidx].eq_ignore_ascii_case("H")
                 })
                 .map(|(&tname, &gidx)| (gidx, tname))
@@ -392,7 +416,8 @@ pub fn parameterize_structure(
                 }
 
                 // Sanity: typical C-H bond ~1.09Å, N-H ~1.01Å; reject if > 1.5Å
-                if best_dist > 2.25 { // 1.5^2
+                if best_dist > 2.25 {
+                    // 1.5^2
                     log::warn!(
                         "H fallback: nearest heavy atom too far ({:.2}Å) for {} in res {}, skipping",
                         best_dist.sqrt(), processed.raw_atoms.atom_names[h_idx], template_name
@@ -403,7 +428,8 @@ pub fn parameterize_structure(
 
                 if let Some(parent_name) = best_heavy {
                     // Find an unclaimed template H bonded to this parent
-                    let assigned = if let Some(h_candidates) = template_h_by_parent.get(parent_name) {
+                    let assigned = if let Some(h_candidates) = template_h_by_parent.get(parent_name)
+                    {
                         let mut found = false;
                         for &h_template_name in h_candidates {
                             if !claimed_template_atoms.contains(h_template_name) {
@@ -412,7 +438,9 @@ pub fn parameterize_structure(
                                     charges[h_idx] = template_atom.charge.unwrap_or(0.0);
                                     atom_types[h_idx] = template_atom.atom_type.clone();
 
-                                    let atom_class = if let Some(at) = ff.get_atom_type(&template_atom.atom_type) {
+                                    let atom_class = if let Some(at) =
+                                        ff.get_atom_type(&template_atom.atom_type)
+                                    {
                                         at.class.clone()
                                     } else {
                                         template_atom.atom_type.clone()
@@ -429,17 +457,26 @@ pub fn parameterize_structure(
 
                                     if has_gbsa {
                                         if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
-                                            if let Some(ref mut r) = radii { r[h_idx] = gbsa.radius; }
-                                            if let Some(ref mut s) = scales { s[h_idx] = gbsa.scale; }
+                                            if let Some(ref mut r) = radii {
+                                                r[h_idx] = gbsa.radius;
+                                            }
+                                            if let Some(ref mut s) = scales {
+                                                s[h_idx] = gbsa.scale;
+                                            }
                                         } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
-                                            if let Some(ref mut r) = radii { r[h_idx] = gbsa.radius; }
-                                            if let Some(ref mut s) = scales { s[h_idx] = gbsa.scale; }
+                                            if let Some(ref mut r) = radii {
+                                                r[h_idx] = gbsa.radius;
+                                            }
+                                            if let Some(ref mut s) = scales {
+                                                s[h_idx] = gbsa.scale;
+                                            }
                                         }
                                     }
 
                                     let input_name = processed.raw_atoms.atom_names[h_idx].as_str();
                                     // Use leaked string for stable lifetime in local_to_global
-                                    let leaked: &'static str = Box::leak(input_name.to_string().into_boxed_str());
+                                    let leaked: &'static str =
+                                        Box::leak(input_name.to_string().into_boxed_str());
                                     local_to_global.insert(leaked, h_idx);
                                     local_to_global.insert(h_template_name, h_idx);
                                     claimed_template_atoms.insert(h_template_name);
@@ -448,7 +485,10 @@ pub fn parameterize_structure(
 
                                     log::debug!(
                                         "H fallback: {} → {} (parent {}) in res {}",
-                                        input_name, h_template_name, parent_name, template_name,
+                                        input_name,
+                                        h_template_name,
+                                        parent_name,
+                                        template_name,
                                     );
                                     break;
                                 }
@@ -462,7 +502,9 @@ pub fn parameterize_structure(
                     if !assigned {
                         log::debug!(
                             "H fallback: no unclaimed template H for parent {} (atom {} in res {})",
-                            parent_name, processed.raw_atoms.atom_names[h_idx], template_name
+                            parent_name,
+                            processed.raw_atoms.atom_names[h_idx],
+                            template_name
                         );
                         num_skipped += 1;
                     }
@@ -603,16 +645,21 @@ pub fn parameterize_structure(
         }
 
         // Add 1-4 pair and compute scaling exceptions (only once per unique topology dihedral)
-        let pair_key = if dih.i < dih.l { (dih.i, dih.l) } else { (dih.l, dih.i) };
+        let pair_key = if dih.i < dih.l {
+            (dih.i, dih.l)
+        } else {
+            (dih.l, dih.i)
+        };
         if !seen_14_pairs.contains(&pair_key) {
             seen_14_pairs.insert(pair_key);
             pairs_14.push([dih.i, dih.l]);
-            
+
             // Use force field defined scaling as primary defaults
             let (lj14scale, coulomb14scale) = (ff.lj14scale, ff.coulomb14scale);
 
             // Check for specific exception override
-            let override_params = exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
+            let override_params =
+                exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
 
             let (charge_prod, sigma, epsilon) = if let Some(exc) = override_params {
                 (exc.charge_prod, exc.sigma, exc.epsilon)
@@ -622,7 +669,7 @@ pub fn parameterize_structure(
                 let epsilon = (epsilons[dih.i] * epsilons[dih.l]).sqrt() * lj14scale;
                 (charge_prod, sigma, epsilon)
             };
-            
+
             exception_14_params.push([charge_prod, sigma, epsilon]);
         }
     }
@@ -630,10 +677,14 @@ pub fn parameterize_structure(
     // Assign Improper Params
     for imp in &improper_topology {
         let matches = lookup_improper(
-            &atom_classes[imp.i], &atom_types[imp.i],
-            &atom_classes[imp.j], &atom_types[imp.j],
-            &atom_classes[imp.k], &atom_types[imp.k],
-            &atom_classes[imp.l], &atom_types[imp.l],
+            &atom_classes[imp.i],
+            &atom_types[imp.i],
+            &atom_classes[imp.j],
+            &atom_types[imp.j],
+            &atom_classes[imp.k],
+            &atom_types[imp.k],
+            &atom_classes[imp.l],
+            &atom_types[imp.l],
             ff,
         );
         for params in matches {
@@ -949,17 +1000,21 @@ fn lookup_proper_all<'a>(
 }
 
 fn lookup_improper<'a>(
-    c1: &str, t1: &str,
-    c_center: &str, t_center: &str,
-    c3: &str, t3: &str,
-    c4: &str, t4: &str,
+    c1: &str,
+    t1: &str,
+    c_center: &str,
+    t_center: &str,
+    c3: &str,
+    t3: &str,
+    c4: &str,
+    t4: &str,
     ff: &'a ForceField,
 ) -> Vec<&'a ImproperTorsionParam> {
     // Matches if atoms match (any permutation? No, typically central is fixed)
     // Amber XML convention: central atom is usually indexed in a specific spot.
     // In our Topology::generate_improper_dihedrals, j is central.
     // In Amber ff19SB XML (OpenMM style): central atom is class3.
-    
+
     let mut matches_vec = Vec::new();
     for t in &ff.improper_torsions {
         // 1. Central atom must match t.class3
@@ -970,7 +1025,7 @@ fn lookup_improper<'a>(
         // 2. The other 3 atoms (c1, c3, c4) must match t.class1, t.class2, t.class4 in ANY order.
         let def_others = vec![&t.class1, &t.class2, &t.class4];
         let target_others = vec![(c1, t1), (c3, t3), (c4, t4)];
-        
+
         // Simple greedy match for the 3 others
         let mut matched_count = 0;
         let mut def_used = [false; 3];
@@ -985,7 +1040,7 @@ fn lookup_improper<'a>(
         }
 
         if matched_count == 3 {
-             matches_vec.push(t);
+            matches_vec.push(t);
         }
     }
     matches_vec

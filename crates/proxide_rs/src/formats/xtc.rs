@@ -74,7 +74,11 @@ impl XtcWriter {
     }
 
     /// Write a single frame to the XTC file
-    pub fn write_frame(&mut self, _time: f32, _coords: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn write_frame(
+        &mut self,
+        _time: f32,
+        _coords: &[f32],
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // TODO: Implement frame compression and XDR writing
         Err("XTC writing is not yet implemented.".into())
     }

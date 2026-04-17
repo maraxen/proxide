@@ -95,8 +95,7 @@ impl FullFormatter {
     }
 }
 
-impl FormattedFull {
-}
+impl FormattedFull {}
 
 #[cfg(test)]
 mod tests {

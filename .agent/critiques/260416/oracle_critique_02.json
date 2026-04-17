@@ -1,0 +1,50 @@
+{
+  "verdict": "REVISE",
+  "confidence": "high",
+  "strategic_assessment": "The plan is substantially stronger than its predecessors — it correctly identifies 5 critical blockers (B1-B5) and 8 warnings not present in either prior plan, and grounds every concern in specific file evidence. The phasing is logical and the security analysis is correct. However, three issues require revision before execution: (1) Phase 0 orders GIL release (B5) as a fix, but the plan's own Phase 3 acknowledges this requires a full parse_structure restructure — the Phase 0 GIL fix is therefore incomplete as written, creating a false sense of closure; (2) The plan claims Arc<AtomicSystem> eliminates 'gratuitous clones' but the current PyAtomicSystem::new() takes Vec<f32> args from Python — wrapping with Arc does nothing to reduce the already-completed copy at construction; (3) The plan does not address the stale _oxidize.abi3.so artifact in src/proxide/ — if this file is loaded at runtime instead of the freshly-built _proxider.so, ALL of Phase 0's fixes are invisible to the running system.",
+  "concerns": [
+    {
+      "area": "Phase 0 GIL Release",
+      "severity": "critical",
+      "issue": "Phase 0 (B5) says 'Add GIL release to compute functions' and gives a pattern, but parse_structure in py_parsers.rs (1079 lines) calls Python::with_gil internally at multiple points mid-function (creating PyArray1, PyDict, reshaping arrays). You cannot simply wrap the outer function in allow_threads — it will panic when inner code tries to acquire the GIL while it is released. The plan does not resolve this structural contradiction; it defers the real fix to Phase 3 while claiming completion in Phase 0.",
+      "recommendation": "Reframe Phase 0 B5 as a narrower, safe fix: release GIL only around the file I/O and parse steps, not the full function. Specifically: (a) extract the Rust-only parse step into a separate fn that returns a non-Python type, (b) call py.allow_threads(|| parse_step(...)), (c) then re-acquire GIL for all PyArray/PyDict construction. The Phase 3 'full restructure' description is correct — move B5 to explicitly read: 'Partial GIL release (file I/O only)' in Phase 0, and 'Full GIL restructure' in Phase 3. Update verification matrix to test only I/O-bound path threading in Phase 0."
+    },
+    {
+      "area": "Arc<AtomicSystem> Zero-Copy Claim",
+      "severity": "warning",
+      "issue": "The plan says Arc<AtomicSystem> 'eliminates gratuitous clones,' but PyAtomicSystem::new() takes Vec<f32>/Vec<String> args from Python. The copy already happened before the Arc is constructed. Arc only helps with inter-thread sharing of the Rust-side object, not with the Python→Rust data copy at construction. The phrase 'without redundant copies' in Phase 1.1 is misleading and may cause developers to think they've solved the FFI copy problem when they have not.",
+      "recommendation": "Rewrite Phase 1.1 to accurately describe what Arc achieves: 'Arc<AtomicSystem> eliminates Rust-side cloning when PyAtomicSystem is returned from multiple parse calls or shared across Python threads. It does NOT eliminate the initial Python→Rust copy at construction. The copy-at-construction remains until Phase 3 zero-copy (ndarray::Array1 storage internals).' Add a note: to benchmark whether this matters, measure RSS delta before/after a large structure parse."
+    },
+    {
+      "area": "Stale _oxidize.abi3.so Artifact",
+      "severity": "critical",
+      "issue": "W7 is listed as a warning but is never addressed in any phase action. src/proxide/_oxidize.abi3.so is a compiled Rust extension sitting in the Python package source tree. If this file exists and is importable, Python's import system may load it instead of the freshly-built _proxider.so (or vice versa — the names differ, so both may coexist and one shadows the other depending on import name). The plan's Phase 0 module name fixes (B2, W8) change the internal module name from _proxide_rs to _proxider — but if _oxidize.abi3.so continues to exist and is auto-imported anywhere, the fix will appear to work in testing but fail in the actual installed package.",
+      "recommendation": "Add to Phase 0 as action 0.6: Audit and remove or relocate _oxidize.abi3.so from src/proxide/. If this was a legacy artifact from a pre-workspace build of a different crate (oxidize), it must be deleted and .gitignore'd. Add to verification: confirm `ls src/proxide/*.so` shows only the expected _proxider.abi3.so after maturin develop, and that `import proxide` does not import any _oxidize symbol."
+    },
+    {
+      "area": "fetch functions PyO3 binding path",
+      "severity": "warning",
+      "issue": "The plan fixes fetch_rcsb etc. in Rust (io/fetching.rs) but the PyO3 binding is in proxide_py/src/lib.rs via direct wrap_pyfunction! on proxide_rs::io::fetching::fetch_rcsb. The #[pyfunction] attribute must be present on the Rust function itself or it cannot be wrapped. Currently fetching.rs has NO #[pyfunction] attributes (confirmed by grep). The wrap_pyfunction! in lib.rs works because the feature = 'python' flag adds pyo3 to proxide_rs. This is architecturally fragile: the 'pure Rust core' (proxide_rs) is not actually pure — it has conditional PyO3 dependence. The plan should acknowledge and address this.",
+      "recommendation": "In Phase 1 (Architecture Hardening), add action 1.5: Move fetch_rcsb, fetch_afdb, fetch_md_cath PyO3 wrappers from proxide_rs/src/io/fetching.rs into proxide_py/src/ (e.g., py_fetch.rs). This keeps proxide_rs truly pyo3-free and makes the architecture match the stated goal of a 'pure Rust core.' The validation function stays in proxide_rs as a pub fn; the PyO3 wrappers live in proxide_py and call validate_id() + the Rust fn."
+    },
+    {
+      "area": "CI — HDF5 manylinux cross-compilation",
+      "severity": "warning",
+      "issue": "Phase 1.3 proposes `before-script-linux: yum install -y hdf5-devel` for manylinux. However, the hdf5-metno crate requires hdf5 >= 1.10. Standard manylinux2014 (CentOS7) ships hdf5 1.8.x via yum. This will fail unless a custom HDF5 build or newer manylinux image is used. The plan does not account for this version mismatch.",
+      "recommendation": "Use manylinux: 2_28 (RHEL8-based) instead of manylinux2014 for the HDF5-enabled builds, or pre-build HDF5 from source in the before-script. Alternatively, split the manylinux build into HDF5 and non-HDF5 flavors, building with --no-default-features --features xtc for the broadest-compatible wheel and a separate HDF5 wheel for users who need mdcath."
+    },
+    {
+      "area": "Testing — Phase 0 Verification Gap",
+      "severity": "warning",
+      "issue": "Phase 0's verification matrix says `python -c \"import proxide; print(proxide._proxider.__doc__)\"` but does not include tests for the security fix (path traversal). The fetch functions are exposed via PyO3, so the security fix must be tested from Python. There is currently no test for `proxide._proxider.fetch_rcsb('../../etc/passwd', '.', 'pdb')` returning an error rather than attempting the traversal.",
+      "recommendation": "Add to tests/io/ (or tests/core/): test_fetch_security.py with tests: (a) fetch with traversal ID returns ValueError, (b) fetch with too-short mdcath ID returns ValueError not a panic, (c) fetch with valid synthetic ID (mock the HTTP call or use vcr) succeeds. This becomes a required smoke test for Phase 0 completion."
+    },
+    {
+      "area": "Windows CLI usability",
+      "severity": "suggestion",
+      "issue": "Windows path handling in the CLI (proxide fetch --dir C:/data) uses str not pathlib.Path. On Windows, path separators differ and the Rust fetch functions use std::path::Path which handles this, but the Python CLI layer should use pathlib.Path throughout for cross-platform correctness.",
+      "recommendation": "In Phase 2.1, specify: all CLI --dir and --output arguments use typer.Argument(parser=pathlib.Path) or annotate as pathlib.Path. The Python layer converts to str before calling Rust. Small change, large cross-platform benefit."
+    }
+  ],
+  "approved_for_execution": false
+}

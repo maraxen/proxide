@@ -1,5 +1,5 @@
-use pyo3::prelude::*;
 use proxide_rs::spec::{CoordFormat, ErrorMode, HydrogenSource, MissingResidueMode, OutputSpec};
+use pyo3::prelude::*;
 
 #[pyclass(name = "CoordFormat", eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,77 +221,137 @@ impl PyOutputSpec {
 
     // --- Getters and Setters ---
     #[getter]
-    fn get_coord_format(&self) -> PyCoordFormat { self.inner.coord_format.into() }
+    fn get_coord_format(&self) -> PyCoordFormat {
+        self.inner.coord_format.into()
+    }
     #[setter]
-    fn set_coord_format(&mut self, value: PyCoordFormat) { self.inner.coord_format = value.into(); }
+    fn set_coord_format(&mut self, value: PyCoordFormat) {
+        self.inner.coord_format = value.into();
+    }
 
     #[getter]
-    fn get_enable_caching(&self) -> bool { self.inner.enable_caching }
+    fn get_enable_caching(&self) -> bool {
+        self.inner.enable_caching
+    }
     #[setter]
-    fn set_enable_caching(&mut self, val: bool) { self.inner.enable_caching = val; }
+    fn set_enable_caching(&mut self, val: bool) {
+        self.inner.enable_caching = val;
+    }
 
     #[getter]
-    fn get_output_format_target(&self) -> String { self.inner.output_format_target.clone() }
+    fn get_output_format_target(&self) -> String {
+        self.inner.output_format_target.clone()
+    }
     #[setter]
-    fn set_output_format_target(&mut self, val: String) { self.inner.output_format_target = val; }
+    fn set_output_format_target(&mut self, val: String) {
+        self.inner.output_format_target = val;
+    }
 
     #[getter]
-    fn get_remove_solvent(&self) -> bool { self.inner.remove_solvent }
+    fn get_remove_solvent(&self) -> bool {
+        self.inner.remove_solvent
+    }
     #[setter]
-    fn set_remove_solvent(&mut self, val: bool) { self.inner.remove_solvent = val; }
+    fn set_remove_solvent(&mut self, val: bool) {
+        self.inner.remove_solvent = val;
+    }
 
     #[getter]
-    fn get_include_hetatm(&self) -> bool { self.inner.include_hetatm }
+    fn get_include_hetatm(&self) -> bool {
+        self.inner.include_hetatm
+    }
     #[setter]
-    fn set_include_hetatm(&mut self, val: bool) { self.inner.include_hetatm = val; }
+    fn set_include_hetatm(&mut self, val: bool) {
+        self.inner.include_hetatm = val;
+    }
 
     #[getter]
-    fn get_compute_rbf(&self) -> bool { self.inner.compute_rbf }
+    fn get_compute_rbf(&self) -> bool {
+        self.inner.compute_rbf
+    }
     #[setter]
-    fn set_compute_rbf(&mut self, val: bool) { self.inner.compute_rbf = val; }
+    fn set_compute_rbf(&mut self, val: bool) {
+        self.inner.compute_rbf = val;
+    }
 
     #[getter]
-    fn get_rbf_num_neighbors(&self) -> usize { self.inner.rbf_num_neighbors }
+    fn get_rbf_num_neighbors(&self) -> usize {
+        self.inner.rbf_num_neighbors
+    }
     #[setter]
-    fn set_rbf_num_neighbors(&mut self, val: usize) { self.inner.rbf_num_neighbors = val; }
+    fn set_rbf_num_neighbors(&mut self, val: usize) {
+        self.inner.rbf_num_neighbors = val;
+    }
 
     #[getter]
-    fn get_compute_electrostatics(&self) -> bool { self.inner.compute_electrostatics }
+    fn get_compute_electrostatics(&self) -> bool {
+        self.inner.compute_electrostatics
+    }
     #[setter]
-    fn set_compute_electrostatics(&mut self, val: bool) { self.inner.compute_electrostatics = val; }
+    fn set_compute_electrostatics(&mut self, val: bool) {
+        self.inner.compute_electrostatics = val;
+    }
 
     #[getter]
-    fn get_compute_vdw(&self) -> bool { self.inner.compute_vdw }
+    fn get_compute_vdw(&self) -> bool {
+        self.inner.compute_vdw
+    }
     #[setter]
-    fn set_compute_vdw(&mut self, val: bool) { self.inner.compute_vdw = val; }
+    fn set_compute_vdw(&mut self, val: bool) {
+        self.inner.compute_vdw = val;
+    }
 
     #[getter]
-    fn get_parameterize_md(&self) -> bool { self.inner.parameterize_md }
+    fn get_parameterize_md(&self) -> bool {
+        self.inner.parameterize_md
+    }
     #[setter]
-    fn set_parameterize_md(&mut self, val: bool) { self.inner.parameterize_md = val; }
+    fn set_parameterize_md(&mut self, val: bool) {
+        self.inner.parameterize_md = val;
+    }
 
     #[getter]
-    fn get_ph(&self) -> Option<f32> { self.inner.ph }
+    fn get_ph(&self) -> Option<f32> {
+        self.inner.ph
+    }
     #[setter]
-    fn set_ph(&mut self, val: Option<f32>) { self.inner.ph = val; }
+    fn set_ph(&mut self, val: Option<f32>) {
+        self.inner.ph = val;
+    }
 
     #[getter]
-    fn get_infer_bonds(&self) -> bool { self.inner.infer_bonds }
+    fn get_infer_bonds(&self) -> bool {
+        self.inner.infer_bonds
+    }
     #[setter]
-    fn set_infer_bonds(&mut self, val: bool) { self.inner.infer_bonds = val; }
+    fn set_infer_bonds(&mut self, val: bool) {
+        self.inner.infer_bonds = val;
+    }
 
     #[getter]
-    fn get_add_hydrogens(&self) -> bool { self.inner.add_hydrogens }
+    fn get_add_hydrogens(&self) -> bool {
+        self.inner.add_hydrogens
+    }
     #[setter]
-    fn set_add_hydrogens(&mut self, val: bool) { self.inner.add_hydrogens = val; }
+    fn set_add_hydrogens(&mut self, val: bool) {
+        self.inner.add_hydrogens = val;
+    }
 
     #[getter]
-    fn get_relax_hydrogens(&self) -> bool { self.inner.relax_hydrogens }
+    fn get_relax_hydrogens(&self) -> bool {
+        self.inner.relax_hydrogens
+    }
     #[setter]
-    fn set_relax_hydrogens(&mut self, val: bool) { self.inner.relax_hydrogens = val; }
+    fn set_relax_hydrogens(&mut self, val: bool) {
+        self.inner.relax_hydrogens = val;
+    }
 
     #[getter]
-    fn get_auto_terminal_caps(&self) -> bool { self.inner.auto_terminal_caps }
+    fn get_auto_terminal_caps(&self) -> bool {
+        self.inner.auto_terminal_caps
+    }
     #[setter]
-    fn set_auto_terminal_caps(&mut self, val: bool) { self.inner.auto_terminal_caps = val; }
+    fn set_auto_terminal_caps(&mut self, val: bool) {
+        self.inner.auto_terminal_caps = val;
+    }
 }
