@@ -34,13 +34,11 @@ jobs:
           sccache: 'true'
           manylinux: auto
           before-script-linux: |
-            # Only need build tools, not system HDF5 (it's compiled statically)
-            # For cross-compile to aarch64, ensure we have ARM toolchain
-            if [ "$TARGET" = "aarch64" ]; then
-              yum install -y binutils-devel gcc-aarch64-linux-gnu || \
-              apt-get install -y binutils-dev g++-aarch64-linux-gnu || \
-              true
-            fi
+            # ARM toolchain for aarch64 cross-compile (no-op on x86_64)
+            # HDF5 is compiled statically, so no system lib needed
+            yum install -y binutils-devel gcc-aarch64-linux-gnu 2>/dev/null || \
+            apt-get update && apt-get install -y binutils-dev g++-aarch64-linux-gnu 2>/dev/null || \
+            true
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
