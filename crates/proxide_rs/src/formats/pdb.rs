@@ -1,13 +1,7 @@
 //! PDB file format parser
 //!  
 //! High-performance parser for Protein Data Bank (PDB) files.
-//! Returns raw atom data matching biotite's AtomArray format.
-//!
-//! # Examples
-//! ```
-//! use oxidize::formats::pdb::parse_pdb_file;
-//! let data = parse_pdb_file("tests/data/1abc.pdb").unwrap();
-//! ```
+//! Returns raw atom data matching the proxide format.
 
 use crate::structure::{AtomRecord, RawAtomData};
 use std::fs::File;

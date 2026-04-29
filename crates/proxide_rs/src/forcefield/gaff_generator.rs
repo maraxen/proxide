@@ -1,23 +1,8 @@
 //! GAFF Template Generator
 //!
-//! Rust implementation of the GAFFTemplateGenerator from openmmforcefields.
+//! Rust implementation of generating GAFF parameters.
 //! Generates residue templates and force field parameters for small molecules
 //! using GAFF (General Amber Force Field) atom typing.
-//!
-//! This module provides:
-//! - GAFF atom type assignment based on element, hybridization, and connectivity
-//! - Residue template generation for small molecules
-//! - Parameter lookup from pre-loaded GAFF force field XML files
-//!
-//! # Usage
-//!
-//! ```rust,ignore
-//! use priox_rs::forcefield::gaff_generator::GaffTemplateGenerator;
-//!
-//! // Create generator with GAFF 2.11 force field
-//! let generator = GaffTemplateGenerator::new("gaff-2.11")?;
-//!
-//! // Generate template for molecule from topology
 //! let template = generator.generate_template(&molecule_name, &elements, &topology)?;
 //! ```
 

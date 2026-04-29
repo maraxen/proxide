@@ -1093,7 +1093,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_py"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.3"
 dependencies = [
  "log",
  "nalgebra",
@@ -1105,7 +1105,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_rs"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.3"
 dependencies = [
  "bytemuck",
  "flate2",
