@@ -1,3 +1,6 @@
+.codex/
+eph/
+
 # Python
 __pycache__/
 *.pyc

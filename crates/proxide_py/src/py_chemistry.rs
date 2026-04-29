@@ -195,9 +195,25 @@ pub fn parameterize_molecule(
     Ok(dict.into_py(py))
 }
 
-/// Assign partial charges using the native Rust Expaloma engine.
+/// Assign partial charges using the native Rust Espaloma engine.
 ///
 /// This implementation is GIL-free and uses nalgebra for inference.
+///
+/// ## Citation
+/// Wang Y, Pulido I, Takaba K, Kaminow B, Scheen J, Wang L, Chodera JD.
+/// "EspalomaCharge: Machine Learning-Enabled Ultrafast Partial Charge Assignment"
+/// J. Phys. Chem. A 2024, 128, 20, 4160-4167. DOI: 10.1021/acs.jpca.4c01287
+///
+/// ## Example
+/// ```python
+/// from proxide._proxider import assign_espaloma_charges
+/// import numpy as np
+///
+/// features = np.random.randn(100, 116).astype(np.float32)
+/// senders = np.array([0, 1, 2], dtype=np.uint32)
+/// receivers = np.array([1, 2, 3], dtype=np.uint32)
+/// charges = assign_espaloma_charges(features, senders, receivers, [0, 0, 0], 1, [0.0])
+/// ```
 #[pyfunction]
 #[pyo3(signature = (features, senders, receivers, segment_ids, num_graphs, total_charges))]
 pub fn assign_espaloma_charges(
