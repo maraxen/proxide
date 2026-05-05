@@ -57,3 +57,4 @@ target/
 
 # Compiled extensions (maturin build artifacts)
 *.abi3.so
+cluster-config.toml

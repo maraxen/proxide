@@ -2511,7 +2511,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.17.1.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/da/55/9987152bd99746b6d5d899a3e920f72f565f5adb4835dc44899382482e2c/nvidia_cudnn_cu12-9.17.1.4-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:d18d61bdd596fca0dbe459c129f6eb7a24ed2e6de1d7988b0a37ac63184ee05d", size = 646648394, upload-time = "2025-12-22T16:42:08.8Z" },
@@ -2547,7 +2547,7 @@ name = "nvidia-cufft-cu12"
 version = "11.4.1.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9b/2b/76445b0af890da61b501fde30650a1a4bd910607261b209cccb5235d3daa/nvidia_cufft_cu12-11.4.1.4-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:1a28c9b12260a1aa7a8fd12f5ebd82d027963d635ba82ff39a1acfa7c4c0fbcf", size = 200822453, upload-time = "2025-06-05T20:05:27.889Z" },
@@ -2591,9 +2591,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.7.5.82"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12" },
-    { name = "nvidia-cusparse-cu12" },
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform != 'win32'" },
+    { name = "nvidia-cusparse-cu12", marker = "sys_platform != 'win32'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/03/99/686ff9bf3a82a531c62b1a5c614476e8dfa24a9d89067aeedf3592ee4538/nvidia_cusolver_cu12-11.7.5.82-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:62efa83e4ace59a4c734d052bb72158e888aa7b770e1a5f601682f16fe5b4fd2", size = 337869834, upload-time = "2025-06-05T20:06:53.125Z" },
@@ -2617,7 +2617,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.10.65"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5e/6f/8710fbd17cdd1d0fc3fea7d36d5b65ce1933611c31e1861da330206b253a/nvidia_cusparse_cu12-12.5.10.65-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:221c73e7482dd93eda44e65ce567c031c07e2f93f6fa0ecd3ba876a195023e83", size = 366359408, upload-time = "2025-06-05T20:07:42.501Z" },
@@ -2674,7 +2674,7 @@ name = "nvidia-nvshmem-cu12"
 version = "3.5.19"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cuda-cccl-cu12" },
+    { name = "nvidia-cuda-cccl-cu12", marker = "sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/1b/06a698b584b67670e7f108381ecdf680d3a497c0567f5183644034f4212e/nvidia_nvshmem_cu12-3.5.19-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:333d91f68038539f20a591ef4d5cee25a85d440537b31809c4e42ae1700fccce", size = 152515031, upload-time = "2026-01-02T04:24:25.119Z" },
@@ -2724,6 +2724,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/14/376b11b79b9b782167728b1fec81a488747453dc878cc553f186696c16cb/openmm-8.4.0.post2-cp314-cp314-manylinux_2_34_x86_64.whl", hash = "sha256:e175a64050d17b571fae66f095abfa9ebf7224ce7bb502e714450925adaa1e98", size = 14253312, upload-time = "2025-11-24T21:42:50.902Z" },
     { url = "https://files.pythonhosted.org/packages/6d/9b/8b53a1d3ba9975265d37630a4e5141cc0d0934231bb9654ac09940fe26e2/openmm-8.4.0.post2-cp314-cp314-win_amd64.whl", hash = "sha256:25872ca6f1a9140df918af71f879aad457a2a2a45c752265c3a753e25fe028df", size = 13097581, upload-time = "2025-11-24T21:43:00.411Z" },
 ]
+
+[[package]]
+name = "openmmforcefields"
+version = "0.15.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/84/c6/92730898236872d856066e180283291786e2dc4649491141b5b9efe0fa4c/openmmforcefields-0.15.1.tar.gz", hash = "sha256:c8c5e806ed89c81691e742fb86f768f4c3c06f0173f7343e8420b78ee8645595", size = 5304142, upload-time = "2026-02-26T10:12:26.75Z" }
 
 [[package]]
 name = "opt-einsum"
@@ -3173,9 +3179,14 @@ trajectories = [
 [package.dev-dependencies]
 dev = [
     { name = "chex" },
+    { name = "expaloma" },
+    { name = "openmm" },
+    { name = "openmmforcefields" },
     { name = "patchelf", marker = "sys_platform == 'linux'" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "ty" },
 ]
 
 [package.metadata]
@@ -3229,9 +3240,14 @@ provides-extras = ["cuda", "tpu", "cpu", "ml", "molecules", "espaloma", "espalom
 [package.metadata.requires-dev]
 dev = [
     { name = "chex" },
+    { name = "expaloma", specifier = ">=0.1.0" },
+    { name = "openmm", specifier = ">=8.4.0.post2" },
+    { name = "openmmforcefields", specifier = ">=0.15.1" },
     { name = "patchelf", marker = "sys_platform == 'linux'", specifier = ">=0.17.2.4" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "ruff", specifier = ">=0.14.8" },
+    { name = "ty", specifier = ">=0.0.1a31" },
 ]
 
 [[package]]

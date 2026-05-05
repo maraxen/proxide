@@ -144,6 +144,11 @@ dev = [
     "pytest-cov>=5.0.0",
     "chex",
     "patchelf>=0.17.2.4; sys_platform == 'linux'",
+    "expaloma>=0.1.0",
+    "openmm>=8.4.0.post2",
+    "openmmforcefields>=0.15.1",
+    "ruff>=0.14.8",
+    "ty>=0.0.1a31",
 ]
 
 [tool.uv]
