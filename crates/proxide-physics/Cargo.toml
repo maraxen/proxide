@@ -11,7 +11,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 proxide-core = { workspace = true }
-proxide-algo = { workspace = true }
+proxide-geometry = { workspace = true }
 proxide-gaff = { workspace = true }
 quick-xml.workspace = true
 log.workspace = true

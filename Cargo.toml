@@ -5,7 +5,7 @@ members = [
     "crates/proxide_py",
     "crates/proxide_fixer",
     "crates/proxide-core",
-    "crates/proxide-algo",
+    "crates/proxide-geometry",
     "crates/proxide-physics",
     "crates/proxide-io",
     "crates/proxide-gaff",
@@ -19,7 +19,7 @@ license = "MIT"
 
 [workspace.dependencies]
 proxide-core = { path = "crates/proxide-core" }
-proxide-algo = { path = "crates/proxide-algo" }
+proxide-geometry = { path = "crates/proxide-geometry" }
 proxide-physics = { path = "crates/proxide-physics" }
 proxide-io = { path = "crates/proxide-io" }
 proxide-gaff = { path = "crates/proxide-gaff" }

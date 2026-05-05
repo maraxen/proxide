@@ -1092,19 +1092,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "proxide-algo"
-version = "0.1.0-alpha.3"
-dependencies = [
- "bytemuck",
- "log",
- "nalgebra",
- "proxide-core",
- "rayon",
- "serde",
- "thiserror",
-]
-
-[[package]]
 name = "proxide-core"
 version = "0.1.0-alpha.3"
 dependencies = [
@@ -1126,8 +1113,21 @@ dependencies = [
  "lazy_static",
  "log",
  "once_cell",
- "proxide-algo",
  "proxide-core",
+ "proxide-geometry",
+ "thiserror",
+]
+
+[[package]]
+name = "proxide-geometry"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "bytemuck",
+ "log",
+ "nalgebra",
+ "proxide-core",
+ "rayon",
+ "serde",
  "thiserror",
 ]
 
@@ -1142,8 +1142,8 @@ dependencies = [
  "memmap2",
  "molly",
  "nom",
- "proxide-algo",
  "proxide-core",
+ "proxide-geometry",
  "proxide-physics",
  "quick-xml",
  "rayon",
@@ -1156,9 +1156,9 @@ name = "proxide-physics"
 version = "0.1.0-alpha.3"
 dependencies = [
  "log",
- "proxide-algo",
  "proxide-core",
  "proxide-gaff",
+ "proxide-geometry",
  "quick-xml",
  "thiserror",
 ]
@@ -1182,8 +1182,8 @@ dependencies = [
  "log",
  "nalgebra",
  "numpy",
- "proxide-algo",
  "proxide-gaff",
+ "proxide-geometry",
  "proxide_rs",
  "pyo3",
  "pyo3-log",
@@ -1203,9 +1203,9 @@ dependencies = [
  "nalgebra",
  "nom",
  "once_cell",
- "proxide-algo",
  "proxide-core",
  "proxide-gaff",
+ "proxide-geometry",
  "proxide-io",
  "proxide-physics",
  "quick-xml",

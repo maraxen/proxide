@@ -6,7 +6,7 @@
 //! Reference: hydride library (biotite-dev/hydride)
 
 use proxide_core::chem::bonds::get_bond_order;
-use proxide_algo::geometry::fragment_library::{calculate_hydrogen_positions, FragmentLibrary};
+use proxide_geometry::geometry::fragment_library::{calculate_hydrogen_positions, FragmentLibrary};
 use crate::geometry::relax::{relax_hydrogens, RelaxOptions};
 use crate::processing::residues::ProcessedStructure;
 use proxide_core::structure::AtomRecord;

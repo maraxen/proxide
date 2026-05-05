@@ -23,7 +23,7 @@ pub fn assign_gaff_atom_types(
     let coords = extract_coords(py, &coordinates)?;
 
     // Default tolerance for bond inference
-    let topology = proxide_algo::geometry::topology::generate_topology(&coords, &elements, 1.3);
+    let topology = proxide_geometry::geometry::topology::generate_topology(&coords, &elements, 1.3);
 
     let gaff = proxide_gaff::gaff::GaffParameters::new();
     let types = proxide_gaff::gaff::assign_gaff_types(&elements, &topology, &gaff);

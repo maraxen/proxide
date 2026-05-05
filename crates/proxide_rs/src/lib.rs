@@ -9,7 +9,7 @@ pub use proxide_core::spec;
 pub use proxide_core::structure;
 
 // Re-export algorithm and physics modules
-pub use proxide_algo::geometry as algo_geometry;
+pub use proxide_geometry::geometry as algo_geometry;
 pub use proxide_physics::physics;
 pub use proxide_io::formats;
 pub use proxide_io::formatters;
