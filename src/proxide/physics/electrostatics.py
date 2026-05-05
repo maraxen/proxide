@@ -10,7 +10,6 @@ import jax
 import jax.numpy as jnp
 from jax_md import space
 
-from proxide.physics.constants import COULOMB_CONSTANT, MIN_DISTANCE
 from proxide.core.types import (
   Array,
   ArrayLike,
@@ -19,6 +18,7 @@ from proxide.core.types import (
   Charges,
   Coordinates,
 )
+from proxide.physics.constants import COULOMB_CONSTANT, MIN_DISTANCE
 
 
 def compute_pairwise_displacements(

@@ -1,26 +1,34 @@
 """Quick diagnostic: decompose energy of 6XHB at initial crystal structure."""
 
 import os
+
 os.environ["JAX_PLATFORMS"] = "cuda,cpu"
 
 import dataclasses
+
 import jax
 import jax.numpy as jnp
-from jax_md import space
-
-from prolix.batched_energy import (
-    single_padded_energy, single_padded_force,
-    _bond_energy_masked, _angle_energy_masked, _dihedral_energy_masked,
-    _lj_energy_masked, _coulomb_energy_masked, _build_dense_exclusion_scales,
-    _cmap_energy_masked,
-)
-from prolix.physics.generalized_born import compute_born_radii, compute_gb_energy, compute_ace_nonpolar_energy
-from prolix.padding import PaddedSystem, select_bucket, ATOM_BUCKETS, pad_protein
-
-from proxide.io.parsing.backend import parse_structure
-from proxide import OutputSpec, CoordFormat
-
 import numpy as np
+from jax_md import space
+from prolix.batched_energy import (
+    _angle_energy_masked,
+    _bond_energy_masked,
+    _build_dense_exclusion_scales,
+    _cmap_energy_masked,
+    _coulomb_energy_masked,
+    _dihedral_energy_masked,
+    _lj_energy_masked,
+    single_padded_energy,
+    single_padded_force,
+)
+from prolix.padding import ATOM_BUCKETS, pad_protein, select_bucket
+from prolix.physics.generalized_born import (
+    compute_ace_nonpolar_energy,
+    compute_gb_energy,
+)
+
+from proxide import CoordFormat, OutputSpec
+from proxide.io.parsing.backend import parse_structure
 
 # Load and parameterize
 spec = OutputSpec(
@@ -85,7 +93,7 @@ e_gb, born_radii = compute_gb_energy(
 )
 e_np = jnp.sum(compute_ace_nonpolar_energy(padded.radii, born_radii) * padded.atom_mask)
 
-print(f"\n=== Energy Decomposition ===")
+print("\n=== Energy Decomposition ===")
 print(f"  Bonds:      {float(e_bond):>15.2f}")
 print(f"  Angles:     {float(e_angle):>15.2f}")
 print(f"  Dihedrals:  {float(e_dih):>15.2f}")
@@ -95,7 +103,7 @@ print(f"  LJ:         {float(e_lj):>15.2f}")
 print(f"  Coulomb:    {float(e_elec):>15.2f}")
 print(f"  GB:         {float(e_gb):>15.2f}")
 print(f"  ACE np:     {float(e_np):>15.2f}")
-print(f"  --------------------")
+print("  --------------------")
 total = float(e_bond + e_angle + e_dih + e_imp + e_cmap + e_lj + e_elec + e_gb + e_np)
 print(f"  SUM:        {total:>15.2f}")
 print(f"  single_padded_energy: {float(e_total):>15.2f}")
@@ -108,13 +116,13 @@ max_f = jnp.max(f_mag * padded.atom_mask)
 
 # Which atom has max force?
 max_idx = int(jnp.argmax(f_mag * padded.atom_mask))
-print(f"\n=== Force Analysis ===")
+print("\n=== Force Analysis ===")
 print(f"  RMS force:  {float(rms):.4f} kcal/mol/Å")
 print(f"  Max force:  {float(max_f):.4f} kcal/mol/Å  (atom {max_idx})")
 
 # Top 10 highest-force atoms
 sorted_idx = jnp.argsort(-(f_mag * padded.atom_mask))[:10]
-print(f"\n  Top 10 force atoms:")
+print("\n  Top 10 force atoms:")
 for idx in sorted_idx:
     i = int(idx)
     print(f"    atom {i}: |F| = {float(f_mag[i]):.2f}")

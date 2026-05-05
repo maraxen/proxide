@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Optional
 
-import typer
 import numpy as np
+import typer
 from rich.console import Console
 from rich.table import Table
 
@@ -17,7 +16,6 @@ from proxide import (
   fetch_afdb,
   fetch_foldcomp_database,
   fetch_rcsb,
-  load_forcefield,
   parse_structure,
 )
 
@@ -93,23 +91,23 @@ def info(
   try:
     with console.status("[bold blue]Analyzing structure..."):
       protein = parse_structure(path)
-    
+
     table = Table(title=f"Structure Summary: {Path(path).name}")
     table.add_column("Property", style="cyan")
     table.add_column("Value", style="magenta")
-    
+
     # Use internal attributes from Protein container
     n_res = protein.coordinates.shape[0] if hasattr(protein, "coordinates") else 0
-    
+
     table.add_row("Number of Residues", str(n_res))
     table.add_row("Number of Chains", str(len(np.unique(protein.chain_index)) if hasattr(protein, "chain_index") else "N/A"))
     table.add_row("Format", str(getattr(protein, "format", "Unknown")))
-    
+
     if getattr(protein, "source", None):
       table.add_row("Source", protein.source)
-    
+
     console.print(table)
-    
+
   except Exception as e:
     console.print(f"[red]Error reading {path}: {e}[/red]")
     raise typer.Exit(1)
@@ -121,7 +119,7 @@ def convert(
   output: str = typer.Argument(..., help="Output file path"),
   add_hydrogens: bool = typer.Option(False, "--add-hydrogens", "-a", help="Add missing hydrogens"),
   infer_bonds: bool = typer.Option(True, "--infer-bonds", "-i", help="Infer bond connectivity"),
-  force_field: Optional[str] = typer.Option(None, "--force-field", "-f", help="Force field for parameterization"),
+  force_field: str | None = typer.Option(None, "--force-field", "-f", help="Force field for parameterization"),
 ):
   """Convert structure between formats and apply modifications."""
   from proxide.io.parsing.backend import iterload, write_dcd
@@ -130,25 +128,25 @@ def convert(
   try:
     in_path = Path(input)
     out_path = Path(output)
-    
+
     # Detect trajectory formats for streaming
     traj_exts = {".xtc", ".dcd", ".trr"}
     is_traj_in = in_path.suffix.lower() in traj_exts
     is_traj_out = out_path.suffix.lower() in traj_exts
-    
+
     if is_traj_in and is_traj_out:
       with console.status(f"[bold green]Streaming trajectory [cyan]{input}[/cyan] -> [cyan]{output}[/cyan]..."):
         # Initial analysis to get number of atoms
         # For now, we use the first chunk to detect metadata
         stream = iterload(input, chunk_size=100)
-        
+
         writer = None
         total_frames = 0
-        
+
         for chunk in stream:
           coords = chunk["coordinates"]  # (chunk_size, N, 3)
           n_frames_chunk, n_atoms, _ = coords.shape
-          
+
           if writer is None:
             if out_path.suffix.lower() == ".dcd":
               writer = write_dcd(output, n_atoms)
@@ -156,16 +154,16 @@ def convert(
               # Fallback or error if writer not implemented
               console.print(f"[red]Error: Writing to {out_path.suffix} is not yet supported in streaming mode.[/red]")
               raise typer.Exit(1)
-          
+
           # Write frames in chunk
           for i in range(n_frames_chunk):
             writer.write_frame(coords[i].flatten().tolist(), None)
-          
+
           total_frames += n_frames_chunk
-        
+
         if writer:
           writer.finalize()
-          
+
       console.print(f"[bold green]✓[/bold green] Streamed {total_frames} frames from [cyan]{input}[/cyan] to [cyan]{output}[/cyan]")
       return
 
@@ -176,10 +174,10 @@ def convert(
       parameterize_md=bool(force_field),
       force_field=force_field,
     )
-    
+
     with console.status("[bold green]Processing structure..."):
       protein = parse_structure(input, spec)
-    
+
     if out_path.suffix.lower() == ".pdb":
       write_pdb(protein, output)
     elif out_path.suffix.lower() == ".npz":
@@ -189,9 +187,9 @@ def convert(
     else:
       console.print(f"[yellow]Warning: Format {out_path.suffix} not yet supported natively. Saving as NPZ.[/yellow]")
       write_npz(protein, out_path.with_suffix(".npz"))
-      
+
     console.print(f"[bold green]✓[/bold green] Converted [cyan]{input}[/cyan] to [cyan]{output}[/cyan]")
-    
+
   except Exception as e:
     console.print(f"[red]Error during conversion: {e}[/red]")
     raise typer.Exit(1)
@@ -219,26 +217,26 @@ def bench(
   """Benchmark parsing performance on the specified file."""
   try:
     console.print(f"[bold]Benchmarking [cyan]{path}[/cyan] over {iterations} iterations...[/bold]")
-    
+
     times = []
     for _ in range(iterations):
       start = time.perf_counter()
       parse_structure(path)
       times.append(time.perf_counter() - start)
-      
+
     avg = np.mean(times)
     std = np.std(times)
-    
+
     table = Table(title="Benchmark Results")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="magenta")
-    
+
     table.add_row("Average Time", f"{avg*1000:.2f} ± {std*1000:.2f} ms")
     table.add_row("Best Time", f"{np.min(times)*1000:.2f} ms")
     table.add_row("Throughput", f"{1.0/avg:.2f} files/s")
-    
+
     console.print(table)
-    
+
   except Exception as e:
     console.print(f"[red]Benchmark failed: {e}[/red]")
     raise typer.Exit(1)
@@ -255,7 +253,7 @@ def parameterize(
   try:
     if output is None:
       output = str(Path(input).with_suffix(".npz"))
-      
+
     with console.status(f"[bold green]Parameterizing {input}..."):
       if input.lower().endswith(".mol2"):
         mol = Molecule.from_mol2(input)
@@ -264,9 +262,9 @@ def parameterize(
       else:
         console.print("[red]Error: Supported molecule formats are .mol2 and .sdf[/red]")
         raise typer.Exit(1)
-        
+
       mol.parameterize()
-      
+
       # Prepare data for NPZ
       data = {
         "positions": mol.positions,
@@ -275,11 +273,11 @@ def parameterize(
         "elements": mol.elements,
         "bonds": np.array(mol.bonds),
       }
-      
+
       np.savez_compressed(output, **data)
-      
+
     console.print(f"[bold green]✓[/bold green] Parameterized and saved to [cyan]{output}[/cyan]")
-    
+
   except Exception as e:
     console.print(f"[red]Parameterization failed: {e}[/red]")
     raise typer.Exit(1)
@@ -291,8 +289,8 @@ def charges(
   backend: str = typer.Option("rust", "--backend", "-b", help="Backend for computation: 'rust' or 'jax'"),
 ):
   """Assign partial charges via Expaloma AM1-BCC surrogate."""
-  from proxide.io.parsing.molecule import Molecule
   from proxide.chem.partial_charges import assign_espaloma_charges_from_proxide_molecule
+  from proxide.io.parsing.molecule import Molecule
 
   try:
     with console.status(f"[bold green]Assigning charges using backend: {backend}..."):
@@ -303,13 +301,13 @@ def charges(
       else:
         console.print("[red]Error: Supported molecule formats are .mol2 and .sdf[/red]")
         raise typer.Exit(1)
-        
+
       start = time.perf_counter()
       q = assign_espaloma_charges_from_proxide_molecule(mol, backend=backend)
       elapsed = time.perf_counter() - start
-      
+
     console.print(f"[bold green]✓[/bold green] Assigned {len(q)} partial charges in [cyan]{elapsed*1000:.2f} ms[/cyan]")
-    
+
   except Exception as e:
     console.print(f"[red]Charge assignment failed: {e}[/red]")
     raise typer.Exit(1)

@@ -41,16 +41,16 @@ from proxide._proxider import (  # type: ignore[unresolved-import]
   # Trajectory parsing
   parse_xtc,
 )
+from proxide.io.fetching import (
+  fetch_afdb,
+  fetch_foldcomp_database,
+  fetch_rcsb,
+)
 from proxide.io.parsing.backend import (
   TrajectoryStream,
   iterload,
   parse_structure,
   write_dcd,
-)
-from proxide.io.fetching import (
-  fetch_rcsb,
-  fetch_afdb,
-  fetch_foldcomp_database,
 )
 
 __all__ = [
