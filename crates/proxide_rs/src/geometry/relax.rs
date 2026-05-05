@@ -24,8 +24,8 @@
 
 #![allow(dead_code)]
 
-use crate::physics::constants::COULOMB_CONSTANT;
-use crate::physics::vdw::{combine_lj_parameters, compute_lj_energy};
+use proxide_physics::physics::constants::COULOMB_CONSTANT;
+use proxide_physics::physics::vdw::{combine_lj_parameters, compute_lj_energy};
 use std::f32::consts::PI;
 
 /// UFF nonbonded parameters: (van der Waals radius Å, well depth kcal/mol)

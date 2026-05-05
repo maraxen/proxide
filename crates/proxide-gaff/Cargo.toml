@@ -1,0 +1,18 @@
+[package]
+name = "proxide-gaff"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "General Amber Force Field (GAFF) implementation for protein structures"
+license.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+proxide-core = { workspace = true }
+proxide-algo = { workspace = true }
+log.workspace = true
+thiserror.workspace = true
+lazy_static.workspace = true
+once_cell.workspace = true

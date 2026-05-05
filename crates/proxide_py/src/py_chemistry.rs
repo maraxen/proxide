@@ -1,7 +1,7 @@
 // TODO: Review allow attributes at a later point
 #![allow(clippy::useless_conversion)]
 
-use crate::{chem, forcefield, physics};
+use crate::{chem, physics};
 use nalgebra::DMatrix;
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
@@ -23,10 +23,10 @@ pub fn assign_gaff_atom_types(
     let coords = extract_coords(py, &coordinates)?;
 
     // Default tolerance for bond inference
-    let topology = forcefield::topology::Topology::from_coords(&coords, &elements, 1.3);
+    let topology = proxide_algo::geometry::topology::generate_topology(&coords, &elements, 1.3);
 
-    let gaff = forcefield::gaff::GaffParameters::new();
-    let types = forcefield::gaff::assign_gaff_types(&elements, &topology, &gaff);
+    let gaff = proxide_gaff::gaff::GaffParameters::new();
+    let types = proxide_gaff::gaff::assign_gaff_types(&elements, &topology, &gaff);
 
     Ok(types)
 }

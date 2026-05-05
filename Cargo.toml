@@ -4,6 +4,11 @@ members = [
     "crates/proxide_rs",
     "crates/proxide_py",
     "crates/proxide_fixer",
+    "crates/proxide-core",
+    "crates/proxide-algo",
+    "crates/proxide-physics",
+    "crates/proxide-io",
+    "crates/proxide-gaff",
 ]
 
 [workspace.package]
@@ -13,6 +18,11 @@ authors = ["Proxide Contributors"]
 license = "MIT"
 
 [workspace.dependencies]
+proxide-core = { path = "crates/proxide-core" }
+proxide-algo = { path = "crates/proxide-algo" }
+proxide-physics = { path = "crates/proxide-physics" }
+proxide-io = { path = "crates/proxide-io" }
+proxide-gaff = { path = "crates/proxide-gaff" }
 proxide_rs = { path = "crates/proxide_rs" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"
