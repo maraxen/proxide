@@ -1,0 +1,32 @@
+[package]
+name = "proxide-io"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "IO and parsing modules for protein structures"
+license.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+proxide-core = { workspace = true }
+proxide-physics = { workspace = true }
+proxide-algo = { workspace = true }
+rayon.workspace = true
+log.workspace = true
+thiserror.workspace = true
+nom.workspace = true
+quick-xml.workspace = true
+flate2.workspace = true
+memmap2.workspace = true
+reqwest = { workspace = true }
+lazy_static = { workspace = true }
+molly = { workspace = true }
+hdf5 = { workspace = true, optional = true }
+
+[features]
+default = ["xtc", "mdcath"]
+xtc = []
+mdcath = ["hdf5"]
+full = ["xtc", "mdcath"]

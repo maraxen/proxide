@@ -2,7 +2,7 @@
 //!
 //! Provides utilities to parse and filter multiple models from PDB files.
 
-use crate::structure::RawAtomData;
+use proxide_core::structure::RawAtomData;
 
 /// Split a multi-model structure into separate RawAtomData for each model.
 /// The input `model_ids` must have the same length as the number of atoms.
@@ -132,7 +132,7 @@ pub fn filter_models(raw: &RawAtomData, model_ids: &[usize], keep_models: &[usiz
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::structure::AtomRecord;
+    use proxide_core::structure::AtomRecord;
 
     fn create_atom(serial: i32, model: usize) -> AtomRecord {
         AtomRecord {

@@ -5,11 +5,11 @@
 //!
 //! Reference: hydride library (biotite-dev/hydride)
 
-use crate::chem::bonds::get_bond_order;
-use crate::geometry::fragment_library::{calculate_hydrogen_positions, FragmentLibrary};
+use proxide_core::chem::bonds::get_bond_order;
+use proxide_algo::geometry::fragment_library::{calculate_hydrogen_positions, FragmentLibrary};
 use crate::geometry::relax::{relax_hydrogens, RelaxOptions};
 use crate::processing::residues::ProcessedStructure;
-use crate::structure::AtomRecord;
+use proxide_core::structure::AtomRecord;
 use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 

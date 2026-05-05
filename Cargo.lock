@@ -1092,6 +1092,78 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxide-algo"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "bytemuck",
+ "log",
+ "nalgebra",
+ "proxide-core",
+ "rayon",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "proxide-core"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "bytemuck",
+ "log",
+ "nalgebra",
+ "quick-xml",
+ "rand",
+ "rand_distr",
+ "rayon",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "proxide-gaff"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "lazy_static",
+ "log",
+ "once_cell",
+ "proxide-algo",
+ "proxide-core",
+ "thiserror",
+]
+
+[[package]]
+name = "proxide-io"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "flate2",
+ "hdf5-metno",
+ "lazy_static",
+ "log",
+ "memmap2",
+ "molly",
+ "nom",
+ "proxide-algo",
+ "proxide-core",
+ "proxide-physics",
+ "quick-xml",
+ "rayon",
+ "reqwest",
+ "thiserror",
+]
+
+[[package]]
+name = "proxide-physics"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "log",
+ "proxide-algo",
+ "proxide-core",
+ "proxide-gaff",
+ "quick-xml",
+ "thiserror",
+]
+
+[[package]]
 name = "proxide_fixer"
 version = "0.1.0-alpha.3"
 dependencies = [
@@ -1110,6 +1182,8 @@ dependencies = [
  "log",
  "nalgebra",
  "numpy",
+ "proxide-algo",
+ "proxide-gaff",
  "proxide_rs",
  "pyo3",
  "pyo3-log",
@@ -1129,6 +1203,11 @@ dependencies = [
  "nalgebra",
  "nom",
  "once_cell",
+ "proxide-algo",
+ "proxide-core",
+ "proxide-gaff",
+ "proxide-io",
+ "proxide-physics",
  "quick-xml",
  "rand",
  "rand_distr",

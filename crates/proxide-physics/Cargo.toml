@@ -1,0 +1,18 @@
+[package]
+name = "proxide-physics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Physics and forcefield modules for protein structures"
+license.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+proxide-core = { workspace = true }
+proxide-algo = { workspace = true }
+proxide-gaff = { workspace = true }
+quick-xml.workspace = true
+log.workspace = true
+thiserror.workspace = true

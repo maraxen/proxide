@@ -3,14 +3,27 @@
 //! High-performance protein structure parsing library.
 //! Provides zero-copy parsing for PDB, mmCIF, and trajectory formats.
 
-// Internal modules
-pub mod chem;
-pub mod forcefield;
-pub mod formats;
-pub mod formatters;
+// Re-export core modules
+pub use proxide_core::chem;
+pub use proxide_core::spec;
+pub use proxide_core::structure;
+
+// Re-export algorithm and physics modules
+pub use proxide_algo::geometry as algo_geometry;
+pub use proxide_physics::physics;
+pub use proxide_io::formats;
+pub use proxide_io::formatters;
+pub use proxide_io::io;
+
+/// Force field and topology modules
+pub mod forcefield {
+    pub use proxide_core::forcefield::*;
+    pub use proxide_gaff as gaff;
+}
+
+// Re-export gaff at top level for convenience
+pub use proxide_gaff as gaff;
+
+// Internal modules (still being migrated or extended)
 pub mod geometry;
-pub mod io;
-pub mod physics;
 pub mod processing;
-pub mod spec;
-pub mod structure;

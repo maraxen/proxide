@@ -1,4 +1,4 @@
-use crate::geometry::cell_list::CellList;
+use proxide_algo::geometry::cell_list::CellList;
 use crate::processing::residues::ProcessedStructure;
 
 /// Normalizes a single residue's name across both the ResidueInfo and its constituent RawAtoms
@@ -301,7 +301,7 @@ fn scale_to(v: [f32; 3], target_mag: f32) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::structure::{AtomRecord, RawAtomData};
+    use proxide_core::structure::{AtomRecord, RawAtomData};
 
     fn make_test_structure() -> ProcessedStructure {
         let mut raw = RawAtomData::with_capacity(10);

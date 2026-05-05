@@ -3,11 +3,11 @@
 //! Converts full atomic data to residue-level features suitable for
 //! protein structure learning models.
 
-use crate::geometry::neighbors::find_k_nearest_neighbors;
-use crate::geometry::radial_basis::compute_radial_basis;
+use proxide_algo::geometry::neighbors::find_k_nearest_neighbors;
+use proxide_algo::geometry::radial_basis::compute_radial_basis;
 use crate::processing::noising::gaussian_backbone_noise_5atom;
 use crate::processing::residues::ProcessedStructure;
-use crate::spec::OutputFormatTarget;
+use proxide_core::spec::OutputFormatTarget;
 
 /// Result of projecting to MPNN batch format
 #[derive(Debug, Clone)]
@@ -163,7 +163,7 @@ pub fn project_to_mpnn_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::structure::{AtomRecord, RawAtomData};
+    use proxide_core::structure::{AtomRecord, RawAtomData};
 
     fn make_test_structure() -> ProcessedStructure {
         let mut raw = RawAtomData::with_capacity(10);

@@ -14,48 +14,44 @@ use pyo3::prelude::*;
 /// Parse a PDB file and return raw atom data (low-level)
 /// Returns first model only for backward compatibility.
 #[pyfunction]
-pub fn parse_pdb(path: String) -> PyResult<PyObject> {
-    Python::with_gil(|py| {
-        let (raw_data, model_ids) = formats::pdb::parse_pdb_file(&path).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("PDB parsing failed: {}", e))
-        })?;
+pub fn parse_pdb(py: Python<'_>, path: String) -> PyResult<PyObject> {
+    let (raw_data, model_ids) = py
+        .allow_threads(|| formats::pdb::parse_pdb_file(&path).map_err(|e| e.to_string()))
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("PDB parsing failed: {}", e)))?;
 
-        // Filter to first model only (legacy behavior)
-        let first_model = model_ids.first().copied().unwrap_or(1);
-        let filtered = processing::filter_models(&raw_data, &model_ids, &[first_model]);
+    // Filter to first model only (legacy behavior)
+    let first_model = model_ids.first().copied().unwrap_or(1);
+    let filtered = processing::filter_models(&raw_data, &model_ids, &[first_model]);
 
-        filtered.to_py_dict(py).map(|dict| dict.into_py(py))
-    })
+    filtered.to_py_dict(py).map(|dict| dict.into_py(py))
 }
 
 /// Parse an mmCIF file and return raw atom data (low-level)
 #[pyfunction]
-pub fn parse_mmcif(path: String) -> PyResult<PyObject> {
-    Python::with_gil(|py| {
-        let (raw_data, _model_ids) = formats::mmcif::parse_mmcif_file(&path).map_err(|e| {
+pub fn parse_mmcif(py: Python<'_>, path: String) -> PyResult<PyObject> {
+    let (raw_data, _model_ids) = py
+        .allow_threads(|| formats::mmcif::parse_mmcif_file(&path).map_err(|e| e.to_string()))
+        .map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("mmCIF parsing failed: {}", e))
         })?;
 
-        raw_data.to_py_dict(py).map(|dict| dict.into_py(py))
-    })
+    raw_data.to_py_dict(py).map(|dict| dict.into_py(py))
 }
 
 /// Parse a PQR file and return raw atom data with charges and radii
 #[pyfunction]
-pub fn parse_pqr(path: String) -> PyResult<PyObject> {
-    Python::with_gil(|py| {
-        let raw_data = formats::pqr::parse_pqr_file(&path).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("PQR parsing failed: {}", e))
-        })?;
+pub fn parse_pqr(py: Python<'_>, path: String) -> PyResult<PyObject> {
+    let raw_data = py
+        .allow_threads(|| formats::pqr::parse_pqr_file(&path).map_err(|e| e.to_string()))
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("PQR parsing failed: {}", e)))?;
 
-        raw_data.to_py_dict(py).map(|dict| dict.into_py(py))
-    })
+    raw_data.to_py_dict(py).map(|dict| dict.into_py(py))
 }
 
 /// Parse a FoldComp file and return AtomicSystem
 #[pyfunction]
-pub fn parse_foldcomp(path: String) -> Result<PyAtomicSystem, PyErr> {
-    formats::foldcomp::read_foldcomp(&path)
+pub fn parse_foldcomp(py: Python<'_>, path: String) -> Result<PyAtomicSystem, PyErr> {
+    py.allow_threads(|| formats::foldcomp::read_foldcomp(&path).map_err(|e| e.to_string()))
         .map(PyAtomicSystem::from_core)
         .map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("FoldComp parsing failed: {}", e))
@@ -523,7 +519,7 @@ pub fn parse_structure(
         let all_elements = &processed.raw_atoms.elements;
 
         // Generate full topology with default tolerance 1.3
-        let topology = forcefield::topology::Topology::from_coords(&all_coords, all_elements, 1.3);
+        let topology = proxide_algo::geometry::topology::generate_topology(&all_coords, all_elements, 1.3);
 
         // Bonds (N_bonds, 2)
         if !topology.bonds.is_empty() {
@@ -899,9 +895,9 @@ pub fn parse_structure(
             let all_elements = &processed.raw_atoms.elements;
             // Infer topology for typing
             let topology =
-                forcefield::topology::Topology::from_coords(&all_coords, all_elements, 1.3);
-            let gaff = forcefield::gaff::GaffParameters::new();
-            let types = forcefield::gaff::assign_gaff_types(all_elements, &topology, &gaff);
+                proxide_algo::geometry::topology::generate_topology(&all_coords, all_elements, 1.3);
+            let gaff = proxide_gaff::gaff::GaffParameters::new();
+            let types = proxide_gaff::gaff::assign_gaff_types(all_elements, &topology, &gaff);
             dict_bound.set_item("atom_types", types)?;
         }
     }
