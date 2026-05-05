@@ -13,20 +13,26 @@ crate-type = ["rlib"]
 proxide-core = { workspace = true }
 proxide-physics = { workspace = true }
 proxide-geometry = { workspace = true }
-rayon.workspace = true
 log.workspace = true
 thiserror.workspace = true
 nom.workspace = true
 quick-xml.workspace = true
-flate2.workspace = true
-memmap2.workspace = true
-reqwest = { workspace = true }
+flate2 = { workspace = true, optional = true }
+memmap2 = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 lazy_static = { workspace = true }
-molly = { workspace = true }
+molly = { workspace = true, optional = true }
 hdf5 = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
 
 [features]
-default = ["xtc", "mdcath"]
-xtc = []
-mdcath = ["hdf5"]
-full = ["xtc", "mdcath"]
+default = ["pdb", "cif", "xtc", "parallel"]
+pdb = []
+cif = []
+fetching = ["dep:reqwest"]
+hdf5 = ["dep:hdf5"]
+foldcomp = ["dep:flate2"]
+xtc = ["dep:molly"]
+parallel = ["dep:rayon"]
+mmap = ["dep:memmap2"]
+full = ["fetching", "hdf5", "foldcomp", "xtc", "parallel", "mmap", "pdb", "cif"]

@@ -14,17 +14,7 @@ proxide-core = { workspace = true }
 proxide-geometry = { workspace = true }
 proxide-physics = { workspace = true }
 proxide-gaff = { workspace = true }
-proxide-io = { workspace = true, features = ["xtc", "mdcath"] }
-# Parsing utilities
-nom.workspace = true
-quick-xml.workspace = true
-
-# Compression and I/O
-flate2.workspace = true
-memmap2.workspace = true
-
-# Parallelism
-rayon.workspace = true
+proxide-io = { workspace = true }
 
 # Logging
 log.workspace = true
@@ -43,21 +33,19 @@ nalgebra.workspace = true
 rand.workspace = true
 rand_distr.workspace = true
 
-# Pure Rust XTC reader
-molly.workspace = true
-
-# HDF5 (Optional)
-hdf5 = { workspace = true, optional = true }
-
-# HTTP Client (Required)
-reqwest = { workspace = true }
+# Optional dependencies
+reqwest = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
 bytemuck = "1.25.0"
 
 [features]
-default = ["xtc", "mdcath"]
-xtc = []
-mdcath = ["hdf5"]
-full = ["xtc", "mdcath"]
+default = ["xtc", "parallel"]
+fetching = ["proxide-io/fetching", "dep:reqwest"]
+hdf5 = ["proxide-io/hdf5"]
+foldcomp = ["proxide-io/foldcomp"]
+xtc = ["proxide-io/xtc"]
+parallel = ["proxide-io/parallel", "dep:rayon"]
+full = ["fetching", "hdf5", "foldcomp", "xtc", "parallel"]
 
 [profile.release]
 lto = true

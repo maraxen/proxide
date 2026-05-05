@@ -11,7 +11,7 @@ use pyo3::types::PyDict;
 // =============================================================================
 
 /// Parse MDTraj HDF5 file metadata
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 #[pyfunction]
 pub fn parse_mdtraj_h5_metadata(py: Python<'_>, path: String) -> PyResult<PyObject> {
     let result = py
@@ -31,7 +31,7 @@ pub fn parse_mdtraj_h5_metadata(py: Python<'_>, path: String) -> PyResult<PyObje
 }
 
 /// Parse a single frame from MDTraj HDF5 file
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 #[pyfunction]
 pub fn parse_mdtraj_h5_frame(py: Python<'_>, path: String, frame_idx: usize) -> PyResult<PyObject> {
     let frame = py
@@ -54,7 +54,7 @@ pub fn parse_mdtraj_h5_frame(py: Python<'_>, path: String, frame_idx: usize) -> 
 }
 
 /// Parse MDCATH HDF5 file metadata
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 #[pyfunction]
 pub fn parse_mdcath_metadata(py: Python<'_>, path: String) -> PyResult<PyObject> {
     let result = py
@@ -72,7 +72,7 @@ pub fn parse_mdcath_metadata(py: Python<'_>, path: String) -> PyResult<PyObject>
 }
 
 /// Get list of replicas for a temperature in MDCATH file
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 #[pyfunction]
 pub fn get_mdcath_replicas(
     py: Python<'_>,
@@ -93,7 +93,7 @@ pub fn get_mdcath_replicas(
 }
 
 /// Parse a single frame from MDCATH HDF5 file
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 #[pyfunction]
 #[pyo3(signature = (path, domain_id, temperature, replica, frame_idx))]
 pub fn parse_mdcath_frame(
@@ -133,7 +133,7 @@ pub fn parse_mdcath_frame(
 }
 
 // Stub functions when mdcath feature is not enabled
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 #[pyfunction]
 pub fn parse_mdtraj_h5_metadata(_path: String) -> PyResult<PyObject> {
     Err(pyo3::exceptions::PyImportError::new_err(
@@ -141,7 +141,7 @@ pub fn parse_mdtraj_h5_metadata(_path: String) -> PyResult<PyObject> {
     ))
 }
 
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 #[pyfunction]
 pub fn parse_mdtraj_h5_frame(_path: String, _frame_idx: usize) -> PyResult<PyObject> {
     Err(pyo3::exceptions::PyImportError::new_err(
@@ -149,7 +149,7 @@ pub fn parse_mdtraj_h5_frame(_path: String, _frame_idx: usize) -> PyResult<PyObj
     ))
 }
 
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 #[pyfunction]
 pub fn parse_mdcath_metadata(_path: String) -> PyResult<PyObject> {
     Err(pyo3::exceptions::PyImportError::new_err(
@@ -157,7 +157,7 @@ pub fn parse_mdcath_metadata(_path: String) -> PyResult<PyObject> {
     ))
 }
 
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 #[pyfunction]
 pub fn get_mdcath_replicas(
     _path: String,
@@ -169,7 +169,7 @@ pub fn get_mdcath_replicas(
     ))
 }
 
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 #[pyfunction]
 #[pyo3(signature = (_path, _domain_id, _temperature, _replica, _frame_idx))]
 pub fn parse_mdcath_frame(

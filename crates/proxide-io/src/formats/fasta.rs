@@ -1,3 +1,4 @@
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -61,6 +62,7 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
     // Pass 2: Parallel tokenization
     // We use the first sequence (query) to define the match_mask if it's A3M.
     // In A3M, the query (first seq) contains no lowercase letters/insertions by definition.
+    // TODO: For WASM targets, use `wasm-bindgen-rayon` to enable true multi-threading here.
     let alphabet = "ACDEFGHIKLMNPQRSTVWY-X";
     let aa_to_id: std::collections::HashMap<char, i8> = alphabet
         .chars()
@@ -68,25 +70,19 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
         .map(|(i, c)| (c, i as i8))
         .collect();
 
+    #[cfg(feature = "parallel")]
     let results: Vec<(String, Vec<i8>, Vec<bool>)> = raw_records
         .into_par_iter()
         .map(|(header, seq_lines)| {
-            let full_seq = seq_lines.join("");
-            let mut tokenized = Vec::new();
-            let mut mask = Vec::new();
+            tokenize_record(header, seq_lines, &aa_to_id)
+        })
+        .collect();
 
-            for c in full_seq.chars() {
-                if c.is_ascii_lowercase() {
-                    // Insertion column - skip for dense match-state MSA
-                    continue;
-                }
-
-                let token = *aa_to_id.get(&c.to_ascii_uppercase()).unwrap_or(&21); // 21 is 'X'
-                tokenized.push(token);
-                mask.push(true); // Every uppercase/gap in A3M is a match column
-            }
-
-            (header, tokenized, mask)
+    #[cfg(not(feature = "parallel"))]
+    let results: Vec<(String, Vec<i8>, Vec<bool>)> = raw_records
+        .into_iter()
+        .map(|(header, seq_lines)| {
+            tokenize_record(header, seq_lines, &aa_to_id)
         })
         .collect();
 
@@ -110,4 +106,23 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
         headers: final_headers,
         match_mask,
     })
+}
+
+fn tokenize_record(header: String, seq_lines: Vec<String>, aa_to_id: &std::collections::HashMap<char, i8>) -> (String, Vec<i8>, Vec<bool>) {
+    let full_seq = seq_lines.join("");
+    let mut tokenized = Vec::new();
+    let mut mask = Vec::new();
+
+    for c in full_seq.chars() {
+        if c.is_ascii_lowercase() {
+            // Insertion column - skip for dense match-state MSA
+            continue;
+        }
+
+        let token = *aa_to_id.get(&c.to_ascii_uppercase()).unwrap_or(&21); // 21 is 'X'
+        tokenized.push(token);
+        mask.push(true); // Every uppercase/gap in A3M is a match column
+    }
+
+    (header, tokenized, mask)
 }

@@ -22,6 +22,9 @@ log = "0.4"
 
 [features]
 default = ["full"]
+fetching = ["proxide_rs/fetching"]
+hdf5 = ["proxide_rs/hdf5"]
 xtc = ["proxide_rs/xtc"]
-mdcath = ["proxide_rs/mdcath"]
-full = ["xtc", "mdcath", "proxide_rs/full"]
+parallel = ["proxide_rs/parallel"]
+foldcomp = ["proxide_rs/foldcomp"]
+full = ["fetching", "hdf5", "xtc", "parallel", "foldcomp"]
