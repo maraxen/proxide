@@ -3,8 +3,8 @@
 //! Converts full atomic data to residue-level features suitable for
 //! protein structure learning models.
 
-use proxide_algo::geometry::neighbors::find_k_nearest_neighbors;
-use proxide_algo::geometry::radial_basis::compute_radial_basis;
+use proxide_geometry::geometry::neighbors::find_k_nearest_neighbors;
+use proxide_geometry::geometry::radial_basis::compute_radial_basis;
 use crate::processing::noising::gaussian_backbone_noise_5atom;
 use crate::processing::residues::ProcessedStructure;
 use proxide_core::spec::OutputFormatTarget;

@@ -1,4 +1,4 @@
-use proxide_algo::geometry::cell_list::CellList;
+use proxide_geometry::geometry::cell_list::CellList;
 use crate::processing::residues::ProcessedStructure;
 
 /// Normalizes a single residue's name across both the ResidueInfo and its constituent RawAtoms

@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 [dependencies]
 proxide_rs = { workspace = true }
 proxide-gaff = { workspace = true }
-proxide-algo = { workspace = true }
+proxide-geometry = { workspace = true }
 pyo3 = { workspace = true, features = ["extension-module"] }
 numpy = { workspace = true }
 nalgebra.workspace = true

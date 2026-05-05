@@ -105,7 +105,7 @@ mod tests {
             "H".to_string(),
         ];
 
-        let topo = proxide_algo::geometry::topology::generate_topology(&coords, &elements, 1.3);
+        let topo = proxide_geometry::geometry::topology::generate_topology(&coords, &elements, 1.3);
         let excl = Exclusions::from_topology(&topo);
 
         // All C-H pairs should be 1-2 excluded

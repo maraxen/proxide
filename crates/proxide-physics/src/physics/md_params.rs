@@ -807,7 +807,7 @@ pub fn parameterize_molecule(
     }
 
     // Infer topology from coordinates
-    let topology = proxide_algo::geometry::topology::generate_topology(coords, elements, bond_tolerance);
+    let topology = proxide_geometry::geometry::topology::generate_topology(coords, elements, bond_tolerance);
     let gaff = GaffParameters::new();
 
     // Assign GAFF atom types

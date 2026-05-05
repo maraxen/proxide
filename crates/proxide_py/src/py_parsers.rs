@@ -519,7 +519,7 @@ pub fn parse_structure(
         let all_elements = &processed.raw_atoms.elements;
 
         // Generate full topology with default tolerance 1.3
-        let topology = proxide_algo::geometry::topology::generate_topology(&all_coords, all_elements, 1.3);
+        let topology = proxide_geometry::geometry::topology::generate_topology(&all_coords, all_elements, 1.3);
 
         // Bonds (N_bonds, 2)
         if !topology.bonds.is_empty() {
@@ -895,7 +895,7 @@ pub fn parse_structure(
             let all_elements = &processed.raw_atoms.elements;
             // Infer topology for typing
             let topology =
-                proxide_algo::geometry::topology::generate_topology(&all_coords, all_elements, 1.3);
+                proxide_geometry::geometry::topology::generate_topology(&all_coords, all_elements, 1.3);
             let gaff = proxide_gaff::gaff::GaffParameters::new();
             let types = proxide_gaff::gaff::assign_gaff_types(all_elements, &topology, &gaff);
             dict_bound.set_item("atom_types", types)?;
