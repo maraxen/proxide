@@ -80,7 +80,7 @@ class Gaff2Rule:
             if self.num_heavy_neighbors != num_heavy_neighbors:
                 return False
 
-        # Exact match on H count (None = wildcard)  
+        # Exact match on H count (None = wildcard)
         if self.num_h is not None:
             if self.num_h != num_h:
                 return False
@@ -197,20 +197,20 @@ class Gaff2Rule:
             return True
 
         atomic_prop = atomic_prop.strip()
-        
+
         # Parse patterns like (element_type(element_type)) or (element_type[SB'])
         # Handle multiple patterns separated by commas
         patterns = atomic_prop.split(",")
-        
+
         for pattern in patterns:
             pattern = pattern.strip()
             if not pattern:
                 continue
-                
+
             # Extract neighbor element requirements from pattern
             # Pattern format: (type1(type2)) means: has neighbor type1, which has neighbor type2
             # Also simpler: (type1) just means has neighbor of type1
-            
+
             # Handle simple direct neighbor type patterns
             match = re.match(r"\((\w+)\)$", pattern)
             if match:
@@ -218,7 +218,7 @@ class Gaff2Rule:
                 # Check if any neighbor matches this type or is in WILDATOM
                 if not self._matches_wildatom(required_type, neighbor_elements, wildatom_map):
                     return False
-                    
+
             # Handle more complex patterns like (C3(C3))
             # For now, just check direct neighbors
             # Complex patterns with nested requirements are rare
@@ -241,7 +241,7 @@ class Gaff2Rule:
         """Check if any neighbor element matches the pattern (direct or WILDATOM)."""
         # Resolve WILDATOM to actual elements
         resolve = wildatom_map.get(pattern, [pattern])
-        
+
         for elem in elements:
             if elem in resolve:
                 return True
@@ -331,7 +331,7 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
             remaining = remaining.lstrip()
             if remaining.startswith('*'):
                 remaining = remaining[1:].strip()
-                
+
             h_ew_match = re.match(r"\[([^\]]+)\]", remaining)
             if h_ew_match:
                 h_ew = h_ew_match.group(1)
@@ -366,7 +366,7 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
 
 
 def extract_atom_features(
-    mol: "Chem.Mol",
+    mol: Chem.Mol,
 ) -> list[dict]:
     """Extract features from RDKit molecule needed for GAFF2 typing.
 
@@ -420,11 +420,11 @@ def extract_atom_features(
         for bond in atom.GetBonds():
             other_idx = bond.GetOtherAtomIdx(atom.GetIdx())
             other_atom = mol.GetAtomWithIdx(other_idx)
-            
+
             # Only consider bonds to non-hydrogen neighbors
             if other_atom.GetAtomicNum() == 1:
                 continue
-                
+
             neighbor_elements.append(other_atom.GetSymbol())
 
             bt = bond.GetBondType()
@@ -471,7 +471,7 @@ def extract_atom_features(
 
 
 def assign_gaff2_atom_types(
-    mol: "Chem.Mol",
+    mol: Chem.Mol,
     rules: list[Gaff2Rule] | None = None,
     wildatom_map: dict[str, list[str]] | None = None,
 ) -> list[str]:
@@ -588,7 +588,7 @@ def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
     """
     if dat_path is None:
         dat_path = Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "gaff-2.2.20.dat"
-    
+
     params = {
         'masses': {},
         'bonds': {},
@@ -599,21 +599,21 @@ def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
 
     content = Path(dat_path).read_text()
     lines = content.split('\n')
-    
+
     for line in lines:
         line_stripped = line.strip()
         if not line_stripped:
             continue
-        
+
         parts = line_stripped.split()
         if len(parts) < 2:
             continue
-        
+
         first = parts[0]
-        
+
         if '-' in first:
             dash_count = first.count('-')
-            
+
             # Parse bond: type1-type2  kb  r0
             if dash_count == 1:
                 t1, t2 = first.split('-')
@@ -625,7 +625,7 @@ def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
                             params['bonds'][(t1, t2)] = (kb, r0)
                     except (ValueError, IndexError):
                         pass
-            
+
             # Parse angle: type1-type2-type3  kt  t0
             elif dash_count == 2:
                 t1, rest = first.split('-', 1)
@@ -638,7 +638,7 @@ def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
                             params['angles'][(t1, t2, t3)] = (kt, t0)
                     except (ValueError, IndexError):
                         pass
-            
+
             # Parse torsion or improper: type1-type2-type3-type4  ...
             elif dash_count == 3:
                 t1, rest = first.split('-', 1)
@@ -667,25 +667,24 @@ def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
                                 pass
                     except (ValueError, IndexError):
                         pass
-        
+
         # Parse mass: type  mass
         elif len(first) <= 3 and first.replace('+', '').islower():
             try:
                 params['masses'][first] = float(parts[1])
             except (ValueError, IndexError):
                 pass
-    
+
     return params
 
 
-def _get_espaloma_charges(mol: "Chem.Mol") -> list[float]:
+def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:
     """Compute partial charges using expaloma or fallback to Gasteiger.
 
     Tries native Rust expaloma first, then RDKit Gasteiger as fallback.
     Returns zero charges if nothing is available.
     """
     from rdkit import Chem
-    from rdkit.Chem import AllChem
 
     mol_copy = Chem.Mol(mol)
     Chem.SanitizeMol(mol_copy)
@@ -735,7 +734,7 @@ def _get_espaloma_charges(mol: "Chem.Mol") -> list[float]:
 
 
 def parameterize_gaff_with_rdkit(
-    mol: "Chem.Mol",
+    mol: Chem.Mol,
     gaff_version: str = "gaff-2.2.20",
 ) -> dict:
     """Assign GAFF2 parameters to an RDKit molecule.
@@ -766,7 +765,7 @@ def parameterize_gaff_with_rdkit(
 
     # Extract molecule topology
     n_atoms = mol.GetNumAtoms()
-    
+
     # Build bond list
     bonds = []
     for bond in mol.GetBonds():
@@ -775,21 +774,21 @@ def parameterize_gaff_with_rdkit(
         # Get atom types
         t_i = atom_types[i] if i < len(atom_types) else "x"
         t_j = atom_types[j] if j < len(atom_types) else "x"
-        
+
         # Get bond order
         bo = bond.GetBondTypeAsDouble()
-        
+
         # Determine bond type string
         if bo >= 1.9:
             bond_type = "tb"  # triple
         elif bo >= 1.4:
-            bond_type = "db"  # double  
+            bond_type = "db"  # double
         else:
             bond_type = "sb"  # single
-            
+
         bonds.append({
-            'i': i, 
-            'j': j, 
+            'i': i,
+            'j': j,
             'type': bond_type,
             'order': bo,
             'gaff_type_i': t_i,
@@ -847,19 +846,19 @@ def parameterize_gaff_with_rdkit(
 
     # Build torsion list (1-2-3-4 connections)
     torsions = []
-    
+
     # Substitutions for atom type looking (cx->c3, etc.)
     type_substitutions = {
         'cx': 'c3', 'cy': 'c3', 'c5': 'c3', 'c6': 'c3',
         'n7': 'n3', 'n8': 'n3', 'n7': 'n3', 'nx': 'n3',
         'ny': 'n3', 'ni': 'n', 'nu': 'n3', 'nv': 'n3',
     }
-    
+
     def _substitute_type(t: str) -> str:
         if t == 'x':
             return 'hc'  # default H type
         return type_substitutions.get(t, t)
-    
+
     for i in range(n_atoms):
         atom_i = mol.GetAtomWithIdx(i)
         for bond1 in atom_i.GetBonds():
@@ -878,16 +877,16 @@ def parameterize_gaff_with_rdkit(
                     t_j = atom_types[j] if j < len(atom_types) else "x"
                     t_k = atom_types[k] if k < len(atom_types) else "x"
                     t_l = atom_types[l] if l < len(atom_types) else "x"
-                    
+
                     key = (t_i, t_j, t_k, t_l)
-                    
+
                     # Try exact match first, then with substitutions
                     torsion_params = params['torsions'].get(key, [])
                     if not torsion_params:
                         # Try with substitutions (cx->c3, etc.)
                         key_sub = tuple(_substitute_type(x) for x in key)
                         torsion_params = params['torsions'].get(key_sub, [])
-                    
+
                     torsions.append({
                         'i': i, 'j': j, 'k': k, 'l': l,
                         'types': key,

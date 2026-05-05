@@ -227,8 +227,8 @@ def fix_pdb(input_path: Path, output_path: Path) -> int:
 
     Returns atom count of the fixed structure.
     """
-    from pdbfixer import PDBFixer
     from openmm import app
+    from pdbfixer import PDBFixer
 
     fixer = PDBFixer(filename=str(input_path))
 

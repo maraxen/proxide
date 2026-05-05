@@ -233,7 +233,7 @@ class Protein:
       n_slots = 37 if is_atom37 else 14
       coordinates = raw_coords.reshape(num_residues, n_slots, 3)
       atom_mask_2d = raw_mask.reshape(num_residues, n_slots)
-      
+
       if is_atom37:
         mask_ca = atom_mask_2d[:, atom_order["CA"]]
       else:

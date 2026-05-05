@@ -9,8 +9,6 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 
-from proxide.physics.constants import MIN_DISTANCE
-from proxide.physics.electrostatics import compute_pairwise_displacements
 from proxide.core.types import (
   Array,
   ArrayLike,
@@ -21,6 +19,8 @@ from proxide.core.types import (
   Epsilons,
   Sigmas,
 )
+from proxide.physics.constants import MIN_DISTANCE
+from proxide.physics.electrostatics import compute_pairwise_displacements
 
 
 def combine_lj_parameters(

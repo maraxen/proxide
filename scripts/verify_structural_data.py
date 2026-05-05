@@ -4,8 +4,9 @@ import sys
 # Add src to path
 sys.path.append(os.path.abspath("src"))
 
-from proxide.core.containers import Protein
 from proxide.io.parsing.rust import OutputSpec, parse_structure
+
+from proxide.core.containers import Protein
 
 
 def verify_structural_data():
