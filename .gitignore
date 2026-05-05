@@ -1,5 +1,5 @@
-.codex/
-eph/
+.codex
+eph
 
 # Python
 __pycache__/
