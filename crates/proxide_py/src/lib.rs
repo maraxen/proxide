@@ -27,6 +27,7 @@ use bindings::spec::{
 };
 
 /// Wrapper for proxide_rs::io::fetching::fetch_rcsb
+#[cfg(feature = "fetching")]
 #[pyfunction]
 #[pyo3(signature = (id, output_dir = ".cache", format_type = "cif"))]
 fn fetch_rcsb(id: &str, output_dir: &str, format_type: &str) -> PyResult<String> {
@@ -35,6 +36,7 @@ fn fetch_rcsb(id: &str, output_dir: &str, format_type: &str) -> PyResult<String>
 }
 
 /// Wrapper for proxide_rs::io::fetching::fetch_md_cath
+#[cfg(feature = "fetching")]
 #[pyfunction]
 #[pyo3(signature = (id, output_dir = ".cache"))]
 fn fetch_md_cath(id: &str, output_dir: &str) -> PyResult<String> {
@@ -43,6 +45,7 @@ fn fetch_md_cath(id: &str, output_dir: &str) -> PyResult<String> {
 }
 
 /// Wrapper for proxide_rs::io::fetching::fetch_afdb
+#[cfg(feature = "fetching")]
 #[pyfunction]
 #[pyo3(signature = (id, output_dir = ".cache", version = 4))]
 fn fetch_afdb(id: &str, output_dir: &str, version: u32) -> PyResult<String> {
@@ -51,6 +54,7 @@ fn fetch_afdb(id: &str, output_dir: &str, version: u32) -> PyResult<String> {
 }
 
 /// Wrapper for proxide_rs::io::fetching::fetch_foldcomp_database
+#[cfg(feature = "fetching")]
 #[pyfunction]
 #[pyo3(signature = (db_name, output_dir = ".cache", download_chunks = 1))]
 fn fetch_foldcomp_database(
@@ -74,6 +78,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_parsers::parse_pdb, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_mmcif, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_pqr, m)?)?;
+    #[cfg(feature = "foldcomp")]
     m.add_function(wrap_pyfunction!(py_parsers::parse_foldcomp, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_structure, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::project_to_mpnn_batch, m)?)?;
@@ -82,17 +87,21 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_forcefield::load_forcefield, m)?)?;
 
     // Trajectory parsing functions (from py_trajectory)
+    #[cfg(feature = "xtc")]
     m.add_function(wrap_pyfunction!(py_trajectory::parse_xtc, m)?)?;
     m.add_function(wrap_pyfunction!(py_trajectory::parse_dcd, m)?)?;
     m.add_function(wrap_pyfunction!(py_trajectory::parse_trr, m)?)?;
     m.add_function(wrap_pyfunction!(py_trajectory::parse_mdc, m)?)?;
 
     // HDF5 parsing functions (from py_hdf5)
-    m.add_function(wrap_pyfunction!(py_hdf5::parse_mdtraj_h5_metadata, m)?)?;
-    m.add_function(wrap_pyfunction!(py_hdf5::parse_mdtraj_h5_frame, m)?)?;
-    m.add_function(wrap_pyfunction!(py_hdf5::parse_mdcath_metadata, m)?)?;
-    m.add_function(wrap_pyfunction!(py_hdf5::get_mdcath_replicas, m)?)?;
-    m.add_function(wrap_pyfunction!(py_hdf5::parse_mdcath_frame, m)?)?;
+    #[cfg(feature = "hdf5")]
+    {
+        m.add_function(wrap_pyfunction!(py_hdf5::parse_mdtraj_h5_metadata, m)?)?;
+        m.add_function(wrap_pyfunction!(py_hdf5::parse_mdtraj_h5_frame, m)?)?;
+        m.add_function(wrap_pyfunction!(py_hdf5::parse_mdcath_metadata, m)?)?;
+        m.add_function(wrap_pyfunction!(py_hdf5::get_mdcath_replicas, m)?)?;
+        m.add_function(wrap_pyfunction!(py_hdf5::parse_mdcath_frame, m)?)?;
+    }
 
     // Chemistry utilities (from py_chemistry)
     m.add_function(wrap_pyfunction!(py_chemistry::assign_masses, m)?)?;
@@ -115,13 +124,17 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyMissingResidueMode>()?;
     m.add_class::<PyHydrogenSource>()?;
 
+    #[cfg(feature = "foldcomp")]
     m.add_class::<py_parsers::FoldCompDatabase>()?;
 
     // Fetching functions (using wrappers)
-    m.add_function(wrap_pyfunction!(fetch_rcsb, m)?)?;
-    m.add_function(wrap_pyfunction!(fetch_md_cath, m)?)?;
-    m.add_function(wrap_pyfunction!(fetch_afdb, m)?)?;
-    m.add_function(wrap_pyfunction!(fetch_foldcomp_database, m)?)?;
+    #[cfg(feature = "fetching")]
+    {
+        m.add_function(wrap_pyfunction!(fetch_rcsb, m)?)?;
+        m.add_function(wrap_pyfunction!(fetch_md_cath, m)?)?;
+        m.add_function(wrap_pyfunction!(fetch_afdb, m)?)?;
+        m.add_function(wrap_pyfunction!(fetch_foldcomp_database, m)?)?;
+    }
 
     // Streaming support
     m.add_class::<py_stream::PyTrajectoryIterator>()?;

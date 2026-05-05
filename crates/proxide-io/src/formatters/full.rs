@@ -8,6 +8,8 @@
 
 use proxide_core::processing::ProcessedStructure;
 use proxide_core::spec::OutputSpec;
+
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 /// Maximum atoms per residue for padding
@@ -71,12 +73,23 @@ impl FullFormatter {
         }
 
         // Residue indices
+        // TODO: For WASM targets, use `wasm-bindgen-rayon` to enable true multi-threading here.
+        #[cfg(feature = "parallel")]
         let residue_index: Vec<i32> = processed.residue_info.par_iter().map(|r| r.res_id).collect();
+        #[cfg(not(feature = "parallel"))]
+        let residue_index: Vec<i32> = processed.residue_info.iter().map(|r| r.res_id).collect();
 
         // Chain indices
+        #[cfg(feature = "parallel")]
         let chain_index: Vec<i32> = processed
             .residue_info
             .par_iter()
+            .map(|r| *processed.chain_indices.get(&r.chain_id).unwrap_or(&0) as i32)
+            .collect();
+        #[cfg(not(feature = "parallel"))]
+        let chain_index: Vec<i32> = processed
+            .residue_info
+            .iter()
             .map(|r| *processed.chain_indices.get(&r.chain_id).unwrap_or(&0) as i32)
             .collect();
 

@@ -10,7 +10,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(dead_code)]
 
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 use hdf5::File as H5File;
 
 use proxide_core::structure::RawAtomData;
@@ -46,7 +46,7 @@ pub struct MdtrajFrame {
 }
 
 /// Parse MDTraj HDF5 file and return metadata
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 pub fn parse_mdtraj_h5_metadata(path: &str) -> Result<MdtrajH5Result, String> {
     let file = H5File::open(path).map_err(|e| format!("Failed to open HDF5 file: {}", e))?;
 
@@ -80,7 +80,7 @@ pub fn parse_mdtraj_h5_metadata(path: &str) -> Result<MdtrajH5Result, String> {
     })
 }
 
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 fn read_topology(
     _file: &H5File,
     num_atoms: usize,
@@ -98,7 +98,7 @@ fn read_topology(
 }
 
 /// Read a single frame from MDTraj HDF5
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 pub fn parse_mdtraj_h5_frame(path: &str, frame_idx: usize) -> Result<MdtrajFrame, String> {
     let file = H5File::open(path).map_err(|e| format!("Failed to open HDF5 file: {}", e))?;
 
@@ -147,7 +147,7 @@ pub fn parse_mdtraj_h5_frame(path: &str, frame_idx: usize) -> Result<MdtrajFrame
 }
 
 /// Convert MDTraj data to RawAtomData
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 pub fn mdtraj_to_raw_atom_data(metadata: &MdtrajH5Result, frame: &MdtrajFrame) -> RawAtomData {
     RawAtomData {
         coords: frame.coords.clone(),
@@ -171,7 +171,7 @@ pub fn mdtraj_to_raw_atom_data(metadata: &MdtrajH5Result, frame: &MdtrajFrame) -
 }
 
 // Stub for when mdcath feature is disabled
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 pub fn parse_mdtraj_h5_metadata(_path: &str) -> Result<MdtrajH5Result, String> {
     Err(
         "HDF5 support requires 'mdcath' feature. Rebuild with: cargo build --features mdcath"
@@ -179,7 +179,7 @@ pub fn parse_mdtraj_h5_metadata(_path: &str) -> Result<MdtrajH5Result, String> {
     )
 }
 
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 pub fn parse_mdtraj_h5_frame(_path: &str, _frame_idx: usize) -> Result<MdtrajFrame, String> {
     Err(
         "HDF5 support requires 'mdcath' feature. Rebuild with: cargo build --features mdcath"
@@ -192,7 +192,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg(feature = "mdcath")]
+    #[cfg(feature = "hdf5")]
     fn test_mdtraj_h5_result_creation() {
         let result = MdtrajH5Result {
             num_frames: 100,

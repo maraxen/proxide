@@ -10,7 +10,7 @@
 
 #![allow(dead_code)]
 
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 use hdf5::{File as H5File, Group};
 
 use proxide_core::structure::RawAtomData;
@@ -44,7 +44,7 @@ pub struct MdcathFrame {
 }
 
 /// Parse MDCATH HDF5 file and return domain metadata
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 pub fn parse_mdcath_metadata(path: &str) -> Result<MdcathDomain, String> {
     let file = H5File::open(path).map_err(|e| format!("Failed to open HDF5 file: {}", e))?;
 
@@ -88,7 +88,7 @@ pub fn parse_mdcath_metadata(path: &str) -> Result<MdcathDomain, String> {
     })
 }
 
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 fn read_string_dataset(group: &Group, name: &str) -> Result<Vec<String>, String> {
     let dataset = group
         .dataset(name)
@@ -106,7 +106,7 @@ fn read_string_dataset(group: &Group, name: &str) -> Result<Vec<String>, String>
 }
 
 /// Get list of replicas for a temperature
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 pub fn get_replicas(path: &str, domain_id: &str, temperature: &str) -> Result<Vec<String>, String> {
     let file = H5File::open(path).map_err(|e| format!("Failed to open HDF5 file: {}", e))?;
     let domain_group = file
@@ -122,7 +122,7 @@ pub fn get_replicas(path: &str, domain_id: &str, temperature: &str) -> Result<Ve
 }
 
 /// Read a single frame from MDCATH trajectory
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 pub fn parse_mdcath_frame(
     path: &str,
     domain_id: &str,
@@ -176,7 +176,7 @@ pub fn parse_mdcath_frame(
 /// Convert MDCATH data to RawAtomData
 /// Note: MDCATH coordinates are at residue level (CA atoms only)
 /// so this creates a simplified representation
-#[cfg(feature = "mdcath")]
+#[cfg(feature = "hdf5")]
 pub fn mdcath_to_raw_atom_data(metadata: &MdcathDomain, frame: &MdcathFrame) -> RawAtomData {
     // MDCATH typically stores CA-only coordinates
     // We treat each residue as a single CA atom
@@ -204,7 +204,7 @@ pub fn mdcath_to_raw_atom_data(metadata: &MdcathDomain, frame: &MdcathFrame) -> 
 }
 
 // Stubs for when mdcath feature is disabled
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 pub fn parse_mdcath_metadata(_path: &str) -> Result<MdcathDomain, String> {
     Err(
         "HDF5 support requires 'mdcath' feature. Rebuild with: cargo build --features mdcath"
@@ -212,7 +212,7 @@ pub fn parse_mdcath_metadata(_path: &str) -> Result<MdcathDomain, String> {
     )
 }
 
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 pub fn get_replicas(
     _path: &str,
     _domain_id: &str,
@@ -221,7 +221,7 @@ pub fn get_replicas(
     Err("HDF5 support requires 'mdcath' feature".to_string())
 }
 
-#[cfg(not(feature = "mdcath"))]
+#[cfg(not(feature = "hdf5"))]
 pub fn parse_mdcath_frame(
     _path: &str,
     _domain_id: &str,

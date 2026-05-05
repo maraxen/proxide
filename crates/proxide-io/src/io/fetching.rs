@@ -1,5 +1,8 @@
+#![cfg(feature = "fetching")]
+
 // TODO: Review allow attributes at a later point
 #![allow(clippy::useless_conversion)]
+// ...
 
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
@@ -14,6 +17,8 @@ const AFDB_URL_BASE: &str = "https://alphafold.ebi.ac.uk/files/";
 
 /// Validates that an ID contains only safe characters for URL and path construction.
 fn validate_id(id: &str) -> Result<(), String> {
+    // TODO: For WASM targets, consider using Origin Private File System (OPFS) 
+    // to store and retrieve these downloaded files for high-performance synchronous access.
     if id.is_empty() {
         return Err("ID cannot be empty".to_string());
     }

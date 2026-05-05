@@ -50,6 +50,7 @@ pub fn parse_pqr(py: Python<'_>, path: String) -> PyResult<PyObject> {
 
 /// Parse a FoldComp file and return AtomicSystem
 #[pyfunction]
+#[cfg(feature = "foldcomp")]
 pub fn parse_foldcomp(py: Python<'_>, path: String) -> Result<PyAtomicSystem, PyErr> {
     py.allow_threads(|| formats::foldcomp::read_foldcomp(&path).map_err(|e| e.to_string()))
         .map(PyAtomicSystem::from_core)
@@ -1022,6 +1023,7 @@ pub fn project_to_mpnn_batch(
 
 /// FoldComp Database accessor
 #[pyclass]
+#[cfg(feature = "foldcomp")]
 pub struct FoldCompDatabase {
     inner: formats::foldcomp::db::FoldCompDb,
 }
