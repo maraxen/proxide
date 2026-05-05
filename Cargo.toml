@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/proxide_rs",
     "crates/proxide_py",
+    "crates/proxide_fixer",
 ]
 
 [workspace.package]
