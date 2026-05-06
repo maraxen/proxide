@@ -4,6 +4,9 @@
 //! to avoid unnecessary copies between the host environment and Rust.
 
 pub mod dcd;
+#[cfg(test)]
+mod dcd_test;
+pub mod fasta;
 #[cfg(feature = "foldcomp")]
 pub mod foldcomp;
 pub mod mmcif;

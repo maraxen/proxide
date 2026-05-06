@@ -1,5 +1,6 @@
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -20,10 +21,6 @@ pub struct TokenizedMSA {
 }
 
 /// Parse A3M/FASTA in parallel using Rayon.
-///
-/// For A3M, uppercase letters and '-' are considered match states.
-/// Lowercase letters are considered insertions relative to the query and are skipped
-/// for the purpose of the dense JAX array, but their presence is used to validate alignment.
 pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
@@ -32,8 +29,6 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
     let mut current_header = String::new();
     let mut current_seq = Vec::new();
 
-    // Pass 1: Sequential read into memory chunks for parallel processing
-    // FASTA is inherently sequential but we can parallelize the tokenization per sequence.
     for line in reader.lines() {
         let line = line?;
         if line.is_empty() {
@@ -59,12 +54,8 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
         return Err(FastaError::InvalidFormat("Empty file".into()));
     }
 
-    // Pass 2: Parallel tokenization
-    // We use the first sequence (query) to define the match_mask if it's A3M.
-    // In A3M, the query (first seq) contains no lowercase letters/insertions by definition.
-    // TODO: For WASM targets, use `wasm-bindgen-rayon` to enable true multi-threading here.
     let alphabet = "ACDEFGHIKLMNPQRSTVWY-X";
-    let aa_to_id: std::collections::HashMap<char, i8> = alphabet
+    let aa_to_id: HashMap<char, i8> = alphabet
         .chars()
         .enumerate()
         .map(|(i, c)| (c, i as i8))
@@ -73,17 +64,13 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
     #[cfg(feature = "parallel")]
     let results: Vec<(String, Vec<i8>, Vec<bool>)> = raw_records
         .into_par_iter()
-        .map(|(header, seq_lines)| {
-            tokenize_record(header, seq_lines, &aa_to_id)
-        })
+        .map(|(header, seq_lines)| tokenize_record(header, seq_lines, &aa_to_id))
         .collect();
 
     #[cfg(not(feature = "parallel"))]
     let results: Vec<(String, Vec<i8>, Vec<bool>)> = raw_records
         .into_iter()
-        .map(|(header, seq_lines)| {
-            tokenize_record(header, seq_lines, &aa_to_id)
-        })
+        .map(|(header, seq_lines)| tokenize_record(header, seq_lines, &aa_to_id))
         .collect();
 
     let mut final_sequences = Vec::new();
@@ -91,10 +78,7 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
     let mut match_mask = Vec::new();
 
     if !results.is_empty() {
-        // Assume all sequences have the same number of match states
-        // In A3M this is guaranteed by the format.
         match_mask = results[0].2.clone();
-
         for (header, seq, _) in results {
             final_headers.push(header);
             final_sequences.push(seq);
@@ -108,21 +92,71 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
     })
 }
 
-fn tokenize_record(header: String, seq_lines: Vec<String>, aa_to_id: &std::collections::HashMap<char, i8>) -> (String, Vec<i8>, Vec<bool>) {
+fn tokenize_record(header: String, seq_lines: Vec<String>, aa_to_id: &HashMap<char, i8>) -> (String, Vec<i8>, Vec<bool>) {
     let full_seq = seq_lines.join("");
     let mut tokenized = Vec::new();
     let mut mask = Vec::new();
 
     for c in full_seq.chars() {
         if c.is_ascii_lowercase() {
-            // Insertion column - skip for dense match-state MSA
             continue;
         }
 
-        let token = *aa_to_id.get(&c.to_ascii_uppercase()).unwrap_or(&21); // 21 is 'X'
+        let token = *aa_to_id.get(&c.to_ascii_uppercase()).unwrap_or(&21);
         tokenized.push(token);
-        mask.push(true); // Every uppercase/gap in A3M is a match column
+        mask.push(true);
+    }
+    (header, tokenized, mask)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::fs::File;
+    use std::env;
+
+    fn temp_file(name: &str) -> std::path::PathBuf {
+        let mut path = env::temp_dir();
+        path.push(name);
+        path
     }
 
-    (header, tokenized, mask)
+    #[test]
+    fn test_parse_fasta_simple() {
+        let path = temp_file("test_fasta_simple.fasta");
+        let mut file = File::create(&path).unwrap();
+        writeln!(file, ">seq1\nACDEF").unwrap();
+        writeln!(file, ">seq2\nGHIKL").unwrap();
+
+        let msa = parse_a3m(&path).unwrap();
+        assert_eq!(msa.headers.len(), 2);
+        assert_eq!(msa.headers[0], "seq1");
+        // A=0, C=1, D=2, E=3, F=4
+        assert_eq!(msa.sequences[0], vec![0, 1, 2, 3, 4]);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn test_parse_multiline() {
+        let path = temp_file("test_multiline.fasta");
+        let mut file = File::create(&path).unwrap();
+        writeln!(file, ">seq1\nACD\nEF").unwrap();
+        
+        let msa = parse_a3m(&path).unwrap();
+        assert_eq!(msa.sequences[0], vec![0, 1, 2, 3, 4]);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn test_parse_a3m_insertions() {
+        let path = temp_file("test_a3m.fasta");
+        let mut file = File::create(&path).unwrap();
+        writeln!(file, ">seq1\nACaDEF").unwrap();
+        
+        let msa = parse_a3m(&path).unwrap();
+        assert_eq!(msa.sequences[0].len(), 5);
+        assert_eq!(msa.sequences[0], vec![0, 1, 2, 3, 4]);
+        std::fs::remove_file(path).unwrap();
+    }
 }

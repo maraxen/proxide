@@ -1,3 +1,4 @@
+use std::fs::File;
 use crate::formats;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray2};
 use pyo3::prelude::*;
@@ -6,7 +7,7 @@ use std::path::Path;
 
 #[pyclass]
 pub struct PyTrajectoryIterator {
-    dcd_reader: Option<formats::dcd::DcdReader>,
+    dcd_reader: Option<formats::dcd::DcdReader<File>>,
     num_atoms: usize,
     chunk_size: usize,
 }
@@ -52,11 +53,11 @@ impl PyTrajectoryIterator {
         if let Some(ref mut reader) = slf.dcd_reader {
             for _ in 0..chunk_size {
                 match reader.read_frame() {
-                    Ok(frame) => {
+                    Ok(Some(frame)) => {
                         frames_coords.extend(frame.coordinates);
                         actual_frames += 1;
                     }
-                    Err(formats::dcd::DcdError::UnexpectedEof) => break,
+                    Ok(None) => break,
                     Err(e) => return Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
                 }
             }
