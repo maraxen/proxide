@@ -24,7 +24,6 @@ from proxide.chem.gaff2 import (
 # Test molecules with expected atom types
 # Format: (smiles, expected_atom_types)
 # Note: Our implementation uses specific GAFF2 types - some differ from idealized expectations
-@pytest.mark.gaff2
 ATOM_TYPE_TESTS = [
     # Alkanes (sp3 carbon)
     ("C", ["cx"]),
@@ -89,7 +88,6 @@ def prepare_mol(smiles: str) -> Chem.Mol:
 
 def test_atom_types():
     """Test atom type assignment for known molecules."""
-    pytest.param("atom types", markers=["gaff2"])
     passed = 0
     failed = 0
     

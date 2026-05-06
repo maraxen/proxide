@@ -44,7 +44,7 @@ class TestOpenMMRoundTrip:
             dtype=jnp.float32,
         )
 
-        system = AtomicSystem(
+        system = AtomicSystem.from_arrays(
             coordinates=coords,
             atom_mask=jnp.ones(3),
             elements=["O", "H", "H"],
@@ -136,7 +136,7 @@ class TestOpenMMRoundTrip:
             dtype=jnp.float32,
         )
 
-        system = AtomicSystem(
+        system = AtomicSystem.from_arrays(
             coordinates=coords,
             atom_mask=jnp.ones(4),
             elements=["C", "C", "C", "C"],
@@ -201,7 +201,7 @@ class TestOpenMMRoundTrip:
             [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [3.0, 0.0, 0.0]], dtype=jnp.float32
         )
 
-        system = AtomicSystem(
+        system = AtomicSystem.from_arrays(
             coordinates=coords,
             atom_mask=jnp.ones(3),
             elements=["C", "C", "C"],
