@@ -10,6 +10,9 @@ pub mod fasta;
 #[cfg(feature = "foldcomp")]
 pub mod foldcomp;
 pub mod mmcif;
+pub mod newick;
+#[cfg(test)]
+mod newick_test;
 pub mod pdb;
 pub mod pqr;
 pub mod trr;
