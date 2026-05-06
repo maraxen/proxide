@@ -98,3 +98,42 @@ fn is_ring_atom_trp(name: &str) -> bool {
         "CG" | "CD1" | "CD2" | "NE1" | "CE2" | "CE3" | "CZ2" | "CZ3" | "CH2"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_backbone_carbonyl() {
+        assert_eq!(get_bond_order("ALA", "C", "O"), 2);
+        assert_eq!(get_bond_order("ALA", "O", "C"), 2);
+    }
+
+    #[test]
+    fn test_asp_carboxylate() {
+        assert_eq!(get_bond_order("ASP", "CG", "OD1"), 2);
+        assert_eq!(get_bond_order("ASP", "CG", "OD2"), 2);
+    }
+
+    #[test]
+    fn test_glu_carboxylate() {
+        assert_eq!(get_bond_order("GLU", "CD", "OE1"), 2);
+        assert_eq!(get_bond_order("GLU", "CD", "OE2"), 2);
+    }
+
+    #[test]
+    fn test_aromatic_rings() {
+        // HIS ring
+        assert_eq!(get_bond_order("HIS", "CG", "ND1"), 4);
+        // PHE ring
+        assert_eq!(get_bond_order("PHE", "CG", "CD1"), 4);
+        // TRP ring
+        assert_eq!(get_bond_order("TRP", "CG", "CD1"), 4);
+    }
+
+    #[test]
+    fn test_default_single_bond() {
+        assert_eq!(get_bond_order("ALA", "CA", "CB"), 1);
+        assert_eq!(get_bond_order("GLY", "N", "CA"), 1);
+    }
+}
