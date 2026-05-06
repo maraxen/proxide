@@ -9,7 +9,6 @@ pub mod electrostatics;
 pub mod frame;
 pub mod gbsa;
 pub mod md_params;
-pub mod nerf;
 pub mod vdw;
 pub mod water;
 

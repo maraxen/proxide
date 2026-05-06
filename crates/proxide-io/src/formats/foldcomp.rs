@@ -1,7 +1,7 @@
 // TODO: Review allow attributes at a later point
 #![allow(clippy::needless_range_loop, clippy::type_complexity)]
 
-use proxide_physics::physics::nerf::Nerf;
+use proxide_geometry::geometry::nerf::Nerf;
 use proxide_core::structure::systems::{AtomicSystem, AtomicSystemArgs};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};

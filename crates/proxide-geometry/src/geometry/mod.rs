@@ -10,6 +10,7 @@ pub mod cell_list;
 pub mod distances;
 pub mod fragment_library;
 pub mod neighbors;
+pub mod nerf;
 pub mod radial_basis;
 pub mod solvent;
 pub mod topology;
@@ -26,6 +27,8 @@ pub use cell_list::*;
 pub use distances::*;
 #[allow(unused_imports)]
 pub use neighbors::*;
+#[allow(unused_imports)]
+pub use nerf::*;
 #[allow(unused_imports)]
 pub use radial_basis::*;
 #[allow(unused_imports)]
