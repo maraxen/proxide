@@ -32,3 +32,4 @@ rand_distr.workspace = true
 [features]
 default = []
 serde = ["dep:serde"]
+testing = []
