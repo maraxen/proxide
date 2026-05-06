@@ -298,12 +298,12 @@ class Protein:
         return None
       arr = np.array(arr, dtype=np.float32)
       if type_ == "bond":
-        arr[:, 0] *= NM_TO_ANGSTROM
-        arr[:, 1] *= BOND_K_FACTOR
+        arr[..., 0] *= NM_TO_ANGSTROM
+        arr[..., 1] *= BOND_K_FACTOR
       elif type_ == "angle":
-        arr[:, 1] *= KJMOL_TO_KCALMOL
+        arr[..., 1] *= KJMOL_TO_KCALMOL
       elif type_ == "dihedral" or type_ == "improper":
-        arr[:, 2] *= KJMOL_TO_KCALMOL
+        arr[..., 2] *= KJMOL_TO_KCALMOL
       elif type_ == "length":
         arr *= NM_TO_ANGSTROM
       elif type_ == "energy":

@@ -193,6 +193,65 @@ class TestOpenMMRoundTrip:
         # k = 0.3 kcal/mol * 4.184 = 1.2552 kJ/mol
         assert abs(k_torsion.value_in_unit(u.kilojoule_per_mole) - 1.2552) < 0.01
 
+    def test_multi_term_torsions(self) -> None:
+        """Test system with multi-term torsions."""
+        from proxide.core.atomic_system import AtomicSystem
+
+        # Create a simple 4-atom chain: C-C-C-C
+        coords = jnp.array(
+            [
+                [0.0, 0.0, 0.0],  # C1
+                [1.54, 0.0, 0.0],  # C2
+                [2.31, 1.26, 0.0],  # C3
+                [3.85, 1.26, 0.0],  # C4
+            ],
+            dtype=jnp.float32,
+        )
+
+        # 2 terms for the same dihedral: 1-fold and 3-fold
+        # Shape: (N_dihedrals, MAX_TERMS, 3) = (1, 2, 3)
+        dihedral_params = jnp.array(
+            [[
+                [1, 0.0, 0.5],  # 1-fold term, k=0.5
+                [3, 0.0, 0.3],  # 3-fold term, k=0.3
+            ]], 
+            dtype=jnp.float32
+        )
+
+        system = AtomicSystem.from_arrays(
+            coordinates=coords,
+            atom_mask=jnp.ones(4),
+            elements=["C", "C", "C", "C"],
+            atom_names=["C1", "C2", "C3", "C4"],
+            proper_dihedrals=jnp.array([[0, 1, 2, 3]], dtype=jnp.int32),
+            dihedral_params=dihedral_params,
+        )
+
+        # Export to OpenMM
+        omm_system = system.to_openmm_system()
+
+        # Find torsion force
+        torsion_force = next(
+            omm_system.getForce(i)
+            for i in range(omm_system.getNumForces())
+            if isinstance(omm_system.getForce(i), openmm.PeriodicTorsionForce)
+        )
+        
+        # Should have TWO terms in OpenMM for the same atoms
+        assert torsion_force.getNumTorsions() == 2
+
+        # Check first term (1-fold)
+        i, j, k, m, periodicity, phase, k_torsion = torsion_force.getTorsionParameters(0)
+        assert (i, j, k, m) == (0, 1, 2, 3)
+        assert periodicity == 1
+        assert abs(k_torsion.value_in_unit(u.kilojoule_per_mole) - 0.5 * 4.184) < 0.01
+
+        # Check second term (3-fold)
+        i, j, k, m, periodicity, phase, k_torsion = torsion_force.getTorsionParameters(1)
+        assert (i, j, k, m) == (0, 1, 2, 3)
+        assert periodicity == 3
+        assert abs(k_torsion.value_in_unit(u.kilojoule_per_mole) - 0.3 * 4.184) < 0.01
+
     def test_topology_with_bonds(self) -> None:
         """Test that topology correctly represents bonds."""
         from proxide.core.atomic_system import AtomicSystem

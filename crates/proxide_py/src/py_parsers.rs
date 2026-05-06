@@ -251,9 +251,11 @@ pub fn parse_structure(
             processed.raw_atoms.epsilons = Some(params.epsilons.clone());
 
             log::info!(
-                "Parameterized {}/{} atoms",
+                "Parameterized {}/{} atoms. Max terms: proper={}, improper={}",
                 params.num_parameterized,
-                processed.raw_atoms.num_atoms
+                processed.raw_atoms.num_atoms,
+                params.max_proper_terms,
+                params.max_improper_terms
             );
 
             md_params = Some(params);
@@ -801,7 +803,8 @@ pub fn parse_structure(
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "dihedral_params",
-                arr.reshape((params.dihedral_params.len(), 3)).unwrap(),
+                arr.reshape((params.dihedrals.len(), params.max_proper_terms, 3))
+                    .unwrap(),
             )?;
         }
         if !params.impropers.is_empty() {
@@ -823,7 +826,8 @@ pub fn parse_structure(
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "improper_params",
-                arr.reshape((params.improper_params.len(), 3)).unwrap(),
+                arr.reshape((params.impropers.len(), params.max_improper_terms, 3))
+                    .unwrap(),
             )?;
         }
 

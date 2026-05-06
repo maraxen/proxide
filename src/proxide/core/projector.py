@@ -321,19 +321,82 @@ def project_to_openmm_system(
           int(dihedrals[d_idx, 3]),
       )
       if i_d < n_atoms and j_d < n_atoms and k_d < n_atoms and l_d < n_atoms:
-        periodicity = int(dihedral_params[d_idx, 0])
-        phase = float(dihedral_params[d_idx, 1]) * np.pi / 180.0
-        k_torsion = float(dihedral_params[d_idx, 2]) * 4.184
-        torsion_force.addTorsion(
-            i_d,
-            j_d,
-            k_d,
-            l_d,
-            periodicity,
-            phase * u.radian,
-            k_torsion * u.kilojoule_per_mole,
-        )
+        if dihedral_params.ndim == 3:
+          for term_idx in range(dihedral_params.shape[1]):
+            periodicity = int(dihedral_params[d_idx, term_idx, 0])
+            phase = float(dihedral_params[d_idx, term_idx, 1]) * np.pi / 180.0
+            k_torsion = float(dihedral_params[d_idx, term_idx, 2]) * 4.184
+            if abs(k_torsion) > 1e-6:
+              torsion_force.addTorsion(
+                  i_d,
+                  j_d,
+                  k_d,
+                  l_d,
+                  periodicity,
+                  phase * u.radian,
+                  k_torsion * u.kilojoule_per_mole,
+              )
+        else:
+          periodicity = int(dihedral_params[d_idx, 0])
+          phase = float(dihedral_params[d_idx, 1]) * np.pi / 180.0
+          k_torsion = float(dihedral_params[d_idx, 2]) * 4.184
+          torsion_force.addTorsion(
+              i_d,
+              j_d,
+              k_d,
+              l_d,
+              periodicity,
+              phase * u.radian,
+              k_torsion * u.kilojoule_per_mole,
+          )
     omm_system.addForce(torsion_force)
+
+  # Improper force
+  if (
+      system.topology.impropers is not None
+      and system.constants
+      and system.constants.improper_params is not None
+  ):
+    improper_force = PeriodicTorsionForce()
+    impropers = np.asarray(system.topology.impropers)
+    improper_params = np.asarray(system.constants.improper_params)
+    for d_idx in range(len(impropers)):
+      i_d, j_d, k_d, l_d = (
+          int(impropers[d_idx, 0]),
+          int(impropers[d_idx, 1]),
+          int(impropers[d_idx, 2]),
+          int(impropers[d_idx, 3]),
+      )
+      if i_d < n_atoms and j_d < n_atoms and k_d < n_atoms and l_d < n_atoms:
+        if improper_params.ndim == 3:
+          for term_idx in range(improper_params.shape[1]):
+            periodicity = int(improper_params[d_idx, term_idx, 0])
+            phase = float(improper_params[d_idx, term_idx, 1]) * np.pi / 180.0
+            k_torsion = float(improper_params[d_idx, term_idx, 2]) * 4.184
+            if abs(k_torsion) > 1e-6:
+              improper_force.addTorsion(
+                  i_d,
+                  j_d,
+                  k_d,
+                  l_d,
+                  periodicity,
+                  phase * u.radian,
+                  k_torsion * u.kilojoule_per_mole,
+              )
+        else:
+          periodicity = int(improper_params[d_idx, 0])
+          phase = float(improper_params[d_idx, 1]) * np.pi / 180.0
+          k_torsion = float(improper_params[d_idx, 2]) * 4.184
+          improper_force.addTorsion(
+              i_d,
+              j_d,
+              k_d,
+              l_d,
+              periodicity,
+              phase * u.radian,
+              k_torsion * u.kilojoule_per_mole,
+          )
+    omm_system.addForce(improper_force)
 
   return omm_system
 
