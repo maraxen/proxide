@@ -26,19 +26,8 @@ pub const MIN_DISTANCE: f32 = 1e-7;
 /// Maximum force magnitude (kcal/mol/Å) for clamping
 pub const MAX_FORCE: f32 = 1e6;
 
-// Unit conversions
-
-/// kcal/mol to kJ/mol
-pub const KCAL_TO_KJ: f32 = 4.184;
-
-/// kJ/mol to kcal/mol
-pub const KJ_TO_KCAL: f32 = 1.0 / 4.184;
-
-/// nanometers to Angstroms
-pub const NM_TO_ANGSTROM: f32 = 10.0;
-
-/// Angstroms to nanometers
-pub const ANGSTROM_TO_NM: f32 = 0.1;
+// Unit conversions (re-exported from proxide-units — single source of truth)
+pub use proxide_units::constants::{KCAL_TO_KJ, KJ_TO_KCAL, NM_TO_ANGSTROM, ANGSTROM_TO_NM};
 
 // Lennard-Jones defaults
 

@@ -123,8 +123,11 @@ impl From<PyHydrogenSource> for HydrogenSource {
 #[pyclass(name = "UnitSystem", eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PyUnitSystem {
+    /// AMBER units: Angstroms (length), kcal/mol (energy). Default.
     Amber,
+    /// GROMACS units: nm (length), kJ/mol (energy). Pass-through (no conversion).
     Gromacs,
+    /// OpenMM units: nm (length), kJ/mol (energy). Same as Gromacs internally.
     OpenMM,
 }
 

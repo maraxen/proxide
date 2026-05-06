@@ -13,6 +13,7 @@ crate-type = ["rlib"]
 proxide-core = { workspace = true }
 proxide-geometry = { workspace = true }
 proxide-gaff = { workspace = true }
+proxide-units = { workspace = true }
 quick-xml.workspace = true
 log.workspace = true
 thiserror.workspace = true
@@ -22,4 +23,3 @@ proxide-core = { workspace = true, features = ["testing"] }
 insta.workspace = true
 approx.workspace = true
 bytemuck = "1.21.0"
-

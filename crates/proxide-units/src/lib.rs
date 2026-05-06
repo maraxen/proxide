@@ -7,7 +7,6 @@
 //! The proxide-physics internals (kcal/mol + Å) are a separate domain.
 
 pub mod constants;
-pub mod phantom;
 pub mod registry;
 
 pub use constants::{

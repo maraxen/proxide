@@ -12,6 +12,15 @@ use numpy::PyArray1;
 use numpy::PyArrayMethods;
 use pyo3::prelude::*;
 
+// Column indices for parameterizer output arrays
+const COL_BOND_LENGTH: usize = 0;
+const COL_BOND_K: usize = 1;
+const COL_ANGLE_THETA: usize = 0;
+const COL_ANGLE_K: usize = 1;
+const COL_TORSION_K: usize = 2;
+const COL_EXCEPTION_SIGMA: usize = 1;
+const COL_EXCEPTION_EPSILON: usize = 2;
+
 /// Scale a specific column of a flat row-major f32 array (in-place).
 fn scale_col(flat: &mut [f32], ncols: usize, col: usize, factor: f32) {
     if factor == 1.0 {
@@ -794,8 +803,8 @@ pub fn parse_structure(
             for p in &params.bond_params {
                 flat.extend_from_slice(p);
             }
-            scale_col(&mut flat, 2, 0, conv.length);
-            scale_col(&mut flat, 2, 1, conv.bond_k);
+            scale_col(&mut flat, 2, COL_BOND_LENGTH, conv.length);
+            scale_col(&mut flat, 2, COL_BOND_K, conv.bond_k);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "bond_params",
@@ -815,7 +824,7 @@ pub fn parse_structure(
             for p in &params.angle_params {
                 flat.extend_from_slice(p);
             }
-            scale_col(&mut flat, 2, 1, conv.angle_k);
+            scale_col(&mut flat, 2, COL_ANGLE_K, conv.angle_k);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "angle_params",
@@ -838,7 +847,7 @@ pub fn parse_structure(
             for p in &params.dihedral_params {
                 flat.extend_from_slice(p);
             }
-            scale_col(&mut flat, 3, 2, conv.energy);
+            scale_col(&mut flat, 3, COL_TORSION_K, conv.energy);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "dihedral_params",
@@ -862,7 +871,7 @@ pub fn parse_structure(
             for p in &params.improper_params {
                 flat.extend_from_slice(p);
             }
-            scale_col(&mut flat, 3, 2, conv.energy);
+            scale_col(&mut flat, 3, COL_TORSION_K, conv.energy);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "improper_params",
@@ -885,8 +894,8 @@ pub fn parse_structure(
             for x in &params.exception_14_params {
                 flat.extend_from_slice(x);
             }
-            scale_col(&mut flat, 3, 1, conv.length);
-            scale_col(&mut flat, 3, 2, conv.energy);
+            scale_col(&mut flat, 3, COL_EXCEPTION_SIGMA, conv.length);
+            scale_col(&mut flat, 3, COL_EXCEPTION_EPSILON, conv.energy);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "exception_14_params",

@@ -783,31 +783,6 @@ fn get_terminal_template_name(
     base_name.to_string()
 }
 
-/// Find alternative template names for actionable error messages
-fn find_template_alternatives(res_name: &str, ff: &ForceField) -> Vec<String> {
-    let mut alternatives = Vec::new();
-    let mut variants = vec![
-        res_name.to_string(),
-        res_name.to_uppercase(),
-        format!("N{}", res_name),
-        format!("C{}", res_name),
-    ];
-
-    if res_name.to_uppercase() == "HIS" {
-        variants.push("HIE".to_string());
-        variants.push("HID".to_string());
-        variants.push("HIP".to_string());
-    }
-
-    for name in &variants {
-        if ff.get_residue(name).is_some() && !alternatives.contains(name) {
-            alternatives.push(name.clone());
-        }
-    }
-
-    alternatives
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
