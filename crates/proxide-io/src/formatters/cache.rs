@@ -63,26 +63,28 @@ pub struct CachedStructure {
     pub coord_shape: Option<(usize, usize, usize)>,
 }
 
+pub struct CachedStructureArgs {
+    pub coordinates: Vec<f32>,
+    pub atom_mask: Vec<f32>,
+    pub aatype: Vec<i8>,
+    pub residue_index: Vec<i32>,
+    pub chain_index: Vec<i32>,
+    pub num_residues: usize,
+    pub atom_names: Option<Vec<String>>,
+    pub coord_shape: Option<(usize, usize, usize)>,
+}
+
 impl CachedStructure {
-    pub fn new(
-        coordinates: Vec<f32>,
-        atom_mask: Vec<f32>,
-        aatype: Vec<i8>,
-        residue_index: Vec<i32>,
-        chain_index: Vec<i32>,
-        num_residues: usize,
-        atom_names: Option<Vec<String>>,
-        coord_shape: Option<(usize, usize, usize)>,
-    ) -> Self {
+    pub fn new(args: CachedStructureArgs) -> Self {
         Self {
-            coordinates,
-            atom_mask,
-            aatype,
-            residue_index,
-            chain_index,
-            _num_residues: num_residues,
-            atom_names,
-            coord_shape,
+            coordinates: args.coordinates,
+            atom_mask: args.atom_mask,
+            aatype: args.aatype,
+            residue_index: args.residue_index,
+            chain_index: args.chain_index,
+            _num_residues: args.num_residues,
+            atom_names: args.atom_names,
+            coord_shape: args.coord_shape,
         }
     }
 }

@@ -1,6 +1,7 @@
 // TODO: Review allow attributes at a later point
 #![allow(clippy::useless_conversion, clippy::too_many_arguments)]
 
+use std::str::FromStr;
 use crate::bindings::atomic_system::PyAtomicSystem;
 use crate::bindings::conversion::ToPyDict;
 use crate::bindings::spec::PyOutputSpec;

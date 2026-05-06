@@ -1,23 +1,23 @@
+//! EspalomaCharge: Machine Learning-Enabled Ultrafast Partial Charge Assignment
+//!
+//! Port of EspalomaCharge to Rust with embedded weights.
+//! Provides AM1-BCC quality partial charges orders of magnitude faster than traditional methods.
+//!
+//! ## Citation
+//! Wang Y, Pulido I, Takaba K, Kaminow B, Scheen J, Wang L, Chodera JD.
+//! "EspalomaCharge: Machine Learning-Enabled Ultrafast Partial Charge Assignment"
+//! J. Phys. Chem. A 2024, 128, 20, 4160-4167. DOI: 10.1021/acs.jpca.4c01287
+//! arXiv: https://arxiv.org/abs/2302.06758
+//! GitHub: https://github.com/choderalab/espaloma_charge
+//!
+//! ## Architecture
+//! - Espaloma v0.0.8 with SAGE graph neural network
+//! - 4-layer message passing
+//! - 128 hidden units per layer
+//! - 116 feature dimensions
+
 use bytemuck;
 use nalgebra::{DMatrix, DVector};
-
-///! EspalomaCharge: Machine Learning-Enabled Ultrafast Partial Charge Assignment
-///!
-///! Port of EspalomaCharge to Rust with embedded weights.
-///! Provides AM1-BCC quality partial charges orders of magnitude faster than traditional methods.
-///!
-///! ## Citation
-///! Wang Y, Pulido I, Takaba K, Kaminow B, Scheen J, Wang L, Chodera JD.
-///! "EspalomaCharge: Machine Learning-Enabled Ultrafast Partial Charge Assignment"
-///! J. Phys. Chem. A 2024, 128, 20, 4160-4167. DOI: 10.1021/acs.jpca.4c01287
-///! arXiv: https://arxiv.org/abs/2302.06758
-///! GitHub: https://github.com/choderalab/espaloma_charge
-///!
-///! ## Architecture
-///! - Espaloma v0.0.8 with SAGE graph neural network
-///! - 4-layer message passing
-///! - 128 hidden units per layer
-///! - 116 feature dimensions
 
 /// Constants for the Espaloma v0.0.8 architecture
 pub const FEATURE_UNITS: usize = 116;
@@ -165,10 +165,10 @@ pub fn infer_charges(
         }
 
         // Normalize by degree
-        for i in 0..n_atoms {
-            if deg[i] > 0.0 {
+        for (i, deg_val) in deg.iter().enumerate().take(n_atoms) {
+            if *deg_val > 0.0 {
                 let mut row = agg.row_mut(i);
-                row /= deg[i];
+                row /= *deg_val;
             }
         }
 
