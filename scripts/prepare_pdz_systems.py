@@ -360,7 +360,7 @@ def main():
 
         # Recommend bucket configuration
         bucket_groups: dict[int, list[str]] = {}
-        for pdb_id, n_atoms, bucket, _ in results:
+        for pdb_id, _n_atoms, bucket, _ in results:
             bucket_groups.setdefault(bucket, []).append(pdb_id)
 
         logger.info("")

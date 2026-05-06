@@ -35,7 +35,7 @@ def test_openmm_exclusions_and_scaling():
     angles = jnp.array([[0, 1, 2], [1, 2, 3]])  # 1-3 pairs: (0,2), (1,3)
     dihedrals = jnp.array([[0, 1, 2, 3]])       # 1-4 pairs: (0,3)
     
-    system = AtomicSystem(
+    system = AtomicSystem.from_arrays(
         coordinates=coords,
         atom_mask=mask,
         charges=charges,
