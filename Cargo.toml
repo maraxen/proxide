@@ -9,6 +9,7 @@ members = [
     "crates/proxide-physics",
     "crates/proxide-io",
     "crates/proxide-gaff",
+    "crates/proxide-units",
 ]
 
 [workspace.package]
@@ -25,6 +26,7 @@ proxide-geometry = { path = "crates/proxide-geometry" }
 proxide-physics = { path = "crates/proxide-physics" }
 proxide-io = { path = "crates/proxide-io" }
 proxide-gaff = { path = "crates/proxide-gaff" }
+proxide-units = { path = "crates/proxide-units" }
 proxide_rs = { path = "crates/proxide_rs" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"

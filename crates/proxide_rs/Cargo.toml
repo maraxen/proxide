@@ -10,11 +10,12 @@ license.workspace = true
 crate-type = ["rlib"]
 
 [dependencies]
-proxide-core = { workspace = true }
-proxide-geometry = { workspace = true }
-proxide-physics = { workspace = true }
-proxide-gaff = { workspace = true }
-proxide-io = { workspace = true }
+proxide-core.workspace = true
+proxide-geometry.workspace = true
+proxide-physics.workspace = true
+proxide-gaff.workspace = true
+proxide-io.workspace = true
+proxide-units.workspace = true
 
 # Logging
 log.workspace = true

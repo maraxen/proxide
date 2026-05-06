@@ -1,4 +1,5 @@
 use proxide_rs::spec::{CoordFormat, ErrorMode, HydrogenSource, MissingResidueMode, OutputSpec};
+use proxide_units::UnitSystem;
 use pyo3::prelude::*;
 
 #[pyclass(name = "CoordFormat", eq, eq_int)]
@@ -119,6 +120,34 @@ impl From<PyHydrogenSource> for HydrogenSource {
     }
 }
 
+#[pyclass(name = "UnitSystem", eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PyUnitSystem {
+    Amber,
+    Gromacs,
+    OpenMM,
+}
+
+impl From<UnitSystem> for PyUnitSystem {
+    fn from(u: UnitSystem) -> Self {
+        match u {
+            UnitSystem::Amber => Self::Amber,
+            UnitSystem::Gromacs => Self::Gromacs,
+            UnitSystem::OpenMM => Self::OpenMM,
+        }
+    }
+}
+
+impl From<PyUnitSystem> for UnitSystem {
+    fn from(u: PyUnitSystem) -> Self {
+        match u {
+            PyUnitSystem::Amber => Self::Amber,
+            PyUnitSystem::Gromacs => Self::Gromacs,
+            PyUnitSystem::OpenMM => Self::OpenMM,
+        }
+    }
+}
+
 #[pyclass(name = "OutputSpec")]
 #[derive(Debug, Clone)]
 pub struct PyOutputSpec {
@@ -155,7 +184,8 @@ impl PyOutputSpec {
         include_b_factors = false,
         include_occupancy = false,
         error_mode = PyErrorMode::Warn,
-        enable_caching = false
+        enable_caching = false,
+        unit_system = PyUnitSystem::Amber
     ))]
     fn new(
         coord_format: PyCoordFormat,
@@ -185,6 +215,7 @@ impl PyOutputSpec {
         include_occupancy: bool,
         error_mode: PyErrorMode,
         enable_caching: bool,
+        unit_system: PyUnitSystem,
     ) -> Self {
         Self {
             inner: OutputSpec {
@@ -215,6 +246,7 @@ impl PyOutputSpec {
                 include_occupancy,
                 error_mode: error_mode.into(),
                 enable_caching,
+                unit_system: unit_system.into(),
             },
         }
     }
@@ -353,5 +385,14 @@ impl PyOutputSpec {
     #[setter]
     fn set_auto_terminal_caps(&mut self, val: bool) {
         self.inner.auto_terminal_caps = val;
+    }
+
+    #[getter]
+    fn get_unit_system(&self) -> PyUnitSystem {
+        self.inner.unit_system.into()
+    }
+    #[setter]
+    fn set_unit_system(&mut self, value: PyUnitSystem) {
+        self.inner.unit_system = value.into();
     }
 }

@@ -11,6 +11,29 @@ use crate::{forcefield, formats, formatters, geometry, physics, processing, spec
 use numpy::PyArray1;
 use numpy::PyArrayMethods;
 use pyo3::prelude::*;
+use proxide_units::UnitConversionSpec;
+
+/// Scale a specific column of a flat row-major f32 array (in-place).
+fn scale_col(flat: &mut [f32], ncols: usize, col: usize, factor: f32) {
+    if factor == 1.0 {
+        return;
+    }
+    let mut i = col;
+    while i < flat.len() {
+        flat[i] *= factor;
+        i += ncols;
+    }
+}
+
+/// Scale all elements of a flat array (in-place).
+fn scale_all(flat: &mut [f32], factor: f32) {
+    if factor == 1.0 {
+        return;
+    }
+    for v in flat.iter_mut() {
+        *v *= factor;
+    }
+}
 
 /// Parse a PDB file and return raw atom data (low-level)
 /// Returns first model only for backward compatibility.
@@ -69,6 +92,7 @@ pub fn parse_structure(
     spec: Option<Bound<'_, PyOutputSpec>>,
 ) -> PyResult<PyObject> {
     let spec = spec.map(|s| s.borrow().inner.clone()).unwrap_or_default();
+    let conv = spec.unit_system.conversion_spec();
     let target = spec::OutputFormatTarget::from_str(&spec.output_format_target)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
@@ -740,9 +764,11 @@ pub fn parse_structure(
         dict_bound.set_item("epsilons", PyArray1::from_slice_bound(py, &params.epsilons))?;
 
         if let Some(ref radii) = params.radii {
+            let mut radii_flat = radii.clone();
+            scale_all(&mut radii_flat, conv.length);
             dict_bound.set_item(
                 "gbsa_radii",
-                PyArray1::from_slice_bound(py, radii.as_slice()),
+                PyArray1::from_slice_bound(py, radii_flat.as_slice()),
             )?;
         }
         if let Some(ref scales) = params.scales {
@@ -765,6 +791,8 @@ pub fn parse_structure(
             for p in &params.bond_params {
                 flat.extend_from_slice(p);
             }
+            scale_col(&mut flat, 2, 0, conv.length);
+            scale_col(&mut flat, 2, 1, conv.bond_k);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "bond_params",
@@ -784,6 +812,7 @@ pub fn parse_structure(
             for p in &params.angle_params {
                 flat.extend_from_slice(p);
             }
+            scale_col(&mut flat, 2, 1, conv.angle_k);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "angle_params",
@@ -806,6 +835,7 @@ pub fn parse_structure(
             for p in &params.dihedral_params {
                 flat.extend_from_slice(p);
             }
+            scale_col(&mut flat, 3, 2, conv.energy);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "dihedral_params",
@@ -829,6 +859,7 @@ pub fn parse_structure(
             for p in &params.improper_params {
                 flat.extend_from_slice(p);
             }
+            scale_col(&mut flat, 3, 2, conv.energy);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "improper_params",
@@ -851,6 +882,8 @@ pub fn parse_structure(
             for x in &params.exception_14_params {
                 flat.extend_from_slice(x);
             }
+            scale_col(&mut flat, 3, 1, conv.length);
+            scale_col(&mut flat, 3, 2, conv.energy);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "exception_14_params",
@@ -877,7 +910,7 @@ pub fn parse_structure(
 
         if !params.cmap_grids.is_empty() {
             // CMAP energy grids: (N_maps, grid_size, grid_size)
-            // Pass raw kJ/mol values. Python OutputSpec handles unit conversion to kcal/mol.
+            // Converted by scale_col/scale_all calls above; arrives at Python boundary in the target unit system.
             let n_maps = params.cmap_grids.len();
             let grid_size = params.cmap_grids[0].size;
             let mut flat = Vec::with_capacity(n_maps * grid_size * grid_size);
@@ -886,6 +919,7 @@ pub fn parse_structure(
                     flat.push(*val);
                 }
             }
+            scale_all(&mut flat, conv.energy);
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "cmap_energy_grids",

@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 proxide_rs = { workspace = true }
+proxide-units = { workspace = true }
 proxide-gaff = { workspace = true }
 proxide-geometry = { workspace = true }
 bytemuck = "1.21.0"

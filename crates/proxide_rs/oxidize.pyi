@@ -16,6 +16,7 @@ class OutputSpec:
   compute_rbf: bool
   compute_vdw: bool
   rbf_num_neighbors: int
+  unit_system: UnitSystem
 
   def __init__(self, **kwargs) -> None: ...
 
@@ -26,8 +27,8 @@ class CoordFormat:
   BackboneOnly: CoordFormat
 
 class ErrorMode:
-  Ignore: ErrorMode
   Warn: ErrorMode
+  Skip: ErrorMode
   Fail: ErrorMode
 
 class MissingResidueMode:
@@ -35,6 +36,11 @@ class MissingResidueMode:
   Fail: MissingResidueMode
   GaffFallback: MissingResidueMode
   ClosestMatch: MissingResidueMode
+
+class UnitSystem:
+  Amber: UnitSystem
+  Gromacs: UnitSystem
+  OpenMM: UnitSystem
 
 class AtomicSystem:
   # Minimal stub based on usage, refine as needed

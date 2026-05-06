@@ -8,6 +8,9 @@ pub use proxide_core::chem;
 pub use proxide_core::spec;
 pub use proxide_core::structure;
 
+// Re-export unit system
+pub use proxide_units::UnitSystem;
+
 // Re-export algorithm and physics modules
 pub use proxide_geometry::geometry as algo_geometry;
 pub use proxide_physics::physics;
