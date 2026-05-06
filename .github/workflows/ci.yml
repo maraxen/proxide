@@ -69,6 +69,30 @@ jobs:
           source .venv/bin/activate
           pytest
 
+  rust-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Rustfmt Check
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace -- -D warnings
+      - name: Feature Powerset Check (Native)
+        run: cargo hack --feature-powerset --check
+      - name: WASM Compatibility Check
+        run: cargo hack --target wasm32-unknown-unknown --no-default-features check
+      - name: Run Workspace Tests
+        run: cargo test --workspace
+      - name: Run Serial Fallback Tests
+        run: cargo test --workspace --no-default-features
+
   # Espaloma JAX charges ([espaloma] extra uses expaloma from PyPI).
   test-espaloma:
     runs-on: ubuntu-latest
