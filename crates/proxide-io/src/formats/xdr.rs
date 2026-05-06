@@ -79,3 +79,49 @@ impl<R: Read> XdrReader<R> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_read_i32() {
+        let data = [0, 0, 0, 42];
+        let mut reader = XdrReader::new(Cursor::new(data));
+        assert_eq!(reader.read_i32().unwrap(), 42);
+        assert!(reader.read_i32().is_err()); // EOF
+    }
+
+    #[test]
+    fn test_read_f32() {
+        let val: f32 = 1.0;
+        let data = val.to_be_bytes();
+        let mut reader = XdrReader::new(Cursor::new(data));
+        assert_eq!(reader.read_f32().unwrap(), 1.0);
+    }
+
+    #[test]
+    fn test_read_string_padded() {
+        // "test" (4 bytes) + len (4 bytes = 4) = 8 bytes
+        // No padding needed for "test" (4%4 == 0)
+        let mut data = vec![0, 0, 0, 4];
+        data.extend_from_slice(b"test");
+        let mut reader = XdrReader::new(Cursor::new(data));
+        assert_eq!(reader.read_string().unwrap(), "test");
+
+        // "abc" (3 bytes) + len (4 bytes = 3) + 1 byte padding = 8 bytes
+        let mut data = vec![0, 0, 0, 3];
+        data.extend_from_slice(b"abc");
+        data.push(0); // padding
+        let mut reader = XdrReader::new(Cursor::new(data));
+        assert_eq!(reader.read_string().unwrap(), "abc");
+    }
+
+    #[test]
+    fn test_eof_handling() {
+        let data = [0, 0, 0]; // Too short for i32
+        let mut reader = XdrReader::new(Cursor::new(data));
+        assert!(reader.read_i32().is_err());
+    }
+}

@@ -674,17 +674,55 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_angle_xml() {
+    fn test_parse_periodic_torsion_xml() {
         let xml = r#"<?xml version="1.0"?>
         <ForceField>
-          <HarmonicAngleForce>
-            <Angle angle="2.0943951" class1="C" class2="CA" class3="CA" k="527.184" />
-          </HarmonicAngleForce>
+          <PeriodicTorsionForce>
+            <Proper class1="C" class2="CA" class3="CA" class4="C" periodicity1="3" phase1="0" k1="1.0" />
+            <Improper class1="N" class2="C" class3="CA" class4="O" periodicity1="2" phase1="3.14" k1="2.5" />
+          </PeriodicTorsionForce>
         </ForceField>"#;
 
         let ff = parse_xml_reader(xml.as_bytes(), "test".to_string()).unwrap();
 
-        assert_eq!(ff.harmonic_angles.len(), 1);
-        assert!((ff.harmonic_angles[0].angle - 2.0943951).abs() < 1e-5);
+        assert_eq!(ff.proper_torsions.len(), 1);
+        assert_eq!(ff.proper_torsions[0].terms[0].periodicity, 3);
+        assert_eq!(ff.proper_torsions[0].terms[0].k, 1.0);
+
+        assert_eq!(ff.improper_torsions.len(), 1);
+        assert!((ff.improper_torsions[0].terms[0].phase - 3.14).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_nonbonded_exceptions_xml() {
+        let xml = r#"<?xml version="1.0"?>
+        <ForceField>
+          <NonbondedForce lj14scale="0.5" coulomb14scale="0.833333">
+            <Atom type="C" sigma="0.3" epsilon="0.1" />
+            <Exception type1="C" type2="N" chargeProd="0.5" sigma="0.2" epsilon="0.05" />
+          </NonbondedForce>
+        </ForceField>"#;
+
+        let ff = parse_xml_reader(xml.as_bytes(), "test".to_string()).unwrap();
+
+        assert_eq!(ff.nonbonded_params.len(), 1);
+        assert_eq!(ff.nonbonded_params[0].sigma, 0.3);
+
+        assert_eq!(ff.exceptions.len(), 1);
+        assert_eq!(ff.exceptions[0].type1, "C");
+        assert_eq!(ff.exceptions[0].charge_prod, 0.5);
+    }
+
+    #[test]
+    fn test_parse_malformed_xml() {
+        let xml = r#"<?xml version="1.0"?>
+        <ForceField>
+          <HarmonicBondForce>
+            <Bond class1="A" k="not_a_float" length="0.1" />
+          </HarmonicBondForce>
+        </ForceField>"#;
+
+        let res = parse_xml_reader(xml.as_bytes(), "test".to_string());
+        assert!(res.is_err());
     }
 }
