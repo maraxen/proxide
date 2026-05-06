@@ -11,7 +11,6 @@ use crate::{forcefield, formats, formatters, geometry, physics, processing, spec
 use numpy::PyArray1;
 use numpy::PyArrayMethods;
 use pyo3::prelude::*;
-use proxide_units::UnitConversionSpec;
 
 /// Scale a specific column of a flat row-major f32 array (in-place).
 fn scale_col(flat: &mut [f32], ncols: usize, col: usize, factor: f32) {
@@ -760,8 +759,12 @@ pub fn parse_structure(
     // --- Output MD Parameters ---
     if let Some(params) = md_params {
         dict_bound.set_item("charges", PyArray1::from_slice_bound(py, &params.charges))?;
-        dict_bound.set_item("sigmas", PyArray1::from_slice_bound(py, &params.sigmas))?;
-        dict_bound.set_item("epsilons", PyArray1::from_slice_bound(py, &params.epsilons))?;
+        let mut sigmas_conv = params.sigmas.clone();
+        scale_all(&mut sigmas_conv, conv.length);
+        dict_bound.set_item("sigmas", PyArray1::from_slice_bound(py, &sigmas_conv))?;
+        let mut epsilons_conv = params.epsilons.clone();
+        scale_all(&mut epsilons_conv, conv.energy);
+        dict_bound.set_item("epsilons", PyArray1::from_slice_bound(py, &epsilons_conv))?;
 
         if let Some(ref radii) = params.radii {
             let mut radii_flat = radii.clone();
