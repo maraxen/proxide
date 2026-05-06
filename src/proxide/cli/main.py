@@ -49,7 +49,7 @@ def fetch_rcsb_cmd(
     console.print(f"[bold green]✓[/bold green] Downloaded to: [cyan]{path}[/cyan]")
   except Exception as e:
     console.print(f"[red]Error fetching {id}: {e}[/red]")
-    raise typer.Exit(1)
+    raise typer.Exit(1) from e
 
 
 @fetch_app.command("afdb")
@@ -65,7 +65,7 @@ def fetch_afdb_cmd(
     console.print(f"[bold green]✓[/bold green] Downloaded to: [cyan]{path}[/cyan]")
   except Exception as e:
     console.print(f"[red]Error fetching {id}: {e}[/red]")
-    raise typer.Exit(1)
+    raise typer.Exit(1) from e
 
 
 @fetch_app.command("foldcomp")
@@ -80,7 +80,7 @@ def fetch_foldcomp_cmd(
     console.print(f"[bold green]✓[/bold green] Downloaded to: [cyan]{path}[/cyan]")
   except Exception as e:
     console.print(f"[red]Error fetching {db}: {e}[/red]")
-    raise typer.Exit(1)
+    raise typer.Exit(1) from e
 
 
 @app.command()
@@ -110,7 +110,7 @@ def info(
 
   except Exception as e:
     console.print(f"[red]Error reading {path}: {e}[/red]")
-    raise typer.Exit(1)
+    raise typer.Exit(1) from e
 
 
 @app.command()
@@ -192,7 +192,7 @@ def convert(
 
   except Exception as e:
     console.print(f"[red]Error during conversion: {e}[/red]")
-    raise typer.Exit(1)
+    raise typer.Exit(1) from e
 
 
 @app.command()
@@ -206,7 +206,7 @@ def validate(
     console.print(f"[bold green]✓[/bold green] {path} is valid.")
   except Exception as e:
     console.print(f"[bold red]✗[/bold red] Validation failed for {path}: {e}")
-    raise typer.Exit(1)
+    raise typer.Exit(1) from e
 
 
 @app.command()
@@ -239,7 +239,7 @@ def bench(
 
   except Exception as e:
     console.print(f"[red]Benchmark failed: {e}[/red]")
-    raise typer.Exit(1)
+    raise typer.Exit(1) from e
 
 
 @app.command()
@@ -280,7 +280,7 @@ def parameterize(
 
   except Exception as e:
     console.print(f"[red]Parameterization failed: {e}[/red]")
-    raise typer.Exit(1)
+    raise typer.Exit(1) from e
 
 
 @app.command()
@@ -310,7 +310,7 @@ def charges(
 
   except Exception as e:
     console.print(f"[red]Charge assignment failed: {e}[/red]")
-    raise typer.Exit(1)
+    raise typer.Exit(1) from e
 
 
 @app.command()

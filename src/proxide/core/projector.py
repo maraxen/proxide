@@ -147,15 +147,25 @@ def project_to_mpnn(system: AtomicSystem, spec: OutputSpec) -> MPNNBatch:
   )
 
 
-@register_projector("openmm")
-def project_to_openmm_system(system: AtomicSystem, spec: OutputSpec) -> Any:
-  """Project AtomicSystem to OpenMM System.
+@dataclass
+class OpenMMSpec:
+  """Specification for OpenMM projection."""
 
-  Moves the logic previously in AtomicSystem.to_openmm_system().
+  output_format_target: str = "openmm"
+  coulomb14scale: float = 1.0
+  lj14scale: float = 1.0
+
+
+@register_projector("openmm")
+def project_to_openmm_system(
+    system: AtomicSystem, spec: OpenMMSpec | None = None, **kwargs: Any
+) -> Any:
+  """Project AtomicSystem to OpenMM System.
 
   Args:
     system: AtomicSystem with topology and constants.
-    spec: OutputSpec (currently unused but for future params).
+    spec: OpenMMSpec with scaling parameters.
+    **kwargs: Additional parameters for OpenMM system (e.g., nonbonded_cutoff).
 
   Returns:
     openmm.System with forces configured.
@@ -163,8 +173,10 @@ def project_to_openmm_system(system: AtomicSystem, spec: OutputSpec) -> Any:
   """
   try:
     from openmm import (  # type: ignore[unresolved-import]
+      HarmonicAngleForce,
       HarmonicBondForce,
       NonbondedForce,
+      PeriodicTorsionForce,
       System,
     )
     from openmm import unit as u  # type: ignore[unresolved-import]
@@ -174,6 +186,10 @@ def project_to_openmm_system(system: AtomicSystem, spec: OutputSpec) -> Any:
     ) from e
 
   import numpy as np
+
+  coulomb14scale = spec.coulomb14scale if spec is not None else 1.0
+  lj14scale = spec.lj14scale if spec is not None else 1.0
+  cutoff = kwargs.get("nonbonded_cutoff", 1.0)
 
   coords = np.asarray(system.state.coordinates)
   mask = np.asarray(system.atom_mask) if system.atom_mask is not None else np.ones(len(coords))
@@ -186,59 +202,70 @@ def project_to_openmm_system(system: AtomicSystem, spec: OutputSpec) -> Any:
   omm_system = System()
 
   # Element masses
-  element_masses = {
-    "H": 1.008,
-    "C": 12.011,
-    "N": 14.007,
-    "O": 15.999,
-    "S": 32.065,
-    "P": 30.974,
-    "F": 18.998,
-    "Cl": 35.453,
-  }
-
   elements = system.topology.elements or ["C"] * n_atoms
   for i in range(n_atoms):
     elem = elements[i] if i < len(elements) else "C"
-    mass = element_masses.get(elem, 12.011)
+    # Basic mass approximation
+    mass = {"H": 1.008, "C": 12.011, "N": 14.007, "O": 15.999, "S": 32.065}.get(elem, 12.011)
     omm_system.addParticle(mass * u.amu)
 
   # Nonbonded force
   nonbonded = NonbondedForce()
   nonbonded.setNonbondedMethod(NonbondedForce.CutoffPeriodic)
-  nonbonded.setCutoffDistance(1.0 * u.nanometer)
+  nonbonded.setCutoffDistance(cutoff * u.nanometer)
 
-  if system.constants:
-    charges = (
-      np.asarray(system.constants.charges)
-      if system.constants.charges is not None
-      else np.zeros(n_atoms)
-    )
-    sigmas = (
-      np.asarray(system.constants.sigmas)
-      if system.constants.sigmas is not None
-      else np.ones(n_atoms) * 0.3
-    )
-    epsilons = (
-      np.asarray(system.constants.epsilons)
-      if system.constants.epsilons is not None
-      else np.zeros(n_atoms)
-    )
-  else:
-    charges = np.zeros(n_atoms)
-    sigmas = np.ones(n_atoms) * 0.3
-    epsilons = np.zeros(n_atoms)
+  charges = (
+    np.asarray(system.constants.charges)
+    if system.constants is not None and system.constants.charges is not None
+    else np.zeros(n_atoms)
+  )
+  sigmas = (
+    np.asarray(system.constants.sigmas)
+    if system.constants is not None and system.constants.sigmas is not None
+    else np.ones(n_atoms) * 0.3
+  )
+  epsilons = (
+    np.asarray(system.constants.epsilons)
+    if system.constants is not None and system.constants.epsilons is not None
+    else np.zeros(n_atoms)
+  )
 
-  # Convert units
+  # Convert units (assuming input in Angstrom/kcal/mol)
   sigmas_nm = sigmas * 0.1
   epsilons_kjmol = epsilons * 4.184
 
   for i in range(n_atoms):
-    q = float(charges[i])
-    sig = float(sigmas_nm[i])
-    eps = float(epsilons_kjmol[i])
-    nonbonded.addParticle(q, sig * u.nanometer, eps * u.kilojoule_per_mole)
+    nonbonded.addParticle(
+        float(charges[i]),
+        float(sigmas_nm[i]) * u.nanometer,
+        float(epsilons_kjmol[i]) * u.kilojoule_per_mole,
+    )
 
+  # Exclusions and 1-4 scaling
+  if system.topology.bonds is not None:
+    bonds = np.asarray(system.topology.bonds)
+    # 1-2 exclusions
+    for b in bonds:
+      nonbonded.addException(int(b[0]), int(b[1]), 0.0, 0.0, 0.0)
+
+    # 1-3 exclusions
+    if system.topology.angles is not None:
+      for angle in np.asarray(system.topology.angles):
+        nonbonded.addException(int(angle[0]), int(angle[2]), 0.0, 0.0, 0.0)
+
+    # 1-4 scaling
+    if system.topology.proper_dihedrals is not None:
+      for dihedral in np.asarray(system.topology.proper_dihedrals):
+        idx_i, idx_l = int(dihedral[0]), int(dihedral[3])
+        # Calculate scaling values
+        charge_prod = float(charges[idx_i] * charges[idx_l] * coulomb14scale)
+        combined_sigma = 0.5 * (float(sigmas_nm[idx_i]) + float(sigmas_nm[idx_l]))
+        combined_epsilon = (
+            np.sqrt(float(epsilons_kjmol[idx_i]) * float(epsilons_kjmol[idx_l])) * lj14scale
+        )
+        nonbonded.addException(idx_i, idx_l, charge_prod, combined_sigma, combined_epsilon)
+
+  nonbonded.setReactionFieldDielectric(78.5)
   omm_system.addForce(nonbonded)
 
   # Bond force
@@ -257,6 +284,56 @@ def project_to_openmm_system(system: AtomicSystem, spec: OutputSpec) -> Any:
         k = float(bond_params[b_idx, 1]) * 4.184 * 100
         bond_force.addBond(i, j, length * u.nanometer, k * u.kilojoule_per_mole / u.nanometer**2)
     omm_system.addForce(bond_force)
+
+  # Angle force
+  if (
+    system.topology.angles is not None
+    and system.constants
+    and system.constants.angle_params is not None
+  ):
+    angle_force = HarmonicAngleForce()
+    angles = np.asarray(system.topology.angles)
+    angle_params = np.asarray(system.constants.angle_params)
+    for a_idx in range(len(angles)):
+      i, j, k = int(angles[a_idx, 0]), int(angles[a_idx, 1]), int(angles[a_idx, 2])
+      if i < n_atoms and j < n_atoms and k < n_atoms:
+        angle_rad = float(angle_params[a_idx, 0]) * np.pi / 180.0
+        k_angle = float(angle_params[a_idx, 1]) * 4.184
+        angle_force.addAngle(
+            i, j, k, angle_rad * u.radian, k_angle * u.kilojoule_per_mole / u.radian**2
+        )
+    omm_system.addForce(angle_force)
+
+  # Torsion force
+  if (
+      system.topology.proper_dihedrals is not None
+      and system.constants
+      and system.constants.dihedral_params is not None
+  ):
+    torsion_force = PeriodicTorsionForce()
+    dihedrals = np.asarray(system.topology.proper_dihedrals)
+    dihedral_params = np.asarray(system.constants.dihedral_params)
+    for d_idx in range(len(dihedrals)):
+      i_d, j_d, k_d, l_d = (
+          int(dihedrals[d_idx, 0]),
+          int(dihedrals[d_idx, 1]),
+          int(dihedrals[d_idx, 2]),
+          int(dihedrals[d_idx, 3]),
+      )
+      if i_d < n_atoms and j_d < n_atoms and k_d < n_atoms and l_d < n_atoms:
+        periodicity = int(dihedral_params[d_idx, 0])
+        phase = float(dihedral_params[d_idx, 1]) * np.pi / 180.0
+        k_torsion = float(dihedral_params[d_idx, 2]) * 4.184
+        torsion_force.addTorsion(
+            i_d,
+            j_d,
+            k_d,
+            l_d,
+            periodicity,
+            phase * u.radian,
+            k_torsion * u.kilojoule_per_mole,
+        )
+    omm_system.addForce(torsion_force)
 
   return omm_system
 

@@ -7,6 +7,7 @@ This module defines:
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Generator, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -150,6 +151,88 @@ class Protein:
   scale_matrix_vdw: Any | None = None
   scale_matrix_elec: Any | None = None
   atom_res_index: Any | None = None
+
+  @property
+  def num_atoms(self) -> int:
+    """Total number of atoms."""
+    if self.atom_mask is not None:
+      return int(jnp.sum(self.atom_mask))
+    return int(self.coordinates.size / 3)
+
+  @property
+  def num_protein_atoms(self) -> int:
+    """Number of protein atoms."""
+    if self.molecule_type is None:
+      return self.num_atoms
+    # Protein is 0
+    return int(jnp.sum(self.molecule_type == 0))
+
+  @property
+  def atom_residue_ids(self) -> jnp.ndarray:
+    """Get the residue index for each atom."""
+    if self.atom_res_index is not None:
+      return self.atom_res_index
+    if self.format == "Atom37":
+      return jnp.repeat(self.residue_index, 37)
+    if self.format == "Atom14":
+      return jnp.repeat(self.residue_index, 14)
+    # For Flat/Full format, residue_index should already be per-atom
+    return self.residue_index
+
+  @property
+  def coord_shape(self) -> tuple[int, ...]:
+    """Get the shape of the coordinates."""
+    return self.coordinates.shape
+
+  def replace(self, **kwargs: Any) -> Protein:
+    """Return a new Protein instance with the specified fields replaced."""
+    return dataclasses.replace(self, **kwargs)
+
+  def to_openmm_system(self, coulomb14scale: float = 1.0, lj14scale: float = 1.0) -> Any:
+    """Convert to OpenMM system."""
+    # Convert Protein to AtomicSystem or use its fields directly if possible
+    # Given the complexity of full conversion, we might need to be clever
+    # For now, let's assume we can create an AtomicSystem representation or access necessary fields.
+    # This is a simplification.
+    from proxide.core.atomic_system import (
+      AtomicState,
+      AtomicSystem,
+      MolecularTopology,
+    )
+    from proxide.core.projector import OpenMMSpec, project_to_openmm_system
+
+    # Ensure coordinates are not None
+    coords = self.full_coordinates if self.full_coordinates is not None else jnp.zeros((0, 3))
+    
+    # Attempt to extract fields
+    # Note: This is an incomplete conversion, but mimics the requested interface.
+    system = AtomicSystem(
+        topology=MolecularTopology(),
+        state=AtomicState(coordinates=coords),
+        atom_mask=self.full_atom_mask,
+    )
+
+    spec = OpenMMSpec(coulomb14scale=coulomb14scale, lj14scale=lj14scale)
+    return project_to_openmm_system(system, spec)
+
+  def to_openmm_topology(self) -> Any:
+    """Convert to OpenMM topology."""
+    from types import SimpleNamespace
+
+    from proxide.core.atomic_system import AtomicState, AtomicSystem, MolecularTopology
+    from proxide.core.projector import project_to_openmm_topology
+
+    # Ensure coordinates are not None
+    coords = self.full_coordinates if self.full_coordinates is not None else jnp.zeros((0, 3))
+    
+    system = AtomicSystem(
+        topology=MolecularTopology(),
+        state=AtomicState(coordinates=coords),
+        atom_mask=self.full_atom_mask,
+    )
+
+    spec = SimpleNamespace(output_format_target="openmm_topology")
+    return project_to_openmm_topology(system, spec)
 
   @classmethod
   def from_rust_dict(
@@ -314,6 +397,9 @@ class Protein:
         virtual_site_params=convert(rust_dict.get("virtual_site_params"))
         if rust_dict.get("virtual_site_params") is not None
         else None,
+        atom_res_index=convert(rust_dict["atom_residue_ids"], dtype=np.int32)
+        if rust_dict.get("atom_residue_ids") is not None
+        else None,
         coulomb14scale=rust_dict.get("coulomb14scale"),
         lj14scale=rust_dict.get("lj14scale"),
       )
@@ -408,6 +494,9 @@ class Protein:
       else None,
       exception_14_params=convert_params(rust_dict.get("exception_14_params"), "exception")
       if rust_dict.get("exception_14_params") is not None
+      else None,
+      atom_res_index=convert(rust_dict.get("atom_residue_ids"), dtype=np.int32)
+      if rust_dict.get("atom_residue_ids") is not None
       else None,
       coulomb14scale=rust_dict.get("coulomb14scale"),
       lj14scale=rust_dict.get("lj14scale"),

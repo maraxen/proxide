@@ -225,11 +225,15 @@ def load_rust(
                 atom_mask=new_atom_mask,
                 full_coordinates=new_full_coords,
                 # full_atom_mask should satisfy AtomicSystem's expectation (often flat)
-                full_atom_mask=new_atom_mask.flatten()
-                if (new_atom_mask is not None and new_atom_mask.ndim > 1)
-                else new_atom_mask,
+                full_atom_mask=(
+                  new_atom_mask.flatten()
+                  if (new_atom_mask is not None and new_atom_mask.ndim > 1)
+                  else new_atom_mask
+                ),
                 chain_ids=list(target_chains),  # Update chain list
                 source=obj.source,
+                coulomb14scale=getattr(obj, "coulomb14scale", None),
+                lj14scale=getattr(obj, "lj14scale", None),
                 # TODO: Propagate/slice physics
               )
 

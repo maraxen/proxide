@@ -225,7 +225,6 @@ class Gaff2Rule:
             match = re.match(r"\((\w+)\((\w+)\)\)$", pattern)
             if match:
                 primary = match.group(1)
-                secondary = match.group(2)
                 # Must have at least one neighbor matching primary type
                 if not self._matches_wildatom(primary, neighbor_elements, wildatom_map):
                     return False
@@ -498,7 +497,7 @@ def assign_gaff2_atom_types(
 
     atom_types: list[str] = []
 
-    for i, feat in enumerate(features):
+    for _i, feat in enumerate(features):
         assigned = False
 
         # For rule matching, use attached_with_implicit_h to get correct degree for aromatic C
@@ -556,7 +555,10 @@ def _get_default_rules() -> tuple[list[Gaff2Rule], dict[str, list[str]]]:
             _default_rules = []
             _default_wildatom = {}
 
-    return _default_rules, _default_wildatom
+    return (
+        _default_rules if _default_rules is not None else [],
+        _default_wildatom if _default_wildatom is not None else {},
+    )
 
 
 def load_gaff2_rules(
@@ -850,7 +852,7 @@ def parameterize_gaff_with_rdkit(
     # Substitutions for atom type looking (cx->c3, etc.)
     type_substitutions = {
         'cx': 'c3', 'cy': 'c3', 'c5': 'c3', 'c6': 'c3',
-        'n7': 'n3', 'n8': 'n3', 'n7': 'n3', 'nx': 'n3',
+        'n7': 'n3', 'n8': 'n3', 'nx': 'n3',
         'ny': 'n3', 'ni': 'n', 'nu': 'n3', 'nv': 'n3',
     }
 
@@ -870,13 +872,14 @@ def parameterize_gaff_with_rdkit(
                 if k <= j or k == i:
                     continue
                 for bond3 in mol.GetAtomWithIdx(k).GetBonds():
-                    l = bond3.GetOtherAtomIdx(k)
-                    if l <= k or l == j:
+                    neighbor_idx = bond3.GetOtherAtomIdx(k)
+                    if neighbor_idx <= k or neighbor_idx == j:
                         continue
+                    l = neighbor_idx
                     t_i = atom_types[i] if i < len(atom_types) else "x"
                     t_j = atom_types[j] if j < len(atom_types) else "x"
                     t_k = atom_types[k] if k < len(atom_types) else "x"
-                    t_l = atom_types[l] if l < len(atom_types) else "x"
+                    t_l = atom_types[neighbor_idx] if neighbor_idx < len(atom_types) else "x"
 
                     key = (t_i, t_j, t_k, t_l)
 
