@@ -1227,7 +1227,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-core"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "bytemuck",
  "log",
@@ -1243,7 +1243,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-gaff"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "lazy_static",
  "log",
@@ -1255,7 +1255,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-geometry"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "bytemuck",
  "log",
@@ -1268,7 +1268,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-io"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "flate2",
  "hdf5-metno",
@@ -1287,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-physics"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "approx",
  "bytemuck",
@@ -1303,11 +1303,11 @@ dependencies = [
 
 [[package]]
 name = "proxide-units"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 
 [[package]]
 name = "proxide_fixer"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "log",
  "nalgebra",
@@ -1319,7 +1319,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_py"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "bytemuck",
  "log",
@@ -1335,7 +1335,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_rs"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "bytemuck",
  "lazy_static",

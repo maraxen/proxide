@@ -973,4 +973,81 @@ mod tests {
         let result = parameterize_structure(&structure, &topology, &ff, &options);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_dihedral_and_improper_params() {
+        let mut ff = make_test_forcefield();
+        
+        // Add Proper Torsion
+        ff.proper_torsions.push(proxide_core::forcefield::ProperTorsionParam {
+            class1: "N".to_string(),
+            class2: "CX".to_string(),
+            class3: "C".to_string(),
+            class4: "N".to_string(),
+            terms: vec![proxide_core::forcefield::TorsionTerm {
+                periodicity: 3,
+                phase: 0.0,
+                k: 1.5,
+            }],
+        });
+        
+        // Add Improper
+        ff.improper_torsions.push(proxide_core::forcefield::ImproperTorsionParam {
+            class1: "N".to_string(),
+            class2: "N".to_string(),
+            class3: "CX".to_string(), // Center
+            class4: "C".to_string(),
+            terms: vec![proxide_core::forcefield::TorsionTerm {
+                periodicity: 2,
+                phase: 3.14159,
+                k: 10.0,
+            }],
+        });
+
+        // Set up dummy topology with dihedral/improper
+        let structure = make_test_structure();
+        let bonds = vec![
+            proxide_core::forcefield::Bond::new(0, 1),
+            proxide_core::forcefield::Bond::new(1, 2),
+            proxide_core::forcefield::Bond::new(2, 0),
+        ];
+        let elements = vec!["N".to_string(), "C".to_string(), "C".to_string()];
+        let mut topology = proxide_core::forcefield::Topology::new(bonds, &elements);
+        
+        topology.proper_dihedrals.push(proxide_core::forcefield::Dihedral::new_proper(0, 1, 2, 0));
+        topology.improper_dihedrals.push(proxide_core::forcefield::Dihedral::new_improper(1, 0, 0, 2));
+        
+        let options = ParamOptions::default();
+        let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
+        
+        assert!(!params.dihedral_params.is_empty());
+        assert!(!params.improper_params.is_empty());
+    }
+
+    #[test]
+    fn test_cmap_params() {
+        let mut ff = make_test_forcefield();
+        ff.cmap_data = Some(proxide_core::forcefield::CMAPData {
+            torsions: vec![proxide_core::forcefield::CMAPTorsion {
+                class1: "N".to_string(),
+                type2: "CX".to_string(),
+                type3: "C".to_string(),
+                type4: "N".to_string(),
+                class5: "CX".to_string(),
+                map_index: 0,
+            }],
+            maps: vec![proxide_core::forcefield::CMAPGrid { size: 24, energies: vec![0.0; 24*24] }],
+        });
+
+        let structure = make_test_structure();
+        let bonds = vec![
+            proxide_core::forcefield::Bond::new(0, 1),
+            proxide_core::forcefield::Bond::new(1, 2),
+        ];
+        let elements = vec!["N".to_string(), "C".to_string(), "C".to_string()];
+        let topology = proxide_core::forcefield::Topology::new(bonds, &elements);
+        let options = ParamOptions::default();
+        
+        let _ = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
+    }
 }

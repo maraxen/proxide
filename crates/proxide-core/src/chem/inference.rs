@@ -226,3 +226,22 @@ impl RowAddInplace for DMatrix<f32> {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_weight_bundle_load_fail() {
+        let bad_data = b"FAIL000000000000000000000000";
+        let result = std::panic::catch_unwind(|| EspalomaWeights::from_bytes(bad_data));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(FEATURE_UNITS, 116);
+        assert_eq!(SAGE_HIDDEN, 128);
+        assert_eq!(N_SAGE_LAYERS, 4);
+    }
+}

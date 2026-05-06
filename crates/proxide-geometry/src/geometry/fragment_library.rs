@@ -230,8 +230,8 @@ pub fn kabsch_rotation(fixed: &[[f32; 3]; 3], mobile: &[[f32; 3]; 3]) -> [[f32; 
 
     // SVD decomposition: H = U × S × V^T
     let svd = SVD::new(h, true, true);
-    let u = svd.u.unwrap();
-    let vt = svd.v_t.unwrap();
+    let u = svd.u.expect("SVD failed");
+    let vt = svd.v_t.expect("SVD failed");
 
     // Rotation matrix R = U × V^T
     // This rotates mobile coordinates onto fixed coordinates
@@ -264,14 +264,6 @@ pub fn rotate_point(point: &[f32; 3], rotation: &[[f32; 3]; 3]) -> [f32; 3] {
     ]
 }
 
-/// Calculate hydrogen positions for a single atom.
-///
-/// # Arguments
-/// * `library` - Fragment library
-/// * `element` - Central atom element
-/// * `charge` - Formal charge
-/// * `stereo` - Stereochemistry indicator
-///
 /// Calculate hydrogen positions for a single atom.
 ///
 /// # Arguments
@@ -329,214 +321,6 @@ pub fn calculate_hydrogen_positions(
     Some(hydrogen_positions)
 }
 
-// ============================================================================
-// Helper functions for 3×3 matrix operations
-// ============================================================================
-
-fn determinant_3x3(m: &[[f32; 3]; 3]) -> f32 {
-    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
-}
-
-/// Simple SVD for 3×3 matrices using Jacobi rotations.
-/// Returns (U, S, V^T)
-fn svd_3x3(a: &[[f32; 3]; 3]) -> ([[f32; 3]; 3], [f32; 3], [[f32; 3]; 3]) {
-    // For a production implementation, consider using nalgebra crate
-    // This is a simplified version using power iteration / Jacobi method
-
-    // A^T × A to get V
-    let mut ata = [[0.0f32; 3]; 3];
-    for (i, row) in ata.iter_mut().enumerate() {
-        for (j, val) in row.iter_mut().enumerate() {
-            #[allow(clippy::needless_range_loop)]
-            for k in 0..3 {
-                *val += a[k][i] * a[k][j];
-            }
-        }
-    }
-
-    // Eigendecomposition of A^T A using Jacobi rotations
-    let (eigenvalues, v) = jacobi_eigendecomposition(&ata);
-
-    // Singular values are sqrt of eigenvalues
-    let s = [
-        eigenvalues[0].sqrt(),
-        eigenvalues[1].sqrt(),
-        eigenvalues[2].sqrt(),
-    ];
-
-    // U = A × V × S^-1
-    let mut u = [[0.0f32; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            let mut sum = 0.0f32;
-            for k in 0..3 {
-                sum += a[i][k] * v[k][j];
-            }
-            u[i][j] = if s[j] > 1e-10 { sum / s[j] } else { 0.0 };
-        }
-    }
-
-    // Fix rank deficiency in U to ensure it's a valid rotation base
-    let mut zero_cols = Vec::new();
-    #[allow(clippy::needless_range_loop)]
-    for j in 0..3 {
-        if s[j] <= 1e-10 {
-            zero_cols.push(j);
-        }
-    }
-
-    if zero_cols.len() == 1 {
-        // Rank 2: The missing column is cross product of other two
-        let missing = zero_cols[0];
-        let c1 = (missing + 1) % 3;
-        let c2 = (missing + 2) % 3;
-
-        let v1 = [u[0][c1], u[1][c1], u[2][c1]];
-        let v2 = [u[0][c2], u[1][c2], u[2][c2]];
-        let cross = cross_product(&v1, &v2);
-        // Normalize checking is good practice though theoretically v1,v2 are unit orthogonal
-        let cross = normalize(&cross);
-        u[0][missing] = cross[0];
-        u[1][missing] = cross[1];
-        u[2][missing] = cross[2];
-    } else if zero_cols.len() == 2 {
-        // Rank 1: One valid column
-        // Build valid orthonormal basis around the one valid column
-        let valid = (0..3).find(|&j| s[j] > 1e-10).unwrap_or(0);
-        let v_valid = [u[0][valid], u[1][valid], u[2][valid]];
-        let v_valid = normalize(&v_valid);
-
-        // Find arbitrary perp
-        let mut arb = [1.0, 0.0, 0.0];
-        if (v_valid[0].abs() - 1.0).abs() < 0.1 {
-            arb = [0.0, 1.0, 0.0];
-        }
-
-        let v_perp1 = cross_product(&v_valid, &arb);
-        let v_perp1 = normalize(&v_perp1);
-
-        let v_perp2 = cross_product(&v_valid, &v_perp1);
-        let v_perp2 = normalize(&v_perp2);
-
-        let m1 = zero_cols[0];
-        let m2 = zero_cols[1];
-
-        for i in 0..3 {
-            u[i][m1] = v_perp1[i];
-        }
-        for i in 0..3 {
-            u[i][m2] = v_perp2[i];
-        }
-    } else if zero_cols.len() == 3 {
-        // Rank 0: Identity
-        u = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-    }
-
-    // V^T
-    let mut vt = [[0.0f32; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            vt[i][j] = v[j][i];
-        }
-    }
-
-    (u, s, vt)
-}
-
-/// Jacobi eigendecomposition for symmetric 3×3 matrix.
-fn jacobi_eigendecomposition(a: &[[f32; 3]; 3]) -> ([f32; 3], [[f32; 3]; 3]) {
-    let mut d = *a; // Working copy
-    let mut v = [[0.0f32; 3]; 3]; // Eigenvectors
-
-    // Initialize V as identity
-    #[allow(clippy::needless_range_loop)]
-    for i in 0..3 {
-        v[i][i] = 1.0;
-    }
-
-    // Jacobi iterations
-    for _ in 0..50 {
-        // Find largest off-diagonal element
-        let mut max_val = 0.0f32;
-        let mut p = 0;
-        let mut q = 1;
-        for (i, row) in d.iter().enumerate() {
-            for (j, &val) in row.iter().enumerate().skip(i + 1) {
-                if val.abs() > max_val {
-                    max_val = val.abs();
-                    p = i;
-                    q = j;
-                }
-            }
-        }
-
-        if max_val < 1e-10 {
-            break;
-        }
-
-        // Compute rotation angle
-        let theta = if (d[q][q] - d[p][p]).abs() < 1e-10 {
-            std::f32::consts::FRAC_PI_4
-        } else {
-            0.5 * (2.0 * d[p][q] / (d[q][q] - d[p][p])).atan()
-        };
-
-        let c = theta.cos();
-        let s = theta.sin();
-
-        // Apply rotation to D
-        let dpp = c * c * d[p][p] - 2.0 * s * c * d[p][q] + s * s * d[q][q];
-        let dqq = s * s * d[p][p] + 2.0 * s * c * d[p][q] + c * c * d[q][q];
-
-        d[p][q] = 0.0;
-        d[q][p] = 0.0;
-        d[p][p] = dpp;
-        d[q][q] = dqq;
-
-        #[allow(clippy::needless_range_loop)]
-        for r in 0..3 {
-            if r != p && r != q {
-                let dpr = c * d[p][r] - s * d[q][r];
-                let dqr = s * d[p][r] + c * d[q][r];
-                d[p][r] = dpr;
-                d[r][p] = dpr;
-                d[q][r] = dqr;
-                d[r][q] = dqr;
-            }
-        }
-
-        // Apply rotation to V
-        #[allow(clippy::needless_range_loop)]
-        for r in 0..3 {
-            let vpr = c * v[r][p] - s * v[r][q];
-            let vqr = s * v[r][p] + c * v[r][q];
-            v[r][p] = vpr;
-            v[r][q] = vqr;
-        }
-    }
-
-    ([d[0][0], d[1][1], d[2][2]], v)
-}
-
-fn cross_product(a: &[f32; 3], b: &[f32; 3]) -> [f32; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
-
-fn normalize(a: &[f32; 3]) -> [f32; 3] {
-    let norm = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
-    if norm > 1e-10 {
-        [a[0] / norm, a[1] / norm, a[2] / norm]
-    } else {
-        [0.0, 0.0, 0.0]
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,49 +329,74 @@ mod tests {
     fn test_fragment_key() {
         let key1 = FragmentKey::new("C", 0, 0, vec![1, 2, 1]);
         let key2 = FragmentKey::new("C", 0, 0, vec![1, 1, 2]);
-
-        // Bond types should be sorted, so these should be equal
         assert_eq!(key1, key2);
     }
 
     #[test]
     fn test_kabsch_identity() {
         let coords: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-
         let rotation = kabsch_rotation(&coords, &coords);
-
-        // Should be approximately identity
-        #[allow(clippy::needless_range_loop)]
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!(
-                    (rotation[i][j] - expected).abs() < 0.01,
-                    "rotation[{}][{}] = {} (expected {})",
-                    i,
-                    j,
-                    rotation[i][j],
-                    expected
-                );
+                assert!((rotation[i][j] - expected).abs() < 0.01);
             }
         }
     }
 
     #[test]
     fn test_rotate_point() {
-        // 90 degree rotation around Z axis
         let rotation = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]];
         let point = [1.0, 0.0, 0.0];
         let rotated = rotate_point(&point, &rotation);
-
         assert!((rotated[0] - 0.0).abs() < 0.01);
         assert!((rotated[1] - 1.0).abs() < 0.01);
         assert!((rotated[2] - 0.0).abs() < 0.01);
     }
 
     #[test]
-    fn test_determinant() {
-        let identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-        assert!((determinant_3x3(&identity) - 1.0).abs() < 0.001);
+    fn test_from_binary_invalid_header() {
+        let data = b"BADH1234567890123";
+        assert!(FragmentLibrary::from_binary(data).is_err());
+    }
+
+    #[test]
+    fn test_from_binary_empty_library() {
+        // FRAG + version 1 + 0 entries = 12 bytes
+        let mut data = vec![];
+        data.extend_from_slice(b"FRAG");
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        let lib = FragmentLibrary::from_binary(&data).unwrap();
+        assert!(lib.is_empty());
+    }
+
+    #[test]
+    fn test_calculate_hydrogen_positions_rotation() {
+        let mut lib = FragmentLibrary::new();
+        let key = FragmentKey::new("C", 0, 0, vec![1]);
+        // Centered coordinates:
+        let heavy_coords = [[1.0, 0.0, 0.0], [-0.5, 0.866, 0.0], [-0.5, -0.866, 0.0]];
+        lib.fragments.insert(key.clone(), Fragment {
+            residue_name: "test".to_string(),
+            atom_name: "C".to_string(),
+            heavy_coords,
+            hydrogen_coords: vec![[0.0, 0.0, 1.0]],
+        });
+
+        // Rotate target heavy coords by 90 deg around Z
+        let rotated_heavy = [[0.0, 1.0, 0.0], [-0.866, -0.5, 0.0], [0.866, -0.5, 0.0]];
+
+        let center = [0.0, 0.0, 0.0];
+        let h_pos = calculate_hydrogen_positions(&lib, "C", 0, 0, vec![1], center, &rotated_heavy).unwrap();
+
+        assert_eq!(h_pos.len(), 1);
+        // Original H was at [0, 0, 1], rotating by 90 deg around Z leaves it at [0, 0, 1]
+        // Wait, rotating heavy_coords by 90 around Z, rotates [0,0,1] around Z?
+        // Z is the axis of rotation, so H should remain at [0,0,1].
+        assert!((h_pos[0][0] - 0.0).abs() < 0.01);
+        assert!((h_pos[0][1] - 0.0).abs() < 0.01);
+        assert!((h_pos[0][2] - 1.0).abs() < 0.01);
     }
 }
