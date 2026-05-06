@@ -73,17 +73,18 @@ pub struct MDParameters {
     /// Proper dihedrals as [atom1, atom2, atom3, atom4]
     pub dihedrals: Vec<[usize; 4]>,
     /// Dihedral parameters (periodicity, phase, k)
-    /// Note: A single dihedral may have multiple terms, this list flattens them
-    /// by repeating the atom indices or we keep them parallel?
-    /// Standard approach: List all terms. If a 1-2-3-4 quaternion has 3 terms,
-    /// it appears 3 times in the list or we use a more complex struct.
-    /// For simplicity and OpenMM compatibility, we'll flatten: each term is a separate entry.
+    /// Note: This is now a multi-row array of shape (num_dihedrals * max_proper_terms, 3)
     pub dihedral_params: Vec<[f32; 3]>,
+    /// Maximum number of terms per proper dihedral
+    pub max_proper_terms: usize,
 
     /// Improper dihedrals as [atom1, atom2, atom3, atom4]
     pub impropers: Vec<[usize; 4]>,
     /// Improper parameters (periodicity, phase, k)
+    /// Note: This is now a multi-row array of shape (num_impropers * max_improper_terms, 3)
     pub improper_params: Vec<[f32; 3]>,
+    /// Maximum number of terms per improper dihedral
+    pub max_improper_terms: usize,
 
     /// 1-4 Pairs for scaling (atom1, atom2)
     pub pairs_14: Vec<[usize; 2]>,
@@ -154,15 +155,11 @@ pub fn parameterize_structure(
     let mut num_skipped = 0usize;
 
     // Initialize topology vectors
-    let mut bonds_vec = Vec::new();
-    let mut bond_params = Vec::new();
-    let mut angles_vec = Vec::new();
-    let mut angle_params = Vec::new();
-    let mut dihedrals_vec = Vec::new();
-    let mut dihedral_params = Vec::new();
-    let mut impropers_vec = Vec::new();
-    let mut improper_params = Vec::new();
-    let mut pairs_14 = Vec::new();
+    let mut bonds_vec: Vec<[usize; 2]> = Vec::new();
+    let mut bond_params: Vec<[f32; 2]> = Vec::new();
+    let mut angles_vec: Vec<[usize; 3]> = Vec::new();
+    let mut angle_params: Vec<[f32; 2]> = Vec::new();
+    let mut pairs_14: Vec<[usize; 2]> = Vec::new();
 
     // CMAP
     let mut cmap_torsions = Vec::new();
@@ -621,6 +618,10 @@ pub fn parameterize_structure(
     let mut exception_14_params = Vec::new();
     let mut seen_14_pairs = HashSet::new();
 
+    let mut dihedrals_vec = Vec::new();
+    let mut all_proper_terms = Vec::new();
+    let mut max_proper_terms = 0;
+
     for dih in &proper_topology {
         let matches = lookup_proper_all(
             &atom_classes[dih.i],
@@ -634,14 +635,20 @@ pub fn parameterize_structure(
             ff,
         );
 
+        let mut terms_collected = Vec::new();
         for params in matches {
             for term in &params.terms {
                 // Filter out small k values to avoid phantom topology, matching Legacy behavior
                 if term.k.abs() > 1e-6 {
-                    dihedrals_vec.push([dih.i, dih.j, dih.k, dih.l]);
-                    dihedral_params.push([term.periodicity as f32, term.phase, term.k]);
+                    terms_collected.push([term.periodicity as f32, term.phase, term.k]);
                 }
             }
+        }
+
+        if !terms_collected.is_empty() {
+            max_proper_terms = max_proper_terms.max(terms_collected.len());
+            dihedrals_vec.push([dih.i, dih.j, dih.k, dih.l]);
+            all_proper_terms.push(terms_collected);
         }
 
         // Add 1-4 pair and compute scaling exceptions (only once per unique topology dihedral)
@@ -674,7 +681,23 @@ pub fn parameterize_structure(
         }
     }
 
+    // Flatten proper dihedral params with padding
+    let mut dihedral_params = Vec::with_capacity(dihedrals_vec.len() * max_proper_terms);
+    for terms in all_proper_terms {
+        for i in 0..max_proper_terms {
+            if i < terms.len() {
+                dihedral_params.push(terms[i]);
+            } else {
+                dihedral_params.push([0.0, 0.0, 0.0]);
+            }
+        }
+    }
+
     // Assign Improper Params
+    let mut impropers_vec = Vec::new();
+    let mut all_improper_terms = Vec::new();
+    let mut max_improper_terms = 0;
+
     for imp in &improper_topology {
         let matches = lookup_improper(
             ImproperLookupParams {
@@ -689,10 +712,31 @@ pub fn parameterize_structure(
             },
             ff,
         );
+
+        let mut terms_collected = Vec::new();
         for params in matches {
             for term in &params.terms {
-                impropers_vec.push([imp.i, imp.j, imp.k, imp.l]);
-                improper_params.push([term.periodicity as f32, term.phase, term.k]);
+                if term.k.abs() > 1e-6 {
+                    terms_collected.push([term.periodicity as f32, term.phase, term.k]);
+                }
+            }
+        }
+
+        if !terms_collected.is_empty() {
+            max_improper_terms = max_improper_terms.max(terms_collected.len());
+            impropers_vec.push([imp.i, imp.j, imp.k, imp.l]);
+            all_improper_terms.push(terms_collected);
+        }
+    }
+
+    // Flatten improper params with padding
+    let mut improper_params = Vec::with_capacity(impropers_vec.len() * max_improper_terms);
+    for terms in all_improper_terms {
+        for i in 0..max_improper_terms {
+            if i < terms.len() {
+                improper_params.push(terms[i]);
+            } else {
+                improper_params.push([0.0, 0.0, 0.0]);
             }
         }
     }
@@ -768,8 +812,10 @@ pub fn parameterize_structure(
         angle_params,
         dihedrals: dihedrals_vec,
         dihedral_params,
+        max_proper_terms,
         impropers: impropers_vec,
         improper_params,
+        max_improper_terms,
         pairs_14,
         exception_14_params,
         cmap_torsions,
@@ -890,8 +936,10 @@ pub fn parameterize_molecule(
         angle_params,
         dihedrals: dihedrals_vec,
         dihedral_params,
+        max_proper_terms: 1,
         impropers: impropers_vec,
         improper_params,
+        max_improper_terms: 1,
         pairs_14,
         exception_14_params: Vec::new(), // GAFF exceptions not handled yet
         cmap_torsions: Vec::new(),

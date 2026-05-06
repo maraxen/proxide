@@ -168,8 +168,10 @@ class AtomicConstants:
     radii: Atomic radii (e.g., for GBSA). Shape (N_atoms,).
     bond_params: Bond force field params [length, k]. Shape (N_bonds, 2).
     angle_params: Angle force field params [theta, k]. Shape (N_angles, 2).
-    dihedral_params: Dihedral params [periodicity, phase, k]. Shape (N_dihedrals, 3).
-    improper_params: Improper dihedral params. Shape (N_impropers, 3).
+    dihedral_params: Dihedral params [periodicity, phase, k]. 
+      Shape (N_dihedrals, 3) or (N_dihedrals, MAX_TERMS, 3).
+    improper_params: Improper dihedral params. 
+      Shape (N_impropers, 3) or (N_impropers, MAX_TERMS, 3).
     cmap_grid: CMAP energy grid for backbone corrections. Shape (grid_size, grid_size).
 
   """
