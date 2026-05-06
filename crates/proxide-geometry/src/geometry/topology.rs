@@ -1,12 +1,104 @@
-//! Topology and bond inference
-//!
-//! Provides methods to infer chemical bonds and topology from atomic coordinates.
-
 use crate::geometry::cell_list::find_neighbors_within_cutoff_fast;
 use crate::geometry::distances::euclidean_distance_squared;
 use proxide_core::forcefield::topology::{Bond, Topology};
+use proxide_core::forcefield::ResidueTemplate;
+use proxide_core::processing::ProcessedStructure;
+use std::collections::{HashMap, HashSet};
 
-/// Get covalent radius for an element symbol (in Angstroms)
+/// Assign template hydrogens to unmatched H atoms based on connectivity
+pub fn assign_template_hydrogens(
+    processed: &ProcessedStructure,
+    template: &ResidueTemplate,
+    local_to_global: &HashMap<&str, usize>,
+    claimed_template_atoms: &mut HashSet<String>,
+    unmatched_h_indices: &[usize],
+    ff: &proxide_core::forcefield::ForceField,
+) -> HashMap<usize, String> {
+    let mut mapping = HashMap::new();
+    let res_start = if !unmatched_h_indices.is_empty() {
+        processed.raw_atoms.res_ids[unmatched_h_indices[0]]
+    } else {
+        0
+    };
+
+    // Build template bond adjacency: heavy_atom_name -> [H_atom_names bonded to it]
+    let mut template_h_by_parent: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (name1, name2) in &template.bonds {
+        let a1_is_h = template.atoms.iter()
+            .find(|a| &a.name == name1)
+            .and_then(|ta| ff.get_atom_type(&ta.atom_type))
+            .map(|at| at.element.eq_ignore_ascii_case("H"))
+            .unwrap_or(name1.starts_with('H') && name1 != "HG");
+        
+        let a2_is_h = template.atoms.iter()
+            .find(|a| &a.name == name2)
+            .and_then(|ta| ff.get_atom_type(&ta.atom_type))
+            .map(|at| at.element.eq_ignore_ascii_case("H"))
+            .unwrap_or(name2.starts_with('H'));
+
+        if a1_is_h && !a2_is_h {
+            template_h_by_parent.entry(name2.as_str()).or_default().push(name1.as_str());
+        } else if a2_is_h && !a1_is_h {
+            template_h_by_parent.entry(name1.as_str()).or_default().push(name2.as_str());
+        }
+    }
+
+    // Collect matched heavy atoms in this residue: (global_idx, template_name)
+    // We need to find which residue these hydrogens belong to.
+    // For simplicity, we assume all unmatched_h_indices are in the same residue passed in 'template'.
+    let res_info = processed.residue_info.iter().find(|r| r.res_name == template.name && r.res_id == res_start as i32);
+    
+    if let Some(res_info) = res_info {
+        let res_heavy_atoms: Vec<(usize, &str)> = local_to_global
+            .iter()
+            .filter(|(_, &gidx)| {
+                gidx >= res_info.start_atom
+                    && gidx < res_info.start_atom + res_info.num_atoms
+                    && !processed.raw_atoms.elements[gidx].eq_ignore_ascii_case("H")
+            })
+            .map(|(&tname, &gidx)| (gidx, tname))
+            .collect();
+
+        for &h_idx in unmatched_h_indices {
+            let hx = processed.raw_atoms.coords[h_idx * 3];
+            let hy = processed.raw_atoms.coords[h_idx * 3 + 1];
+            let hz = processed.raw_atoms.coords[h_idx * 3 + 2];
+
+            let mut best_heavy: Option<&str> = None;
+            let mut best_dist = f32::MAX;
+
+            for &(heavy_idx, tname) in &res_heavy_atoms {
+                let dx = hx - processed.raw_atoms.coords[heavy_idx * 3];
+                let dy = hy - processed.raw_atoms.coords[heavy_idx * 3 + 1];
+                let dz = hz - processed.raw_atoms.coords[heavy_idx * 3 + 2];
+                let dist = dx * dx + dy * dy + dz * dz;
+                if dist < best_dist {
+                    best_dist = dist;
+                    best_heavy = Some(tname);
+                }
+            }
+
+            // Sanity: typical C-H bond ~1.09A, N-H ~1.01A; reject if > 1.5A
+            if best_dist > 2.25 {
+                continue;
+            }
+
+            if let Some(parent_name) = best_heavy {
+                if let Some(h_candidates) = template_h_by_parent.get(parent_name) {
+                    for &h_template_name in h_candidates {
+                        if !claimed_template_atoms.contains(h_template_name) {
+                            mapping.insert(h_idx, h_template_name.to_string());
+                            claimed_template_atoms.insert(h_template_name.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    mapping
+}
 /// Values from Cambridge Structural Database / inner logic of many tools
 pub fn get_covalent_radius(element: &str) -> f32 {
     match element.to_uppercase().as_str() {

@@ -11,6 +11,7 @@ use proxide_core::forcefield::{
     NonbondedException, NonbondedParam, ProperTorsionParam, Topology,
 };
 use proxide_core::processing::ProcessedStructure;
+use proxide_geometry::geometry::topology::assign_template_hydrogens;
 
 /// Errors during parameterization
 #[derive(Error, Debug)]
@@ -122,11 +123,11 @@ impl Default for ParamOptions {
 /// Parameterize a structure using force field templates
 pub fn parameterize_structure(
     processed: &ProcessedStructure,
+    topology: &Topology,
     ff: &ForceField,
     options: &ParamOptions,
 ) -> Result<MDParameters, ParamError> {
     let n_atoms = processed.raw_atoms.num_atoms;
-    let n_residues = processed.num_residues;
 
     // Initialize output arrays
     let mut charges = vec![0.0f32; n_atoms];
@@ -154,22 +155,6 @@ pub fn parameterize_structure(
     let mut num_parameterized = 0usize;
     let mut num_skipped = 0usize;
 
-    // Initialize topology vectors
-    let mut bonds_vec: Vec<[usize; 2]> = Vec::new();
-    let mut bond_params: Vec<[f32; 2]> = Vec::new();
-    let mut angles_vec: Vec<[usize; 3]> = Vec::new();
-    let mut angle_params: Vec<[f32; 2]> = Vec::new();
-    let mut pairs_14: Vec<[usize; 2]> = Vec::new();
-
-    // CMAP
-    let mut cmap_torsions = Vec::new();
-    let mut cmap_map_indices = Vec::new();
-    let cmap_grids = if let Some(cmap_data) = &ff.cmap_data {
-        cmap_data.maps.clone()
-    } else {
-        Vec::new()
-    };
-
     // Mapping from (class1, class2) -> BondParam
     // We need atom classes for lookup, so let's store them
     let mut atom_classes = vec![String::new(); n_atoms];
@@ -181,7 +166,7 @@ pub fn parameterize_structure(
             get_terminal_template_name(
                 &res_info.res_name,
                 res_idx,
-                n_residues,
+                processed.num_residues,
                 &res_info.chain_id,
                 processed,
                 ff,
@@ -194,30 +179,14 @@ pub fn parameterize_structure(
         let template = match ff.get_residue(&template_name) {
             Some(t) => t,
             None => {
-                // ... (existing fallback logic truncated for brevity, assume similar structure) ...
-                // For simplicity in this replacement, I'll copy the core logic but abbreviated errors
-                // In real code, I should preserve the detailed error handling.
-                // Assuming I can just grab the template or fail/skip.
                 match ff.get_residue(&res_info.res_name) {
                     Some(t) => t,
                     None => {
                         if options.missing_mode == MissingResidueMode::Fail {
-                            let alts = find_template_alternatives(&res_info.res_name, ff);
-                            let msg = if alts.is_empty() {
-                                format!(
-                                    "\"{}\". No obvious alternatives found in force field.",
-                                    res_info.res_name
-                                )
-                            } else {
-                                format!("\"{}\". Ambiguous protonation state or naming detected. Supported alternatives in force field: {}. Please specify protonation state or rename prior to parameterization.", res_info.res_name, alts.join(", "))
-                            };
-                            return Err(ParamError::MissingTemplate(msg));
+                            return Err(ParamError::MissingTemplate(res_info.res_name.clone()));
                         }
-                        // Apply element-based LJ fallbacks even for skipped residues
-                        // to prevent sigma=0 which causes LJ singularity in MD
-                        for atom_idx in
-                            res_info.start_atom..(res_info.start_atom + res_info.num_atoms)
-                        {
+                        // Apply element-based LJ fallbacks
+                        for atom_idx in res_info.start_atom..(res_info.start_atom + res_info.num_atoms) {
                             let element = &processed.raw_atoms.elements[atom_idx];
                             let (fb_sigma, fb_epsilon) = match element.to_uppercase().as_str() {
                                 "H" => (0.1069, 0.065),
@@ -225,19 +194,11 @@ pub fn parameterize_structure(
                                 "N" => (0.325, 0.71),
                                 "O" => (0.296, 0.88),
                                 "S" => (0.356, 1.04),
-                                _ => (
-                                    crate::physics::constants::DEFAULT_SIGMA,
-                                    crate::physics::constants::DEFAULT_EPSILON,
-                                ),
+                                _ => (crate::physics::constants::DEFAULT_SIGMA, crate::physics::constants::DEFAULT_EPSILON),
                             };
                             sigmas[atom_idx] = fb_sigma;
                             epsilons[atom_idx] = fb_epsilon;
                         }
-                        log::debug!(
-                            "Applied element-based LJ fallbacks for skipped residue {} ({} atoms)",
-                            res_info.res_name,
-                            res_info.num_atoms
-                        );
                         num_skipped += res_info.num_atoms;
                         continue;
                     }
@@ -245,27 +206,15 @@ pub fn parameterize_structure(
             }
         };
 
-        // Build atom name -> template atom lookup
-        let template_atoms: HashMap<&str, _> = template
-            .atoms
-            .iter()
-            .map(|a| (a.name.as_str(), a))
-            .collect();
-
+        let template_atoms: HashMap<&str, _> = template.atoms.iter().map(|a| (a.name.as_str(), a)).collect();
         let mut local_to_global: HashMap<&str, usize> = HashMap::new();
-
-        // Track which template atoms have been claimed (for H fallback)
-        let mut claimed_template_atoms: HashSet<&str> = HashSet::new();
-        // Collect unmatched H atoms for second-pass connectivity fallback
+        let mut claimed_template_atoms: HashSet<String> = HashSet::new();
         let mut unmatched_h_indices: Vec<usize> = Vec::new();
 
-        // === PASS 1: Exact name match + static aliases ===
+        // PASS 1: Exact name match
         for atom_idx in res_info.start_atom..(res_info.start_atom + res_info.num_atoms) {
             let atom_name = &processed.raw_atoms.atom_names[atom_idx];
-
-            // Find matching template atom (with PDB naming alias fallback)
             let template_atom_opt = template_atoms.get(atom_name.as_str()).or_else(|| {
-                // PDBFixer names N-terminal H as "H", but AMBER templates use "H1"
                 match atom_name.as_str() {
                     "H" => template_atoms.get("H1"),
                     "H1" => template_atoms.get("H"),
@@ -274,69 +223,38 @@ pub fn parameterize_structure(
             });
 
             if let Some(template_atom) = template_atom_opt {
-                // Assign charge from template
                 charges[atom_idx] = template_atom.charge.unwrap_or(0.0);
                 atom_types[atom_idx] = template_atom.atom_type.clone();
 
-                // Get Class from Atom Type
                 let atom_class = if let Some(at) = ff.get_atom_type(&template_atom.atom_type) {
                     at.class.clone()
                 } else {
-                    template_atom.atom_type.clone() // Fallback
+                    template_atom.atom_type.clone()
                 };
                 atom_classes[atom_idx] = atom_class.clone();
 
-                // Look up LJ params by atom type, then fallback to class
-                let mut nb_found = false;
                 if let Some(nb) = nonbonded_map.get(&template_atom.atom_type) {
                     sigmas[atom_idx] = nb.sigma;
                     epsilons[atom_idx] = nb.epsilon;
-                    nb_found = true;
                 } else if let Some(nb) = nonbonded_map.get(&atom_class) {
                     sigmas[atom_idx] = nb.sigma;
                     epsilons[atom_idx] = nb.epsilon;
-                    nb_found = true;
                 }
 
-                if !nb_found {
-                    log::warn!(
-                        "No nonbonded parameters for atom {} (type: {}, class: {}) in res {}.",
-                        atom_name,
-                        template_atom.atom_type,
-                        atom_class,
-                        template_name
-                    );
-                }
-
-                // Look up GBSA params if available
                 if has_gbsa {
                     if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
-                        if let Some(ref mut r) = radii {
-                            r[atom_idx] = gbsa.radius;
-                        }
-                        if let Some(ref mut s) = scales {
-                            s[atom_idx] = gbsa.scale;
-                        }
+                        if let Some(ref mut r) = radii { r[atom_idx] = gbsa.radius; }
+                        if let Some(ref mut s) = scales { s[atom_idx] = gbsa.scale; }
                     } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
-                        if let Some(ref mut r) = radii {
-                            r[atom_idx] = gbsa.radius;
-                        }
-                        if let Some(ref mut s) = scales {
-                            s[atom_idx] = gbsa.scale;
-                        }
+                        if let Some(ref mut r) = radii { r[atom_idx] = gbsa.radius; }
+                        if let Some(ref mut s) = scales { s[atom_idx] = gbsa.scale; }
                     }
                 }
 
                 local_to_global.insert(atom_name.as_str(), atom_idx);
-                claimed_template_atoms.insert(template_atom.name.as_str());
-                // Also register the template atom name if it differs from PDB name
-                // (e.g. PDB "H" → template "H1") so template bonds resolve correctly
-                if template_atom.name.as_str() != atom_name.as_str() {
-                    local_to_global.insert(template_atom.name.as_str(), atom_idx);
-                }
+                claimed_template_atoms.insert(template_atom.name.clone());
                 num_parameterized += 1;
             } else {
-                // Check if this is a hydrogen — defer to connectivity-based pass 2
                 let element = &processed.raw_atoms.elements[atom_idx];
                 if element.eq_ignore_ascii_case("H") {
                     unmatched_h_indices.push(atom_idx);
@@ -346,373 +264,110 @@ pub fn parameterize_structure(
             }
         }
 
-        // === PASS 2: Connectivity-based H fallback ===
-        // For each unmatched H (generically named H1, H2, ... by Proxide),
-        // find the nearest matched heavy atom in the same residue by coordinate
-        // distance, then assign an unclaimed template H bonded to the
-        // corresponding template heavy atom.
+        // PASS 2: H fallback using geometry crate
         if !unmatched_h_indices.is_empty() {
-            // Build template bond adjacency: heavy_atom_name -> [H_atom_names bonded to it]
-            let mut template_h_by_parent: HashMap<&str, Vec<&str>> = HashMap::new();
-            for (name1, name2) in &template.bonds {
-                let a1_is_h = template_atoms
-                    .get(name1.as_str())
-                    .and_then(|ta| ff.get_atom_type(&ta.atom_type))
-                    .map(|at| at.element.eq_ignore_ascii_case("H"))
-                    .unwrap_or(
-                        name1.starts_with('H') && name1 != "HG", /* edge: HG in CYS is on S */
-                    );
-                let a2_is_h = template_atoms
-                    .get(name2.as_str())
-                    .and_then(|ta| ff.get_atom_type(&ta.atom_type))
-                    .map(|at| at.element.eq_ignore_ascii_case("H"))
-                    .unwrap_or(name2.starts_with('H'));
+            let h_mapping = assign_template_hydrogens(
+                processed,
+                template,
+                &local_to_global,
+                &mut claimed_template_atoms,
+                &unmatched_h_indices,
+                ff,
+            );
 
-                if a1_is_h && !a2_is_h {
-                    template_h_by_parent
-                        .entry(name2.as_str())
-                        .or_default()
-                        .push(name1.as_str());
-                } else if a2_is_h && !a1_is_h {
-                    template_h_by_parent
-                        .entry(name1.as_str())
-                        .or_default()
-                        .push(name2.as_str());
-                }
-            }
+            for (h_idx, t_name) in h_mapping {
+                if let Some(template_atom) = template_atoms.get(t_name.as_str()) {
+                    charges[h_idx] = template_atom.charge.unwrap_or(0.0);
+                    atom_types[h_idx] = template_atom.atom_type.clone();
 
-            // Collect matched heavy atoms in this residue: (global_idx, template_name)
-            let res_heavy_atoms: Vec<(usize, &str)> = local_to_global
-                .iter()
-                .filter(|(_, &gidx)| {
-                    gidx >= res_info.start_atom
-                        && gidx < res_info.start_atom + res_info.num_atoms
-                        && !processed.raw_atoms.elements[gidx].eq_ignore_ascii_case("H")
-                })
-                .map(|(&tname, &gidx)| (gidx, tname))
-                .collect();
-
-            for &h_idx in &unmatched_h_indices {
-                // Find nearest heavy atom by Euclidean distance
-                let hx = processed.raw_atoms.coords[h_idx * 3];
-                let hy = processed.raw_atoms.coords[h_idx * 3 + 1];
-                let hz = processed.raw_atoms.coords[h_idx * 3 + 2];
-
-                let mut best_heavy: Option<&str> = None;
-                let mut best_dist = f32::MAX;
-
-                for &(heavy_idx, tname) in &res_heavy_atoms {
-                    let dx = hx - processed.raw_atoms.coords[heavy_idx * 3];
-                    let dy = hy - processed.raw_atoms.coords[heavy_idx * 3 + 1];
-                    let dz = hz - processed.raw_atoms.coords[heavy_idx * 3 + 2];
-                    let dist = dx * dx + dy * dy + dz * dz;
-                    if dist < best_dist {
-                        best_dist = dist;
-                        best_heavy = Some(tname);
-                    }
-                }
-
-                // Sanity: typical C-H bond ~1.09Å, N-H ~1.01Å; reject if > 1.5Å
-                if best_dist > 2.25 {
-                    // 1.5^2
-                    log::warn!(
-                        "H fallback: nearest heavy atom too far ({:.2}Å) for {} in res {}, skipping",
-                        best_dist.sqrt(), processed.raw_atoms.atom_names[h_idx], template_name
-                    );
-                    num_skipped += 1;
-                    continue;
-                }
-
-                if let Some(parent_name) = best_heavy {
-                    // Find an unclaimed template H bonded to this parent
-                    let assigned = if let Some(h_candidates) = template_h_by_parent.get(parent_name)
-                    {
-                        let mut found = false;
-                        for &h_template_name in h_candidates {
-                            if !claimed_template_atoms.contains(h_template_name) {
-                                if let Some(template_atom) = template_atoms.get(h_template_name) {
-                                    // Assign parameters from this template H
-                                    charges[h_idx] = template_atom.charge.unwrap_or(0.0);
-                                    atom_types[h_idx] = template_atom.atom_type.clone();
-
-                                    let atom_class = if let Some(at) =
-                                        ff.get_atom_type(&template_atom.atom_type)
-                                    {
-                                        at.class.clone()
-                                    } else {
-                                        template_atom.atom_type.clone()
-                                    };
-                                    atom_classes[h_idx] = atom_class.clone();
-
-                                    if let Some(nb) = nonbonded_map.get(&template_atom.atom_type) {
-                                        sigmas[h_idx] = nb.sigma;
-                                        epsilons[h_idx] = nb.epsilon;
-                                    } else if let Some(nb) = nonbonded_map.get(&atom_class) {
-                                        sigmas[h_idx] = nb.sigma;
-                                        epsilons[h_idx] = nb.epsilon;
-                                    }
-
-                                    if has_gbsa {
-                                        if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
-                                            if let Some(ref mut r) = radii {
-                                                r[h_idx] = gbsa.radius;
-                                            }
-                                            if let Some(ref mut s) = scales {
-                                                s[h_idx] = gbsa.scale;
-                                            }
-                                        } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
-                                            if let Some(ref mut r) = radii {
-                                                r[h_idx] = gbsa.radius;
-                                            }
-                                            if let Some(ref mut s) = scales {
-                                                s[h_idx] = gbsa.scale;
-                                            }
-                                        }
-                                    }
-
-                                    let input_name = processed.raw_atoms.atom_names[h_idx].as_str();
-                                    // Use leaked string for stable lifetime in local_to_global
-                                    let leaked: &'static str =
-                                        Box::leak(input_name.to_string().into_boxed_str());
-                                    local_to_global.insert(leaked, h_idx);
-                                    local_to_global.insert(h_template_name, h_idx);
-                                    claimed_template_atoms.insert(h_template_name);
-                                    num_parameterized += 1;
-                                    found = true;
-
-                                    log::debug!(
-                                        "H fallback: {} → {} (parent {}) in res {}",
-                                        input_name,
-                                        h_template_name,
-                                        parent_name,
-                                        template_name,
-                                    );
-                                    break;
-                                }
-                            }
-                        }
-                        found
+                    let atom_class = if let Some(at) = ff.get_atom_type(&template_atom.atom_type) {
+                        at.class.clone()
                     } else {
-                        false
+                        template_atom.atom_type.clone()
                     };
+                    atom_classes[h_idx] = atom_class.clone();
 
-                    if !assigned {
-                        log::debug!(
-                            "H fallback: no unclaimed template H for parent {} (atom {} in res {})",
-                            parent_name,
-                            processed.raw_atoms.atom_names[h_idx],
-                            template_name
-                        );
-                        num_skipped += 1;
+                    if let Some(nb) = nonbonded_map.get(&template_atom.atom_type) {
+                        sigmas[h_idx] = nb.sigma;
+                        epsilons[h_idx] = nb.epsilon;
+                    } else if let Some(nb) = nonbonded_map.get(&atom_class) {
+                        sigmas[h_idx] = nb.sigma;
+                        epsilons[h_idx] = nb.epsilon;
                     }
-                } else {
-                    num_skipped += 1;
-                }
-            }
-        }
 
-        // Add intra-residue bonds from template
-        // println!("DEBUG: Res {} ({}) Template {} Bonds: {}", i, res_name, template_name, template.bonds.len());
-        for (name1, name2) in &template.bonds {
-            // println!("DEBUG: Checking bond {}-{}", name1, name2);
-            if let (Some(&idx1), Some(&idx2)) = (
-                local_to_global.get(name1.as_str()),
-                local_to_global.get(name2.as_str()),
-            ) {
-                bonds_vec.push([idx1, idx2]);
-            } else {
-                // println!("DEBUG: Missing atom for bond {}-{} in res {}", name1, name2, res_name);
-            }
-        }
-    }
-
-    // Add peptide bonds (Inter-residue)
-    // Only for standard amino acids (type < 20)
-    for i in 0..processed.num_residues - 1 {
-        let res1 = &processed.residue_info[i];
-        let res2 = &processed.residue_info[i + 1];
-
-        // Ensure both are standard residues before attempting peptide bond
-        if res1.res_type < 20 && res2.res_type < 20 && res1.chain_id == res2.chain_id {
-            // Check for C and N
-            // We need to scan atoms of res1 for "C" and res2 for "N"
-            let mut c_idx = None;
-            for j in res1.start_atom..(res1.start_atom + res1.num_atoms) {
-                if processed.raw_atoms.atom_names[j] == "C" {
-                    c_idx = Some(j);
-                    break;
-                }
-            }
-            let mut n_idx = None;
-            for j in res2.start_atom..(res2.start_atom + res2.num_atoms) {
-                if processed.raw_atoms.atom_names[j] == "N" {
-                    n_idx = Some(j);
-                    break;
-                }
-            }
-
-            if let (Some(c), Some(n)) = (c_idx, n_idx) {
-                // Check distance to be sure it's a bond
-                // (e.g. avoid bonding ligands that happen to have C/N but are far away)
-                let pos_c = &processed.raw_atoms.coords[c * 3..c * 3 + 3];
-                let pos_n = &processed.raw_atoms.coords[n * 3..n * 3 + 3];
-                let dist_sq = (pos_c[0] - pos_n[0]).powi(2)
-                    + (pos_c[1] - pos_n[1]).powi(2)
-                    + (pos_c[2] - pos_n[2]).powi(2);
-
-                // 2.0 Angstroms squared = 4.0
-                if dist_sq < 4.0 {
-                    bonds_vec.push([c, n]);
+                    if has_gbsa {
+                        if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
+                            if let Some(ref mut r) = radii { r[h_idx] = gbsa.radius; }
+                            if let Some(ref mut s) = scales { s[h_idx] = gbsa.scale; }
+                        } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
+                            if let Some(ref mut r) = radii { r[h_idx] = gbsa.radius; }
+                            if let Some(ref mut s) = scales { s[h_idx] = gbsa.scale; }
+                        }
+                    }
+                    num_parameterized += 1;
                 }
             }
         }
     }
 
-    // Build Topology (Adjacency)
-    let mut adjacency: HashMap<usize, Vec<usize>> = HashMap::new();
-    for window in bonds_vec.iter() {
-        let (i, j) = (window[0], window[1]);
-        adjacency.entry(i).or_default().push(j);
-        adjacency.entry(j).or_default().push(i);
-    }
-
-    // Generate Angles and Dihedrals
-    let angles_topology = Topology::generate_angles(&adjacency);
-    let proper_topology = Topology::generate_proper_dihedrals(&adjacency);
-    let improper_topology =
-        Topology::generate_improper_dihedrals(&adjacency, &processed.raw_atoms.elements);
-
-    // Assign Bond Params
-    for bond in &bonds_vec {
-        let (i, j) = (bond[0], bond[1]);
+    // --- Assign bonded parameters using Topology ---
+    let mut bonds_vec = Vec::new();
+    let mut bond_params = Vec::new();
+    for bond in &topology.bonds {
+        let (i, j) = (bond.i, bond.j);
+        bonds_vec.push([i, j]);
         if let Some(params) = lookup_bond(&atom_classes[i], &atom_classes[j], ff) {
             bond_params.push([params.length, params.k]);
         } else {
-            bond_params.push([0.0, 0.0]); // Default/Missing
+            bond_params.push([0.0, 0.0]);
         }
     }
 
-    // Assign Angle Params
-    for angle in &angles_topology {
-        angles_vec.push([angle.i, angle.j, angle.k]);
-        if let Some(params) = lookup_angle(
-            &atom_classes[angle.i],
-            &atom_classes[angle.j],
-            &atom_classes[angle.k],
-            ff,
-        ) {
+    let mut angles_vec = Vec::new();
+    let mut angle_params = Vec::new();
+    for angle in &topology.angles {
+        let (i, j, k) = (angle.i, angle.j, angle.k);
+        angles_vec.push([i, j, k]);
+        if let Some(params) = lookup_angle(&atom_classes[i], &atom_classes[j], &atom_classes[k], ff) {
             angle_params.push([params.angle, params.k]);
         } else {
             angle_params.push([0.0, 0.0]);
         }
     }
 
-    // Build nonbonded exception map once, before the loop
-    let mut exception_map: HashMap<(String, String), &NonbondedException> = HashMap::new();
-    for exc in &ff.exceptions {
-        exception_map.insert((exc.type1.clone(), exc.type2.clone()), exc);
-        exception_map.insert((exc.type2.clone(), exc.type1.clone()), exc);
-    }
-
-    // Assign Proper Dihedral Params and 1-4 Pairs
-    let mut exception_14_params = Vec::new();
-    let mut seen_14_pairs = HashSet::new();
-
     let mut dihedrals_vec = Vec::new();
     let mut all_proper_terms = Vec::new();
     let mut max_proper_terms = 0;
-
-    for dih in &proper_topology {
-        let matches = lookup_proper_all(
-            &atom_classes[dih.i],
-            &atom_types[dih.i],
-            &atom_classes[dih.j],
-            &atom_types[dih.j],
-            &atom_classes[dih.k],
-            &atom_types[dih.k],
-            &atom_classes[dih.l],
-            &atom_types[dih.l],
-            ff,
-        );
-
+    for dih in &topology.proper_dihedrals {
+        let matches = lookup_proper_all(&atom_classes[dih.i], &atom_types[dih.i], &atom_classes[dih.j], &atom_types[dih.j], &atom_classes[dih.k], &atom_types[dih.k], &atom_classes[dih.l], &atom_types[dih.l], ff);
         let mut terms_collected = Vec::new();
         for params in matches {
             for term in &params.terms {
-                // Filter out small k values to avoid phantom topology, matching Legacy behavior
                 if term.k.abs() > 1e-6 {
                     terms_collected.push([term.periodicity as f32, term.phase, term.k]);
                 }
             }
         }
-
         if !terms_collected.is_empty() {
             max_proper_terms = max_proper_terms.max(terms_collected.len());
             dihedrals_vec.push([dih.i, dih.j, dih.k, dih.l]);
             all_proper_terms.push(terms_collected);
         }
-
-        // Add 1-4 pair and compute scaling exceptions (only once per unique topology dihedral)
-        let pair_key = if dih.i < dih.l {
-            (dih.i, dih.l)
-        } else {
-            (dih.l, dih.i)
-        };
-        if !seen_14_pairs.contains(&pair_key) {
-            seen_14_pairs.insert(pair_key);
-            pairs_14.push([dih.i, dih.l]);
-
-            // Use force field defined scaling as primary defaults
-            let (lj14scale, coulomb14scale) = (ff.lj14scale, ff.coulomb14scale);
-
-            // Check for specific exception override
-            let override_params =
-                exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
-
-            let (charge_prod, sigma, epsilon) = if let Some(exc) = override_params {
-                (exc.charge_prod, exc.sigma, exc.epsilon)
-            } else {
-                let charge_prod = charges[dih.i] * charges[dih.l] * coulomb14scale;
-                let sigma = (sigmas[dih.i] + sigmas[dih.l]) / 2.0;
-                let epsilon = (epsilons[dih.i] * epsilons[dih.l]).sqrt() * lj14scale;
-                (charge_prod, sigma, epsilon)
-            };
-
-            exception_14_params.push([charge_prod, sigma, epsilon]);
-        }
     }
 
-    // Flatten proper dihedral params with padding
     let mut dihedral_params = Vec::with_capacity(dihedrals_vec.len() * max_proper_terms);
     for terms in all_proper_terms {
         for i in 0..max_proper_terms {
-            if i < terms.len() {
-                dihedral_params.push(terms[i]);
-            } else {
-                dihedral_params.push([0.0, 0.0, 0.0]);
-            }
+            if i < terms.len() { dihedral_params.push(terms[i]); }
+            else { dihedral_params.push([0.0, 0.0, 0.0]); }
         }
     }
 
-    // Assign Improper Params
     let mut impropers_vec = Vec::new();
     let mut all_improper_terms = Vec::new();
     let mut max_improper_terms = 0;
-
-    for imp in &improper_topology {
-        let matches = lookup_improper(
-            ImproperLookupParams {
-                c1: &atom_classes[imp.i],
-                t1: &atom_types[imp.i],
-                c_center: &atom_classes[imp.j],
-                t_center: &atom_types[imp.j],
-                c3: &atom_classes[imp.k],
-                t3: &atom_types[imp.k],
-                c4: &atom_classes[imp.l],
-                t4: &atom_types[imp.l],
-            },
-            ff,
-        );
-
+    for imp in &topology.improper_dihedrals {
+        let matches = lookup_improper(ImproperLookupParams { c1: &atom_classes[imp.i], t1: &atom_types[imp.i], c_center: &atom_classes[imp.j], t_center: &atom_types[imp.j], c3: &atom_classes[imp.k], t3: &atom_types[imp.k], c4: &atom_classes[imp.l], t4: &atom_types[imp.l] }, ff);
         let mut terms_collected = Vec::new();
         for params in matches {
             for term in &params.terms {
@@ -721,7 +376,6 @@ pub fn parameterize_structure(
                 }
             }
         }
-
         if !terms_collected.is_empty() {
             max_improper_terms = max_improper_terms.max(terms_collected.len());
             impropers_vec.push([imp.i, imp.j, imp.k, imp.l]);
@@ -729,51 +383,57 @@ pub fn parameterize_structure(
         }
     }
 
-    // Flatten improper params with padding
     let mut improper_params = Vec::with_capacity(impropers_vec.len() * max_improper_terms);
     for terms in all_improper_terms {
         for i in 0..max_improper_terms {
-            if i < terms.len() {
-                improper_params.push(terms[i]);
-            } else {
-                improper_params.push([0.0, 0.0, 0.0]);
-            }
+            if i < terms.len() { improper_params.push(terms[i]); }
+            else { improper_params.push([0.0, 0.0, 0.0]); }
         }
     }
 
-    // --- CMAP Second-Pass Extraction ---
-    if let Some(cmap_data) = &ff.cmap_data {
-        for i in 0..n_residues {
-            // CMAP term is across consecutive residues: res_i and res_{i+1}
-            // Typically L-alanine: [C_{i-1}, N_i, CA_i, C_i, N_{i+1}]
-            if i == 0 || i + 1 >= n_residues {
-                continue;
-            }
+    // --- Nonbonded Exceptions (1-4) ---
+    let mut pairs_14 = Vec::new();
+    let mut exception_14_params = Vec::new();
+    let mut seen_14_pairs = HashSet::new();
+    let mut exception_map: HashMap<(String, String), &NonbondedException> = HashMap::new();
+    for exc in &ff.exceptions {
+        exception_map.insert((exc.type1.clone(), exc.type2.clone()), exc);
+        exception_map.insert((exc.type2.clone(), exc.type1.clone()), exc);
+    }
 
+    for dih in &topology.proper_dihedrals {
+        let pair_key = if dih.i < dih.l { (dih.i, dih.l) } else { (dih.l, dih.i) };
+        if !seen_14_pairs.contains(&pair_key) {
+            seen_14_pairs.insert(pair_key);
+            pairs_14.push([dih.i, dih.l]);
+            let override_params = exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
+            let (charge_prod, sigma, epsilon) = if let Some(exc) = override_params {
+                (exc.charge_prod, exc.sigma, exc.epsilon)
+            } else {
+                let charge_prod = charges[dih.i] * charges[dih.l] * ff.coulomb14scale;
+                let sigma = (sigmas[dih.i] + sigmas[dih.l]) / 2.0;
+                let epsilon = (epsilons[dih.i] * epsilons[dih.l]).sqrt() * ff.lj14scale;
+                (charge_prod, sigma, epsilon)
+            };
+            exception_14_params.push([charge_prod, sigma, epsilon]);
+        }
+    }
+
+    // --- CMAP ---
+    let mut cmap_torsions = Vec::new();
+    let mut cmap_map_indices = Vec::new();
+    if let Some(cmap_data) = &ff.cmap_data {
+        for i in 0..processed.num_residues {
+            if i == 0 || i + 1 >= processed.num_residues { continue; }
             let res_prev = &processed.residue_info[i - 1];
             let res_curr = &processed.residue_info[i];
             let res_next = &processed.residue_info[i + 1];
 
-            // Helper to find atom within residue range
             let find_atom = |ri: &proxide_core::processing::ResidueInfo, name: &str| -> Option<usize> {
-                (ri.start_atom..(ri.start_atom + ri.num_atoms)).find(|&atom_idx| processed.raw_atoms.atom_names[atom_idx] == name)
+                (ri.start_atom..(ri.start_atom + ri.num_atoms)).find(|&idx| processed.raw_atoms.atom_names[idx] == name)
             };
 
-            // Find backbone atoms for CMAP
-            if let (
-                Some(idx1), // C_{i-1}
-                Some(idx2), // N_i
-                Some(idx3), // CA_i
-                Some(idx4), // C_i
-                Some(idx5), // N_{i+1}
-            ) = (
-                find_atom(res_prev, "C"),
-                find_atom(res_curr, "N"),
-                find_atom(res_curr, "CA"),
-                find_atom(res_curr, "C"),
-                find_atom(res_next, "N"),
-            ) {
-                // Check if this quintuplet matches any CMAP torsion definition
+            if let (Some(idx1), Some(idx2), Some(idx3), Some(idx4), Some(idx5)) = (find_atom(res_prev, "C"), find_atom(res_curr, "N"), find_atom(res_curr, "CA"), find_atom(res_curr, "C"), find_atom(res_next, "N")) {
                 let c1 = &atom_classes[idx1];
                 let t2 = &atom_types[idx2];
                 let t3 = &atom_types[idx3];
@@ -781,13 +441,7 @@ pub fn parameterize_structure(
                 let c5 = &atom_classes[idx5];
 
                 for torsion in &cmap_data.torsions {
-                    // OpenMM XML: class1, type2, type3, type4, class5
-                    if torsion.class1 == *c1
-                        && torsion.type2 == *t2
-                        && torsion.type3 == *t3
-                        && torsion.type4 == *t4
-                        && torsion.class5 == *c5
-                    {
+                    if torsion.class1 == *c1 && torsion.type2 == *t2 && torsion.type3 == *t3 && torsion.type4 == *t4 && torsion.class5 == *c5 {
                         cmap_torsions.push([idx1, idx2, idx3, idx4, idx5]);
                         cmap_map_indices.push(torsion.map_index);
                         break;
@@ -798,29 +452,12 @@ pub fn parameterize_structure(
     }
 
     Ok(MDParameters {
-        charges,
-        sigmas,
-        epsilons,
-        radii,
-        scales,
-        atom_types,
-        num_parameterized,
-        num_skipped,
-        bonds: bonds_vec,
-        bond_params,
-        angles: angles_vec,
-        angle_params,
-        dihedrals: dihedrals_vec,
-        dihedral_params,
-        max_proper_terms,
-        impropers: impropers_vec,
-        improper_params,
-        max_improper_terms,
-        pairs_14,
-        exception_14_params,
-        cmap_torsions,
-        cmap_map_indices,
-        cmap_grids,
+        charges, sigmas, epsilons, radii, scales, atom_types, num_parameterized, num_skipped,
+        bonds: bonds_vec, bond_params, angles: angles_vec, angle_params,
+        dihedrals: dihedrals_vec, dihedral_params, max_proper_terms,
+        impropers: impropers_vec, improper_params, max_improper_terms,
+        pairs_14, exception_14_params, cmap_torsions, cmap_map_indices,
+        cmap_grids: if let Some(cmap_data) = &ff.cmap_data { cmap_data.maps.clone() } else { Vec::new() },
     })
 }
 
@@ -1297,7 +934,14 @@ mod tests {
         let structure = make_test_structure();
         let options = ParamOptions::default();
 
-        let params = parameterize_structure(&structure, &ff, &options).unwrap();
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
 
         assert_eq!(params.charges.len(), 3);
         assert!((params.charges[0] - (-0.4157)).abs() < 1e-4); // N
@@ -1321,7 +965,14 @@ mod tests {
             missing_mode: MissingResidueMode::SkipWarn,
         };
 
-        let params = parameterize_structure(&structure, &ff, &options).unwrap();
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
 
         // All atoms should be skipped (template not found)
         assert_eq!(params.num_skipped, 3);
@@ -1337,7 +988,14 @@ mod tests {
             missing_mode: MissingResidueMode::Fail,
         };
 
-        let result = parameterize_structure(&structure, &ff, &options);
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        let result = parameterize_structure(&structure, &topology, &ff, &options);
         assert!(result.is_err());
     }
 }

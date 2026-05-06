@@ -237,8 +237,14 @@ pub fn parse_structure(
                 },
             };
 
+            let topology = geometry::topology::generate_topology(
+                bytemuck::cast_slice(&processed.raw_atoms.coords),
+                &processed.raw_atoms.elements,
+                1.3, // default bond tolerance
+            );
+
             let params =
-                physics::md_params::parameterize_structure(&processed, &ff, &param_options)
+                physics::md_params::parameterize_structure(&processed, &topology, &ff, &param_options)
                     .map_err(|e| {
                         pyo3::exceptions::PyValueError::new_err(format!(
                             "Parameterization failed: {}",

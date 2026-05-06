@@ -1278,7 +1278,6 @@ dependencies = [
  "nom",
  "proxide-core",
  "proxide-geometry",
- "proxide-physics",
  "quick-xml",
  "rayon",
  "reqwest",
@@ -1290,6 +1289,7 @@ name = "proxide-physics"
 version = "0.1.0-alpha.3"
 dependencies = [
  "approx",
+ "bytemuck",
  "insta",
  "log",
  "proxide-core",
@@ -1315,6 +1315,7 @@ dependencies = [
 name = "proxide_py"
 version = "0.1.0-alpha.3"
 dependencies = [
+ "bytemuck",
  "log",
  "nalgebra",
  "numpy",

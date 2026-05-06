@@ -21,4 +21,5 @@ thiserror.workspace = true
 proxide-core = { workspace = true, features = ["testing"] }
 insta.workspace = true
 approx.workspace = true
+bytemuck = "1.21.0"
 
