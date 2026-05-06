@@ -16,3 +16,9 @@ proxide-gaff = { workspace = true }
 quick-xml.workspace = true
 log.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+proxide-core = { workspace = true, features = ["testing"] }
+insta.workspace = true
+approx.workspace = true
+

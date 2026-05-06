@@ -320,4 +320,20 @@ mod tests {
 
         assert_eq!(features.len(), 2 * 5); // n_res * 5 backbone atoms
     }
+
+    #[test]
+    fn test_electrostatic_forces_snapshot() {
+        use proxide_core::testing::normalize_coords;
+
+        let target = [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]];
+        let source = [[5.0, 0.0, 0.0], [0.0, 5.0, 0.0]];
+        let charges_target = [1.0, -1.0];
+        let charges_source = [-1.0, 1.0];
+
+        let forces =
+            compute_coulomb_forces(&target, &source, &charges_target, &charges_source, false);
+
+        let normalized_forces = normalize_coords(&forces);
+        insta::assert_debug_snapshot!(normalized_forces);
+    }
 }

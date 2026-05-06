@@ -1,0 +1,16 @@
+---
+source: crates/proxide-physics/src/physics/electrostatics.rs
+expression: normalized_forces
+---
+[
+    [
+        13.282544,
+        -13.282544,
+        0.0,
+    ],
+    [
+        -21.741154,
+        21.741154,
+        0.0,
+    ],
+]
