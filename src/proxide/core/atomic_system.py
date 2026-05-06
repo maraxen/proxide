@@ -257,10 +257,24 @@ class AtomicSystem:
 
   @property
   def has_solvent(self) -> bool:
-    """Check if system contains any solvent atoms."""
+    """Check if system contains any solvent atoms (molecule_type == 2)."""
     if self.topology.molecule_type is None:
       return False
-    return bool(jnp.any(self.topology.molecule_type == 2))
+    return int(jnp.sum(self.topology.molecule_type == 2)) > 0
+
+  def to_openmm_system(self, coulomb14scale: float = 1.0, lj14scale: float = 1.0, **kwargs: Any) -> Any:
+    """Convert to OpenMM system."""
+    from proxide.core.projector import OpenMMSpec, project_to_openmm_system
+    spec = OpenMMSpec(coulomb14scale=coulomb14scale, lj14scale=lj14scale)
+    return project_to_openmm_system(self, spec, **kwargs)
+
+  def to_openmm_topology(self) -> Any:
+    """Convert to OpenMM topology."""
+    from types import SimpleNamespace
+
+    from proxide.core.projector import project_to_openmm_topology
+    spec = SimpleNamespace(output_format_target="openmm_topology")
+    return project_to_openmm_topology(self, spec)
 
   @classmethod
   def from_arrays(
@@ -273,10 +287,18 @@ class AtomicSystem:
     chain_index: PerAtomChainIndex | None = None,
     molecule_type: MoleculeType | None = None,
     bonds: Bonds | None = None,
+    angles: Angles | None = None,
+    proper_dihedrals: ProperDihedrals | None = None,
+    impropers: Impropers | None = None,
     charges: Charges | None = None,
     sigmas: Sigmas | None = None,
     epsilons: Epsilons | None = None,
+    masses: Masses | None = None,
     radii: Radii | None = None,
+    bond_params: BondParams | None = None,
+    angle_params: AngleParams | None = None,
+    dihedral_params: DihedralParams | None = None,
+    improper_params: ImproperParams | None = None,
     box_vectors: BoxVectors | None = None,
     source: str | None = None,
   ) -> AtomicSystem:
@@ -294,10 +316,18 @@ class AtomicSystem:
       chain_index: Per-atom chain IDs.
       molecule_type: Per-atom molecule type (0=protein, 1=ligand, ...).
       bonds: Bond pairs, shape (N_bonds, 2).
+      angles: Angle triplets, shape (N_angles, 3).
+      proper_dihedrals: Proper dihedral quartets, shape (N_dihedrals, 4).
+      impropers: Improper dihedral quartets, shape (N_impropers, 4).
       charges: Partial charges.
       sigmas: LJ sigma params.
       epsilons: LJ epsilon params.
+      masses: Atomic masses.
       radii: Atomic radii.
+      bond_params: Bond force field params.
+      angle_params: Angle force field params.
+      dihedral_params: Dihedral params.
+      improper_params: Improper dihedral params.
       box_vectors: Periodic box, shape (3, 3).
       source: Source file path.
 
@@ -312,18 +342,29 @@ class AtomicSystem:
       chain_index=chain_index,
       molecule_type=molecule_type,
       bonds=bonds,
+      angles=angles,
+      proper_dihedrals=proper_dihedrals,
+      impropers=impropers,
     )
     state = AtomicState(
       coordinates=coordinates,
       box_vectors=box_vectors,
     )
     constants = None
-    if any(x is not None for x in [charges, sigmas, epsilons, radii]):
+    if any(x is not None for x in [
+        charges, sigmas, epsilons, masses, radii, bond_params,
+        angle_params, dihedral_params, improper_params
+    ]):
       constants = AtomicConstants(
         charges=charges,
         sigmas=sigmas,
         epsilons=epsilons,
+        masses=masses,
         radii=radii,
+        bond_params=bond_params,
+        angle_params=angle_params,
+        dihedral_params=dihedral_params,
+        improper_params=improper_params,
       )
     return cls(
       topology=topology,

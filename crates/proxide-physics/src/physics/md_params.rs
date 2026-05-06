@@ -677,14 +677,16 @@ pub fn parameterize_structure(
     // Assign Improper Params
     for imp in &improper_topology {
         let matches = lookup_improper(
-            &atom_classes[imp.i],
-            &atom_types[imp.i],
-            &atom_classes[imp.j],
-            &atom_types[imp.j],
-            &atom_classes[imp.k],
-            &atom_types[imp.k],
-            &atom_classes[imp.l],
-            &atom_types[imp.l],
+            ImproperLookupParams {
+                c1: &atom_classes[imp.i],
+                t1: &atom_types[imp.i],
+                c_center: &atom_classes[imp.j],
+                t_center: &atom_types[imp.j],
+                c3: &atom_classes[imp.k],
+                t3: &atom_types[imp.k],
+                c4: &atom_classes[imp.l],
+                t4: &atom_types[imp.l],
+            },
             ff,
         );
         for params in matches {
@@ -710,12 +712,7 @@ pub fn parameterize_structure(
 
             // Helper to find atom within residue range
             let find_atom = |ri: &proxide_core::processing::ResidueInfo, name: &str| -> Option<usize> {
-                for atom_idx in ri.start_atom..(ri.start_atom + ri.num_atoms) {
-                    if processed.raw_atoms.atom_names[atom_idx] == name {
-                        return Some(atom_idx);
-                    }
-                }
-                None
+                (ri.start_atom..(ri.start_atom + ri.num_atoms)).find(|&atom_idx| processed.raw_atoms.atom_names[atom_idx] == name)
             };
 
             // Find backbone atoms for CMAP
@@ -999,15 +996,19 @@ fn lookup_proper_all<'a>(
     best_matches
 }
 
+struct ImproperLookupParams<'a> {
+    c1: &'a str,
+    t1: &'a str,
+    c_center: &'a str,
+    t_center: &'a str,
+    c3: &'a str,
+    t3: &'a str,
+    c4: &'a str,
+    t4: &'a str,
+}
+
 fn lookup_improper<'a>(
-    c1: &str,
-    t1: &str,
-    c_center: &str,
-    t_center: &str,
-    c3: &str,
-    t3: &str,
-    c4: &str,
-    t4: &str,
+    params: ImproperLookupParams<'a>,
     ff: &'a ForceField,
 ) -> Vec<&'a ImproperTorsionParam> {
     // Matches if atoms match (any permutation? No, typically central is fixed)
@@ -1018,13 +1019,17 @@ fn lookup_improper<'a>(
     let mut matches_vec = Vec::new();
     for t in &ff.improper_torsions {
         // 1. Central atom must match t.class3
-        if !matches(&t.class3, c_center, t_center) {
+        if !matches(&t.class3, params.c_center, params.t_center) {
             continue;
         }
 
         // 2. The other 3 atoms (c1, c3, c4) must match t.class1, t.class2, t.class4 in ANY order.
         let def_others = [&t.class1, &t.class2, &t.class4];
-        let target_others = vec![(c1, t1), (c3, t3), (c4, t4)];
+        let target_others = vec![
+            (params.c1, params.t1),
+            (params.c3, params.t3),
+            (params.c4, params.t4),
+        ];
 
         // Simple greedy match for the 3 others
         let mut matched_count = 0;
