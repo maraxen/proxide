@@ -2,7 +2,7 @@
 #![allow(clippy::needless_range_loop, clippy::type_complexity)]
 
 use proxide_physics::physics::nerf::Nerf;
-use proxide_core::structure::systems::AtomicSystem;
+use proxide_core::structure::systems::{AtomicSystem, AtomicSystemArgs};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -331,7 +331,19 @@ fn reconstruct(
     let atom_mask = vec![1.0; coords.len() / 3];
 
     // Create AtomicSystem
-    let mut system = AtomicSystem::new(coords, atom_mask, Some(atom_names), Some(elements));
+    let mut system = AtomicSystem::new(AtomicSystemArgs {
+        coordinates: coords,
+        atom_mask,
+        atom_names: Some(atom_names),
+        elements: Some(elements),
+        bonds: None,
+        charges: None,
+        sigmas: None,
+        epsilons: None,
+        radii: None,
+        residue_index: None,
+        chain_index: None,
+    });
 
     // Set additional fields
     // residue_index

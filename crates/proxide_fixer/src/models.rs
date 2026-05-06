@@ -1,5 +1,5 @@
 use proxide_rs::structure::RawAtomData;
-use proxide_rs::structure::systems::AtomicSystem;
+use proxide_rs::structure::systems::{AtomicSystem, AtomicSystemArgs};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -111,19 +111,26 @@ impl Topology {
                     atom_names.push(atom.name.clone());
                     elements.push(atom.element.clone());
                     residue_indices.push(res_idx);
-                    chain_indices.push(current_chain_idx as i32);
+                    chain_indices.push(current_chain_idx);
                 }
                 res_idx += 1;
             }
         }
 
         let num_atoms = atom_names.len();
-        let mut system = AtomicSystem::new(
+        let mut system = AtomicSystem::new(AtomicSystemArgs {
             coordinates,
-            vec![1.0; num_atoms],
-            Some(atom_names),
-            Some(elements),
-        );
+            atom_mask: vec![1.0; num_atoms],
+            atom_names: Some(atom_names),
+            elements: Some(elements),
+            bonds: None,
+            charges: None,
+            sigmas: None,
+            epsilons: None,
+            radii: None,
+            residue_index: None,
+            chain_index: None,
+        });
         system.residue_index = Some(residue_indices);
         system.chain_index = Some(chain_indices);
         system.unique_chain_ids = Some(unique_chain_ids);

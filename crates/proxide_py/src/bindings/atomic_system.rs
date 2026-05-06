@@ -15,15 +15,36 @@ impl PyAtomicSystem {
 #[pymethods]
 impl PyAtomicSystem {
     #[new]
-    #[pyo3(signature = (coordinates, atom_mask, atom_names = None, elements = None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (coordinates, atom_mask, atom_names = None, elements = None, bonds = None, charges = None, sigmas = None, epsilons = None, radii = None, residue_index = None, chain_index = None))]
     fn new(
         coordinates: Vec<f32>,
         atom_mask: Vec<f32>,
         atom_names: Option<Vec<String>>,
         elements: Option<Vec<String>>,
+        bonds: Option<Vec<[usize; 2]>>,
+        charges: Option<Vec<f32>>,
+        sigmas: Option<Vec<f32>>,
+        epsilons: Option<Vec<f32>>,
+        radii: Option<Vec<f32>>,
+        residue_index: Option<Vec<i32>>,
+        chain_index: Option<Vec<i32>>,
     ) -> Self {
+        use proxide_rs::structure::systems::AtomicSystemArgs;
         Self {
-            inner: AtomicSystem::new(coordinates, atom_mask, atom_names, elements),
+            inner: AtomicSystem::new(AtomicSystemArgs {
+                coordinates,
+                atom_mask,
+                atom_names,
+                elements,
+                bonds,
+                charges,
+                sigmas,
+                epsilons,
+                radii,
+                residue_index,
+                chain_index,
+            }),
         }
     }
 

@@ -26,8 +26,9 @@ pub enum OutputFormatTarget {
     Mpnn,
 }
 
-impl OutputFormatTarget {
-    pub fn from_str(s: &str) -> Result<Self, String> {
+impl std::str::FromStr for OutputFormatTarget {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "general" => Ok(Self::General),
             "mpnn" => Ok(Self::Mpnn),

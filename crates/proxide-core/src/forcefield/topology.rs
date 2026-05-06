@@ -309,13 +309,6 @@ mod tests {
     #[test]
     fn test_methane_topology() {
         // Methane: C at origin, 4 H around it
-        let coords = [
-            [0.0, 0.0, 0.0],       // C
-            [1.09, 0.0, 0.0],      // H
-            [-0.36, 1.03, 0.0],    // H
-            [-0.36, -0.51, 0.89],  // H
-            [-0.36, -0.51, -0.89], // H
-        ];
         let elements = vec![
             "C".to_string(),
             "H".to_string(),
@@ -324,7 +317,15 @@ mod tests {
             "H".to_string(),
         ];
 
-        let topo = Topology::from_coords(&coords, &elements, 1.3);
+        // 4 C-H bonds
+        let bonds = vec![
+            Bond::new(0, 1),
+            Bond::new(0, 2),
+            Bond::new(0, 3),
+            Bond::new(0, 4),
+        ];
+
+        let topo = Topology::new(bonds, &elements);
 
         // 4 C-H bonds
         assert_eq!(topo.bonds.len(), 4);
@@ -339,15 +340,6 @@ mod tests {
     #[test]
     fn test_ethane_topology() {
         // Simplified ethane: C-C with 3 H each
-        // Just checking angle/dihedral generation logic
-        let coords = [
-            [0.0, 0.0, 0.0],   // C1
-            [1.54, 0.0, 0.0],  // C2 (C-C bond ~1.54 A)
-            [-0.5, 0.9, 0.0],  // H1 on C1
-            [-0.5, -0.9, 0.0], // H2 on C1
-            [2.04, 0.9, 0.0],  // H3 on C2
-            [2.04, -0.9, 0.0], // H4 on C2
-        ];
         let elements = vec![
             "C".to_string(),
             "C".to_string(),
@@ -357,12 +349,24 @@ mod tests {
             "H".to_string(),
         ];
 
-        let topo = Topology::from_coords(&coords, &elements, 1.7);
+        // Bonds: C1-C2, C1-H1, C1-H2, C2-H3, C2-H4
+        let bonds = vec![
+            Bond::new(0, 1),
+            Bond::new(0, 2),
+            Bond::new(0, 3),
+            Bond::new(1, 4),
+            Bond::new(1, 5),
+        ];
 
-        // Should have C-C bond and C-H bonds
-        assert!(topo.bonds.len() >= 5);
+        let topo = Topology::new(bonds, &elements);
 
-        // Should have angles
-        assert!(!topo.angles.is_empty());
+        // Should have 5 bonds
+        assert_eq!(topo.bonds.len(), 5);
+
+        // Should have angles (H1-C1-C2, H2-C1-C2, H1-C1-H2, H3-C2-C1, H4-C2-C1, H3-C2-H4)
+        assert_eq!(topo.angles.len(), 6);
+
+        // Should have proper dihedrals (H1-C1-C2-H3, H1-C1-C2-H4, H2-C1-C2-H3, H2-C1-C2-H4)
+        assert_eq!(topo.proper_dihedrals.len(), 4);
     }
 }

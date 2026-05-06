@@ -13,6 +13,7 @@ pub use proxide_geometry::geometry as algo_geometry;
 pub use proxide_physics::physics;
 pub use proxide_io::formats;
 pub use proxide_io::formatters;
+#[cfg(feature = "fetching")]
 pub use proxide_io::io;
 
 /// Force field and topology modules

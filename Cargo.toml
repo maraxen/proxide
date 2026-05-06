@@ -18,6 +18,8 @@ authors = ["Proxide Contributors"]
 license = "MIT"
 
 [workspace.dependencies]
+approx = "0.5"
+insta = { version = "1.39", features = ["glob"] }
 proxide-core = { path = "crates/proxide-core" }
 proxide-geometry = { path = "crates/proxide-geometry" }
 proxide-physics = { path = "crates/proxide-physics" }

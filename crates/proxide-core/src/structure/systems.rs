@@ -36,29 +36,38 @@ pub struct AtomicSystem {
     pub num_atoms: usize,
 }
 
+pub struct AtomicSystemArgs {
+    pub coordinates: Vec<f32>,
+    pub atom_mask: Vec<f32>,
+    pub atom_names: Option<Vec<String>>,
+    pub elements: Option<Vec<String>>,
+    pub bonds: Option<Vec<[usize; 2]>>,
+    pub charges: Option<Vec<f32>>,
+    pub sigmas: Option<Vec<f32>>,
+    pub epsilons: Option<Vec<f32>>,
+    pub radii: Option<Vec<f32>>,
+    pub residue_index: Option<Vec<i32>>,
+    pub chain_index: Option<Vec<i32>>,
+}
+
 impl AtomicSystem {
-    pub fn new(
-        coordinates: Vec<f32>,
-        atom_mask: Vec<f32>,
-        atom_names: Option<Vec<String>>,
-        elements: Option<Vec<String>>,
-    ) -> Self {
-        let num_atoms = atom_mask.len();
+    pub fn new(args: AtomicSystemArgs) -> Self {
+        let num_atoms = args.atom_mask.len();
         Self {
-            coordinates,
-            atom_mask,
-            atom_names: atom_names.unwrap_or_default(),
-            elements: elements.unwrap_or_default(),
-            bonds: None,
+            coordinates: args.coordinates,
+            atom_mask: args.atom_mask,
+            atom_names: args.atom_names.unwrap_or_default(),
+            elements: args.elements.unwrap_or_default(),
+            bonds: args.bonds,
             angles: None,
             proper_dihedrals: None,
             impropers: None,
-            charges: None,
-            sigmas: None,
-            epsilons: None,
-            radii: None,
-            residue_index: None,
-            chain_index: None,
+            charges: args.charges,
+            sigmas: args.sigmas,
+            epsilons: args.epsilons,
+            radii: args.radii,
+            residue_index: args.residue_index,
+            chain_index: args.chain_index,
             unique_chain_ids: None,
             neighbor_indices: None,
             rbf_features: None,
