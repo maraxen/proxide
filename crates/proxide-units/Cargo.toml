@@ -1,0 +1,12 @@
+[package]
+name = "proxide-units"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Unit conversion constants and specifications for proxide parameterizer output"
+license.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

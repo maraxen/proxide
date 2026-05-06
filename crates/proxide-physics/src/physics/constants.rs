@@ -2,7 +2,8 @@
 //!
 //! Port of proxide/physics/constants.py
 //!
-//! Note: These constants are used internally and will be exposed to Python.
+//! Note: These constants are for physics engine internals (kcal/mol + Å domain).
+//! For parameterizer output unit conversions (GROMACS nm/kJ → target), see proxide-units.
 
 #![allow(dead_code)]
 

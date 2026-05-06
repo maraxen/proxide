@@ -23,7 +23,7 @@ pub(crate) use proxide_rs::{
 // Import wrapper types
 use bindings::atomic_system::PyAtomicSystem;
 use bindings::spec::{
-    PyCoordFormat, PyErrorMode, PyHydrogenSource, PyMissingResidueMode, PyOutputSpec,
+    PyCoordFormat, PyErrorMode, PyHydrogenSource, PyMissingResidueMode, PyOutputSpec, PyUnitSystem,
 };
 
 /// Wrapper for proxide_rs::io::fetching::fetch_rcsb
@@ -123,6 +123,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyErrorMode>()?;
     m.add_class::<PyMissingResidueMode>()?;
     m.add_class::<PyHydrogenSource>()?;
+    m.add_class::<PyUnitSystem>()?;
 
     #[cfg(feature = "foldcomp")]
     m.add_class::<py_parsers::FoldCompDatabase>()?;

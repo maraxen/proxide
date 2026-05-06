@@ -18,6 +18,9 @@ bytemuck = "1.21.0"
 rayon.workspace = true
 quick-xml.workspace = true
 
+# Unit system types
+proxide-units.workspace = true
+
 # Serialization
 serde = { version = "1.0", features = ["derive"], optional = true }
 

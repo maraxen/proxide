@@ -1232,6 +1232,7 @@ dependencies = [
  "bytemuck",
  "log",
  "nalgebra",
+ "proxide-units",
  "quick-xml",
  "rand",
  "rand_distr",
@@ -1300,6 +1301,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxide-units"
+version = "0.1.0-alpha.3"
+
+[[package]]
 name = "proxide_fixer"
 version = "0.1.0-alpha.3"
 dependencies = [
@@ -1321,6 +1326,7 @@ dependencies = [
  "numpy",
  "proxide-gaff",
  "proxide-geometry",
+ "proxide-units",
  "proxide_rs",
  "pyo3",
  "pyo3-log",
@@ -1340,6 +1346,7 @@ dependencies = [
  "proxide-geometry",
  "proxide-io",
  "proxide-physics",
+ "proxide-units",
  "rand",
  "rand_distr",
  "rayon",

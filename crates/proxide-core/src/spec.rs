@@ -3,6 +3,8 @@
 //! Defines the OutputSpec struct that controls how structures are formatted
 //! and what optional processing steps should be applied.
 
+use proxide_units::UnitSystem;
+
 /// Coordinate format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoordFormat {
@@ -124,6 +126,9 @@ pub struct OutputSpec {
 
     // Performance
     pub enable_caching: bool,
+
+    // Unit system
+    pub unit_system: UnitSystem,
 }
 
 impl Default for OutputSpec {
@@ -156,6 +161,7 @@ impl Default for OutputSpec {
             include_occupancy: false,
             error_mode: ErrorMode::Warn,
             enable_caching: false,
+            unit_system: UnitSystem::Amber,
         }
     }
 }
