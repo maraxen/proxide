@@ -397,7 +397,7 @@ class Protein:
         virtual_site_params=convert(rust_dict.get("virtual_site_params"))
         if rust_dict.get("virtual_site_params") is not None
         else None,
-        atom_res_index=convert(rust_dict["atom_residue_ids"], dtype=np.int32)
+        atom_res_index=convert(rust_dict.get("atom_residue_ids"), dtype=np.int32)
         if rust_dict.get("atom_residue_ids") is not None
         else None,
         coulomb14scale=rust_dict.get("coulomb14scale"),
