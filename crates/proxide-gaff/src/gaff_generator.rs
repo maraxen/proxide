@@ -876,7 +876,7 @@ impl GaffTemplateGenerator {
         type3: &str,
         type4: &str,
     ) -> Option<&ProperTorsionParam> {
-        // First try exact match
+        // 1. Exact match
         if let Some(param) = self.forcefield.proper_torsions.iter().find(|t| {
             (t.class1 == type1 && t.class2 == type2 && t.class3 == type3 && t.class4 == type4)
                 || (t.class1 == type4
@@ -887,7 +887,7 @@ impl GaffTemplateGenerator {
             return Some(param);
         }
 
-        // Try wildcard matches (empty string = wildcard)
+        // 2. Wildcard match (X-c3-c3-X)
         self.forcefield.proper_torsions.iter().find(|t| {
             let matches_forward = (t.class1.is_empty() || t.class1 == type1)
                 && (t.class2 == type2 || t.class2.is_empty())
@@ -1032,57 +1032,39 @@ impl GaffTemplateGenerator {
         topology: &Topology,
     ) -> Vec<AssignedDihedral> {
         let mut dihedrals = Vec::new();
-        let mut seen: HashSet<(usize, usize, usize, usize)> = HashSet::new();
 
-        // For each bond (i-j), find all i-j-k-l dihedrals
-        for (&i, i_neighbors) in &topology.adjacency {
-            for &j in i_neighbors {
-                if i >= j {
+        // For each bond (j-k), find all i-j-k-l dihedrals
+        for (&j, j_neighbors) in &topology.adjacency {
+            for &k in j_neighbors {
+                if j >= k {
                     continue;
-                } // Only process each bond once
+                }
 
-                if let Some(j_neighbors) = topology.adjacency.get(&j) {
-                    for &k in j_neighbors {
-                        if k == i {
+                // Check i-j-k-l
+                if let Some(i_neighbors) = topology.adjacency.get(&j) {
+                    for &i in i_neighbors {
+                        if i == k {
                             continue;
                         }
 
                         if let Some(k_neighbors) = topology.adjacency.get(&k) {
                             for &l in k_neighbors {
-                                if l == j {
+                                if l == j || l == i {
                                     continue;
                                 }
 
-                                // Canonical ordering
-                                let key = if i < l {
-                                    (i, j, k, l)
-                                } else if i > l {
-                                    (l, k, j, i)
-                                } else if j < k {
-                                    (i, j, k, l)
-                                } else {
-                                    (l, k, j, i)
-                                };
+                                let type1 = &atom_types[i];
+                                let type2 = &atom_types[j];
+                                let type3 = &atom_types[k];
+                                let type4 = &atom_types[l];
 
-                                if seen.contains(&key) {
-                                    continue;
-                                }
-                                seen.insert(key);
-
-                                let type1 = &atom_types[key.0];
-                                let type2 = &atom_types[key.1];
-                                let type3 = &atom_types[key.2];
-                                let type4 = &atom_types[key.3];
-
-                                if let Some(param) =
-                                    self.get_proper_torsion_parameters(type1, type2, type3, type4)
-                                {
+                                if let Some(param) = self.get_proper_torsion_parameters(type1, type2, type3, type4) {
                                     for term in &param.terms {
                                         dihedrals.push(AssignedDihedral {
-                                            atom1: key.0,
-                                            atom2: key.1,
-                                            atom3: key.2,
-                                            atom4: key.3,
+                                            atom1: i,
+                                            atom2: j,
+                                            atom3: k,
+                                            atom4: l,
                                             periodicity: term.periodicity,
                                             phase: term.phase,
                                             k: term.k,
