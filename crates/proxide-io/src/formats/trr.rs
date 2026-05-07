@@ -12,6 +12,11 @@ use std::fs::File;
 use std::io::BufReader;
 use thiserror::Error;
 
+#[cfg(test)]
+mod tests {
+    include!("tests/trr_tests.rs");
+}
+
 #[derive(Error, Debug)]
 pub enum TrrError {
     #[error("IO error: {0}")]
@@ -49,17 +54,26 @@ pub struct TrrFrame {
     pub time: f32,
 }
 
-pub struct TrrReader {
-    reader: XdrReader<BufReader<File>>,
+pub struct TrrReader<R: std::io::Read> {
+    reader: XdrReader<R>,
 }
 
-impl TrrReader {
+impl<R: std::io::Read> TrrReader<R> {
+    pub fn new(reader: R) -> Self {
+        Self {
+            reader: XdrReader::new(reader),
+        }
+    }
+}
+
+impl TrrReader<BufReader<File>> {
     pub fn open(path: &str) -> Result<Self, TrrError> {
         let file = File::open(path)?;
-        let reader = XdrReader::new(BufReader::new(file));
-        Ok(Self { reader })
+        Ok(Self::new(BufReader::new(file)))
     }
+}
 
+impl<R: std::io::Read> TrrReader<R> {
     pub fn read_next_header(&mut self) -> Result<Option<TrrHeader>, TrrError> {
         let magic = match self.reader.read_i32() {
             Ok(m) => m,

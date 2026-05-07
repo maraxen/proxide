@@ -164,3 +164,74 @@ impl FoldCompDb {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn create_mock_foldcomp_data() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"FCMP"); // magic
+        let mut header = vec![0u8; 72];
+        header[0..2].copy_from_slice(&1u16.to_le_bytes()); // n_residue = 1
+        header[8] = 2; // n_anchor
+        header[9] = b'A';
+        for i in 0..6 {
+            let start = 48 + i * 4;
+            header[start..start+4].copy_from_slice(&1.0f32.to_le_bytes());
+        }
+        data.extend_from_slice(&header);
+        data.extend_from_slice(&[0u8; 8]); // anchors
+        for i in 1..=9 {
+            data.extend_from_slice(&(i as f32).to_le_bytes()); // start atoms
+        }
+        data.extend_from_slice(&[0u8; 36]); // last anchor
+        data.push(0); // hasOXT
+        data.extend_from_slice(&[0u8; 12]); // OXT coords
+        data.extend_from_slice(&[0u8; 8]); // 1 record
+        data
+    }
+
+    #[test]
+    fn test_foldcomp_db_mock() {
+        let temp_dir = std::env::temp_dir().join("foldcomp_test");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let base_path = temp_dir.join("test");
+        let db_path = &base_path;
+        let index_path = temp_dir.join("test.index");
+        let lookup_path = temp_dir.join("test.lookup");
+
+        let mock_data = create_mock_foldcomp_data();
+        let data_len = mock_data.len() as u64;
+
+        // Write .db
+        let mut db_file = File::create(db_path).unwrap();
+        db_file.write_all(&mock_data).unwrap();
+
+        // Write .index: ID Offset Length
+        let mut index_file = File::create(index_path).unwrap();
+        writeln!(index_file, "10\t0\t{}", data_len).unwrap();
+
+        // Write .lookup: ID Name
+        let mut lookup_file = File::create(lookup_path).unwrap();
+        writeln!(lookup_file, "10\tPROT_A").unwrap();
+
+        let db = FoldCompDb::open(&base_path).expect("Failed to open mock DB");
+        
+        // Test get by ID
+        let sys1 = db.get(10).expect("Failed to get by ID");
+        assert_eq!(sys1.coordinates.len(), 9);
+
+        // Test get by Name
+        let sys2 = db.get_by_name("PROT_A").expect("Failed to get by name");
+        assert_eq!(sys2.coordinates.len(), 9);
+
+        // Test not found
+        assert!(db.get(20).is_err());
+        assert!(db.get_by_name("PROT_B").is_err());
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+}
