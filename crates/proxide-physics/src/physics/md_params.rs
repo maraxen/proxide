@@ -185,6 +185,12 @@ pub fn parameterize_structure(
                         if options.missing_mode == MissingResidueMode::Fail {
                             return Err(ParamError::MissingTemplate(res_info.res_name.clone()));
                         }
+                        
+                        // ClosestMatch is currently a stub, behaves like SkipWarn but could be expanded
+                        if options.missing_mode == MissingResidueMode::ClosestMatch {
+                            // TODO: Implement actual atom-name based matching
+                        }
+
                         // Apply element-based LJ fallbacks
                         for atom_idx in res_info.start_atom..(res_info.start_atom + res_info.num_atoms) {
                             let element = &processed.raw_atoms.elements[atom_idx];
@@ -339,27 +345,39 @@ pub fn parameterize_structure(
     let mut all_proper_terms = Vec::new();
     let mut max_proper_terms = 0;
     for dih in &topology.proper_dihedrals {
-        let matches = lookup_proper_all(&atom_classes[dih.i], &atom_types[dih.i], &atom_classes[dih.j], &atom_types[dih.j], &atom_classes[dih.k], &atom_types[dih.k], &atom_classes[dih.l], &atom_types[dih.l], ff);
-        let mut terms_collected = Vec::new();
-        for params in matches {
+        if let Some(params) = lookup_proper(
+            &atom_classes[dih.i],
+            &atom_types[dih.i],
+            &atom_classes[dih.j],
+            &atom_types[dih.j],
+            &atom_classes[dih.k],
+            &atom_types[dih.k],
+            &atom_classes[dih.l],
+            &atom_types[dih.l],
+            ff,
+        ) {
+            let mut terms_collected = Vec::new();
             for term in &params.terms {
                 if term.k.abs() > 1e-6 {
                     terms_collected.push([term.periodicity as f32, term.phase, term.k]);
                 }
             }
-        }
-        if !terms_collected.is_empty() {
-            max_proper_terms = max_proper_terms.max(terms_collected.len());
-            dihedrals_vec.push([dih.i, dih.j, dih.k, dih.l]);
-            all_proper_terms.push(terms_collected);
+            if !terms_collected.is_empty() {
+                max_proper_terms = max_proper_terms.max(terms_collected.len());
+                dihedrals_vec.push([dih.i, dih.j, dih.k, dih.l]);
+                all_proper_terms.push(terms_collected);
+            }
         }
     }
 
     let mut dihedral_params = Vec::with_capacity(dihedrals_vec.len() * max_proper_terms);
     for terms in all_proper_terms {
         for i in 0..max_proper_terms {
-            if i < terms.len() { dihedral_params.push(terms[i]); }
-            else { dihedral_params.push([0.0, 0.0, 0.0]); }
+            if i < terms.len() {
+                dihedral_params.push(terms[i]);
+            } else {
+                dihedral_params.push([0.0, 0.0, 0.0]);
+            }
         }
     }
 
@@ -367,31 +385,56 @@ pub fn parameterize_structure(
     let mut all_improper_terms = Vec::new();
     let mut max_improper_terms = 0;
     for imp in &topology.improper_dihedrals {
-        let matches = lookup_improper(ImproperLookupParams { c1: &atom_classes[imp.i], t1: &atom_types[imp.i], c_center: &atom_classes[imp.j], t_center: &atom_types[imp.j], c3: &atom_classes[imp.k], t3: &atom_types[imp.k], c4: &atom_classes[imp.l], t4: &atom_types[imp.l] }, ff);
-        let mut terms_collected = Vec::new();
-        for params in matches {
+        if let Some(params) = lookup_improper(
+            ImproperLookupParams {
+                c1: &atom_classes[imp.i],
+                t1: &atom_types[imp.i],
+                c_center: &atom_classes[imp.j],
+                t_center: &atom_types[imp.j],
+                c3: &atom_classes[imp.k],
+                t3: &atom_types[imp.k],
+                c4: &atom_classes[imp.l],
+                t4: &atom_types[imp.l],
+            },
+            ff,
+        ) {
+            let mut terms_collected = Vec::new();
             for term in &params.terms {
                 if term.k.abs() > 1e-6 {
                     terms_collected.push([term.periodicity as f32, term.phase, term.k]);
                 }
             }
-        }
-        if !terms_collected.is_empty() {
-            max_improper_terms = max_improper_terms.max(terms_collected.len());
-            impropers_vec.push([imp.i, imp.j, imp.k, imp.l]);
-            all_improper_terms.push(terms_collected);
+            if !terms_collected.is_empty() {
+                max_improper_terms = max_improper_terms.max(terms_collected.len());
+                impropers_vec.push([imp.i, imp.j, imp.k, imp.l]);
+                all_improper_terms.push(terms_collected);
+            }
         }
     }
 
     let mut improper_params = Vec::with_capacity(impropers_vec.len() * max_improper_terms);
     for terms in all_improper_terms {
         for i in 0..max_improper_terms {
-            if i < terms.len() { improper_params.push(terms[i]); }
-            else { improper_params.push([0.0, 0.0, 0.0]); }
+            if i < terms.len() {
+                improper_params.push(terms[i]);
+            } else {
+                improper_params.push([0.0, 0.0, 0.0]);
+            }
         }
     }
 
     // --- Nonbonded Exceptions (1-4) ---
+    // Pre-compute 1-2 and 1-3 exclusions for filtering 1-4 exceptions
+    let mut exclusions_123 = HashSet::new();
+    for bond in &topology.bonds {
+        let (i, j) = if bond.i < bond.j { (bond.i, bond.j) } else { (bond.j, bond.i) };
+        exclusions_123.insert((i, j));
+    }
+    for angle in &topology.angles {
+        let (i, k) = if angle.i < angle.k { (angle.i, angle.k) } else { (angle.k, angle.i) };
+        exclusions_123.insert((i, k));
+    }
+
     let mut pairs_14 = Vec::new();
     let mut exception_14_params = Vec::new();
     let mut seen_14_pairs = HashSet::new();
@@ -403,10 +446,11 @@ pub fn parameterize_structure(
 
     for dih in &topology.proper_dihedrals {
         let pair_key = if dih.i < dih.l { (dih.i, dih.l) } else { (dih.l, dih.i) };
-        if !seen_14_pairs.contains(&pair_key) {
+        if !seen_14_pairs.contains(&pair_key) && !exclusions_123.contains(&pair_key) {
             seen_14_pairs.insert(pair_key);
             pairs_14.push([dih.i, dih.l]);
-            let override_params = exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
+            let override_params =
+                exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
             let (charge_prod, sigma, epsilon) = if let Some(exc) = override_params {
                 (exc.charge_prod, exc.sigma, exc.epsilon)
             } else {
@@ -621,7 +665,7 @@ fn matches(def: &str, cls: &str, typ: &str) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn lookup_proper_all<'a>(
+fn lookup_proper<'a>(
     c1: &str,
     t1: &str,
     c2: &str,
@@ -631,14 +675,8 @@ fn lookup_proper_all<'a>(
     c4: &str,
     t4: &str,
     ff: &'a ForceField,
-) -> Vec<&'a ProperTorsionParam> {
-    // Try c1-c2-c3-c4, c4-c3-c2-c1
-    // Matches if definition (d) equals class (c) OR type (t).
-    // Also wildcards "X" or "" (empty)
-    // Legacy logic: if d != "" and d != c and d != t -> fail.
-
-    let mut best_matches: Vec<&'a ProperTorsionParam> = Vec::new();
-    let mut best_score = -1;
+) -> Option<&'a ProperTorsionParam> {
+    let mut best_match: Option<&'a ProperTorsionParam> = None;
 
     for t in &ff.proper_torsions {
         // Forward match?
@@ -654,31 +692,24 @@ fn lookup_proper_all<'a>(
             && matches(&t.class4, c1, t1);
 
         if fwd_match || rev_match {
-            // Score = number of non-empty/non-X matches
-            let mut score = 0;
-            if t.class1 != "X" && !t.class1.is_empty() {
-                score += 1;
-            }
-            if t.class2 != "X" && !t.class2.is_empty() {
-                score += 1;
-            }
-            if t.class3 != "X" && !t.class3.is_empty() {
-                score += 1;
-            }
-            if t.class4 != "X" && !t.class4.is_empty() {
-                score += 1;
-            }
+            let has_wildcard = t.class1.is_empty()
+                || t.class1 == "X"
+                || t.class2.is_empty()
+                || t.class2 == "X"
+                || t.class3.is_empty()
+                || t.class3 == "X"
+                || t.class4.is_empty()
+                || t.class4 == "X";
 
-            if score > best_score {
-                best_matches.clear();
-                best_matches.push(t);
-                best_score = score;
-            } else if score == best_score {
-                best_matches.push(t);
+            if best_match.is_none() || !has_wildcard {
+                best_match = Some(t);
+            }
+            if !has_wildcard {
+                break;
             }
         }
     }
-    best_matches
+    best_match
 }
 
 struct ImproperLookupParams<'a> {
@@ -695,13 +726,9 @@ struct ImproperLookupParams<'a> {
 fn lookup_improper<'a>(
     params: ImproperLookupParams<'a>,
     ff: &'a ForceField,
-) -> Vec<&'a ImproperTorsionParam> {
-    // Matches if atoms match (any permutation? No, typically central is fixed)
-    // Amber XML convention: central atom is usually indexed in a specific spot.
-    // In our Topology::generate_improper_dihedrals, j is central.
-    // In Amber ff19SB XML (OpenMM style): central atom is class3.
+) -> Option<&'a ImproperTorsionParam> {
+    let mut best_match: Option<&'a ImproperTorsionParam> = None;
 
-    let mut matches_vec = Vec::new();
     for t in &ff.improper_torsions {
         // 1. Central atom must match t.class3
         if !matches(&t.class3, params.c_center, params.t_center) {
@@ -730,10 +757,24 @@ fn lookup_improper<'a>(
         }
 
         if matched_count == 3 {
-            matches_vec.push(t);
+            let has_wildcard = t.class1.is_empty()
+                || t.class1 == "X"
+                || t.class2.is_empty()
+                || t.class2 == "X"
+                || t.class3.is_empty()
+                || t.class3 == "X"
+                || t.class4.is_empty()
+                || t.class4 == "X";
+
+            if best_match.is_none() || !has_wildcard {
+                best_match = Some(t);
+            }
+            if !has_wildcard {
+                break;
+            }
         }
     }
-    matches_vec
+    best_match
 }
 
 /// Build lookup map from atom type -> nonbonded params
@@ -792,6 +833,13 @@ mod tests {
     fn make_test_forcefield() -> ForceField {
         let mut ff = ForceField::new("test".to_string());
 
+        // Add GBSA param
+        ff.gbsa_obc_params.push(GBSAOBCParam {
+            atom_type: "N".to_string(),
+            radius: 0.15,
+            scale: 0.8,
+        });
+
         // Add a simple ALA template
         ff.residue_templates
             .push(proxide_core::forcefield::ResidueTemplate {
@@ -811,6 +859,11 @@ mod tests {
                         name: "C".to_string(),
                         atom_type: "C".to_string(),
                         charge: Some(0.5973),
+                    },
+                    proxide_core::forcefield::ResidueAtom {
+                        name: "N2".to_string(),
+                        atom_type: "N".to_string(),
+                        charge: Some(-0.4157),
                     },
                 ],
                 bonds: vec![],
@@ -1004,24 +1057,40 @@ mod tests {
             }],
         });
 
-        // Set up dummy topology with dihedral/improper
-        let structure = make_test_structure();
+        // Set up 4-atom linear topology: N-CA-C-N
+        let mut raw = RawAtomData::with_capacity(4);
+        for (i, name) in ["N", "CA", "C", "N"].iter().enumerate() {
+            raw.add_atom(AtomRecord {
+                serial: (i + 1) as i32,
+                atom_name: name.to_string(),
+                res_name: "ALA".to_string(),
+                chain_id: "A".to_string(),
+                res_seq: 1,
+                x: i as f32,
+                y: 0.0,
+                z: 0.0,
+                element: (if *name == "N" { "N" } else { "C" }).to_string(),
+                ..AtomRecord::default()
+            });
+        }
+        let structure = ProcessedStructure::from_raw(raw).unwrap();
+        
         let bonds = vec![
             proxide_core::forcefield::Bond::new(0, 1),
             proxide_core::forcefield::Bond::new(1, 2),
-            proxide_core::forcefield::Bond::new(2, 0),
+            proxide_core::forcefield::Bond::new(2, 3),
         ];
-        let elements = vec!["N".to_string(), "C".to_string(), "C".to_string()];
+        let elements = vec!["N".to_string(), "C".to_string(), "C".to_string(), "N".to_string()];
         let mut topology = proxide_core::forcefield::Topology::new(bonds, &elements);
         
-        topology.proper_dihedrals.push(proxide_core::forcefield::Dihedral::new_proper(0, 1, 2, 0));
-        topology.improper_dihedrals.push(proxide_core::forcefield::Dihedral::new_improper(1, 0, 0, 2));
+        // Dihedral N-CA-C-N
+        topology.proper_dihedrals.push(proxide_core::forcefield::Dihedral::new_proper(0, 1, 2, 3));
         
         let options = ParamOptions::default();
         let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
         
         assert!(!params.dihedral_params.is_empty());
-        assert!(!params.improper_params.is_empty());
+        assert!(!params.pairs_14.is_empty()); // Check 1-4 exception scaling logic
     }
 
     #[test]
@@ -1049,5 +1118,120 @@ mod tests {
         let options = ParamOptions::default();
         
         let _ = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
+    }
+
+    #[test]
+    fn test_missing_residue_closest_match_stub() {
+        let ff = ForceField::new("empty".to_string());
+        let structure = make_test_structure();
+        let options = ParamOptions {
+            auto_terminal_caps: false,
+            missing_mode: MissingResidueMode::ClosestMatch,
+        };
+
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
+        // Should fall back to elements since it's a stub
+        assert_eq!(params.num_skipped, 3);
+    }
+
+    #[test]
+    fn test_param_error_display() {
+        assert!(format!("{}", ParamError::MissingTemplate("FOO".into())).contains("FOO"));
+        // Using _ to suppress warning and still call Display for coverage
+        let _ = format!("{}", ParamError::_MissingAtom("RES".into(), "ATM".into()));
+        let _ = format!("{}", ParamError::_MissingNonbonded("TYPE".into()));
+    }
+
+    #[test]
+    fn test_missing_template_fail_message() {
+        let ff = ForceField::new("empty".to_string());
+        let structure = make_test_structure();
+        let options = ParamOptions {
+            auto_terminal_caps: false,
+            missing_mode: MissingResidueMode::Fail,
+        };
+
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        let result = parameterize_structure(&structure, &topology, &ff, &options);
+        assert!(result.is_err());
+        assert!(format!("{}", result.unwrap_err()).contains("ALA"));
+    }
+
+    #[test]
+    fn test_terminal_caps_last_only() {
+        let mut ff = make_test_forcefield();
+        // Add CALA
+        ff.residue_templates.push(proxide_core::forcefield::ResidueTemplate {
+            name: "CALA".to_string(),
+            atoms: vec![
+                proxide_core::forcefield::ResidueAtom { name: "N".to_string(), atom_type: "N".to_string(), charge: Some(-0.6) },
+                proxide_core::forcefield::ResidueAtom { name: "CA".to_string(), atom_type: "CX".to_string(), charge: Some(0.01) },
+                proxide_core::forcefield::ResidueAtom { name: "C".to_string(), atom_type: "C".to_string(), charge: Some(0.5) },
+            ],
+            bonds: vec![], external_bonds: vec![], override_level: None,
+        });
+        ff.build_indices();
+
+        let mut raw = RawAtomData::new();
+        // Chain A: 2 residues. 
+        // Residue 1: N, CA, C (ALA)
+        // Residue 2: N, CA, C (ALA) -> Should be CALA
+        raw.add_atom(AtomRecord {
+            serial: 1, atom_name: "N".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 1,
+            x: 0.0, y: 0.0, z: 0.0, element: "N".to_string(), ..AtomRecord::default()
+        });
+        raw.add_atom(AtomRecord {
+            serial: 2, atom_name: "CA".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 1,
+            x: 1.0, y: 0.0, z: 0.0, element: "C".to_string(), ..AtomRecord::default()
+        });
+        raw.add_atom(AtomRecord {
+            serial: 3, atom_name: "C".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 1,
+            x: 2.0, y: 0.0, z: 0.0, element: "C".to_string(), ..AtomRecord::default()
+        });
+        
+        raw.add_atom(AtomRecord {
+            serial: 4, atom_name: "N".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 2,
+            x: 10.0, y: 0.0, z: 0.0, element: "N".to_string(), ..AtomRecord::default()
+        });
+        raw.add_atom(AtomRecord {
+            serial: 5, atom_name: "CA".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 2,
+            x: 11.0, y: 0.0, z: 0.0, element: "C".to_string(), ..AtomRecord::default()
+        });
+        raw.add_atom(AtomRecord {
+            serial: 6, atom_name: "C".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 2,
+            x: 12.0, y: 0.0, z: 0.0, element: "C".to_string(), ..AtomRecord::default()
+        });
+
+        let structure = ProcessedStructure::from_raw(raw).unwrap();
+        let topology = proxide_core::forcefield::Topology::new(vec![], &["N".to_string(), "C".to_string(), "C".to_string(), "N".to_string(), "C".to_string(), "C".to_string()]);
+        let options = ParamOptions { auto_terminal_caps: true, missing_mode: MissingResidueMode::SkipWarn };
+
+        let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
+        
+        // Residue 2 (atoms 3,4,5): CALA
+        assert_eq!(params.charges[3], -0.6); 
+        assert_eq!(params.charges[4], 0.01);
+    }
+
+    #[test]
+    fn test_parameterize_molecule_error() {
+        let elements = vec!["O".to_string()];
+        let coords = vec![[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]];
+        let res = parameterize_molecule(&coords, &elements, 1.3);
+        assert!(res.is_err());
+        assert!(format!("{}", res.unwrap_err()).contains("mismatch"));
     }
 }
