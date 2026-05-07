@@ -89,8 +89,8 @@ pub struct MDParameters {
 
     /// 1-4 Pairs for scaling (atom1, atom2)
     pub pairs_14: Vec<[usize; 2]>,
-    /// Per-pair 1-4 exception parameters: (chargeProd, sigma, epsilon)
-    pub exception_14_params: Vec<[f32; 3]>,
+    /// Per-pair exception parameters: (type1, type2, chargeProd, sigma, epsilon)
+    pub nonbonded_exceptions: Vec<(String, String, f32, f32, f32)>,
 
     // --- CMAP ---
     /// CMAP torsions as [atom1, atom2, atom3, atom4, atom5]
@@ -436,12 +436,10 @@ pub fn parameterize_structure(
     }
 
     let mut pairs_14 = Vec::new();
-    let mut exception_14_params = Vec::new();
     let mut seen_14_pairs = HashSet::new();
-    let mut exception_map: HashMap<(String, String), &NonbondedException> = HashMap::new();
+    let mut nonbonded_exceptions = Vec::new();
     for exc in &ff.exceptions {
-        exception_map.insert((exc.type1.clone(), exc.type2.clone()), exc);
-        exception_map.insert((exc.type2.clone(), exc.type1.clone()), exc);
+        nonbonded_exceptions.push((exc.type1.clone(), exc.type2.clone(), exc.charge_prod, exc.sigma, exc.epsilon));
     }
 
     for dih in &topology.proper_dihedrals {
@@ -449,17 +447,6 @@ pub fn parameterize_structure(
         if !seen_14_pairs.contains(&pair_key) && !exclusions_123.contains(&pair_key) {
             seen_14_pairs.insert(pair_key);
             pairs_14.push([dih.i, dih.l]);
-            let override_params =
-                exception_map.get(&(atom_types[dih.i].clone(), atom_types[dih.l].clone()));
-            let (charge_prod, sigma, epsilon) = if let Some(exc) = override_params {
-                (exc.charge_prod, exc.sigma, exc.epsilon)
-            } else {
-                let charge_prod = charges[dih.i] * charges[dih.l] * ff.coulomb14scale;
-                let sigma = (sigmas[dih.i] + sigmas[dih.l]) / 2.0;
-                let epsilon = (epsilons[dih.i] * epsilons[dih.l]).sqrt() * ff.lj14scale;
-                (charge_prod, sigma, epsilon)
-            };
-            exception_14_params.push([charge_prod, sigma, epsilon]);
         }
     }
 
@@ -500,7 +487,11 @@ pub fn parameterize_structure(
         bonds: bonds_vec, bond_params, angles: angles_vec, angle_params,
         dihedrals: dihedrals_vec, dihedral_params, max_proper_terms,
         impropers: impropers_vec, improper_params, max_improper_terms,
-        pairs_14, exception_14_params, cmap_torsions, cmap_map_indices,
+        pairs_14,
+        nonbonded_exceptions,
+        cmap_torsions,
+        cmap_map_indices,
+
         cmap_grids: if let Some(cmap_data) = &ff.cmap_data { cmap_data.maps.clone() } else { Vec::new() },
     })
 }
@@ -622,7 +613,7 @@ pub fn parameterize_molecule(
         improper_params,
         max_improper_terms: 1,
         pairs_14,
-        exception_14_params: Vec::new(), // GAFF exceptions not handled yet
+        exception_14_params: Vec::new(),
         cmap_torsions: Vec::new(),
         cmap_map_indices: Vec::new(),
         cmap_grids: Vec::new(),

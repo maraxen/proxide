@@ -192,6 +192,10 @@ pub fn parameterize_molecule(
         )?;
     }
 
+    // Nonbonded exceptions (N, 5)
+    let exceptions: Vec<(String, String, f32, f32, f32)> = params.nonbonded_exceptions;
+    dict.set_item("nonbonded_exceptions", exceptions)?;
+
     Ok(dict.into_py(py))
 }
 
