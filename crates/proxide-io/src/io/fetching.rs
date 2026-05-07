@@ -37,6 +37,15 @@ fn validate_id(id: &str) -> Result<(), String> {
 
 /// Fetch structure content from the RCSB data bank.
 pub fn fetch_rcsb(pdb_id: &str, output_dir: &str, format_type: &str) -> Result<String, String> {
+    _fetch_rcsb_with_base(pdb_id, output_dir, format_type, RCSB_URL_PDB)
+}
+
+fn _fetch_rcsb_with_base(
+    pdb_id: &str,
+    output_dir: &str,
+    format_type: &str,
+    base_url: &str,
+) -> Result<String, String> {
     validate_id(pdb_id)?;
     let output_path = Path::new(output_dir);
     if !output_path.exists() {
@@ -49,11 +58,11 @@ pub fn fetch_rcsb(pdb_id: &str, output_dir: &str, format_type: &str) -> Result<S
     // Try primary format first
     let (url, filename) = match format_type {
         "pdb" => (
-            format!("{}{}.pdb", RCSB_URL_PDB, pdb_id_upper),
+            format!("{}{}.pdb", base_url, pdb_id_upper),
             format!("{}.pdb", pdb_id_upper),
         ),
         _ => (
-            format!("{}{}.cif", RCSB_URL_MMCIF, pdb_id_upper),
+            format!("{}{}.cif", base_url, pdb_id_upper),
             format!("{}.cif", pdb_id_upper),
         ),
     };
@@ -73,12 +82,12 @@ pub fn fetch_rcsb(pdb_id: &str, output_dir: &str, format_type: &str) -> Result<S
     // 2. Fallback
     let (fb_url, fb_filename) = if format_type == "pdb" {
         (
-            format!("{}{}.cif", RCSB_URL_MMCIF, pdb_id_upper),
+            format!("{}{}.cif", base_url, pdb_id_upper),
             format!("{}.cif", pdb_id_upper),
         )
     } else {
         (
-            format!("{}{}.pdb", RCSB_URL_PDB, pdb_id_upper),
+            format!("{}{}.pdb", base_url, pdb_id_upper),
             format!("{}.pdb", pdb_id_upper),
         )
     };
@@ -95,6 +104,14 @@ pub fn fetch_rcsb(pdb_id: &str, output_dir: &str, format_type: &str) -> Result<S
 
 /// Fetch an h5 file from the MD-CATH data bank.
 pub fn fetch_md_cath(md_cath_id: &str, output_dir: &str) -> Result<String, String> {
+    _fetch_md_cath_with_base(md_cath_id, output_dir, MDCATH_URL_BASE)
+}
+
+fn _fetch_md_cath_with_base(
+    md_cath_id: &str,
+    output_dir: &str,
+    base_url: &str,
+) -> Result<String, String> {
     validate_id(md_cath_id)?;
     let output_path = Path::new(output_dir);
     if !output_path.exists() {
@@ -115,7 +132,7 @@ pub fn fetch_md_cath(md_cath_id: &str, output_dir: &str) -> Result<String, Strin
         ));
     }
     let subdirs = &md_cath_id[1..3];
-    let url = format!("{}{}/{}.h5", MDCATH_URL_BASE, subdirs, md_cath_id);
+    let url = format!("{}{}/{}.h5", base_url, subdirs, md_cath_id);
 
     let client = Client::new();
     match _download_file(&client, &url, &target_path) {
@@ -126,6 +143,15 @@ pub fn fetch_md_cath(md_cath_id: &str, output_dir: &str) -> Result<String, Strin
 
 /// Fetch a structure from the AlphaFold Structure Database (AFDB).
 pub fn fetch_afdb(uniprot_id: &str, output_dir: &str, version: u32) -> Result<String, String> {
+    _fetch_afdb_with_base(uniprot_id, output_dir, version, AFDB_URL_BASE)
+}
+
+fn _fetch_afdb_with_base(
+    uniprot_id: &str,
+    output_dir: &str,
+    version: u32,
+    base_url: &str,
+) -> Result<String, String> {
     validate_id(uniprot_id)?;
     let output_path = Path::new(output_dir);
     if !output_path.exists() {
@@ -139,7 +165,7 @@ pub fn fetch_afdb(uniprot_id: &str, output_dir: &str, version: u32) -> Result<St
         return Ok(target_path.to_string_lossy().to_string());
     }
 
-    let url = format!("{}{}", AFDB_URL_BASE, filename);
+    let url = format!("{}{}", base_url, filename);
     let client = Client::new();
 
     match _download_file(&client, &url, &target_path) {
@@ -194,13 +220,26 @@ pub fn fetch_foldcomp_database(
     output_dir: &str,
     _download_chunks: usize,
 ) -> Result<String, String> {
+    _fetch_foldcomp_database_with_base(
+        db_name,
+        output_dir,
+        _download_chunks,
+        "https://opendata.mmseqs.org/foldcomp/",
+    )
+}
+
+fn _fetch_foldcomp_database_with_base(
+    db_name: &str,
+    output_dir: &str,
+    _download_chunks: usize,
+    base_url: &str,
+) -> Result<String, String> {
     validate_id(db_name)?;
     let output_path = Path::new(output_dir);
     if !output_path.exists() {
         std::fs::create_dir_all(output_path).map_err(|e| e.to_string())?;
     }
 
-    let base_url = "https://opendata.mmseqs.org/foldcomp/";
     let client = Client::new();
 
     let extensions = ["", ".index", ".lookup", ".dbtype", ".source"];
@@ -228,4 +267,129 @@ pub fn fetch_foldcomp_database(
     }
 
     Ok(output_path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use httpmock::prelude::*;
+
+    #[test]
+    fn test_validate_id() {
+        assert!(validate_id("1abc").is_ok());
+        assert!(validate_id("ID_with-hyphen").is_ok());
+        assert!(validate_id("").is_err());
+        assert!(validate_id("id with spaces").is_err());
+        assert!(validate_id("id!@#").is_err());
+        assert!(validate_id("ab/c").is_err());
+        assert!(validate_id("a.b").is_err());
+        assert!(validate_id("\\test").is_err());
+    }
+
+    #[test]
+    fn test_fetch_md_cath_short_id() {
+        assert!(fetch_md_cath("ab", "/tmp").is_err());
+    }
+
+    #[test]
+    fn test_fetch_with_retry_404() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/test.pdb");
+            then.status(404);
+        });
+
+        let client = Client::new();
+        let url = server.url("/test.pdb");
+        let res = _fetch_with_retry(&client, &url);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err(), "404 Not Found");
+        mock.assert();
+    }
+
+    #[test]
+    fn test_fetch_rcsb_pdb_primary_success() {
+        let server = MockServer::start();
+        let pdb_id = "1ABC";
+        let mock = server.mock(|when, then| {
+            when.method(GET).path(format!("/{}.pdb", pdb_id));
+            then.status(200).body("PDB CONTENT");
+        });
+
+        let output_dir = tempfile::tempdir().unwrap();
+        let base_url = format!("{}/", server.base_url());
+        let path = _fetch_rcsb_with_base(pdb_id, output_dir.path().to_str().unwrap(), "pdb", &base_url).unwrap();
+        
+        assert!(Path::new(&path).exists());
+        assert!(path.ends_with("1ABC.pdb"));
+        mock.assert();
+    }
+
+    #[test]
+    fn test_fetch_rcsb_pdb_fallback_to_cif() {
+        let server = MockServer::start();
+        let pdb_id = "1ABC";
+        
+        // Mock 404 for PDB, 200 for CIF
+        let mock_pdb = server.mock(|when, then| {
+            when.method(GET).path(format!("/{}.pdb", pdb_id));
+            then.status(404);
+        });
+        let mock_cif = server.mock(|when, then| {
+            when.method(GET).path(format!("/{}.cif", pdb_id));
+            then.status(200).body("CIF CONTENT");
+        });
+
+        let output_dir = tempfile::tempdir().unwrap();
+        let base_url = format!("{}/", server.base_url());
+        
+        let path = _fetch_rcsb_with_base(pdb_id, output_dir.path().to_str().unwrap(), "pdb", &base_url).unwrap();
+        
+        assert!(path.ends_with("1ABC.cif"));
+        assert!(Path::new(&path).exists());
+        mock_pdb.assert();
+        mock_cif.assert();
+    }
+
+    #[test]
+    fn test_fetch_afdb() {
+        let server = MockServer::start();
+        let uniprot_id = "P12345";
+        let mock = server.mock(|when, then| {
+            when.method(GET).path(format!("/AF-{}-F1-model_v1.pdb", uniprot_id));
+            then.status(200).body("AFDB CONTENT");
+        });
+
+        let output_dir = tempfile::tempdir().unwrap();
+        let base_url = format!("{}/", server.base_url());
+        let path = _fetch_afdb_with_base(uniprot_id, output_dir.path().to_str().unwrap(), 1, &base_url).unwrap();
+        assert!(Path::new(&path).exists());
+        mock.assert();
+    }
+
+    #[test]
+    fn test_fetch_foldcomp_database() {
+        let server = MockServer::start();
+        let db_name = "testdb";
+        let extensions = vec!["", ".index", ".lookup", ".dbtype", ".source"];
+        let mut mocks = Vec::new();
+        for ext in extensions {
+            let path = format!("/{}{}", db_name, ext);
+            mocks.push(server.mock(|when, then| {
+                when.method(GET).path(path);
+                then.status(200).body("CONTENT");
+            }));
+        }
+
+        let output_dir = tempfile::tempdir().unwrap();
+        let base_url = format!("{}/", server.base_url());
+        let _path = _fetch_foldcomp_database_with_base(db_name, output_dir.path().to_str().unwrap(), 0, &base_url).unwrap();
+        
+        for ext in vec!["", ".index", ".lookup", ".dbtype", ".source"] {
+            assert!(output_dir.path().join(format!("{}{}", db_name, ext)).exists());
+        }
+        for mock in mocks {
+            mock.assert();
+        }
+    }
 }
