@@ -71,7 +71,13 @@ pub fn parse_pdb_file<P: AsRef<Path>>(
 ) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
+    parse_pdb_from_reader(reader)
+}
 
+/// Internal parser implementation taking any reader
+pub fn parse_pdb_from_reader<R: BufRead>(
+    reader: R,
+) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
     let mut raw_data = RawAtomData::new();
     let mut model_ids: Vec<usize> = Vec::new();
     let mut current_model: usize = 1; // Default model 1 if no MODEL record
@@ -87,9 +93,9 @@ pub fn parse_pdb_file<P: AsRef<Path>>(
                     current_model = model_num;
                 }
             }
-        } else if trimmed.starts_with("ENDMDL") {
-            // Model ends, next atoms belong to next model
-            // current_model will be updated by next MODEL record
+        } else if trimmed.starts_with("ENDMDL") || trimmed.starts_with("TER") || trimmed.starts_with("ANISOU") {
+            // TER and ANISOU are explicitly ignored for now but could trigger state changes
+            continue;
         } else if trimmed.starts_with("ATOM") || trimmed.starts_with("HETATM") {
             if let Some(atom) = parse_atom_line(&line) {
                 raw_data.add_atom(atom);
@@ -192,5 +198,47 @@ mod tests {
         assert_eq!(data.atom_names[1], "CA");
         assert_eq!(data.res_names[0], "ALA");
         assert_eq!(data.b_factors[1], 25.0);
+    }
+
+    #[test]
+    fn test_parse_4_char_atom_name() {
+        // 1H5' should be captured correctly
+        let line = "ATOM      1 1H5' ALA A   1      20.154  29.699   5.276  1.00 49.05           H  ";
+        let atom = parse_atom_line(line).unwrap();
+        assert_eq!(atom.atom_name, "1H5'");
+    }
+
+    #[test]
+    fn test_parse_atom_line_edge_cases() {
+        // Short line
+        assert!(parse_atom_line("ATOM").is_none());
+
+        // Temp factor fallback and element inference
+        let line = "ATOM      1  N   ALA A   1      20.154  29.699   5.276"; 
+        let atom = parse_atom_line(line).unwrap();
+        assert_eq!(atom.temp_factor, 0.0);
+        assert_eq!(atom.element, "N");
+
+        // Explicit occupancy but no temp factor
+        let line = "ATOM      1  N   ALA A   1      20.154  29.699   5.276  1.00";
+        let atom = parse_atom_line(line).unwrap();
+        assert_eq!(atom.occupancy, 1.0);
+        assert_eq!(atom.temp_factor, 0.0);
+    }
+
+    #[test]
+    fn test_pdb_with_ter_and_anisou() {
+        let pdb_content = "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N
+ANISOU    1  N   ALA A   1   1000   1000   1000      0      0      0       N
+TER       2      ALA A   1
+ATOM      3  N   ALA B   1      10.000   0.000   0.000  1.00  0.00           N";
+        
+        let (raw_data, _) = parse_pdb_from_reader(pdb_content.as_bytes()).unwrap();
+
+        assert_eq!(raw_data.num_atoms, 2);
+        assert_eq!(raw_data.chain_ids[0], "A");
+        assert_eq!(raw_data.chain_ids[1], "B");
+        assert_eq!(raw_data.res_ids[0], 1);
+        assert_eq!(raw_data.res_ids[1], 1);
     }
 }

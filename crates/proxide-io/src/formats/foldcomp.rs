@@ -593,4 +593,60 @@ mod tests {
         assert_eq!(bc.c_n_ca_angle, 200);
         assert_eq!(bc.n_ca_c_angle, 50);
     }
+
+    #[test]
+    fn test_read_foldcomp_mock() {
+        let mut data = Vec::new();
+        // 1. Magic
+        data.extend_from_slice(MAGICNUMBER);
+
+        // 2. Header (72 bytes)
+        let n_residue = 1u16;
+        let n_anchor = 2u8;
+        let mut header = vec![0u8; 72];
+        header[0..2].copy_from_slice(&n_residue.to_le_bytes());
+        header[8] = n_anchor;
+        header[9] = b'A'; // chain A
+        // mins=0.0, cont_fs=1.0 (defaulting most to 0)
+        for i in 0..6 {
+            let start = 48 + i * 4;
+            header[start..start+4].copy_from_slice(&1.0f32.to_le_bytes());
+        }
+        data.extend_from_slice(&header);
+
+        // 3. Anchors (n_anchor * 4)
+        data.extend_from_slice(&0i32.to_be_bytes());
+        data.extend_from_slice(&0i32.to_be_bytes());
+
+        // 4. Title (0 bytes)
+
+        // 5. Start Atoms (36 bytes)
+        // [1.0, 1.0, 1.0], [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]
+        for i in 1..=9 {
+            data.extend_from_slice(&(i as f32).to_le_bytes());
+        }
+
+        // 7. Last Anchor (36 bytes)
+        data.extend_from_slice(&[0u8; 36]);
+
+        // 8. OXT
+        data.push(0); // hasOXT = false
+        data.extend_from_slice(&[0u8; 12]);
+
+        // 9. Records (n_residue * 8)
+        // Residue 0 (Ala = 0)
+        let record = [0u8; 8]; 
+        data.extend_from_slice(&record);
+
+        let mut cursor = std::io::Cursor::new(data);
+        let system = read_foldcomp_from_reader(&mut cursor).expect("Failed to read mock FoldComp");
+
+        assert_eq!(system.coordinates.len(), 9); // 3 atoms for 1 residue
+        assert_eq!(system.coordinates[0], 1.0);
+        assert_eq!(system.coordinates[1], 2.0);
+        assert_eq!(system.coordinates[2], 3.0);
+        assert_eq!(system.coordinates[3], 4.0);
+        assert_eq!(system.coordinates[6], 7.0);
+        assert_eq!(system.unique_chain_ids.as_ref().unwrap()[0], "A");
+    }
 }

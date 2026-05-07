@@ -6,6 +6,11 @@
 use molly::XTCReader;
 use std::path::Path;
 
+#[cfg(test)]
+mod tests {
+    include!("tests/xtc_tests.rs");
+}
+
 /// XTC trajectory data structure
 #[derive(Debug, Clone)]
 pub struct XtcTrajectory {

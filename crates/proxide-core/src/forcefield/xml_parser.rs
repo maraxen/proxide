@@ -51,7 +51,7 @@ pub fn parse_forcefield_xml(path: &str) -> Result<ForceField, ParseError> {
 }
 
 /// Parse from any reader
-fn parse_xml_reader<R: std::io::BufRead>(
+pub fn parse_xml_reader<R: std::io::BufRead>(
     reader: R,
     name: String,
 ) -> Result<ForceField, ParseError> {
@@ -724,5 +724,100 @@ mod tests {
 
         let res = parse_xml_reader(xml.as_bytes(), "test".to_string());
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_parse_harmonic_angle_xml() {
+        let xml = r#"<?xml version="1.0"?>
+        <ForceField>
+          <HarmonicAngleForce>
+            <Angle angle="1.902" class1="C" class2="N" class3="H" k="418.4" />
+          </HarmonicAngleForce>
+        </ForceField>"#;
+
+        let ff = parse_xml_reader(xml.as_bytes(), "test".to_string()).unwrap();
+
+        assert_eq!(ff.harmonic_angles.len(), 1);
+        assert_eq!(ff.harmonic_angles[0].angle, 1.902);
+        assert_eq!(ff.harmonic_angles[0].k, 418.4);
+        assert_eq!(ff.harmonic_angles[0].class1, "C");
+    }
+
+    #[test]
+    fn test_parse_gbsa_obc_xml() {
+        let xml = r#"<?xml version="1.0"?>
+        <ForceField>
+          <GBSAOBCForce>
+            <Atom radius="0.15" scale="0.8" type="C" />
+          </GBSAOBCForce>
+        </ForceField>"#;
+
+        let ff = parse_xml_reader(xml.as_bytes(), "test".to_string()).unwrap();
+
+        assert_eq!(ff.gbsa_obc_params.len(), 1);
+        assert_eq!(ff.gbsa_obc_params[0].radius, 0.15);
+        assert_eq!(ff.gbsa_obc_params[0].scale, 0.8);
+    }
+
+    #[test]
+    fn test_parse_cmap_xml() {
+        let xml = r#"<?xml version="1.0"?>
+        <ForceField>
+          <CMAPTorsionForce>
+            <Map>
+              0.1 0.2
+              0.3 0.4
+            </Map>
+            <Torsion class1="N" class2="CA" class3="C" class4="N" class5="CA" map="0" />
+          </CMAPTorsionForce>
+        </ForceField>"#;
+
+        let ff = parse_xml_reader(xml.as_bytes(), "test".to_string()).unwrap();
+
+        assert!(ff.cmap_data.is_some());
+        let cmap = ff.cmap_data.as_ref().unwrap();
+        assert_eq!(cmap.maps.len(), 1);
+        assert_eq!(cmap.maps[0].size, 2); // sqrt(4)
+        assert_eq!(cmap.maps[0].energies, vec![0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(cmap.torsions.len(), 1);
+        assert_eq!(cmap.torsions[0].map_index, 0);
+    }
+
+    #[test]
+    fn test_parse_residue_bond_indices() {
+        let xml = r#"<?xml version="1.0"?>
+        <ForceField>
+          <Residues>
+            <Residue name="TEST">
+              <Atom name="N" type="NT" />
+              <Atom name="CA" type="CT" />
+              <Bond from="0" to="1" />
+              <ExternalBond from="0" />
+            </Residue>
+          </Residues>
+        </ForceField>"#;
+
+        let ff = parse_xml_reader(xml.as_bytes(), "test".to_string()).unwrap();
+
+        let res = &ff.residue_templates[0];
+        assert_eq!(res.bonds[0], ("N".to_string(), "CA".to_string()));
+        assert_eq!(res.external_bonds[0], "N".to_string());
+    }
+
+    #[test]
+    fn test_parse_missing_attribute() {
+        let xml = r#"<?xml version="1.0"?>
+        <ForceField>
+          <AtomTypes>
+            <Type name="missing_mass" element="C" />
+          </AtomTypes>
+        </ForceField>"#;
+
+        let res = parse_xml_reader(xml.as_bytes(), "test".to_string());
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            ParseError::MissingAttribute(attr) => assert_eq!(attr, "mass"),
+            _ => panic!("Expected MissingAttribute error"),
+        }
     }
 }

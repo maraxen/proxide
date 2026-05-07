@@ -29,6 +29,7 @@ from proxide.core.types import (
 class OutputSpec(Protocol):
   """Protocol for output format specifications."""
 
+  # TODO: Allow for custom registration and use of specification functions within a Protocol.
   output_format_target: str
 
 
