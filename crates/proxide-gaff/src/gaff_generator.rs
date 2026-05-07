@@ -724,8 +724,8 @@ impl GaffTemplateGenerator {
         let ff = if let Some(path) = ff_path {
             parse_forcefield_xml(path).map_err(|e| GaffError::ParseError(format!("{}", e)))?
         } else {
-            // Try to find in assets directory (relative to workspace)
-            let path = format!("src/priox/assets/gaff/ffxml/{}.xml", forcefield);
+            // Try to find in assets directory (relative to crate)
+            let path = format!("../../src/proxide/assets/gaff/ffxml/{}.xml", forcefield);
             parse_forcefield_xml(&path)
                 .map_err(|e| GaffError::FileNotFound(format!("{}: {}", path, e)))?
         };
@@ -1180,5 +1180,113 @@ mod tests {
     fn test_invalid_version() {
         assert!(GaffTemplateGenerator::parse_version("amber-14").is_err());
         assert!(GaffTemplateGenerator::parse_version("gaff").is_err());
+    }
+
+    #[test]
+    fn test_hydrogen_refinement() {
+        let typer = GaffAtomTyper::new();
+        
+        // C-H (aliphatic) -> None (defaults to hc in assign_single_type, refine doesn't change it if no special parent)
+        assert_eq!(typer.refine_hydrogen_type("c3", Some(&"C".to_string())), None);
+        
+        // O-H (hydroxyl) -> ho
+        assert_eq!(typer.refine_hydrogen_type("oh", Some(&"O".to_string())), Some("ho".to_string()));
+        
+        // N-H (amine) -> hn
+        assert_eq!(typer.refine_hydrogen_type("n3", Some(&"N".to_string())), Some("hn".to_string()));
+        
+        // ca-H (aromatic) -> ha
+        assert_eq!(typer.refine_hydrogen_type("ca", Some(&"C".to_string())), Some("ha".to_string()));
+
+        // Extra branches
+        assert_eq!(typer.refine_hydrogen_type("sh", Some(&"S".to_string())), Some("hs".to_string()));
+        assert_eq!(typer.refine_hydrogen_type("p2", Some(&"P".to_string())), Some("hp".to_string()));
+        
+        // Element-based fallbacks
+        assert_eq!(typer.refine_hydrogen_type("unknown", Some(&"N".to_string())), Some("hn".to_string()));
+        assert_eq!(typer.refine_hydrogen_type("unknown", Some(&"O".to_string())), Some("ho".to_string()));
+        assert_eq!(typer.refine_hydrogen_type("unknown", Some(&"S".to_string())), Some("hs".to_string()));
+        assert_eq!(typer.refine_hydrogen_type("unknown", Some(&"P".to_string())), Some("hp".to_string()));
+        assert_eq!(typer.refine_hydrogen_type("unknown", Some(&"C".to_string())), None);
+    }
+
+    #[test]
+    fn test_missing_parameters_none() {
+        let ff = ForceField::new("empty".to_string());
+        let gen = GaffTemplateGenerator {
+            forcefield_version: "test".to_string(),
+            major_version: 2,
+            minor_version: "0".to_string(),
+            forcefield: ff,
+            typer: GaffAtomTyper::new(),
+            lj14scale: 0.5,
+            coulomb14scale: 0.8333,
+        };
+        
+        assert!(gen.get_bond_parameters("XX", "YY").is_none());
+        assert!(gen.get_angle_parameters("XX", "YY", "ZZ").is_none());
+        assert!(gen.get_proper_torsion_parameters("A", "B", "C", "D").is_none());
+    }
+
+    #[test]
+    fn test_wildcard_torsion_lookup() {
+        let xml = r#"<?xml version="1.0"?>
+        <ForceField>
+          <PeriodicTorsionForce>
+            <Proper class1="" class2="c3" class3="c3" class4="" periodicity1="3" phase1="0" k1="0.15" />
+            <Proper class1="c3" class2="c3" class3="c3" class4="c3" periodicity1="3" phase1="0" k1="1.0" />
+          </PeriodicTorsionForce>
+        </ForceField>"#;
+        
+        let ff = proxide_core::forcefield::xml_parser::parse_xml_reader(xml.as_bytes(), "test".to_string()).unwrap();
+        let gen = GaffTemplateGenerator {
+            forcefield_version: "test".to_string(),
+            major_version: 2,
+            minor_version: "0".to_string(),
+            forcefield: ff,
+            typer: GaffAtomTyper::new(),
+            lj14scale: 0.5,
+            coulomb14scale: 0.8333,
+        };
+        
+        // Exact match
+        let p1 = gen.get_proper_torsion_parameters("c3", "c3", "c3", "c3").unwrap();
+        assert_eq!(p1.terms[0].k, 1.0);
+        
+        // Wildcard match (X-c3-c3-X)
+        let p2 = gen.get_proper_torsion_parameters("hc", "c3", "c3", "hc").unwrap();
+        assert_eq!(p2.terms[0].k, 0.15);
+    }
+
+    #[test]
+    fn test_generate_template() {
+        let gen = GaffTemplateGenerator::new("gaff-2.11", None).unwrap();
+        let elements = vec!["C".to_string(), "C".to_string(), "O".to_string()];
+        let bonds = vec![
+            proxide_core::forcefield::topology::Bond::new(0, 1),
+            proxide_core::forcefield::topology::Bond::new(1, 2),
+        ];
+        let topo = proxide_core::forcefield::topology::Topology::new(bonds, &elements);
+        let template = gen.generate_template("test", &elements, &topo, None).unwrap();
+        
+        assert_eq!(template.name, "test");
+        assert_eq!(template.atoms.len(), 3);
+    }
+
+    #[test]
+    fn test_proper_dihedrals() {
+        let gen = GaffTemplateGenerator::new("gaff-2.11", None).unwrap();
+        let elements = vec!["C".to_string(), "C".to_string(), "C".to_string(), "C".to_string()];
+        let bonds = vec![
+            proxide_core::forcefield::topology::Bond::new(0, 1),
+            proxide_core::forcefield::topology::Bond::new(1, 2),
+            proxide_core::forcefield::topology::Bond::new(2, 3),
+        ];
+        let topo = proxide_core::forcefield::topology::Topology::new(bonds, &elements);
+        
+        let atom_types = gen.assign_atom_types(&elements, &topo);
+        let dihedrals = gen.collect_proper_dihedrals(&atom_types, &topo);
+        
+        assert!(!dihedrals.is_empty());
     }
 }
