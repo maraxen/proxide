@@ -17,7 +17,13 @@ pub fn parse_mmcif_file<P: AsRef<Path>>(
 ) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
+    parse_mmcif_from_reader(reader)
+}
 
+/// Internal parser implementation taking any reader
+pub fn parse_mmcif_from_reader<R: BufRead>(
+    reader: R,
+) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
     let mut raw_data = RawAtomData::new();
     let mut model_ids: Vec<usize> = Vec::new();
     let mut in_atom_site_loop = false;
@@ -256,5 +262,65 @@ mod tests {
         assert_eq!(atom.atom_name, "N");
         assert_eq!(atom.res_name, "ALA");
         assert!((atom.x - 20.154).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_mmcif_multiple_loops_and_missing() {
+        let cif_content = "
+# Dummy section
+_entity.id 1
+_entity.type polymer
+
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+ATOM 1 N N . ALA A 1 ? 0.000 0.000 0.000 1.00 0.00
+ATOM 2 C CA . ALA A 1 . 1.000 1.000 1.000 1.00 0.00
+
+loop_
+_next_category.field value
+";
+        let (raw_data, _) = parse_mmcif_from_reader(cif_content.as_bytes()).unwrap();
+        assert_eq!(raw_data.num_atoms, 2);
+        assert_eq!(raw_data.atom_names[0], "N");
+        assert_eq!(raw_data.atom_names[1], "CA");
+        assert_eq!(raw_data.insertion_codes[0], ' '); // ? becomes empty, then next().unwrap_or(' ')
+        assert_eq!(raw_data.insertion_codes[1], ' '); // . becomes empty
+    }
+
+    #[test]
+    fn test_mmcif_permuted_columns() {
+        let cif_content = "
+loop_
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+0.0 0.0 0.0 ATOM 1 N ALA A 1
+1.0 2.0 3.0 ATOM 2 CA ALA A 1
+";
+        let (raw_data, _) = parse_mmcif_from_reader(cif_content.as_bytes()).unwrap();
+        assert_eq!(raw_data.num_atoms, 2);
+        assert_eq!(raw_data.atom_names[1], "CA");
+        assert_eq!(raw_data.coords[3], 1.0);
+        assert_eq!(raw_data.coords[4], 2.0);
+        assert_eq!(raw_data.coords[5], 3.0);
     }
 }
