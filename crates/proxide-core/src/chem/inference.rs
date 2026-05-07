@@ -258,6 +258,78 @@ mod tests {
     }
 
     #[test]
+    fn test_weight_bundle_too_short() {
+        let result = EspalomaWeights::from_bytes(&[0u8; 11]);
+        assert_eq!(result.unwrap_err(), "Weight bundle too short");
+    }
+
+    #[test]
+    fn test_weight_bundle_invalid_magic() {
+        let result = EspalomaWeights::from_bytes(&[0u8; 12]);
+        assert_eq!(result.unwrap_err(), "Invalid weight bundle magic");
+    }
+
+    #[test]
+    fn test_embedded_weights_parsing() {
+        let weights = EspalomaWeights::from_bytes(EMBEDDED_WEIGHTS).expect("Failed to parse embedded weights");
+        assert_eq!(weights.sages.len(), 4);
+        assert_eq!(weights.w_f_in.nrows(), 128);
+        assert_eq!(weights.w_f_in.ncols(), 116);
+    }
+
+    #[test]
+    fn test_infer_charges_simple() {
+        let weights = EspalomaWeights::from_bytes(EMBEDDED_WEIGHTS).unwrap();
+        
+        // One atom (dummy features)
+        let x = DM::zeros(1, FEATURE_UNITS);
+        
+        let senders = vec![];
+        let receivers = vec![];
+        let segment_ids = vec![0];
+        let total_charges = vec![0.0];
+        
+        let charges = infer_charges(
+            &weights,
+            &x,
+            &senders,
+            &receivers,
+            &segment_ids,
+            1,
+            &total_charges,
+        );
+        
+        assert_eq!(charges.len(), 1);
+        // Single atom with 0.0 total charge must have 0.0 charge due to QEq constraint
+        assert!((charges[0]).abs() < 1e-5);
+        
+        // Two atoms, bonded
+        let mut x2 = DM::zeros(2, FEATURE_UNITS);
+        // Set some dummy features to differentiate them
+        x2[(0, 0)] = 1.0; 
+        x2[(1, 1)] = 1.0;
+        
+        let senders2 = vec![0, 1];
+        let receivers2 = vec![1, 0];
+        let segment_ids2 = vec![0, 0];
+        let total_charges2 = vec![0.0];
+        
+        let charges2 = infer_charges(
+            &weights,
+            &x2,
+            &senders2,
+            &receivers2,
+            &segment_ids2,
+            1,
+            &total_charges2,
+        );
+        
+        assert_eq!(charges2.len(), 2);
+        // Sum should be zero
+        assert!((charges2[0] + charges2[1]).abs() < 1e-5);
+    }
+
+    #[test]
     fn test_weight_bundle_load_insufficient_data() {
         // Correct magic and version, but wrong size
         let mut data = vec![0u8; 12];
