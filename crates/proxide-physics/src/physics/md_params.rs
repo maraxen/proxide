@@ -91,6 +91,8 @@ pub struct MDParameters {
     pub pairs_14: Vec<[usize; 2]>,
     /// Per-pair exception parameters: (type1, type2, chargeProd, sigma, epsilon)
     pub nonbonded_exceptions: Vec<(String, String, f32, f32, f32)>,
+    /// Numeric-only view of exceptions for Python export: [chargeProd, sigma, epsilon]
+    pub exception_14_params: Vec<[f32; 3]>,
 
     // --- CMAP ---
     /// CMAP torsions as [atom1, atom2, atom3, atom4, atom5]
@@ -488,6 +490,7 @@ pub fn parameterize_structure(
         dihedrals: dihedrals_vec, dihedral_params, max_proper_terms,
         impropers: impropers_vec, improper_params, max_improper_terms,
         pairs_14,
+        exception_14_params: nonbonded_exceptions.iter().map(|(_, _, q, s, e)| [*q, *s, *e]).collect(),
         nonbonded_exceptions,
         cmap_torsions,
         cmap_map_indices,
@@ -613,6 +616,7 @@ pub fn parameterize_molecule(
         improper_params,
         max_improper_terms: 1,
         pairs_14,
+        nonbonded_exceptions: Vec::new(),
         exception_14_params: Vec::new(),
         cmap_torsions: Vec::new(),
         cmap_map_indices: Vec::new(),
