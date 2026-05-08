@@ -11,3 +11,26 @@ pub mod formats;
 pub mod formatters;
 #[cfg(feature = "fetching")]
 pub mod io;
+
+#[cfg(feature = "ssbond")]
+#[derive(thiserror::Error, Debug)]
+pub enum IOParseError {
+    #[error("Recursion depth exceeded")]
+    RecursionExceeded,
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+#[cfg(feature = "ssbond")]
+pub struct CIFRegistry {
+    pub max_recursion_depth: usize,
+}
+
+#[cfg(feature = "ssbond")]
+impl Default for CIFRegistry {
+    fn default() -> Self {
+        Self {
+            max_recursion_depth: 10,
+        }
+    }
+}

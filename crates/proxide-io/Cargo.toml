@@ -28,13 +28,14 @@ rayon = { workspace = true, optional = true }
 default = ["pdb", "cif", "xtc", "parallel"]
 pdb = []
 cif = []
+ssbond = []
 fetching = ["dep:reqwest"]
 hdf5 = ["dep:hdf5"]
 foldcomp = ["dep:flate2"]
 xtc = ["dep:molly"]
 parallel = ["dep:rayon"]
 mmap = ["dep:memmap2"]
-full = ["fetching", "hdf5", "foldcomp", "xtc", "parallel", "mmap", "pdb", "cif"]
+full = ["fetching", "hdf5", "foldcomp", "xtc", "parallel", "mmap", "pdb", "cif", "ssbond"]
 
 [dev-dependencies]
 httpmock = "0.7"

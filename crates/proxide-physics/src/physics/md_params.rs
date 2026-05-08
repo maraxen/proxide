@@ -756,13 +756,13 @@ fn lookup_improper<'a>(
     let mut best_match: Option<&'a ImproperTorsionParam> = None;
 
     for t in &ff.improper_torsions {
-        // 1. Central atom must match t.class3
-        if !matches(&t.class3, params.c_center, params.t_center) {
+        // 1. Central atom must match t.class1 (AMBER ff.xml convention: center is class1)
+        if !matches(&t.class1, params.c_center, params.t_center) {
             continue;
         }
 
-        // 2. The other 3 atoms (c1, c3, c4) must match t.class1, t.class2, t.class4 in ANY order.
-        let def_others = [&t.class1, &t.class2, &t.class4];
+        // 2. The other 3 atoms (c1, c3, c4) must match t.class2, t.class3, t.class4 in ANY order.
+        let def_others = [&t.class2, &t.class3, &t.class4];
         let target_others = vec![
             (params.c1, params.t1),
             (params.c3, params.t3),

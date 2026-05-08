@@ -1848,6 +1848,7 @@ version = "0.1.0-alpha.7"
 dependencies = [
  "log",
  "nalgebra",
+ "proxide-geometry",
  "proxide_rs",
  "serde",
  "serde_json",
