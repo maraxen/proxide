@@ -889,9 +889,9 @@ pub fn parse_structure(
             dict_bound.set_item("pairs_14", arr.reshape((params.pairs_14.len(), 2)).unwrap())?;
         }
 
-        if !params.exception_14_params.is_empty() {
-            let mut flat = Vec::with_capacity(params.exception_14_params.len() * 3);
-            for x in &params.exception_14_params {
+        if !params.resolved_nonbonded_14_params.is_empty() {
+            let mut flat = Vec::with_capacity(params.resolved_nonbonded_14_params.len() * 3);
+            for x in &params.resolved_nonbonded_14_params {
                 flat.extend_from_slice(x);
             }
             scale_col(&mut flat, 3, COL_EXCEPTION_SIGMA, conv.length);
@@ -899,7 +899,7 @@ pub fn parse_structure(
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "exception_14_params",
-                arr.reshape((params.exception_14_params.len(), 3)).unwrap(),
+                arr.reshape((params.resolved_nonbonded_14_params.len(), 3)).unwrap(),
             )?;
         }
 
