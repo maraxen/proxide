@@ -91,8 +91,10 @@ pub struct MDParameters {
     pub pairs_14: Vec<[usize; 2]>,
     /// Per-pair exception parameters: (type1, type2, chargeProd, sigma, epsilon)
     pub nonbonded_exceptions: Vec<(String, String, f32, f32, f32)>,
-    /// Numeric-only view of exceptions for Python export: [chargeProd, sigma, epsilon]
-    pub exception_14_params: Vec<[f32; 3]>,
+    /// Per-atom-pair resolved 1-4 params, row-aligned with pairs_14: [chargeProd, sigma, epsilon].
+    /// Uses explicit FF <Exception> override for the atom-type pair if present,
+    /// else Lorentz-Berthelot combining rules scaled by ff.lj14scale / ff.coulomb14scale.
+    pub resolved_nonbonded_14_params: Vec<[f32; 3]>,
 
     // --- CMAP ---
     /// CMAP torsions as [atom1, atom2, atom3, atom4, atom5]
@@ -187,7 +189,7 @@ pub fn parameterize_structure(
                         if options.missing_mode == MissingResidueMode::Fail {
                             return Err(ParamError::MissingTemplate(res_info.res_name.clone()));
                         }
-                        
+
                         // ClosestMatch is currently a stub, behaves like SkipWarn but could be expanded
                         if options.missing_mode == MissingResidueMode::ClosestMatch {
                             // TODO: Implement actual atom-name based matching
@@ -347,7 +349,7 @@ pub fn parameterize_structure(
     let mut all_proper_terms = Vec::new();
     let mut max_proper_terms = 0;
     for dih in &topology.proper_dihedrals {
-        if let Some(params) = lookup_proper(
+        let proper_matches = lookup_proper(
             &atom_classes[dih.i],
             &atom_types[dih.i],
             &atom_classes[dih.j],
@@ -357,13 +359,28 @@ pub fn parameterize_structure(
             &atom_classes[dih.l],
             &atom_types[dih.l],
             ff,
-        ) {
+        );
+
+        if !proper_matches.is_empty() {
             let mut terms_collected = Vec::new();
-            for term in &params.terms {
-                if term.k.abs() > 1e-6 {
-                    terms_collected.push([term.periodicity as f32, term.phase, term.k]);
+            // Use a set to deduplicate by (periodicity, phase)
+            let mut seen_terms: HashSet<(u32, String)> = HashSet::new();
+
+            // Collect terms from all matching parameters
+            for params in proper_matches {
+                for term in &params.terms {
+                    if term.k.abs() > 1e-6 {
+                        // Deduplicate by (periodicity, phase) to avoid double-counting
+                        let phase_str = format!("{:.10}", term.phase);
+                        let term_key = (term.periodicity, phase_str);
+                        if !seen_terms.contains(&term_key) {
+                            seen_terms.insert(term_key);
+                            terms_collected.push([term.periodicity as f32, term.phase, term.k]);
+                        }
+                    }
                 }
             }
+
             if !terms_collected.is_empty() {
                 max_proper_terms = max_proper_terms.max(terms_collected.len());
                 dihedrals_vec.push([dih.i, dih.j, dih.k, dih.l]);
@@ -484,13 +501,17 @@ pub fn parameterize_structure(
         }
     }
 
+    let resolved_nonbonded_14_params = resolve_14_params(
+        &pairs_14, &charges, &sigmas, &epsilons, &atom_types,
+        &ff.exceptions, ff.lj14scale, ff.coulomb14scale,
+    );
     Ok(MDParameters {
         charges, sigmas, epsilons, radii, scales, atom_types, num_parameterized, num_skipped,
         bonds: bonds_vec, bond_params, angles: angles_vec, angle_params,
         dihedrals: dihedrals_vec, dihedral_params, max_proper_terms,
         impropers: impropers_vec, improper_params, max_improper_terms,
         pairs_14,
-        exception_14_params: nonbonded_exceptions.iter().map(|(_, _, q, s, e)| [*q, *s, *e]).collect(),
+        resolved_nonbonded_14_params,
         nonbonded_exceptions,
         cmap_torsions,
         cmap_map_indices,
@@ -595,6 +616,10 @@ pub fn parameterize_molecule(
 
     // 1-4 pairs from dihedrals
     let pairs_14: Vec<[usize; 2]> = dihedrals_vec.iter().map(|d| [d[0], d[3]]).collect();
+    let resolved_nonbonded_14_params = resolve_14_params(
+        &pairs_14, &charges, &sigmas, &epsilons, &atom_types,
+        &[], 0.5, 0.833333,
+    );
 
     Ok(MDParameters {
         charges,
@@ -615,9 +640,9 @@ pub fn parameterize_molecule(
         impropers: impropers_vec,
         improper_params,
         max_improper_terms: 1,
+        resolved_nonbonded_14_params,
         pairs_14,
         nonbonded_exceptions: Vec::new(),
-        exception_14_params: Vec::new(),
         cmap_torsions: Vec::new(),
         cmap_map_indices: Vec::new(),
         cmap_grids: Vec::new(),
@@ -670,8 +695,9 @@ fn lookup_proper<'a>(
     c4: &str,
     t4: &str,
     ff: &'a ForceField,
-) -> Option<&'a ProperTorsionParam> {
-    let mut best_match: Option<&'a ProperTorsionParam> = None;
+) -> Vec<&'a ProperTorsionParam> {
+    let mut specific_matches: Vec<&'a ProperTorsionParam> = Vec::new();
+    let mut wildcard_matches: Vec<&'a ProperTorsionParam> = Vec::new();
 
     for t in &ff.proper_torsions {
         // Forward match?
@@ -696,15 +722,20 @@ fn lookup_proper<'a>(
                 || t.class4.is_empty()
                 || t.class4 == "X";
 
-            if best_match.is_none() || !has_wildcard {
-                best_match = Some(t);
-            }
-            if !has_wildcard {
-                break;
+            if has_wildcard {
+                wildcard_matches.push(t);
+            } else {
+                specific_matches.push(t);
             }
         }
     }
-    best_match
+
+    // Return specific matches if any exist; otherwise return wildcard matches
+    if !specific_matches.is_empty() {
+        specific_matches
+    } else {
+        wildcard_matches
+    }
 }
 
 struct ImproperLookupParams<'a> {
@@ -770,6 +801,35 @@ fn lookup_improper<'a>(
         }
     }
     best_match
+}
+
+fn resolve_14_params(
+    pairs_14: &[[usize; 2]],
+    charges: &[f32],
+    sigmas: &[f32],
+    epsilons: &[f32],
+    atom_types: &[String],
+    exceptions: &[NonbondedException],
+    lj14scale: f32,
+    coulomb14scale: f32,
+) -> Vec<[f32; 3]> {
+    pairs_14
+        .iter()
+        .map(|&[i, j]| {
+            let ti = &atom_types[i];
+            let tj = &atom_types[j];
+            if let Some(exc) = exceptions.iter().find(|e| {
+                (&e.type1 == ti && &e.type2 == tj) || (&e.type1 == tj && &e.type2 == ti)
+            }) {
+                [exc.charge_prod, exc.sigma, exc.epsilon]
+            } else {
+                let charge_prod = coulomb14scale * charges[i] * charges[j];
+                let sigma = 0.5 * (sigmas[i] + sigmas[j]);
+                let epsilon = lj14scale * (epsilons[i] * epsilons[j]).sqrt();
+                [charge_prod, sigma, epsilon]
+            }
+        })
+        .collect()
 }
 
 /// Build lookup map from atom type -> nonbonded params
@@ -1025,7 +1085,7 @@ mod tests {
     #[test]
     fn test_dihedral_and_improper_params() {
         let mut ff = make_test_forcefield();
-        
+
         // Add Proper Torsion
         ff.proper_torsions.push(proxide_core::forcefield::ProperTorsionParam {
             class1: "N".to_string(),
@@ -1038,7 +1098,7 @@ mod tests {
                 k: 1.5,
             }],
         });
-        
+
         // Add Improper
         ff.improper_torsions.push(proxide_core::forcefield::ImproperTorsionParam {
             class1: "N".to_string(),
@@ -1069,7 +1129,7 @@ mod tests {
             });
         }
         let structure = ProcessedStructure::from_raw(raw).unwrap();
-        
+
         let bonds = vec![
             proxide_core::forcefield::Bond::new(0, 1),
             proxide_core::forcefield::Bond::new(1, 2),
@@ -1077,13 +1137,13 @@ mod tests {
         ];
         let elements = vec!["N".to_string(), "C".to_string(), "C".to_string(), "N".to_string()];
         let mut topology = proxide_core::forcefield::Topology::new(bonds, &elements);
-        
+
         // Dihedral N-CA-C-N
         topology.proper_dihedrals.push(proxide_core::forcefield::Dihedral::new_proper(0, 1, 2, 3));
-        
+
         let options = ParamOptions::default();
         let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
-        
+
         assert!(!params.dihedral_params.is_empty());
         assert!(!params.pairs_14.is_empty()); // Check 1-4 exception scaling logic
     }
@@ -1111,7 +1171,7 @@ mod tests {
         let elements = vec!["N".to_string(), "C".to_string(), "C".to_string()];
         let topology = proxide_core::forcefield::Topology::new(bonds, &elements);
         let options = ParamOptions::default();
-        
+
         let _ = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
     }
 
@@ -1181,7 +1241,7 @@ mod tests {
         ff.build_indices();
 
         let mut raw = RawAtomData::new();
-        // Chain A: 2 residues. 
+        // Chain A: 2 residues.
         // Residue 1: N, CA, C (ALA)
         // Residue 2: N, CA, C (ALA) -> Should be CALA
         raw.add_atom(AtomRecord {
@@ -1196,7 +1256,7 @@ mod tests {
             serial: 3, atom_name: "C".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 1,
             x: 2.0, y: 0.0, z: 0.0, element: "C".to_string(), ..AtomRecord::default()
         });
-        
+
         raw.add_atom(AtomRecord {
             serial: 4, atom_name: "N".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 2,
             x: 10.0, y: 0.0, z: 0.0, element: "N".to_string(), ..AtomRecord::default()
@@ -1215,9 +1275,9 @@ mod tests {
         let options = ParamOptions { auto_terminal_caps: true, missing_mode: MissingResidueMode::SkipWarn };
 
         let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
-        
+
         // Residue 2 (atoms 3,4,5): CALA
-        assert_eq!(params.charges[3], -0.6); 
+        assert_eq!(params.charges[3], -0.6);
         assert_eq!(params.charges[4], 0.01);
     }
 
