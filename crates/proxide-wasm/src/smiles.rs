@@ -21,6 +21,7 @@ pub struct WasmAtom {
     pub formal_charge: i8,
     pub implicit_h: u8,
     pub in_ring: bool,
+    pub is_aromatic: bool,
     pub atom_type: String, // GAFF2 type — empty until assign_params() is called
 }
 
@@ -52,6 +53,9 @@ pub fn parse(smiles: &str) -> Result<WasmMol, String> {
     // Detect rings using DFS
     let in_ring = detect_rings(&atoms);
 
+    // Detect aromatic atoms from SMILES notation
+    let is_aromatic = detect_aromaticity(&atoms);
+
     // Convert atoms from purr representation to WasmAtom
     let mut wasm_atoms = Vec::new();
     for (idx, atom) in atoms.iter().enumerate() {
@@ -64,6 +68,7 @@ pub fn parse(smiles: &str) -> Result<WasmMol, String> {
             formal_charge,
             implicit_h,
             in_ring: in_ring[idx],
+            is_aromatic: is_aromatic[idx],
             atom_type: String::new(), // To be populated by assign_params()
         });
     }
@@ -378,6 +383,18 @@ fn detect_rings(atoms: &[purr::graph::Atom]) -> Vec<bool> {
     }
 
     in_ring
+}
+
+/// Detect aromatic atoms from SMILES notation (Aromatic vs Aliphatic)
+fn detect_aromaticity(atoms: &[purr::graph::Atom]) -> Vec<bool> {
+    let n = atoms.len();
+    let mut is_aromatic = vec![false; n];
+
+    for (i, atom) in atoms.iter().enumerate() {
+        is_aromatic[i] = matches!(atom.kind, AtomKind::Aromatic(_));
+    }
+
+    is_aromatic
 }
 
 /// DFS helper for ring detection.

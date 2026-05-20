@@ -37,6 +37,7 @@ pub fn parse_pdb(text: &str) -> Result<WasmMol, String> {
             formal_charge: 0,    // PDB doesn't provide formal charges
             implicit_h: 0,       // PDB doesn't distinguish implicit H; deferred to topology
             in_ring: false,      // Ring detection deferred to topology module
+            is_aromatic: false,  // Aromaticity detection deferred to topology module
             atom_type: String::new(), // To be populated by assign_params()
         });
     }

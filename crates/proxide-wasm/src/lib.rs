@@ -10,6 +10,9 @@ pub use smiles::{WasmAtom, WasmBond, WasmMol, BondOrder};
 pub mod pdb;
 pub use pdb::parse_pdb;
 
+pub mod gaff2;
+pub use gaff2::{assign_params, ParamSet, BondRecord, AngleRecord, TorsionRecord, AtomRecord};
+
 #[wasm_bindgen]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()

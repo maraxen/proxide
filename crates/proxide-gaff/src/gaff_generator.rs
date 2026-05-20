@@ -15,7 +15,7 @@ use proxide_core::forcefield::types::{
     ForceField, HarmonicAngleParam, HarmonicBondParam, ImproperTorsionParam, NonbondedParam,
     ProperTorsionParam, ResidueAtom, ResidueTemplate,
 };
-use proxide_core::forcefield::xml_parser::parse_forcefield_xml;
+use proxide_core::forcefield::xml_parser::{parse_forcefield_xml, parse_xml_reader};
 
 /// Supported GAFF force field versions
 pub const INSTALLED_FORCEFIELDS: &[&str] = &[
@@ -729,6 +729,29 @@ impl GaffTemplateGenerator {
             parse_forcefield_xml(&path)
                 .map_err(|e| GaffError::FileNotFound(format!("{}: {}", path, e)))?
         };
+
+        Ok(Self {
+            forcefield_version: forcefield.to_string(),
+            major_version: major,
+            minor_version: minor,
+            forcefield: ff,
+            typer: GaffAtomTyper::new(),
+            lj14scale: 0.5,
+            coulomb14scale: 0.8333333,
+        })
+    }
+
+    /// Create generator from XML content string (WASM-compatible — no filesystem access).
+    pub fn from_xml_content(forcefield: &str, xml_content: &str) -> Result<Self, GaffError> {
+        if !INSTALLED_FORCEFIELDS.contains(&forcefield) {
+            return Err(GaffError::InvalidForceField(format!(
+                "'{}' not in {:?}",
+                forcefield, INSTALLED_FORCEFIELDS
+            )));
+        }
+        let (major, minor) = Self::parse_version(forcefield)?;
+        let ff = parse_xml_reader(xml_content.as_bytes(), forcefield.to_string())
+            .map_err(|e| GaffError::ParseError(format!("{}", e)))?;
 
         Ok(Self {
             forcefield_version: forcefield.to_string(),
