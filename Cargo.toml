@@ -10,6 +10,7 @@ members = [
     "crates/proxide-io",
     "crates/proxide-gaff",
     "crates/proxide-units",
+    "crates/proxide-wasm",
 ]
 
 [workspace.package]
