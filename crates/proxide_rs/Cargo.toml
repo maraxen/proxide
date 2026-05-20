@@ -47,9 +47,3 @@ foldcomp = ["proxide-io/foldcomp"]
 xtc = ["proxide-io/xtc"]
 parallel = ["proxide-io/parallel", "dep:rayon"]
 full = ["fetching", "hdf5", "foldcomp", "xtc", "parallel"]
-
-[profile.release]
-lto = true
-codegen-units = 1
-opt-level = 3
-strip = true
