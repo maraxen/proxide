@@ -1,18 +1,36 @@
 """
-HP4-WASM parity test: Rust proxide-wasm vs Python GAFFTemplateGenerator.
+HP4-WASM parity test: Rust proxide-wasm vs Python GAFF2 reference.
 
-Validates that the Rust GAFF2 parameter assignment produces physically
-plausible results matching expected OpenMM units and value ranges.
+Two tiers of verification:
+
+  Tier 1 — Structural plausibility (parametric range checks):
+    Verifies Rust output has correct shape and physically reasonable values.
+
+  Tier 2 — Numerical parity vs gaff-2.11.xml (the real Claim 2 test):
+    Parses the same gaff-2.11.xml that the Rust binary embeds and compares
+    bond parameters directly. Also spot-checks atom types against canonical
+    GAFF2 assignments for the 5 ANI-1x molecules.
+
+    Tolerances follow the original exit criterion:
+      bond k: ±1 kcal/mol/Å² = ±418.4 kJ/mol/nm²
+      r0:     ±0.01 Å        = ±0.001 nm
 
 Requires:
   - uv run pytest (proxide venv has openmmforcefields, rdkit, openmm)
   - cargo build -p proxide-wasm --bin param_cli (Rust CLI binary)
 """
+import functools
 import json
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import pytest
+
+# K tolerance: 1 kcal/mol/Å² in kJ/mol/nm²  (1 kcal/mol/Å² × 4.184 × 100)
+K_TOL_KJ = 418.4
+# r0 tolerance: 0.01 Å in nm
+R0_TOL_NM = 0.001
 
 PROJECT_ROOT = Path(__file__).parent.parent
 RUST_BINARY = PROJECT_ROOT / "target" / "debug" / "param_cli"
@@ -42,33 +60,59 @@ def rust_params(smiles: str) -> dict:
     return json.loads(result.stdout)
 
 
-def py_gaff2_atom_types(smiles: str) -> dict:
-    """Get GAFF2 atom types from openmmforcefields/rdkit."""
+def _find_gaff2_xml() -> Path:
+    """Locate gaff-2.11.xml in the installed openmmforcefields package."""
     try:
-        from openmmforcefields.generators import GAFFTemplateGenerator
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
-    except ImportError as e:
-        pytest.skip(f"Python deps not available: {e}")
-
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError(f"RDKit could not parse SMILES: {smiles}")
-    mol = AllChem.AddHs(mol)
-    AllChem.EmbedMolecule(mol, randomSeed=42)
-
-    gen = GAFFTemplateGenerator(molecules=[mol], forcefield="gaff-2.11")
-    # Try to get templates
-    try:
-        templates = gen.generate_residue_template(mol)
-        if templates:
-            return {
-                "atom_types": [a.type for a in templates.atoms],
-                "n_atoms": mol.GetNumAtoms(),
-            }
-    except Exception:
+        import openmmforcefields
+        pkg_root = Path(openmmforcefields.__file__).parent
+        candidate = pkg_root / "ffxml/amber/gaff/ffxml/gaff-2.11.xml"
+        if candidate.exists():
+            return candidate
+    except ImportError:
         pass
-    return {"atom_types": [], "n_atoms": mol.GetNumAtoms()}
+    pytest.skip("openmmforcefields not installed — cannot locate gaff-2.11.xml")
+
+
+@functools.lru_cache(maxsize=1)
+def py_bond_params() -> dict:
+    """Parse gaff-2.11.xml and return {(type1, type2): (k, r0)} in kJ/mol/nm² and nm."""
+    xml_path = _find_gaff2_xml()
+    root = ET.parse(xml_path).getroot()
+    bond_force = root.find(".//HarmonicBondForce")
+    params = {}
+    for b in bond_force.findall("Bond"):
+        c1, c2 = b.get("class1"), b.get("class2")
+        k, r0 = float(b.get("k")), float(b.get("length"))
+        params[(c1, c2)] = (k, r0)
+        params[(c2, c1)] = (k, r0)
+    return params
+
+
+@functools.lru_cache(maxsize=1)
+def py_angle_params() -> dict:
+    """Parse gaff-2.11.xml and return {(t1,t2,t3): (k, theta0)} in kJ/mol/rad² and radians."""
+    xml_path = _find_gaff2_xml()
+    root = ET.parse(xml_path).getroot()
+    angle_force = root.find(".//HarmonicAngleForce")
+    params = {}
+    for a in angle_force.findall("Angle"):
+        c1, c2, c3 = a.get("class1"), a.get("class2"), a.get("class3")
+        k, theta = float(a.get("k")), float(a.get("angle"))
+        params[(c1, c2, c3)] = (k, theta)
+        params[(c3, c2, c1)] = (k, theta)
+    return params
+
+
+# Canonical GAFF2 atom types for the 5 test molecules.
+# Source: gaff-2.11 atom-typing rules (element + hybridization + ring membership).
+# These are stable reference values — any correct GAFF2 typer must agree.
+CANONICAL_TYPES = {
+    "methane": ["c3"],
+    "ethane":  ["c3", "c3"],
+    "ethanol": ["c3", "c3", "oh"],
+    "acetone": ["c3", "c", "o", "c3"],   # c=carbonyl C, o=carbonyl O
+    "benzene": ["ca", "ca", "ca", "ca", "ca", "ca"],
+}
 
 
 # ============================================================================
@@ -317,6 +361,84 @@ def test_acetone_structure():
     o_types = {a["atom_type"] for a in o_atoms}
     assert any(ot.startswith("o") for ot in o_types), \
         f"Acetone oxygen should start with 'o', got {o_types}"
+
+
+# ============================================================================
+# Tier 2: Numerical parity vs gaff-2.11.xml  (the real Claim 2 test)
+# ============================================================================
+
+
+@pytest.mark.parametrize("name,smiles", TEST_MOLS)
+def test_parity_atom_types_vs_canonical(name, smiles):
+    """Rust heavy-atom types match canonical GAFF2 reference for each molecule."""
+    params = rust_params(smiles)
+    expected = CANONICAL_TYPES[name]
+    actual = [a["atom_type"] for a in params["atoms"]]
+    assert actual == expected, (
+        f"{name}: atom types mismatch\n"
+        f"  expected: {expected}\n"
+        f"  got:      {actual}"
+    )
+
+
+@pytest.mark.parametrize("name,smiles", TEST_MOLS)
+def test_parity_bond_k_vs_xml(name, smiles):
+    """Rust bond force constants match gaff-2.11.xml within 1 kcal/mol/Å² = 418.4 kJ/mol/nm²."""
+    params = rust_params(smiles)
+    xml = py_bond_params()
+    mismatches = []
+    for bond in params["bonds"]:
+        pair = tuple(bond["type_pair"])
+        if pair not in xml:
+            mismatches.append(f"  type pair {pair} not in XML")
+            continue
+        xml_k, _ = xml[pair]
+        delta = abs(bond["k"] - xml_k)
+        if delta >= K_TOL_KJ:
+            mismatches.append(
+                f"  {pair}: Rust k={bond['k']:.2f}, XML k={xml_k:.2f}, Δ={delta:.2f} kJ/mol/nm²"
+            )
+    assert not mismatches, f"{name}: bond k parity failures:\n" + "\n".join(mismatches)
+
+
+@pytest.mark.parametrize("name,smiles", TEST_MOLS)
+def test_parity_bond_r0_vs_xml(name, smiles):
+    """Rust bond equilibrium lengths match gaff-2.11.xml within 0.01 Å = 0.001 nm."""
+    params = rust_params(smiles)
+    xml = py_bond_params()
+    mismatches = []
+    for bond in params["bonds"]:
+        pair = tuple(bond["type_pair"])
+        if pair not in xml:
+            mismatches.append(f"  type pair {pair} not in XML")
+            continue
+        _, xml_r0 = xml[pair]
+        delta = abs(bond["r0"] - xml_r0)
+        if delta >= R0_TOL_NM:
+            mismatches.append(
+                f"  {pair}: Rust r0={bond['r0']:.6f}, XML r0={xml_r0:.6f}, Δ={delta:.6f} nm"
+            )
+    assert not mismatches, f"{name}: bond r0 parity failures:\n" + "\n".join(mismatches)
+
+
+@pytest.mark.parametrize("name,smiles", TEST_MOLS)
+def test_parity_angle_k_vs_xml(name, smiles):
+    """Rust angle force constants match gaff-2.11.xml within 10 kJ/mol/rad²."""
+    params = rust_params(smiles)
+    xml = py_angle_params()
+    mismatches = []
+    for angle in params["angles"]:
+        triple = tuple(angle["type_triple"])
+        if triple not in xml:
+            mismatches.append(f"  type triple {triple} not in XML")
+            continue
+        xml_k, _ = xml[triple]
+        delta = abs(angle["k_angle"] - xml_k)
+        if delta >= 10.0:  # kJ/mol/rad²
+            mismatches.append(
+                f"  {triple}: Rust k={angle['k_angle']:.4f}, XML k={xml_k:.4f}, Δ={delta:.4f}"
+            )
+    assert not mismatches, f"{name}: angle k parity failures:\n" + "\n".join(mismatches)
 
 
 # ============================================================================
