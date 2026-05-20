@@ -23,6 +23,10 @@ proxide-gaff = { path = "../proxide-gaff" }
 proxide-io = { path = "../proxide-io", default-features = false, features = ["pdb"] }
 serde-wasm-bindgen = "0.6"
 
+[[bin]]
+name = "param_cli"
+path = "src/bin/param_cli.rs"
+
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 
