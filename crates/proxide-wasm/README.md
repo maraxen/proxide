@@ -64,11 +64,10 @@ console.log(mol.atoms);  // [{ idx: 0, atomic_num: 6, atom_type: "ca" }, ...]
 
 ### `parse_pdb(text: string) → object | Error`
 
-Parses PDB file text and returns a molecular graph.
+Parses PDB file text and returns a molecular graph. **Note:** Bond connectivity is only populated when the PDB file includes `CONECT` records. Standard protein PDB files omit `CONECT`, so `mol.bonds` will be empty — calling `assign_params_js` on such a molecule will produce an empty parameter set. Full peptide-bond inference is deferred to v1.0 (see Known Limitations).
 
 ```javascript
-const mol = parse_pdb(pdbText);
-console.log(mol.bonds);  // [{ i: 0, j: 1, type_pair: ["c3", "c3"] }, ...]
+const mol = parse_pdb(pdbText);  // bonds[] empty unless CONECT records present
 ```
 
 ### `assign_params_js(mol: object) → string | Error`
@@ -127,22 +126,22 @@ The parameter assignment returns a JSON object conforming to the prolix §7.1 co
     {
       "i": 0,
       "j": 1,
-      "k": 33,
+      "k_idx": 2,
+      "k_angle": 527.0,
       "theta0": 1.911,
-      "type_triplet": ["c3", "c3", "c3"]
+      "type_triple": ["c3", "c3", "c3"]
     }
   ],
   "torsions": [
     {
       "i": 0,
       "j": 1,
-      "k": 2,
+      "k_idx": 2,
       "l": 3,
-      "idivf": 1,
-      "pk": 0.15,
+      "periodicity": 3,
+      "k_torsion": 0.6276,
       "phase": 0.0,
-      "pn": 3.0,
-      "type_quartet": ["c3", "c3", "c3", "c3"]
+      "type_quad": ["c3", "c3", "c3", "c3"]
     }
   ]
 }
@@ -182,7 +181,9 @@ Both sides read the same `gaff-2.11.xml` file, so differences only arise from at
 
 - **Element scope**: H, C, N, O only (ANI-1x / GAFF2 v0 scope). Sulfur, phosphorus, and halogens are not typed and will cause errors.
 
-- **Fused polycyclic rings**: Ring detection uses heuristics that correctly identify monocyclic aromatic rings (benzene, pyridine). However, fused polycyclics (naphthalene, indole) may incorrectly assign `in_ring=false` for interior atoms. This is a known limitation tracked for v1.0.
+- **PDB bond connectivity**: `parse_pdb` only populates bond connectivity when the PDB file includes explicit `CONECT` records. Standard protein PDB files omit these (bonds are implied by residue topology), so calling `assign_params_js` on a PDB-parsed molecule without `CONECT` records will produce an empty parameter set. Peptide-bond inference from residue topology is deferred to v1.0.
+
+- **Fused polycyclic rings**: Ring detection now correctly identifies rings of up to size 8 using iterative DFS. Multi-ring systems (naphthalene, indole) are handled correctly — each ring atom is marked via cycle-path tracing from back edges.
 
 - **No non-bonded parameters**: LJ epsilon/sigma and partial charges (AM1-BCC, RESP, etc.) are out of scope for v0. The JSON output contains bonded parameters only.
 
