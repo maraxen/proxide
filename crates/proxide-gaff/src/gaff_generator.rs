@@ -288,20 +288,20 @@ impl GaffAtomTyper {
             "H".to_string(),
             vec![
                 GaffTypeRule {
-                    atom_type: "ha".to_string(),
-                    num_neighbors: Some(1),
-                    is_aromatic: None,
-                    is_ring: None,
-                    neighbor_elements: None,
-                    description: "H on aromatic C".to_string(),
-                },
-                GaffTypeRule {
                     atom_type: "hc".to_string(),
                     num_neighbors: Some(1),
                     is_aromatic: None,
                     is_ring: None,
                     neighbor_elements: Some(vec!["C".to_string()]),
                     description: "H on aliphatic C without electron-withdrawing".to_string(),
+                },
+                GaffTypeRule {
+                    atom_type: "ha".to_string(),
+                    num_neighbors: Some(1),
+                    is_aromatic: Some(true),
+                    is_ring: None,
+                    neighbor_elements: Some(vec!["C".to_string()]),
+                    description: "H on aromatic C".to_string(),
                 },
                 GaffTypeRule {
                     atom_type: "h1".to_string(),
@@ -653,7 +653,8 @@ impl GaffAtomTyper {
         let parent_elem = parent_element.map(|s| s.to_uppercase()).unwrap_or_default();
 
         match parent_type {
-            "ca" | "cc" | "cd" | "cp" | "cq" => Some("ha".to_string()),
+            "c1" | "c2" | "c3" | "cc" | "cx" | "cy" => Some("hc".to_string()),
+            "ca" | "cd" | "cp" | "cq" => Some("ha".to_string()),
             "n" | "na" | "nb" | "nc" | "nd" | "ne" | "nf" | "nh" | "no" | "n3" | "n4" => {
                 Some("hn".to_string())
             }
@@ -1190,23 +1191,27 @@ mod tests {
     #[test]
     fn test_hydrogen_refinement() {
         let typer = GaffAtomTyper::new();
-        
-        // C-H (aliphatic) -> None (defaults to hc in assign_single_type, refine doesn't change it if no special parent)
-        assert_eq!(typer.refine_hydrogen_type("c3", Some(&"C".to_string())), None);
-        
+
+        // C-H (aliphatic) -> hc (sp3 aliphatic carbon)
+        assert_eq!(typer.refine_hydrogen_type("c3", Some(&"C".to_string())), Some("hc".to_string()));
+
+        // C1/C2 (sp/sp2 aliphatic) -> hc
+        assert_eq!(typer.refine_hydrogen_type("c1", Some(&"C".to_string())), Some("hc".to_string()));
+        assert_eq!(typer.refine_hydrogen_type("c2", Some(&"C".to_string())), Some("hc".to_string()));
+
         // O-H (hydroxyl) -> ho
         assert_eq!(typer.refine_hydrogen_type("oh", Some(&"O".to_string())), Some("ho".to_string()));
-        
+
         // N-H (amine) -> hn
         assert_eq!(typer.refine_hydrogen_type("n3", Some(&"N".to_string())), Some("hn".to_string()));
-        
+
         // ca-H (aromatic) -> ha
         assert_eq!(typer.refine_hydrogen_type("ca", Some(&"C".to_string())), Some("ha".to_string()));
 
         // Extra branches
         assert_eq!(typer.refine_hydrogen_type("sh", Some(&"S".to_string())), Some("hs".to_string()));
         assert_eq!(typer.refine_hydrogen_type("p2", Some(&"P".to_string())), Some("hp".to_string()));
-        
+
         // Element-based fallbacks
         assert_eq!(typer.refine_hydrogen_type("unknown", Some(&"N".to_string())), Some("hn".to_string()));
         assert_eq!(typer.refine_hydrogen_type("unknown", Some(&"O".to_string())), Some("ho".to_string()));

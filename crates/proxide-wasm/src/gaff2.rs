@@ -153,12 +153,27 @@ pub fn assign_params(mol: &WasmMol) -> ParamSet {
     }).collect();
 
     // Look up torsion parameters
-    let torsions: Vec<TorsionRecord> = topology.proper_dihedrals.iter().filter_map(|d| {
-        let t1 = atom_types.get(d.i)?;
-        let t2 = atom_types.get(d.j)?;
-        let t3 = atom_types.get(d.k)?;
-        let t4 = atom_types.get(d.l)?;
-        let param = gen.get_proper_torsion_parameters(t1, t2, t3, t4)?;
+    let torsions: Vec<TorsionRecord> = topology.proper_dihedrals.iter().flat_map(|d| {
+        let t1 = match atom_types.get(d.i) {
+            Some(t) => t,
+            None => return vec![],
+        };
+        let t2 = match atom_types.get(d.j) {
+            Some(t) => t,
+            None => return vec![],
+        };
+        let t3 = match atom_types.get(d.k) {
+            Some(t) => t,
+            None => return vec![],
+        };
+        let t4 = match atom_types.get(d.l) {
+            Some(t) => t,
+            None => return vec![],
+        };
+        let param = match gen.get_proper_torsion_parameters(t1, t2, t3, t4) {
+            Some(p) => p,
+            None => return vec![],
+        };
 
         // Each ProperTorsionParam has a Vec<TorsionTerm>, we return one record per term
         param.terms.iter().map(|term| TorsionRecord {
@@ -170,7 +185,7 @@ pub fn assign_params(mol: &WasmMol) -> ParamSet {
             k_torsion: term.k as f64,
             phase: term.phase as f64,
             type_quad: [t1.clone(), t2.clone(), t3.clone(), t4.clone()],
-        }).next()
+        }).collect()
     }).collect();
 
     ParamSet {
@@ -239,10 +254,24 @@ mod tests {
     fn ethane_has_cc_bond() {
         let mol = parse("CC").unwrap();
         let params = assign_params(&mol);
-        assert_eq!(params.bonds.len(), 1, "ethane should have one C-C bond");
-        assert!(params.bonds[0].r0 > 0.14 && params.bonds[0].r0 < 0.16,
-                "C-C bond length should be ~0.1526 nm, got {}", params.bonds[0].r0);
-        assert!(params.bonds[0].k > 100.0, "C-C force constant should be significant");
+
+        // Should have at least 1 C-C bond (and 6 C-H bonds from implicit hydrogens)
+        let cc_bond = params.bonds.iter()
+            .find(|b| (b.type_pair[0] == "c3" && b.type_pair[1] == "c3")
+                   || (b.type_pair[1] == "c3" && b.type_pair[0] == "c3"));
+        assert!(cc_bond.is_some(),
+                "ethane should have a c3-c3 bond, bonds present: {:?}",
+                params.bonds.iter().map(|b| &b.type_pair).collect::<Vec<_>>());
+
+        let cc = cc_bond.unwrap();
+        assert!(cc.r0 > 0.14 && cc.r0 < 0.16,
+                "C-C bond length should be ~0.1526 nm, got {}", cc.r0);
+        assert!(cc.k > 100.0, "C-C force constant should be significant");
+
+        // With implicit H expansion, ethane (CC) should have 7 bonds total: 1 C-C + 6 C-H
+        assert!(params.bonds.len() > 1,
+                "ethane with implicit H should have >1 bond (C-C + C-H), got {} bonds",
+                params.bonds.len());
     }
 
     #[test]
