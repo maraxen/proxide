@@ -58,3 +58,10 @@ target/
 # Compiled extensions (maturin build artifacts)
 *.abi3.so
 cluster-config.toml
+
+# Praxia agent state
+.praxia/
+praxia.toml
+
+# Coverage reports
+scripts/coverage/cobertura.xml
