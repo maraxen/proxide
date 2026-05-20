@@ -7,6 +7,9 @@ pub use proxide_core::AtomicSystem;
 pub mod smiles;
 pub use smiles::{WasmAtom, WasmBond, WasmMol, BondOrder};
 
+pub mod pdb;
+pub use pdb::parse_pdb;
+
 #[wasm_bindgen]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
