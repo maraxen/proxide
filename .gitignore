@@ -59,6 +59,10 @@ target/
 *.abi3.so
 cluster-config.toml
 
+# Caches
+.fastembed_cache/
+.pdbfixer_upstream/
+
 # Praxia agent state
 .praxia/
 praxia.toml
