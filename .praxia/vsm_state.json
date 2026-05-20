@@ -1,0 +1,13 @@
+{
+  "workspace_id": "671c13bb-f52d-43c1-bc68-d339b36a3881",
+  "s1_boundaries": [
+    "python",
+    "rust"
+  ],
+  "s4_scan_scope": "/home/marielle/projects/proxide",
+  "initial_posture": "investigate",
+  "initial_gap_type": "SystemModel",
+  "planning_tier": "Tactical",
+  "schema_confidence": 0.5,
+  "initialized_at": "2026-05-11T15:40:14.843555624+00:00"
+}
