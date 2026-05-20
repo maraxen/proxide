@@ -14,8 +14,6 @@ crate-type = ["rlib"]
 nalgebra.workspace = true
 bytemuck = "1.21.0"
 
-# Parallelism (needed for some basic types if they implement parallel traits)
-rayon.workspace = true
 quick-xml.workspace = true
 
 # Unit system types

@@ -14,6 +14,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 nom.workspace = true
 purr = "0.9"
+getrandom = { version = "0.2", features = ["js"] }
+
+# Proxide crates for WASM API
+proxide-core = { path = "../proxide-core", default-features = false }
+proxide-gaff = { path = "../proxide-gaff" }
+proxide-io = { path = "../proxide-io", default-features = false, features = ["pdb"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
