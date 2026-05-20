@@ -354,31 +354,61 @@ fn bond_kind_to_order(kind: &BondKind) -> BondOrder {
     }
 }
 
-/// Detect rings using DFS back-edge detection.
+/// Detect ring membership via iterative DFS — safe for WASM (no stack overflow).
 fn detect_rings(atoms: &[purr::graph::Atom]) -> Vec<bool> {
     let n = atoms.len();
     let mut in_ring = vec![false; n];
-
     if n == 0 {
         return in_ring;
     }
 
-    // Build adjacency list from purr atoms
-    let mut adj = vec![Vec::new(); n];
+    // Build adjacency list
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
     for (i, atom) in atoms.iter().enumerate() {
         for bond in &atom.bonds {
-            let j = bond.tid;
-            adj[i].push(j);
+            adj[i].push(bond.tid);
         }
     }
 
-    // DFS to find back edges (indicating cycles)
     let mut visited = vec![false; n];
-    let mut rec_stack = vec![false; n];
+    let mut parent = vec![usize::MAX; n];
 
+    // Iterative DFS — one pass per connected component
     for start in 0..n {
-        if !visited[start] {
-            dfs_ring_detection(start, &adj, &mut visited, &mut rec_stack, &mut in_ring);
+        if visited[start] {
+            continue;
+        }
+
+        // Stack entries: (node, index_into_adj[node])
+        let mut stack: Vec<(usize, usize)> = vec![(start, 0)];
+        visited[start] = true;
+
+        while let Some(&mut (node, ref mut ni)) = stack.last_mut() {
+            if *ni >= adj[node].len() {
+                stack.pop();
+                continue;
+            }
+            let neighbor = adj[node][*ni];
+            *ni += 1;
+
+            // Skip the edge back to this node's parent (undirected graph)
+            if neighbor == parent[node] {
+                continue;
+            }
+
+            if !visited[neighbor] {
+                visited[neighbor] = true;
+                parent[neighbor] = node;
+                stack.push((neighbor, 0));
+            } else {
+                // Back edge found — trace all atoms on the cycle path
+                let mut cur = node;
+                while cur != neighbor && cur != usize::MAX {
+                    in_ring[cur] = true;
+                    cur = parent[cur];
+                }
+                in_ring[neighbor] = true;
+            }
         }
     }
 
@@ -395,30 +425,6 @@ fn detect_aromaticity(atoms: &[purr::graph::Atom]) -> Vec<bool> {
     }
 
     is_aromatic
-}
-
-/// DFS helper for ring detection.
-fn dfs_ring_detection(
-    node: usize,
-    adj: &[Vec<usize>],
-    visited: &mut [bool],
-    rec_stack: &mut [bool],
-    in_ring: &mut [bool],
-) {
-    visited[node] = true;
-    rec_stack[node] = true;
-
-    for &neighbor in &adj[node] {
-        if !visited[neighbor] {
-            dfs_ring_detection(neighbor, adj, visited, rec_stack, in_ring);
-        } else if rec_stack[neighbor] {
-            // Back edge found — both nodes are in a cycle
-            in_ring[node] = true;
-            in_ring[neighbor] = true;
-        }
-    }
-
-    rec_stack[node] = false;
 }
 
 #[cfg(test)]
@@ -489,5 +495,25 @@ mod tests {
         assert_eq!(mol.atoms.len(), 2);
         assert_eq!(mol.bonds.len(), 1);
         assert_eq!(mol.bonds[0].order, BondOrder::Triple);
+    }
+
+    #[test]
+    fn acyclic_propane_no_ring() {
+        let mol = parse("CCC").unwrap();
+        assert!(
+            mol.atoms.iter().all(|a| !a.in_ring),
+            "propane has no ring atoms, got: {:?}",
+            mol.atoms.iter().map(|a| a.in_ring).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn cyclohexane_all_in_ring() {
+        let mol = parse("C1CCCCC1").unwrap();
+        assert_eq!(mol.atoms.len(), 6, "cyclohexane: 6 carbons");
+        assert!(
+            mol.atoms.iter().all(|a| a.in_ring),
+            "all cyclohexane atoms should be in ring"
+        );
     }
 }

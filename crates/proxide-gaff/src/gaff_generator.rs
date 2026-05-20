@@ -504,8 +504,9 @@ impl GaffAtomTyper {
     pub fn assign_types(&self, elements: &[String], topology: &Topology) -> Vec<String> {
         // Compute aromaticity
         let is_aromatic_map = topology.compute_aromaticity(elements);
-        // TODO: compute ring membership
-        let is_ring_map: Vec<bool> = vec![false; elements.len()]; // placeholder
+        let is_ring_map: Vec<bool> = (0..elements.len())
+            .map(|i| topology.is_in_ring(i, 8))
+            .collect();
 
         let mut types = Vec::with_capacity(elements.len());
 
