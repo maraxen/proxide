@@ -299,4 +299,64 @@ mod tests {
         assert!(params.bonds.len() > 0, "ethanol should have bonds");
         assert!(params.angles.len() > 0, "ethanol should have angles");
     }
+
+    #[test]
+    fn json_schema_roundtrip_ethane() {
+        let mol = parse("CC").unwrap(); // ethane: has bonds, angles, torsions
+        let params = assign_params(&mol);
+        let json = serde_json::to_value(&params).unwrap();
+
+        // Top-level keys match prolix §7.1 schema
+        assert!(json.get("molecule_id").is_some(), "missing molecule_id");
+        assert!(json.get("atoms").is_some() && json["atoms"].is_array(), "missing/wrong atoms");
+        assert!(json.get("bonds").is_some() && json["bonds"].is_array(), "missing/wrong bonds");
+        assert!(json.get("angles").is_some() && json["angles"].is_array(), "missing/wrong angles");
+        assert!(json.get("torsions").is_some() && json["torsions"].is_array(), "missing/wrong torsions");
+
+        // Bond record shape: i, j, k, r0, type_pair
+        if let Some(bond) = json["bonds"].as_array().and_then(|a| a.first()) {
+            assert!(bond.get("i").and_then(|v| v.as_u64()).is_some(), "bond.i missing or wrong type");
+            assert!(bond.get("j").and_then(|v| v.as_u64()).is_some(), "bond.j missing or wrong type");
+            assert!(bond.get("k").and_then(|v| v.as_f64()).is_some(), "bond.k missing or wrong type");
+            assert!(bond.get("r0").and_then(|v| v.as_f64()).is_some(), "bond.r0 missing or wrong type");
+            assert!(bond.get("type_pair").and_then(|v| v.as_array()).map(|a| a.len() == 2).unwrap_or(false),
+                    "bond.type_pair should be array of 2 strings");
+        } else {
+            panic!("ethane should have at least one bond");
+        }
+
+        // Atom record shape: idx, atomic_num, atom_type
+        if let Some(atom) = json["atoms"].as_array().and_then(|a| a.first()) {
+            assert!(atom.get("idx").and_then(|v| v.as_u64()).is_some(), "atom.idx missing");
+            assert!(atom.get("atomic_num").and_then(|v| v.as_u64()).is_some(), "atom.atomic_num missing");
+            assert!(atom.get("atom_type").and_then(|v| v.as_str()).is_some(), "atom.atom_type missing");
+        }
+
+        // Angle record shape: i, j, k_idx, k_angle, theta0, type_triple
+        if let Some(angle) = json["angles"].as_array().and_then(|a| a.first()) {
+            assert!(angle.get("i").is_some(), "angle.i missing");
+            assert!(angle.get("j").is_some(), "angle.j missing");
+            assert!(angle.get("k_idx").is_some(), "angle.k_idx missing");
+            assert!(angle.get("k_angle").and_then(|v| v.as_f64()).is_some(), "angle.k_angle missing/wrong");
+            assert!(angle.get("theta0").and_then(|v| v.as_f64()).is_some(), "angle.theta0 missing/wrong");
+            assert!(angle.get("type_triple").and_then(|v| v.as_array()).map(|a| a.len() == 3).unwrap_or(false),
+                    "angle.type_triple should be array of 3");
+        }
+
+        // Torsion record shape (if present)
+        if let Some(torsion) = json["torsions"].as_array().and_then(|a| a.first()) {
+            assert!(torsion.get("i").is_some(), "torsion.i missing");
+            assert!(torsion.get("j").is_some(), "torsion.j missing");
+            assert!(torsion.get("k_idx").is_some(), "torsion.k_idx missing");
+            assert!(torsion.get("l").is_some(), "torsion.l missing");
+            assert!(torsion.get("periodicity").and_then(|v| v.as_u64()).is_some(), "torsion.periodicity missing");
+            assert!(torsion.get("k_torsion").and_then(|v| v.as_f64()).is_some(), "torsion.k_torsion missing");
+            assert!(torsion.get("phase").and_then(|v| v.as_f64()).is_some(), "torsion.phase missing");
+            assert!(torsion.get("type_quad").and_then(|v| v.as_array()).map(|a| a.len() == 4).unwrap_or(false),
+                    "torsion.type_quad should be 4 strings");
+        }
+
+        // Print the full JSON for manual verification
+        println!("{}", serde_json::to_string_pretty(&params).unwrap());
+    }
 }
