@@ -14,7 +14,7 @@ pub fn parse_xtc(py: Python<'_>, path: String) -> PyResult<PyObject> {
         use formats::xtc::molly_impl::read_xtc_molly;
         let traj = py
             .allow_threads(|| read_xtc_molly(&path).map_err(|e| e.to_string()))
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
         let dict = PyDict::new_bound(py);
         dict.set_item("num_frames", traj.num_frames)?;
@@ -56,7 +56,7 @@ pub fn parse_dcd(py: Python<'_>, path: String) -> PyResult<PyObject> {
     use formats::dcd::parse_dcd as read_dcd;
     let traj = py
         .allow_threads(|| read_dcd(&path).map_err(|e| e.to_string()))
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
     let dict = PyDict::new_bound(py);
     dict.set_item("num_frames", traj.num_frames)?;
@@ -104,7 +104,7 @@ pub fn parse_trr(py: Python<'_>, path: String) -> PyResult<PyObject> {
     use formats::trr::parse_trr as read_trr;
     let traj = py
         .allow_threads(|| read_trr(&path).map_err(|e| e.to_string()))
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
     let dict = PyDict::new_bound(py);
     dict.set_item("num_frames", traj.num_frames)?;

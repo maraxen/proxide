@@ -10,6 +10,7 @@ use std::fs::File;
 use std::io::copy;
 use std::path::Path;
 
+#[allow(dead_code)]
 const RCSB_URL_MMCIF: &str = "https://files.rcsb.org/download/";
 const RCSB_URL_PDB: &str = "https://files.rcsb.org/download/";
 const MDCATH_URL_BASE: &str = "http://mdcath.dat.s3-website-us-west-2.amazonaws.com/data/";

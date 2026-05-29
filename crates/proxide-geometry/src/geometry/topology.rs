@@ -46,7 +46,7 @@ pub fn assign_template_hydrogens(
     // Collect matched heavy atoms in this residue: (global_idx, template_name)
     // We need to find which residue these hydrogens belong to.
     // For simplicity, we assume all unmatched_h_indices are in the same residue passed in 'template'.
-    let res_info = processed.residue_info.iter().find(|r| r.res_name == template.name && r.res_id == res_start as i32);
+    let res_info = processed.residue_info.iter().find(|r| r.res_name == template.name && r.res_id == res_start);
     
     if let Some(res_info) = res_info {
         let res_heavy_atoms: Vec<(usize, &str)> = local_to_global

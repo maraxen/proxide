@@ -47,7 +47,9 @@ pub struct DcdTrajectory {
 
 pub struct DcdWriter {
     writer: File,
+    #[allow(dead_code)]
     n_atoms: usize,
+    #[allow(dead_code)]
     has_unit_cell: bool,
 }
 

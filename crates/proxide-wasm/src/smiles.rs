@@ -118,7 +118,7 @@ fn extract_atomic_info(atom_kind: &AtomKind) -> Result<(u8, i8), String> {
             ..
         } => {
             let atomic_num = bracket_symbol_to_atomic_num(symbol)?;
-            let formal_charge = charge.as_ref().map(|c| charge_to_i8(c)).unwrap_or(0);
+            let formal_charge = charge.as_ref().map(charge_to_i8).unwrap_or(0);
             Ok((atomic_num, formal_charge))
         }
     }
