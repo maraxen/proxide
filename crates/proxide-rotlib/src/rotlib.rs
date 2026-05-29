@@ -6,6 +6,7 @@ use crate::rotamer_id::RotamerId;
 use crate::binning::angle_to_standard;
 
 /// Per-rotamer data within a single phi/psi bin.
+#[derive(Clone)]
 pub(crate) struct BinData {
     /// Rotamer probabilities (len = nr).
     pub(crate) probs:  Vec<f64>,
@@ -14,6 +15,7 @@ pub(crate) struct BinData {
 }
 
 /// Per amino-acid rotamer library entry.
+#[derive(Clone)]
 pub(crate) struct AaEntry {
     /// Sidechain heavy-atom names in library order.
     pub(crate) atom_names:      Vec<String>,
@@ -199,8 +201,33 @@ impl RotamerLibrary {
         Ok(entry.rotamers[bin].probs[rot_index])
     }
 
-    pub fn place_rotamer(&self, _aa: &str, _phi: f64, _psi: f64, _rot_index: usize, _n: [f64; 3], _ca: [f64; 3], _c: [f64; 3]) -> Result<crate::rotamer_id::PlacedRotamer, RotlibError> {
-        todo!("implement in Phase 6")
+    pub fn place_rotamer(&self, aa: &str, phi: f64, psi: f64, rot_index: usize, n: [f64; 3], ca: [f64; 3], c: [f64; 3]) -> Result<crate::rotamer_id::PlacedRotamer, RotlibError> {
+        use crate::frame::{backbone_frame, Frame, Transform};
+        use crate::rotamer_id::{PlacedAtom, PlacedRotamer, RotamerId};
+
+        let entry = self.entries.get(aa)
+            .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
+        let bin = self.backbone_bin(aa, phi, psi)? as usize;
+        // bin is always valid (produced by backbone_bin which indexes entry.rotamers)
+        let bin_data = &entry.rotamers[bin];
+        let nr = bin_data.coords.len();
+        if rot_index >= nr {
+            return Err(RotlibError::RotIndexOob(aa.to_string(), rot_index, nr));
+        }
+
+        let res_frame = backbone_frame(n, ca, c);
+        let lab_frame = Frame::identity();
+        let xform = Transform::switch_frames(&res_frame, &lab_frame);
+
+        let atoms = bin_data.coords[rot_index].iter()
+            .zip(&entry.atom_names)
+            .map(|(&xyz, name)| PlacedAtom { name: name.clone(), xyz: xform.apply(xyz) })
+            .collect();
+
+        Ok(PlacedRotamer {
+            id: RotamerId { aa: aa.to_string(), bin_index: bin as u32, rot_index: rot_index as u32 },
+            atoms,
+        })
     }
 
     pub fn sidechain_atom_names(&self, aa: &str) -> Result<&[String], RotlibError> {
@@ -209,7 +236,155 @@ impl RotamerLibrary {
             .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))
     }
 
-    pub fn backbone_bin(&self, _aa: &str, _phi: f64, _psi: f64) -> Result<u32, RotlibError> {
-        todo!("implement in Phase 6")
+    pub fn backbone_bin(&self, aa: &str, phi: f64, psi: f64) -> Result<u32, RotlibError> {
+        use crate::binning::find_closest_angle;
+        let entry = self.entries.get(aa)
+            .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
+        // Sentinel: either angle is 9999.0 → return default_bin
+        if phi == 9999.0 || psi == 9999.0 {
+            return Ok(entry.default_bin);
+        }
+        let phi_ind = find_closest_angle(&entry.bin_phi_centers, phi);
+        let psi_ind = find_closest_angle(&entry.bin_psi_centers, psi);
+        let n_psi = entry.bin_psi_centers.len();
+        Ok((phi_ind * n_psi + psi_ind) as u32)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_backbone_bin_unknown_aa() {
+        let lib = RotamerLibrary { entries: std::collections::HashMap::new() };
+        let result = lib.backbone_bin("UNK", -60.0, -45.0);
+        assert!(result.is_err());
+        match result {
+            Err(RotlibError::UnknownAa(aa)) => assert_eq!(aa, "UNK"),
+            _ => panic!("Expected UnknownAa error"),
+        }
+    }
+
+    #[test]
+    fn test_backbone_bin_sentinel_phi() {
+        use std::collections::HashMap;
+        let mut entry = AaEntry {
+            atom_names: vec!["CB".to_string()],
+            bin_phi_centers: vec![-120.0, -60.0, 60.0],
+            bin_psi_centers: vec![-45.0, -20.0, 20.0, 45.0],
+            default_bin: 5,
+            rotamers: vec![
+                BinData { probs: vec![0.5], coords: vec![vec![[1.0, 2.0, 3.0]]] };
+                12
+            ],
+        };
+        let mut entries = HashMap::new();
+        entries.insert("ALA".to_string(), entry);
+        let lib = RotamerLibrary { entries };
+
+        let result = lib.backbone_bin("ALA", 9999.0, -45.0);
+        assert_eq!(result.unwrap(), 5);
+    }
+
+    #[test]
+    fn test_backbone_bin_sentinel_psi() {
+        use std::collections::HashMap;
+        let entry = AaEntry {
+            atom_names: vec!["CB".to_string()],
+            bin_phi_centers: vec![-120.0, -60.0, 60.0],
+            bin_psi_centers: vec![-45.0, -20.0, 20.0, 45.0],
+            default_bin: 7,
+            rotamers: vec![
+                BinData { probs: vec![0.5], coords: vec![vec![[1.0, 2.0, 3.0]]] };
+                12
+            ],
+        };
+        let mut entries = HashMap::new();
+        entries.insert("ALA".to_string(), entry);
+        let lib = RotamerLibrary { entries };
+
+        let result = lib.backbone_bin("ALA", -60.0, 9999.0);
+        assert_eq!(result.unwrap(), 7);
+    }
+
+    #[test]
+    fn test_place_rotamer_unknown_aa() {
+        let lib = RotamerLibrary { entries: std::collections::HashMap::new() };
+        let result = lib.place_rotamer("UNK", -60.0, -45.0, 0, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
+        assert!(result.is_err());
+        match result {
+            Err(RotlibError::UnknownAa(aa)) => assert_eq!(aa, "UNK"),
+            _ => panic!("Expected UnknownAa error"),
+        }
+    }
+
+    #[test]
+    fn test_place_rotamer_rot_index_oob() {
+        use std::collections::HashMap;
+        let entry = AaEntry {
+            atom_names: vec!["CB".to_string()],
+            bin_phi_centers: vec![-120.0, -60.0, 60.0],
+            bin_psi_centers: vec![-45.0, -20.0, 20.0, 45.0],
+            default_bin: 0,
+            rotamers: vec![
+                BinData {
+                    probs: vec![0.5],
+                    coords: vec![vec![[1.0, 2.0, 3.0]]]
+                };
+                12
+            ],
+        };
+        let mut entries = HashMap::new();
+        entries.insert("ALA".to_string(), entry);
+        let lib = RotamerLibrary { entries };
+
+        let result = lib.place_rotamer("ALA", -120.0, -45.0, 5, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
+        assert!(result.is_err());
+        match result {
+            Err(RotlibError::RotIndexOob(aa, idx, nr)) => {
+                assert_eq!(aa, "ALA");
+                assert_eq!(idx, 5);
+                assert_eq!(nr, 1);
+            },
+            _ => panic!("Expected RotIndexOob error"),
+        }
+    }
+
+    #[test]
+    fn test_place_rotamer_creates_placed_atom() {
+        use std::collections::HashMap;
+        let entry = AaEntry {
+            atom_names: vec!["CB".to_string(), "CG".to_string()],
+            bin_phi_centers: vec![-120.0, -60.0, 60.0],
+            bin_psi_centers: vec![-45.0, -20.0, 20.0, 45.0],
+            default_bin: 0,
+            rotamers: vec![
+                BinData {
+                    probs: vec![0.8],
+                    coords: vec![vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]]
+                };
+                12
+            ],
+        };
+        let mut entries = HashMap::new();
+        entries.insert("VAL".to_string(), entry);
+        let lib = RotamerLibrary { entries };
+
+        // Use backbone coordinates that form identity-like frame
+        let n = [1.0, 0.0, 0.0];
+        let ca = [0.0, 0.0, 0.0];
+        let c = [0.0, 1.0, 0.0];
+
+        let result = lib.place_rotamer("VAL", -120.0, -45.0, 0, n, ca, c);
+        assert!(result.is_ok());
+        let placed = result.unwrap();
+
+        assert_eq!(placed.id.aa, "VAL");
+        assert_eq!(placed.id.bin_index, 0);
+        assert_eq!(placed.id.rot_index, 0);
+        assert_eq!(placed.atoms.len(), 2);
+        assert_eq!(placed.atoms[0].name, "CB");
+        assert_eq!(placed.atoms[1].name, "CG");
     }
 }
