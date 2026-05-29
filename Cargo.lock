@@ -1839,6 +1839,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxide-rotlib"
+version = "0.1.0-alpha.7"
+dependencies = [
+ "log",
+ "serde",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "proxide-units"
 version = "0.1.0-alpha.7"
 

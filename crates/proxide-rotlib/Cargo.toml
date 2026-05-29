@@ -1,0 +1,26 @@
+[package]
+name        = "proxide-rotlib"
+version.workspace   = true
+edition.workspace   = true
+authors.workspace   = true
+license.workspace   = true
+description = "Backbone-dependent rotamer library for protein sidechain placement"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+thiserror = { workspace = true }
+log       = { workspace = true }
+
+[dependencies.serde]
+version  = "1"
+optional = true
+features = ["derive"]
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+serde   = ["dep:serde"]
