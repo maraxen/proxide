@@ -11,6 +11,7 @@ members = [
     "crates/proxide-gaff",
     "crates/proxide-units",
     "crates/proxide-wasm",
+    "crates/proxide-rotlib",
 ]
 
 [workspace.package]
@@ -28,6 +29,7 @@ proxide-physics = { path = "crates/proxide-physics" }
 proxide-io = { path = "crates/proxide-io" }
 proxide-gaff = { path = "crates/proxide-gaff" }
 proxide-units = { path = "crates/proxide-units" }
+proxide-rotlib = { path = "crates/proxide-rotlib" }
 proxide_rs = { path = "crates/proxide_rs" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"
@@ -47,9 +49,3 @@ rand_distr = "0.4"
 molly = "0.4.0"
 hdf5 = { package = "hdf5-metno", version = "0.11", features = ["static"] }
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "rustls-tls"] }
-
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-strip = true
