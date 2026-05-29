@@ -202,6 +202,7 @@ impl RotamerLibrary {
         Ok(entry.rotamers[bin].probs[rot_index])
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn place_rotamer(&self, aa: &str, phi: f64, psi: f64, rot_index: usize, n: [f64; 3], ca: [f64; 3], c: [f64; 3]) -> Result<crate::rotamer_id::PlacedRotamer, RotlibError> {
         use crate::frame::{backbone_frame, Frame, Transform};
         use crate::rotamer_id::{PlacedAtom, PlacedRotamer, RotamerId};
