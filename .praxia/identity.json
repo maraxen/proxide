@@ -44,7 +44,10 @@
   },
   "always_do": [
     "ruff format before commit",
-    "pytest before merge"
+    "pytest before merge",
+    "cargo fmt before commit",
+    "cargo clippy before commit",
+    "cargo test before merge"
   ],
   "ask_first": [
     "delete files",
@@ -71,7 +74,8 @@
   "coordination_mechanisms": [
     "github_actions",
     "just",
-    "pre_commit"
+    "pre_commit",
+    "cargo_lock"
   ],
   "quirks": [],
   "quirks_initialized": false,
