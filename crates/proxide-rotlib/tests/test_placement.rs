@@ -138,11 +138,26 @@ fn test_place_sentinel_uses_default_bin() {
 }
 
 #[test]
+fn test_place_ala_cb_exact_coords() {
+    // Unit-level exact coordinate check: CB stored at [1.0, 0.0, 0.0] in canonical frame.
+    // Backbone: N=[0,0,0], CA=[1.458,0,0], C=[1.980,1.418,0].
+    // Expected lab-frame CB = [2.458, 0.0, 0.0] (derived analytically).
+    let (_lib_tmp, lib) = make_placement_lib();
+    let placed = lib.place_rotamer("ALA", 0.0, 0.0, 0, N, CA, C).unwrap();
+    let cb_xyz = placed.atoms[0].xyz;
+    let expected = [2.458, 0.0, 0.0];
+    for i in 0..3 {
+        assert!((cb_xyz[i] - expected[i]).abs() < 1e-9,
+            "CB coord[{i}]: expected {:.6}, got {:.6}", expected[i], cb_xyz[i]);
+    }
+}
+
+#[test]
 #[ignore]
 fn test_place_parity_mosaist() {
-    // Integration test: verify ALA CB placement on real rotlib
-    // Reference backbone: N=[0,0,0], CA=[1.458,0,0], C=[1.980,1.418,0]
-    // phi=9999 (sentinel), psi=9999 (sentinel), rot=0
+    // TODO: Run `~/repos/mosaist/testfiles/` MSL binary against rotlib.bin with
+    // N=[0,0,0], CA=[1.458,0,0], C=[1.980,1.418,0], ALA default rotamer to get
+    // reference CB coordinates, then add: assert!((placed.atoms[0].xyz[i] - REF[i]).abs() < 1e-5)
     let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
     let placed = lib
         .place_rotamer("ALA", 9999.0, 9999.0, 0, N, CA, C)

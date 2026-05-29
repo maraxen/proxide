@@ -82,8 +82,8 @@ fn validate_grid(bins: &[(f64, f64, f64)]) -> Result<(Vec<f64>, Vec<f64>), Rotli
     }
     let mut phi_centers: Vec<f64> = phi_set.iter().map(|&b| f64::from_bits(b)).collect();
     let mut psi_centers: Vec<f64> = psi_set.iter().map(|&b| f64::from_bits(b)).collect();
-    phi_centers.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    psi_centers.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    phi_centers.sort_by(f64::total_cmp);
+    psi_centers.sort_by(f64::total_cmp);
     Ok((phi_centers, psi_centers))
 }
 
@@ -129,10 +129,10 @@ impl RotamerLibrary {
 
             // default_bin: argmax frequency, first-maximum wins
             let default_bin = bin_descriptors.iter().enumerate()
-                .max_by(|(_, (_, _, fa)), (_, (_, _, fb))|
-                    fa.partial_cmp(fb).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(i, _)| i as u32)
-                .unwrap_or(0);
+                .fold((0usize, f64::NEG_INFINITY), |(best_i, best_f), (i, &(_, _, f))| {
+                    if f > best_f { (i, f) } else { (best_i, best_f) }
+                })
+                .0 as u32;
 
             // rotamer data
             let mut rotamers: Vec<BinData> = Vec::with_capacity(nb);
