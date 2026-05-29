@@ -6,7 +6,7 @@ use crate::rotamer_id::RotamerId;
 use crate::binning::angle_to_standard;
 
 /// Per-rotamer data within a single phi/psi bin.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct BinData {
     /// Rotamer probabilities (len = nr).
     pub(crate) probs:  Vec<f64>,
@@ -15,7 +15,7 @@ pub(crate) struct BinData {
 }
 
 /// Per amino-acid rotamer library entry.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct AaEntry {
     /// Sidechain heavy-atom names in library order.
     pub(crate) atom_names:      Vec<String>,
@@ -30,6 +30,7 @@ pub(crate) struct AaEntry {
 }
 
 /// Backbone-dependent rotamer library loaded from an MSL binary file.
+#[derive(Debug)]
 pub struct RotamerLibrary {
     pub(crate) entries: HashMap<String, AaEntry>,
 }
