@@ -276,4 +276,22 @@ impl ConFind {
     pub fn residue_id(&self, ri: ResidueIndex) -> &ResidueId {
         &self.backbone.ids[ri.0 as usize]
     }
+
+    /// Residues whose backbone atoms permanently clash with any ALA rotamer of `res`.
+    ///
+    /// Returns an empty vec if `res` was not cached yet. Call `cache_residue(res)` first.
+    pub fn constrained_contacts(&self, res: ResidueIndex) -> Vec<ResidueIndex> {
+        let cache = match self.cache.get(&res) {
+            Some(c) => c,
+            None => return Vec::new(),
+        };
+        let mut result: Vec<ResidueIndex> = cache
+            .permanent_contacts
+            .iter()
+            .map(|&atom_idx| self.bb_atom_res[atom_idx])
+            .collect();
+        result.sort_unstable();
+        result.dedup();
+        result
+    }
 }

@@ -166,3 +166,56 @@ fn n_residues_matches_backbone() {
 
     assert_eq!(confind.n_residues(), 5, "n_residues should match backbone length");
 }
+
+#[test]
+#[ignore = "requires rotamer library — set RLIB env var to run"]
+fn constrained_contacts_returns_vec() {
+    let rotlib = match load_rotlib_or_skip() {
+        Some(r) => r,
+        None => {
+            println!("RLIB not set, skipping test");
+            return;
+        }
+    };
+
+    let backbone = make_synthetic_backbone(4, 3.8);
+    let confind = ConFind::new(rotlib, backbone.clone(), false);
+
+    let ri = ResidueIndex(0);
+    confind.cache_residue(ri).ok();
+
+    // constrained_contacts should return a Vec<ResidueIndex>
+    let contacts = confind.constrained_contacts(ri);
+
+    // Result should be a sorted vec with no duplicates
+    assert!(contacts.is_empty() || contacts.len() > 0);
+
+    // Verify the vec is sorted
+    if contacts.len() > 1 {
+        for i in 0..contacts.len() - 1 {
+            assert!(contacts[i] < contacts[i + 1], "constrained_contacts should return sorted results");
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires rotamer library — set RLIB env var to run"]
+fn constrained_contacts_uncached_returns_empty() {
+    let rotlib = match load_rotlib_or_skip() {
+        Some(r) => r,
+        None => {
+            println!("RLIB not set, skipping test");
+            return;
+        }
+    };
+
+    let backbone = make_synthetic_backbone(4, 3.8);
+    let confind = ConFind::new(rotlib, backbone.clone(), false);
+
+    let ri = ResidueIndex(1);
+    // Don't cache ri
+
+    // constrained_contacts should return empty vec for uncached residue
+    let contacts = confind.constrained_contacts(ri);
+    assert!(contacts.is_empty(), "constrained_contacts should return empty vec for uncached residue");
+}

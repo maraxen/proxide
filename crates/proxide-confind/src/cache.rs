@@ -16,11 +16,9 @@ pub struct ResidueCache {
     pub n_library_rotamers: usize,
     /// interference[resB_idx][aa] = accumulated aaP * rotP / 100
     pub interference: HashMap<ResidueIndex, HashMap<String, f64>>,
-    /// Residues whose backbone clashes with any ALA rotamer of self.
-    /// **v1 deviation**: Mosaist stores raw bb-atom indices for constrained-contacts lookup;
-    /// we store ResidueIndex instead (sufficient for v1 — no constrained-contacts API yet).
-    /// If `getConstrainedContacts` is ever implemented, this field needs refactoring to Vec<usize>.
-    pub permanent_contacts: Vec<ResidueIndex>,
+    /// Backbone atoms permanently clashed by any ALA rotamer of self.
+    /// Stores raw backbone atom indices for constrained-contacts lookup.
+    pub permanent_contacts: Vec<usize>,
 }
 
 /// Sum of aaProp[aa] * rotP over surviving rotamers of `res` in `available_aa`.
@@ -87,7 +85,7 @@ pub fn cache_residue_impl(
     let mut rotamer_grids: HashMap<String, Option<ProximityGrid<Arc<RotamerId>>>> =
         HashMap::new();
     let mut interference: HashMap<ResidueIndex, HashMap<String, f64>> = HashMap::new();
-    let mut permanent_contacts_set: HashSet<ResidueIndex> = HashSet::new();
+    let mut permanent_contacts_set: HashSet<usize> = HashSet::new();
     let mut total_rotamers: usize = 0;
 
     for &aa in &AA_NAMES {
@@ -131,7 +129,7 @@ pub fn cache_residue_impl(
                     prune = true;
 
                     if aa == "ALA" {
-                        permanent_contacts_set.insert(res_b);
+                        permanent_contacts_set.insert(bb_atom_idx);
                     }
 
                     // First-encounter guard per resB per rotamer.
@@ -181,8 +179,8 @@ pub fn cache_residue_impl(
         0.0
     };
 
-    let permanent_contacts: Vec<ResidueIndex> = {
-        let mut v: Vec<ResidueIndex> = permanent_contacts_set.into_iter().collect();
+    let permanent_contacts: Vec<usize> = {
+        let mut v: Vec<usize> = permanent_contacts_set.into_iter().collect();
         v.sort_unstable();
         v
     };
