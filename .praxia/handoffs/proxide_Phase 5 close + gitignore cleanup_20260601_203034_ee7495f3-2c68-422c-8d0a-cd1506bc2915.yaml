@@ -1,0 +1,42 @@
+---
+workspace: proxide
+session_id: b40e6073-0001-0000-0000-000000000000
+status: complete
+immediately_relevant:
+- file: crates/proxide-confind/tests/test_distogram.rs
+  lines:
+  - 1
+  - 1864
+  reason: 'New test: 111×111 reference const + test_distogram_1dc7_chain_a (GLY/PRO skipped per ConFind aaNames)'
+- file: .gitignore
+  lines:
+  - 66
+  - 70
+  reason: Blanket .praxia/ replaced with .praxia/cache/ + .praxia/eph/ exclusions
+- file: .praxia/.gitignore
+  lines:
+  - 1
+  - 3
+  reason: 'New file: ignores cache/ and eph/ within .praxia/'
+active_dispatches: []
+task_id: 260601_confind-fullprot-distogram
+phase: Phase 5 close + gitignore cleanup
+goal_statement: Add full-protein CB distogram to proxide-confind; track .praxia/ state in git
+context_refs:
+- phase: Phase 4
+  task_id: 260601_rotlib-fixture-expansion
+  summary: 2ZTA distogram + GLY/PRO placement tests in rotlib (689e98c); Python frame-math reference script
+- phase: Phase 3
+  task_id: 260601_proxconfind3-close
+  summary: Confind suite 52 passed, 36 ignored before this session
+failed_attempts: []
+open_questions: []
+deferred:
+- description: 'Real phi/psi backbone_bin exercise: compute actual φ/ψ from adjacent backbone atoms, pass to place_rotamer to exercise backbone_bin grid lookup path'
+  rationale: Non-trivial; requires replicating Mosaist bin selection in Python
+  recommended_phase: Phase 6
+- description: 'Debt #67: Dunbrack / multi-rotlib / PRO cis-trans support'
+  rationale: Architectural; separate item
+  recommended_phase: future
+lessons_refs: []
+---
