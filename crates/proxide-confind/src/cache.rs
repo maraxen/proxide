@@ -17,8 +17,9 @@ pub struct ResidueCache {
     /// interference[resB_idx][aa] = accumulated aaP * rotP / 100
     pub interference: HashMap<ResidueIndex, HashMap<String, f64>>,
     /// Residues whose backbone clashes with any ALA rotamer of self.
-    /// (Stored as ResidueIndex; Mosaist stores raw backbone-atom indices into
-    /// the backbone vector, but for v1 the residue identity is sufficient.)
+    /// **v1 deviation**: Mosaist stores raw bb-atom indices for constrained-contacts lookup;
+    /// we store ResidueIndex instead (sufficient for v1 — no constrained-contacts API yet).
+    /// If `getConstrainedContacts` is ever implemented, this field needs refactoring to Vec<usize>.
     pub permanent_contacts: Vec<ResidueIndex>,
 }
 
@@ -147,10 +148,6 @@ pub fn cache_residue_impl(
                         // Non-ALA: stop after first backbone clash atom found.
                         break 'atom_loop;
                     }
-                }
-                if prune && aa == "ALA" {
-                    // ALA continues after clashes to record all permanent contacts.
-                    // But we've broken 'atom_loop for non-ALA above.
                 }
             }
 

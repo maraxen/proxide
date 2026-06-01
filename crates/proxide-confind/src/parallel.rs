@@ -130,20 +130,14 @@ pub fn run_phases_b_c(
         .collect();
 
     // B1 — compute CD for each pair in parallel.
-    let results: Vec<Result<(f64, Vec<ClashTuple>), ConFindError>> = pairs
+    let pair_results: Vec<(f64, Vec<ClashTuple>)> = pairs
         .par_iter()
         .map(|&(ri, rj)| {
             let ca = cache_map.get(&ri).ok_or(ConFindError::NotCached(ri))?;
             let cb = cache_map.get(&rj).ok_or(ConFindError::NotCached(rj))?;
             contact_degree_raw(ri, rj, &ca, &cb, rotlib, None, None)
         })
-        .collect();
-
-    // Unwrap results (fail fast on first error).
-    let mut pair_results: Vec<(f64, Vec<ClashTuple>)> = Vec::with_capacity(results.len());
-    for r in results {
-        pair_results.push(r?);
-    }
+        .collect::<Result<Vec<_>, _>>()?;
 
     // B2 — sequential collProb merge.
     let of_interest: HashSet<ResidueIndex> = residues.iter().copied().collect();

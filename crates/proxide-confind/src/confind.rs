@@ -24,8 +24,6 @@ pub struct ConFind {
 
     cache: DashMap<ResidueIndex, Arc<ResidueCache>>,
     coll_prob: DashMap<ResidueIndex, HashMap<Arc<RotamerId>, f64>>,
-    #[allow(dead_code)]
-    degrees: DashMap<(ResidueIndex, ResidueIndex), f64>,
     freedom: DashMap<ResidueIndex, f64>,
 }
 
@@ -65,7 +63,6 @@ impl ConFind {
             bb_atom_res: Arc::new(bb_atom_res_vec),
             cache: DashMap::new(),
             coll_prob: DashMap::new(),
-            degrees: DashMap::new(),
             freedom: DashMap::new(),
         }
     }
@@ -126,8 +123,8 @@ impl ConFind {
 
     /// Full contact + freedom pipeline (Phases A–C).
     ///
-    /// `residues` must be sorted ascending by ResidueIndex for correct
-    /// collProb attribution (v1 constraint).
+    /// `residues` is the set of residues for which freedom will be computed.
+    /// All residues for which you want `freedom()` to succeed must appear here.
     pub fn contacts(
         &self,
         residues: &[ResidueIndex],
@@ -192,7 +189,7 @@ impl ConFind {
         dcut_bb: f64,
         ignore_flanking: usize,
     ) -> Result<ContactList, ConFindError> {
-        let (bb_atoms, bb_atom_res) = (self.bb_atoms.as_ref(), self.bb_atom_res.as_ref());
+        let bb_atoms = self.bb_atoms.as_ref();
 
         // Build per-residue atom index ranges in bb_atoms.
         // bb_atoms was built in order of backbone residues.
@@ -248,7 +245,6 @@ impl ConFind {
                 }
             }
         }
-        let _ = bb_atom_res; // used during build, not here
         Ok(contact)
     }
 
