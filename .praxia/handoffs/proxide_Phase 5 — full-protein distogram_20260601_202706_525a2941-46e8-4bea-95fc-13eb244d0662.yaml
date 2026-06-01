@@ -1,0 +1,37 @@
+---
+workspace: proxide
+session_id: b40e6073-0000-0000-0000-000000000000
+status: complete
+immediately_relevant:
+- file: crates/proxide-confind/tests/test_distogram.rs
+  lines:
+  - 1
+  - 1864
+  reason: 'New test: 111×111 reference const + test_distogram_1dc7_chain_a. GLY/PRO filtered per ConFind aaNames.'
+- file: crates/proxide-confind/tests/common/mod.rs
+  lines:
+  - 231
+  - 248
+  reason: real_pdb_path_1dc7() and load_1dc7_backbone() helpers used by new test
+active_dispatches: []
+task_id: 260601_confind-fullprot-distogram
+phase: Phase 5 — full-protein distogram
+goal_statement: Add full-protein CB distogram parity test (all 20 AAs) to proxide-confind using 1DC7 chain A
+context_refs:
+- phase: Phase 4
+  task_id: 260601_rotlib-fixture-expansion
+  summary: Added 2ZTA distogram + GLY/PRO placement tests to rotlib (689e98c); Python frame-math reference script established
+- phase: Phase 3
+  task_id: 260601_proxconfind3-close
+  summary: Confind suite at 52 passed, 36 ignored before this session
+failed_attempts: []
+open_questions: []
+deferred:
+- description: 'Real phi/psi backbone_bin exercise: compute actual φ/ψ from adjacent backbone atoms, pass to place_rotamer to exercise backbone_bin grid lookup path'
+  rationale: Non-trivial — requires replicating Mosaist bin selection in Python; not on critical path
+  recommended_phase: Phase 6
+- description: 'Debt #67: Dunbrack / multi-rotlib / PRO cis-trans support'
+  rationale: Architectural; separate item
+  recommended_phase: future
+lessons_refs: []
+---

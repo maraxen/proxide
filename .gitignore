@@ -64,7 +64,9 @@ cluster-config.toml
 .pdbfixer_upstream/
 
 # Praxia agent state
-.praxia/
+# .praxia/ tracked (daily log, docs, handoffs, backlog)
+.praxia/cache/
+.praxia/eph/
 praxia.toml
 
 # Coverage reports

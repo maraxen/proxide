@@ -1,0 +1,14 @@
+Migration applied: 2026-05-22T12:16:17.609093
+Project: /home/marielle/projects/proxide
+
+.agent/critiques/260415/oracle_critique_01.md → .praxia/docs/misc/260417_oracle-critique-01.md [git]
+.agent/critiques/260415/oracle_critique_03.md → .praxia/docs/misc/260417_oracle-critique-03.md [git]
+.agent/critiques/260416/oracle_critique_01.md → .praxia/docs/misc/260417_oracle-critique-01-1.md [git]
+.agent/critiques/260416/oracle_critique_02.md → .praxia/docs/misc/260417_oracle-critique-02.md [git]
+.agent/docs/daily/260415.md → .praxia/docs/misc/260417_untitled.md [git]
+.agent/docs/daily/260416.md → .praxia/docs/misc/260417_untitled-1.md [git]
+.agent/docs/plans/comprehensive_deployment_plan.md → .praxia/docs/plans/260417_comprehensive-deployment-plan.md [git]
+.agent/docs/plans/deployment_plan.md → .praxia/docs/plans/260416_deployment-plan.md [git]
+.agent/docs/plans/phase2_plan.md → .praxia/docs/plans/260416_phase2-plan.md [git]
+.agent/recon/260415.md → .praxia/docs/misc/260417_untitled-2.md [git]
+.agent/recon/260416.md → .praxia/docs/misc/260417_untitled-3.md [git]
