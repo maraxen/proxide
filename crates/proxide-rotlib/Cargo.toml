@@ -5,6 +5,7 @@ edition.workspace   = true
 authors.workspace   = true
 license.workspace   = true
 description = "Backbone-dependent rotamer library for protein sidechain placement"
+keywords    = ["rotamer", "sidechain", "backbone", "structural-biology"]
 
 [lib]
 crate-type = ["rlib"]

@@ -1,3 +1,35 @@
+//! Contact-degree algorithm for protein residue pairs (proxide-confind).
+//!
+//! Implements the ConFind contact-degree metric — a Rust/rayon port of
+//! Mosaist's `mstcondeg`. Given a protein backbone and a rotamer library,
+//! ConFind estimates how much rotamer freedom each residue loses due to
+//! sidechain clashes with its neighbours.
+//!
+//! # Algorithm phases
+//!
+//! - **Phase A — cache:** for each residue, enumerate its rotamers, prune
+//!   those clashing with backbone atoms, and store crowdedness
+//!   (fraction pruned).
+//! - **Phase B — contacts:** for each residue pair within the cutoff,
+//!   enumerate cross-rotamer clashes in parallel (rayon) to compute
+//!   collision probabilities.
+//! - **Phase C — freedom:** aggregate collision probabilities into a scalar
+//!   rotamer-freedom value per residue.
+//!
+//! # Typical usage
+//!
+//! ```ignore
+//! let cf = ConFind::new(rotlib, backbone, /*strict=*/false);
+//! let contacts = cf.contacts(&[ri_a, ri_b, ...])?;
+//! let freedom_a = cf.freedom(ri_a)?;
+//! ```
+//!
+//! # References
+//!
+//! - Mosaist protein design suite: <https://grigoryanlab.org/mosaist/>
+//! - Grigoryan G, Keating AE. "Structural specificity in coiled-coil
+//!   interactions." *Curr Opin Struct Biol.* 2008;18(4):477-483.
+
 pub mod cache;
 pub mod confind;
 pub mod contact_list;

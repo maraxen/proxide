@@ -1,7 +1,21 @@
+/// Cα–Cα distance cutoff (Å) for the neighbour list; residue pairs farther
+/// apart than this are never evaluated.
 pub const DCUT: f64 = 25.0;
+
+/// Hard-clash distance threshold (Å); any rotamer with a heavy-atom contact
+/// below this distance is treated as clashing and pruned.
 pub const CLASH_DIST: f64 = 2.0;
+
+/// Soft-contact distance threshold (Å); contacts below this distance
+/// contribute to the collision-probability accumulation.
 pub const CONT_DIST: f64 = 3.0;
+
+/// Lower bound on the collision-probability weight applied when two atoms
+/// are within `CONT_DIST`.
 pub const LO_COLL_PROB: f64 = 0.5;
+
+/// Upper bound on the collision-probability weight (applied at or below
+/// `CLASH_DIST`).
 pub const HI_COLL_PROB: f64 = 2.0;
 
 /// 18 amino acids placed as rotamers (GLY and PRO excluded).
