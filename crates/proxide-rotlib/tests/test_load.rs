@@ -4,12 +4,11 @@ use helpers::{write_minimal_lib, BinSpec, RotSpec, real_rotlib_path};
 use proxide_rotlib::{RotamerLibrary, RotlibError};
 
 const AA_NAMES: &[&str] = &[
-    "ALA","ARG","ASN","ASP","CYS","GLN","GLU","HIS",
-    "ILE","LEU","LYS","MET","PHE","SER","THR","TRP","TYR","VAL",
+    "ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS",
+    "ILE","LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL",
 ];
 
 #[test]
-#[ignore]
 fn test_load_all_aa_names_present() {
     let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
     for &aa in AA_NAMES {
@@ -18,7 +17,6 @@ fn test_load_all_aa_names_present() {
 }
 
 #[test]
-#[ignore]
 fn test_num_rotamers_sentinel_positive() {
     let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
     for &aa in AA_NAMES {

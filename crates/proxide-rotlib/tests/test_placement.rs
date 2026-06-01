@@ -152,6 +152,32 @@ fn test_place_ala_cb_exact_coords() {
     }
 }
 
+/// All 20 standard amino acids: atom count, finite coords, CB distance from CA.
+#[test]
+fn test_place_all_aa_smoke() {
+    const ALL_AA: &[&str] = &[
+        "ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY",
+        "HIS","ILE","LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL",
+    ];
+    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    for &aa in ALL_AA {
+        let placed = lib.place_rotamer(aa, 9999.0, 9999.0, 0, N, CA, C)
+            .unwrap_or_else(|e| panic!("{aa}: place_rotamer failed: {e}"));
+        let expected_na = lib.sidechain_atom_names(aa).unwrap().len();
+        assert_eq!(placed.atoms.len(), expected_na, "{aa}: atom count mismatch");
+        for atom in &placed.atoms {
+            for &v in &atom.xyz {
+                assert!(v.is_finite(), "{aa}/{}: non-finite coord", atom.name);
+            }
+        }
+        // All non-GLY have a CB; check bond distance to CA is chemically plausible.
+        if let Some(cb) = placed.atoms.iter().find(|a| a.name == "CB") {
+            let d = ((cb.xyz[0]-CA[0]).powi(2) + (cb.xyz[1]-CA[1]).powi(2) + (cb.xyz[2]-CA[2]).powi(2)).sqrt();
+            assert!(d > 1.2 && d < 1.8, "{aa}: CB-CA dist {d:.3} Å out of [1.2, 1.8]");
+        }
+    }
+}
+
 #[test]
 fn test_place_parity_mosaist() {
     // Reference CB in lab frame derived from rotlib.bin canonical coords
