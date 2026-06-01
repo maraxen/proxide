@@ -200,3 +200,39 @@ pub fn load_rotlib_or_skip() -> Option<Arc<RotamerLibrary>> {
     let path = Path::new(&path_str);
     RotamerLibrary::load(path).ok().map(Arc::new)
 }
+
+/// Load the small PDB fixture. Uses PDB_PATH env var or defaults to Mosaist testfiles.
+pub fn real_pdb_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("PDB_PATH") {
+        std::path::PathBuf::from(p)
+    } else {
+        std::path::PathBuf::from("/home/marielle/repos/mosaist/testfiles/small.pdb")
+    }
+}
+
+/// Load RotamerLibrary path. Uses ROTLIB_PATH env var or defaults to Mosaist testfiles.
+pub fn real_rotlib_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("ROTLIB_PATH") {
+        std::path::PathBuf::from(p)
+    } else {
+        std::path::PathBuf::from("/home/marielle/repos/mosaist/testfiles/rotlib.bin")
+    }
+}
+
+/// Load backbone from the real PDB fixture. Returns None if file not found.
+pub fn load_real_backbone() -> Option<Arc<ProteinBackbone>> {
+    let path = real_pdb_path();
+    if !path.exists() {
+        return None;
+    }
+    proxide_confind::load_pdb_f64(&path).ok().map(Arc::new)
+}
+
+/// Find the ResidueIndex for a given chain_id + res_id in a backbone.
+pub fn res_idx(bb: &ProteinBackbone, chain: &str, res_id: i32) -> proxide_confind::coords::ResidueIndex {
+    let i = bb.ids
+        .iter()
+        .position(|id| id.chain_id == chain && id.res_id == res_id)
+        .unwrap_or_else(|| panic!("residue {},{} not found", chain, res_id));
+    proxide_confind::coords::ResidueIndex(i as u32)
+}
