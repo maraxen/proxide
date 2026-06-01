@@ -59,6 +59,23 @@ const N: [f64; 3] = [0.0, 0.0, 0.0];
 const CA: [f64; 3] = [1.458, 0.0, 0.0];
 const C: [f64; 3] = [1.980, 1.418, 0.0];
 
+fn dihedral_angle(p1: [f64; 3], p2: [f64; 3], p3: [f64; 3], p4: [f64; 3]) -> f64 {
+    let sub  = |a: [f64; 3], b: [f64; 3]| [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+    let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
+        [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
+    };
+    let dot  = |a: [f64; 3], b: [f64; 3]| a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    let norm = |a: [f64; 3]| dot(a, a).sqrt();
+    let b1   = sub(p2, p1);
+    let b2   = sub(p3, p2);
+    let b3   = sub(p4, p3);
+    let n1   = cross(b1, b2);
+    let n2   = cross(b2, b3);
+    let b2n  = { let s = 1.0 / norm(b2); [b2[0]*s, b2[1]*s, b2[2]*s] };
+    let m1   = cross(n1, b2n);
+    f64::atan2(dot(m1, n2), dot(n1, n2))
+}
+
 #[test]
 fn test_place_ala_one_atom() {
     let (_lib_tmp, lib) = make_placement_lib();
@@ -202,5 +219,65 @@ fn test_place_parity_mosaist() {
             "CB coord[{i}]: expected {:.9}, got {:.9}, diff {:.2e}",
             REF_CB[i], xyz[i], (xyz[i] - REF_CB[i]).abs()
         );
+    }
+}
+
+/// Place MET A:2 from small.pdb using real φ/ψ computed from adjacent backbone atoms.
+/// Exercises the backbone_bin grid lookup path with non-sentinel angles.
+/// φ/ψ are negated per Mosaist sign convention (coords.rs fill_dihedrals).
+#[test]
+#[ignore]
+fn test_place_met_real_phi_psi_small_pdb() {
+    let pdb = helpers::real_pdb_path();
+    if !pdb.exists() { return; }
+    let rotlib = real_rotlib_path();
+    if !rotlib.exists() { return; }
+
+    let residues = helpers::parse_pdb_backbone(&pdb);
+    let find_res = |chain: char, seq: i32| -> &helpers::BackboneResidue {
+        residues.iter()
+            .find(|r| r.chain == chain && r.res_seq == seq)
+            .unwrap_or_else(|| panic!("residue {chain}:{seq} not found in small.pdb"))
+    };
+    let arg1 = find_res('A', 1);
+    let met2 = find_res('A', 2);
+    let lys3 = find_res('A', 3);
+
+    // Mosaist sign convention: negate the raw dihedral angle.
+    let phi = -dihedral_angle(arg1.c, met2.n, met2.ca, met2.c).to_degrees();
+    let psi = -dihedral_angle(met2.n, met2.ca, met2.c, lys3.n).to_degrees();
+
+    // Sanity-check: angles are real (non-sentinel) backbone-derived values.
+    assert!(phi.abs() < 500.0, "phi looks like a sentinel: {phi}");
+    assert!(psi.abs() < 500.0, "psi looks like a sentinel: {psi}");
+
+    let lib = RotamerLibrary::load(&rotlib).unwrap();
+
+    let placed = lib
+        .place_rotamer("MET", phi, psi, 0, met2.n, met2.ca, met2.c)
+        .unwrap();
+
+    // Real φ/ψ must route to a different bin than sentinel (exercises grid lookup).
+    let sentinel = lib
+        .place_rotamer("MET", 9999.0, 9999.0, 0, met2.n, met2.ca, met2.c)
+        .unwrap();
+    assert_ne!(
+        placed.id.bin_index,
+        sentinel.id.bin_index,
+        "real φ/ψ ({phi:.1}°, {psi:.1}°) must select a different bin than sentinel — \
+         backbone_bin grid lookup path is not being exercised"
+    );
+
+    // Chemical plausibility: CB within bonded distance from CA, all coords finite.
+    let cb = placed.atoms.iter().find(|a| a.name == "CB")
+        .expect("MET should have a CB atom");
+    let ca = met2.ca;
+    let d = ((cb.xyz[0]-ca[0]).powi(2) + (cb.xyz[1]-ca[1]).powi(2) + (cb.xyz[2]-ca[2]).powi(2)).sqrt();
+    assert!(d > 1.2 && d < 1.8,
+        "CB-CA dist {d:.3} Å out of chemically plausible range [1.2, 1.8]");
+    for atom in &placed.atoms {
+        for &v in &atom.xyz {
+            assert!(v.is_finite(), "MET/{}: non-finite coord in real-angle placement", atom.name);
+        }
     }
 }
