@@ -1,0 +1,31 @@
+---
+workspace: proxide
+session_id: b40e6073-0002-0000-0000-000000000000
+status: complete
+immediately_relevant:
+- file: crates/proxide-rotlib/tests/test_placement.rs
+  lines:
+  - 62
+  - 78
+  reason: 'dihedral_angle helper added (before first #[test])'
+- file: crates/proxide-rotlib/tests/test_placement.rs
+  lines:
+  - 221
+  - 283
+  reason: 'test_place_met_real_phi_psi_small_pdb: real phi/psi from MET A:2, asserts non-sentinel bin + chemical plausibility'
+active_dispatches: []
+task_id: 260601_phase6-backbone-bin
+phase: null
+goal_statement: Exercise backbone_bin non-sentinel path by placing MET A:2 from small.pdb using real phi/psi computed from adjacent backbone atoms
+context_refs:
+- phase: Phase 5
+  task_id: 260601_confind-fullprot-distogram
+  summary: 111x111 1DC7 distogram test (46b68f9); .praxia/ gitignore cleanup (20f70e9)
+failed_attempts: []
+open_questions: []
+deferred:
+- description: 'Debt #67: Dunbrack / multi-rotlib / PRO cis-trans support'
+  rationale: Architectural; separate item
+  recommended_phase: future
+lessons_refs: []
+---
