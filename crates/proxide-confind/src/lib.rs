@@ -18,10 +18,16 @@
 //!
 //! # Typical usage
 //!
-//! ```ignore
-//! let cf = ConFind::new(rotlib, backbone, /*strict=*/false);
-//! let contacts = cf.contacts(&[ri_a, ri_b, ...])?;
-//! let freedom_a = cf.freedom(ri_a)?;
+//! ```no_run
+//! use proxide_confind::{ConFind, ResidueIndex};
+//! use proxide_rotlib::RotamerLibrary;
+//! use std::{path::Path, sync::Arc};
+//!
+//! let rotlib = Arc::new(RotamerLibrary::load(Path::new("rotlib.bin")).unwrap());
+//! let backbone = Arc::new(proxide_confind::load_pdb_f64(Path::new("protein.pdb")).unwrap());
+//! let cf = ConFind::new(rotlib, backbone, false);
+//! let residues = vec![ResidueIndex(0), ResidueIndex(1)];
+//! let contacts = cf.contacts(&residues, 0.0).unwrap();
 //! ```
 //!
 //! # References

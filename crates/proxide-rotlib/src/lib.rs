@@ -7,9 +7,15 @@
 //!
 //! # Typical usage
 //!
-//! ```ignore
-//! let lib = RotamerLibrary::load(Path::new("rotlib.bin"))?;
-//! let placed = lib.place_rotamer("LEU", phi, psi, rot_index, n, ca, c)?;
+//! ```no_run
+//! use proxide_rotlib::RotamerLibrary;
+//! use std::path::Path;
+//!
+//! let lib = RotamerLibrary::load(Path::new("rotlib.bin")).unwrap();
+//! let n = [0.0f64, 0.0, 0.0];
+//! let ca = [1.458, 0.0, 0.0];
+//! let c = [2.009, 1.420, 0.0];
+//! let placed = lib.place_rotamer("LEU", -60.0, -40.0, 0, n, ca, c).unwrap();
 //! ```
 //!
 //! # References

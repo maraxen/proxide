@@ -118,13 +118,19 @@ pub fn run_phases_b_c(
     lo_cut: f64,
     hi_cut: f64,
 ) -> Result<ContactList, ConFindError> {
-    // B1 — collect canonical pairs.
+    // Build the query set once; used to filter pairs in B1 and accumulate in B2.
+    let of_interest: HashSet<ResidueIndex> = residues.iter().copied().collect();
+
+    // B1 — collect canonical pairs where BOTH endpoints are in the query set.
+    // Filtering here prevents NotCached errors when neighbors outside the subset
+    // were not cached by the caller.
     let pairs: Vec<(ResidueIndex, ResidueIndex)> = residues
         .par_iter()
         .flat_map(|&ri| {
+            let of_interest = &of_interest;
             neighbors_fn(ri)
                 .into_par_iter()
-                .filter(move |&rj| rj > ri)
+                .filter(move |&rj| rj > ri && of_interest.contains(&rj))
                 .map(move |rj| (ri, rj))
         })
         .collect();
@@ -140,7 +146,6 @@ pub fn run_phases_b_c(
         .collect::<Result<Vec<_>, _>>()?;
 
     // B2 — sequential collProb merge.
-    let of_interest: HashSet<ResidueIndex> = residues.iter().copied().collect();
     let mut coll_prob_local: HashMap<ResidueIndex, HashMap<Arc<RotamerId>, f64>> = HashMap::new();
 
     for ((_ri, _rj), (_, tuples)) in pairs.iter().zip(&pair_results) {

@@ -43,11 +43,11 @@ fn crowdedness_before_cache_returns_error() {
     let backbone = make_synthetic_backbone(2, 3.8);
     let confind = ConFind::new(rotlib, backbone.clone(), false);
 
-    // Without caching anything, accessing methods should fail appropriately
+    // neighbors() is purely geometric (CA grid built at construction) — no caching needed.
     let ri = ResidueIndex(0);
     let result = confind.neighbors(ri);
-    // neighbors returns empty vec for missing CA, which is safe
-    assert!(result.is_empty());
+    // Both residues are within DCUT (25 Å); expect a non-empty result.
+    assert!(!result.is_empty());
 }
 
 #[test]
