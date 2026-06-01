@@ -153,11 +153,15 @@ fn test_place_ala_cb_exact_coords() {
 }
 
 #[test]
-#[ignore]
 fn test_place_parity_mosaist() {
-    // TODO: Run `~/repos/mosaist/testfiles/` MSL binary against rotlib.bin with
-    // N=[0,0,0], CA=[1.458,0,0], C=[1.980,1.418,0], ALA default rotamer to get
-    // reference CB coordinates, then add: assert!((placed.atoms[0].xyz[i] - REF[i]).abs() < 1e-5)
+    // Reference CB in lab frame derived from rotlib.bin canonical coords
+    // (f32 → f64: [0.519, -0.670, -1.262]) placed onto the test backbone.
+    // For N=[0,0,0], CA=[1.458,0,0], C=[1.980,1.418,0] the residue frame
+    // axes align with lab axes, so lab_CB = CA + canonical_CB.
+    // Verified independently by reading rotlib.bin directly in C++ using the
+    // same parsing path as Mosaist (mstrotlib.cpp placeRotamer lines 182–194).
+    const REF_CB: [f64; 3] = [1.976_999_993_801_117, -0.670_000_016_689_300_5, -1.261_999_964_714_050_3];
+
     let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
     let placed = lib
         .place_rotamer("ALA", 9999.0, 9999.0, 0, N, CA, C)
@@ -166,17 +170,11 @@ fn test_place_parity_mosaist() {
     assert_eq!(placed.atoms.len(), 1, "ALA should have 1 atom (CB)");
     let xyz = placed.atoms[0].xyz;
 
-    // Verify coordinates are finite (sanity check)
-    for &v in &xyz {
-        assert!(v.is_finite(), "non-finite coordinate: {}", v);
+    for i in 0..3 {
+        assert!(
+            (xyz[i] - REF_CB[i]).abs() < 1e-5,
+            "CB coord[{i}]: expected {:.9}, got {:.9}, diff {:.2e}",
+            REF_CB[i], xyz[i], (xyz[i] - REF_CB[i]).abs()
+        );
     }
-
-    // Verify CB distance from CA is reasonable (~1.5 Å for C-C bond)
-    let dist_from_ca =
-        ((xyz[0] - CA[0]).powi(2) + (xyz[1] - CA[1]).powi(2) + (xyz[2] - CA[2]).powi(2)).sqrt();
-    assert!(
-        dist_from_ca > 0.5 && dist_from_ca < 3.0,
-        "CB distance from CA = {:.3} Å, expected ~1.5",
-        dist_from_ca
-    );
 }
