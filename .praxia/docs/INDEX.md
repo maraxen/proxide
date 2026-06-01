@@ -1,6 +1,7 @@
 # proxide Internal Docs
 
 ## Handoffs
+- [260601_proxconfind3-close](handoffs/260601_proxconfind3-close.md) — proxconfind3 session close: constrained-contacts + 1DC7 GLY/PRO parity tests; 52/36 pass/ignored; main at ac8776e
 - [260601_confind-parity-merge](handoffs/260601_confind-parity-merge.md) — confind parity tests merged to main; 48/36 pass/ignored; deferred: constrained_contacts + 1DC7 GLY/PRO parity
 - [260601_rotlib-fixture-expansion](handoffs/260601_rotlib-fixture-expansion.md) — Expand rotlib parity test fixtures: GLY/PRO coverage, real backbone diversity, distogram tests beyond small.pdb
 
