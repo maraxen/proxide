@@ -383,7 +383,7 @@ pub fn find_rotatable_groups(elements: &[String], bonds: &[[usize; 2]]) -> Vec<R
     }
 
     let is_hydrogen: Vec<bool> = elements.iter().map(|e| e.to_uppercase() == "H").collect();
-    let is_nitrogen: Vec<bool> = elements.iter().map(|e| e.to_uppercase() == "N").collect();
+    let _is_nitrogen: Vec<bool> = elements.iter().map(|e| e.to_uppercase() == "N").collect();
 
     let mut groups = Vec::new();
 

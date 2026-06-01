@@ -35,12 +35,12 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
             continue;
         }
 
-        if line.starts_with('>') {
+        if let Some(header_content) = line.strip_prefix('>') {
             if !current_header.is_empty() {
                 raw_records.push((current_header.clone(), current_seq.clone()));
                 current_seq.clear();
             }
-            current_header = line[1..].to_string();
+            current_header = header_content.to_string();
         } else {
             current_seq.push(line);
         }

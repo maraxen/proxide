@@ -813,6 +813,7 @@ fn lookup_improper<'a>(
     best_match
 }
 
+#[allow(clippy::too_many_arguments)]
 fn resolve_14_params(
     pairs_14: &[[usize; 2]],
     charges: &[f32],

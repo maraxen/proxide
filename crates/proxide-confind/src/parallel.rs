@@ -1,0 +1,197 @@
+use crate::cache::{weight_of_available_rotamers, ResidueCache};
+use crate::contact_list::ContactList;
+use crate::coords::ResidueIndex;
+use crate::error::ConFindError;
+use crate::params::{aa_propensity, AA_NAMES, CONT_DIST};
+use dashmap::DashMap;
+use proxide_rotlib::{RotamerId, RotamerLibrary};
+use rayon::prelude::*;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+/// One pairwise clash event, emitted by contact_degree_with_clashes for Phase B2.
+pub struct ClashTuple {
+    pub res_a: ResidueIndex,
+    pub rot_a: Arc<RotamerId>,
+    /// aaPropB * rotProbB
+    pub contrib_to_a: f64,
+    pub res_b: ResidueIndex,
+    pub rot_b: Arc<RotamerId>,
+    /// aaPropA * rotProbA
+    pub contrib_to_b: f64,
+}
+
+/// Compute raw CD and emit ClashTuples for one residue pair.
+///
+/// Iterates over all surviving rotamer pairs across all AAs, finds SC–SC contacts
+/// within CONT_DIST, accumulates CD numerator and ClashTuples for collProb.
+pub fn contact_degree_raw(
+    res_a: ResidueIndex,
+    res_b: ResidueIndex,
+    cache_a: &ResidueCache,
+    cache_b: &ResidueCache,
+    rotlib: &RotamerLibrary,
+    aa_allowed_a: Option<&[&str]>,
+    aa_allowed_b: Option<&[&str]>,
+) -> Result<(f64, Vec<ClashTuple>), ConFindError> {
+    let aa_set_a: HashSet<&str> = match aa_allowed_a {
+        Some(list) => list.iter().copied().collect(),
+        None => AA_NAMES.iter().copied().collect(),
+    };
+    let aa_set_b: HashSet<&str> = match aa_allowed_b {
+        Some(list) => list.iter().copied().collect(),
+        None => AA_NAMES.iter().copied().collect(),
+    };
+
+    let mut cd_raw: f64 = 0.0;
+    let mut tuples: Vec<ClashTuple> = Vec::new();
+
+    // Outer loop: aa at resA.
+    for &aa_a in &AA_NAMES {
+        if !aa_set_a.contains(aa_a) {
+            continue;
+        }
+        let grid_a = match cache_a.rotamer_grids.get(aa_a).and_then(|g| g.as_ref()) {
+            Some(g) => g,
+            None => continue,
+        };
+
+        // Inner loop: aa at resB.
+        for &aa_b in &AA_NAMES {
+            if !aa_set_b.contains(aa_b) {
+                continue;
+            }
+            let grid_b = match cache_b.rotamer_grids.get(aa_b).and_then(|g| g.as_ref()) {
+                Some(g) => g,
+                None => continue,
+            };
+
+            // Enumerate contacts: for each atom in grid_a, query grid_b.
+            for ai in 0..grid_a.point_size() {
+                let rot_a = grid_a.get_tag(ai);
+                let point_a = grid_a.get_point(ai);
+                let hits = grid_b.points_within(point_a, 0.0, CONT_DIST);
+
+                for rot_b in hits {
+                    let prob_a = rotlib.rotamer_probability_by_id(rot_a).unwrap_or(0.0);
+                    let prop_a = aa_propensity(aa_a);
+                    let prob_b = rotlib.rotamer_probability_by_id(&rot_b).unwrap_or(0.0);
+                    let prop_b = aa_propensity(aa_b);
+
+                    cd_raw += prop_a * prop_b * prob_a * prob_b;
+
+                    tuples.push(ClashTuple {
+                        res_a,
+                        rot_a: rot_a.clone(),
+                        contrib_to_a: prop_b * prob_b,
+                        res_b,
+                        rot_b,
+                        contrib_to_b: prop_a * prob_a,
+                    });
+                }
+            }
+        }
+    }
+
+    // Normalize.
+    let denom = weight_of_available_rotamers(cache_a, rotlib, &aa_set_a)
+        * weight_of_available_rotamers(cache_b, rotlib, &aa_set_b);
+    let cd = if denom == 0.0 { 0.0 } else { cd_raw / denom };
+
+    Ok((cd, tuples))
+}
+
+/// Phase B1: parallel enumeration of all canonical (ri < rj) neighbor pairs.
+/// Phase B2: sequential collProb merge (asymmetric ofInterest).
+/// Phase C: parallel freedom computation.
+///
+/// Returns a ContactList filtered by `cd_cut`.
+#[allow(clippy::too_many_arguments)]
+pub fn run_phases_b_c(
+    residues: &[ResidueIndex],
+    cd_cut: f64,
+    cache_map: &DashMap<ResidueIndex, Arc<ResidueCache>>,
+    rotlib: &RotamerLibrary,
+    neighbors_fn: impl Fn(ResidueIndex) -> Vec<ResidueIndex> + Sync,
+    coll_prob_out: &DashMap<ResidueIndex, HashMap<Arc<RotamerId>, f64>>,
+    freedom_out: &DashMap<ResidueIndex, f64>,
+    lo_cut: f64,
+    hi_cut: f64,
+) -> Result<ContactList, ConFindError> {
+    // B1 — collect canonical pairs.
+    let pairs: Vec<(ResidueIndex, ResidueIndex)> = residues
+        .par_iter()
+        .flat_map(|&ri| {
+            neighbors_fn(ri)
+                .into_par_iter()
+                .filter(move |&rj| rj > ri)
+                .map(move |rj| (ri, rj))
+        })
+        .collect();
+
+    // B1 — compute CD for each pair in parallel.
+    let pair_results: Vec<(f64, Vec<ClashTuple>)> = pairs
+        .par_iter()
+        .map(|&(ri, rj)| {
+            let ca = cache_map.get(&ri).ok_or(ConFindError::NotCached(ri))?;
+            let cb = cache_map.get(&rj).ok_or(ConFindError::NotCached(rj))?;
+            contact_degree_raw(ri, rj, &ca, &cb, rotlib, None, None)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // B2 — sequential collProb merge.
+    let of_interest: HashSet<ResidueIndex> = residues.iter().copied().collect();
+    let mut coll_prob_local: HashMap<ResidueIndex, HashMap<Arc<RotamerId>, f64>> = HashMap::new();
+
+    for ((_ri, _rj), (_, tuples)) in pairs.iter().zip(&pair_results) {
+        for t in tuples {
+            *coll_prob_local
+                .entry(t.res_a)
+                .or_default()
+                .entry(t.rot_a.clone())
+                .or_insert(0.0) += t.contrib_to_a;
+            if of_interest.contains(&t.res_b) {
+                *coll_prob_local
+                    .entry(t.res_b)
+                    .or_default()
+                    .entry(t.rot_b.clone())
+                    .or_insert(0.0) += t.contrib_to_b;
+            }
+        }
+    }
+    // Ensure all query residues have an entry (possibly empty).
+    for &ri in residues {
+        coll_prob_local.entry(ri).or_default();
+    }
+    for (ri, map) in coll_prob_local {
+        coll_prob_out.insert(ri, map);
+    }
+
+    // Phase C — freedom (parallel over residues, after B2 completes).
+    residues
+        .par_iter()
+        .try_for_each(|&ri| -> Result<(), ConFindError> {
+            let cp = coll_prob_out.get(&ri).ok_or(ConFindError::NotCached(ri))?;
+            let cache = cache_map.get(&ri).ok_or(ConFindError::NotCached(ri))?;
+            let f = crate::freedom::compute_freedom(
+                &cp,
+                cache.surviving_rotamers.len(),
+                cache.n_library_rotamers,
+                lo_cut,
+                hi_cut,
+                2,
+            );
+            freedom_out.insert(ri, f);
+            Ok(())
+        })?;
+
+    // Build ContactList.
+    let mut contact = ContactList::default();
+    for (&(ri, rj), (cd, _)) in pairs.iter().zip(&pair_results) {
+        if *cd > cd_cut {
+            contact.pairs.push((ri, rj));
+            contact.degrees.push(*cd);
+        }
+    }
+    Ok(contact)
+}
