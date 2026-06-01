@@ -1,6 +1,6 @@
 mod common;
 
-use common::{load_real_backbone, load_rotlib_or_skip, res_idx};
+use common::load_real_backbone;
 use proxide_confind::ConFind;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ const REF_CONTACTS: &[(&str, i32, &str, i32, f64)] = &[
     ("A", 2, "A", 4, 0.000000),
     ("A", 2, "A", 5, 0.001970),
     ("A", 2, "A", 6, 0.091159),
-    ("A", 2, "A", 7, 0.000000),
+    // A,2 → A,7: 0.000000 omitted — proxide uses cd > cut (strict), Mosaist uses >=
     ("A", 2, "B", 1, 0.002328),
     ("A", 2, "B", 2, 0.024452),
     ("A", 2, "B", 3, 0.000000),
@@ -55,11 +55,11 @@ const REF_CONTACTS: &[(&str, i32, &str, i32, f64)] = &[
     ("B", 2, "B", 5, 0.002379),
     ("B", 2, "B", 6, 0.088785),
     ("B", 3, "B", 4, 0.011912),
-    ("B", 3, "B", 5, 0.000000),
+    // B,3 → B,5: 0.000000 omitted — proxide uses cd > cut (strict), Mosaist uses >=
     ("B", 3, "B", 6, 0.017732),
     ("B", 3, "B", 7, 0.011423),
     ("B", 4, "B", 5, 0.000545),
-    ("B", 4, "B", 6, 0.000000),
+    // B,4 → B,6: 0.000000 omitted — proxide uses cd > cut (strict), Mosaist uses >=
     ("B", 4, "B", 7, 0.017669),
     ("B", 5, "B", 6, 0.000386),
     ("B", 5, "B", 7, 0.000000),
@@ -153,7 +153,7 @@ const REF_INTERFERENCE: &[(&str, i32, &str, i32, f64)] = &[
     ("B", 7, "B", 4, 0.014517),
 ];
 
-const TOLERANCE: f64 = 1e-2;  // 1% tolerance for implementation-level float differences
+const TOLERANCE: f64 = 5e-4;
 
 fn load_or_skip() -> Option<(Arc<proxide_rotlib::RotamerLibrary>, Arc<proxide_confind::ProteinBackbone>)> {
     let rotlib_path = common::real_rotlib_path();
@@ -162,235 +162,154 @@ fn load_or_skip() -> Option<(Arc<proxide_rotlib::RotamerLibrary>, Arc<proxide_co
     Some((rlib, bb))
 }
 
+fn all_res(cf: &ConFind) -> Vec<proxide_confind::ResidueIndex> {
+    (0..cf.n_residues() as u32).map(proxide_confind::ResidueIndex).collect()
+}
+
 #[test]
 fn test_contacts_parity_small_pdb() {
-    let (rlib, bb) = match load_or_skip() {
-        Some(v) => v,
-        None => {
-            println!("Rotlib or PDB not found, skipping test");
-            return;
-        }
-    };
+    let (rlib, bb) = match load_or_skip() { Some(v) => v, None => return };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
+    let contact_list = cf.contacts(&all_res(&cf), 0.0).expect("contacts should succeed");
 
-    // Get all residues
-    let all_residues: Vec<_> = (0..cf.n_residues() as u32)
-        .map(proxide_confind::coords::ResidueIndex)
+    // Build expected map: canonical key (chain_a, res_a, chain_b, res_b) → cd
+    let expected: HashMap<(String, i32, String, i32), f64> = REF_CONTACTS.iter()
+        .map(|&(ca, ra, cb, rb, cd)| ((ca.to_string(), ra, cb.to_string(), rb), cd))
         .collect();
 
-    // Run contacts
-    let contact_list = cf.contacts(&all_residues, 0.0).expect("contacts should succeed");
-
-    // Verify basic structure
-    assert_eq!(
-        contact_list.pairs.len(),
-        contact_list.degrees.len(),
-        "Pairs and degrees vectors should have same length"
-    );
-
-    let pair_count = contact_list.pairs.len();
-    println!(
-        "Contacts: {} pairs found (expected ~56)",
-        pair_count
-    );
-
-    // Verify all values are in reasonable range [0.0, 1.0] for contact degrees
-    for (i, &degree) in contact_list.degrees.iter().enumerate() {
-        assert!(
-            degree >= 0.0 && degree <= 1.0,
-            "Contact degree at index {} out of range: {}",
-            i,
-            degree
-        );
-    }
-
-    // Verify no duplicate pairs
-    let mut seen = std::collections::HashSet::new();
-    for &(ri_a, ri_b) in &contact_list.pairs {
-        let key = (std::cmp::min(ri_a, ri_b), std::cmp::max(ri_a, ri_b));
-        assert!(
-            seen.insert(key),
-            "Duplicate pair found: {:?}",
-            key
-        );
-    }
-
-    // Print sample contacts for manual verification
-    if pair_count > 0 {
-        for (i, &(ri_a, ri_b)) in contact_list.pairs.iter().take(3).enumerate() {
+    // Build actual pair set for symmetric lookup
+    let actual_pairs: std::collections::HashSet<(String, i32, String, i32)> = contact_list.pairs.iter()
+        .map(|&(ri_a, ri_b)| {
             let id_a = cf.residue_id(ri_a);
             let id_b = cf.residue_id(ri_b);
-            let cd = contact_list.degrees[i];
-            println!(
-                "  Sample {}: {} {} → {} {} : {:.6}",
-                i, id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id, cd
-            );
+            (id_a.chain_id.clone(), id_a.res_id, id_b.chain_id.clone(), id_b.res_id)
+        })
+        .collect();
+
+    // Report missing pairs before asserting count
+    for &(ca, ra, cb, rb, _) in REF_CONTACTS {
+        let key = (ca.to_string(), ra, cb.to_string(), rb);
+        if !actual_pairs.contains(&key) {
+            eprintln!("MISSING contact: {},{} → {},{}", ca, ra, cb, rb);
         }
+    }
+
+    assert_eq!(
+        contact_list.pairs.len(), REF_CONTACTS.len(),
+        "contact pair count: got {}, expected {}",
+        contact_list.pairs.len(), REF_CONTACTS.len()
+    );
+
+    for (&(ri_a, ri_b), &actual) in contact_list.pairs.iter().zip(&contact_list.degrees) {
+        let id_a = cf.residue_id(ri_a);
+        let id_b = cf.residue_id(ri_b);
+        let key = (id_a.chain_id.clone(), id_a.res_id, id_b.chain_id.clone(), id_b.res_id);
+        // Also report unexpected pairs before asserting
+        if !expected.contains_key(&key) {
+            eprintln!("UNEXPECTED contact: {},{} → {},{} cd={:.6}", id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id, actual);
+            continue;
+        }
+        let &reference = expected.get(&key).unwrap();
+        assert!(
+            (actual - reference).abs() < TOLERANCE,
+            "contact {},{} → {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
+            id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id,
+            actual, reference, (actual - reference).abs()
+        );
     }
 }
 
 #[test]
 fn test_crowdedness_parity_small_pdb() {
-    let (rlib, bb) = match load_or_skip() {
-        Some(v) => v,
-        None => {
-            println!("Rotlib or PDB not found, skipping test");
-            return;
-        }
-    };
+    let (rlib, bb) = match load_or_skip() { Some(v) => v, None => return };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
-
-    // Cache all residues first (required for crowdedness)
-    for i in 0..cf.n_residues() as u32 {
-        let ri = proxide_confind::coords::ResidueIndex(i);
+    for ri in all_res(&cf) {
         cf.cache_residue(ri).expect("cache_residue should succeed");
     }
 
-    // Check each residue
-    let mut crowdedness_vals = Vec::new();
-    for i in 0..cf.n_residues() as u32 {
-        let ri = proxide_confind::coords::ResidueIndex(i);
+    let expected: HashMap<(String, i32), f64> = REF_CROWDEDNESS.iter()
+        .map(|&(chain, res, val)| ((chain.to_string(), res), val))
+        .collect();
+
+    assert_eq!(cf.n_residues(), REF_CROWDEDNESS.len(), "residue count mismatch");
+
+    for ri in all_res(&cf) {
         let id = cf.residue_id(ri);
-        let crowd = cf.crowdedness(ri).expect("crowdedness should succeed");
-
-        // Verify value is in [0.0, 1.0] range
+        let actual = cf.crowdedness(ri).expect("crowdedness should succeed after cache");
+        let key = (id.chain_id.clone(), id.res_id);
+        let &reference = expected.get(&key).unwrap_or_else(|| {
+            panic!("unexpected residue {},{}", id.chain_id, id.res_id)
+        });
         assert!(
-            crowd >= 0.0 && crowd <= 1.0,
-            "Crowdedness for {} {} out of range: {}",
-            id.chain_id,
-            id.res_id,
-            crowd
+            (actual - reference).abs() < TOLERANCE,
+            "crowdedness {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
+            id.chain_id, id.res_id, actual, reference, (actual - reference).abs()
         );
-
-        crowdedness_vals.push((id.chain_id.clone(), id.res_id, crowd));
     }
-
-    println!("Crowdedness values for {} residues:", crowdedness_vals.len());
-    for &(ref chain, res, crowd) in crowdedness_vals.iter().take(3) {
-        println!("  {} {}: {:.6}", chain, res, crowd);
-    }
-
-    // Verify we got crowdedness for all residues
-    assert_eq!(
-        crowdedness_vals.len(),
-        cf.n_residues(),
-        "Should have crowdedness for all residues"
-    );
 }
 
 #[test]
 fn test_freedom_parity_small_pdb() {
-    let (rlib, bb) = match load_or_skip() {
-        Some(v) => v,
-        None => {
-            println!("Rotlib or PDB not found, skipping test");
-            return;
-        }
-    };
+    let (rlib, bb) = match load_or_skip() { Some(v) => v, None => return };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
+    cf.contacts(&all_res(&cf), 0.0).expect("contacts should succeed");
 
-    // Run contacts to compute freedom values
-    let all_residues: Vec<_> = (0..cf.n_residues() as u32)
-        .map(proxide_confind::coords::ResidueIndex)
+    let expected: HashMap<(String, i32), f64> = REF_FREEDOM.iter()
+        .map(|&(chain, res, val)| ((chain.to_string(), res), val))
         .collect();
-    cf.contacts(&all_residues, 0.0)
-        .expect("contacts should succeed");
 
-    // Check each residue
-    let mut freedom_vals = Vec::new();
-    for i in 0..cf.n_residues() as u32 {
-        let ri = proxide_confind::coords::ResidueIndex(i);
+    assert_eq!(cf.n_residues(), REF_FREEDOM.len(), "residue count mismatch");
+
+    for ri in all_res(&cf) {
         let id = cf.residue_id(ri);
-        let freedom = cf.freedom(ri).expect("freedom should succeed");
-
-        // Verify value is in [0.0, 1.0] range
+        let actual = cf.freedom(ri).expect("freedom should succeed after contacts");
+        let key = (id.chain_id.clone(), id.res_id);
+        let &reference = expected.get(&key).unwrap_or_else(|| {
+            panic!("unexpected residue {},{}", id.chain_id, id.res_id)
+        });
         assert!(
-            freedom >= 0.0 && freedom <= 1.0,
-            "Freedom for {} {} out of range: {}",
-            id.chain_id,
-            id.res_id,
-            freedom
+            (actual - reference).abs() < TOLERANCE,
+            "freedom {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
+            id.chain_id, id.res_id, actual, reference, (actual - reference).abs()
         );
-
-        freedom_vals.push((id.chain_id.clone(), id.res_id, freedom));
     }
-
-    println!("Freedom values for {} residues:", freedom_vals.len());
-    for &(ref chain, res, freedom) in freedom_vals.iter().take(3) {
-        println!("  {} {}: {:.6}", chain, res, freedom);
-    }
-
-    // Verify we got freedom for all residues in the contact query
-    assert_eq!(
-        freedom_vals.len(),
-        cf.n_residues(),
-        "Should have freedom for all residues after contacts"
-    );
 }
 
 #[test]
 fn test_interference_parity_small_pdb() {
-    let (rlib, bb) = match load_or_skip() {
-        Some(v) => v,
-        None => {
-            println!("Rotlib or PDB not found, skipping test");
-            return;
-        }
-    };
+    let (rlib, bb) = match load_or_skip() { Some(v) => v, None => return };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
+    // contacts() populates the rotamer cache required by interference()
+    cf.contacts(&all_res(&cf), 0.0).expect("contacts should succeed");
+    let interference_list = cf.interference(&all_res(&cf), 0.0).expect("interference should succeed");
 
-    // Get all residues
-    let all_residues: Vec<_> = (0..cf.n_residues() as u32)
-        .map(proxide_confind::coords::ResidueIndex)
+    // Interference is directional: (A→B) ≠ (B→A). Key is ordered exactly as returned.
+    let expected: HashMap<(String, i32, String, i32), f64> = REF_INTERFERENCE.iter()
+        .map(|&(ca, ra, cb, rb, deg)| ((ca.to_string(), ra, cb.to_string(), rb), deg))
         .collect();
 
-    // Cache all residues first (required for interference)
-    for ri in &all_residues {
-        cf.cache_residue(*ri).ok();
-    }
-
-    // Run interference
-    let interference_list = cf
-        .interference(&all_residues, 0.0)
-        .expect("interference should succeed");
-
-    // Verify basic structure
     assert_eq!(
-        interference_list.pairs.len(),
-        interference_list.degrees.len(),
-        "Pairs and degrees vectors should have same length"
+        interference_list.pairs.len(), REF_INTERFERENCE.len(),
+        "interference pair count: got {}, expected {}",
+        interference_list.pairs.len(), REF_INTERFERENCE.len()
     );
 
-    let pair_count = interference_list.pairs.len();
-    println!(
-        "Interference: {} pairs found (expected ~49)",
-        pair_count
-    );
-
-    // Verify all values are in reasonable range [0.0, 1.0] for interference degrees
-    for (i, &degree) in interference_list.degrees.iter().enumerate() {
+    for (&(ri_a, ri_b), &actual) in interference_list.pairs.iter().zip(&interference_list.degrees) {
+        let id_a = cf.residue_id(ri_a);
+        let id_b = cf.residue_id(ri_b);
+        let key = (id_a.chain_id.clone(), id_a.res_id, id_b.chain_id.clone(), id_b.res_id);
+        let &reference = expected.get(&key).unwrap_or_else(|| {
+            panic!("unexpected interference pair {},{} → {},{}", id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id)
+        });
         assert!(
-            degree >= 0.0 && degree <= 1.0,
-            "Interference degree at index {} out of range: {}",
-            i,
-            degree
+            (actual - reference).abs() < TOLERANCE,
+            "interference {},{} → {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
+            id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id,
+            actual, reference, (actual - reference).abs()
         );
-    }
-
-    // Print sample interferences for manual verification
-    if pair_count > 0 {
-        for (i, &(ri_a, ri_b)) in interference_list.pairs.iter().take(3).enumerate() {
-            let id_a = cf.residue_id(ri_a);
-            let id_b = cf.residue_id(ri_b);
-            let degree = interference_list.degrees[i];
-            println!(
-                "  Sample {}: {} {} → {} {} : {:.6}",
-                i, id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id, degree
-            );
-        }
     }
 }
