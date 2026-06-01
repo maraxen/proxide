@@ -89,6 +89,26 @@ pub fn real_pdb_path() -> std::path::PathBuf {
     }
 }
 
+/// Load the 1DC7 PDB fixture (124-residue protein, contains GLY and PRO).
+/// Uses DC7_PDB_PATH env var if set, else mosaist's `1DC7.pdb`.
+pub fn real_pdb_path_1dc7() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("DC7_PDB_PATH") {
+        std::path::PathBuf::from(p)
+    } else {
+        std::path::PathBuf::from("/home/marielle/repos/mosaist/testfiles/1DC7.pdb")
+    }
+}
+
+/// Load the 2ZTA PDB fixture (GCN4 leucine zipper, 31 residues chain A, 14 unique AAs).
+/// Uses PDB_2ZTA_PATH env var if set, else mosaist's `2ZTA.pdb`.
+pub fn real_pdb_path_2zta() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("PDB_2ZTA_PATH") {
+        std::path::PathBuf::from(p)
+    } else {
+        std::path::PathBuf::from("/home/marielle/repos/mosaist/testfiles/2ZTA.pdb")
+    }
+}
+
 /// A residue with complete backbone coordinates parsed from a PDB ATOM record.
 #[derive(Clone, Debug)]
 pub struct BackboneResidue {
