@@ -228,6 +228,24 @@ pub fn load_real_backbone() -> Option<Arc<ProteinBackbone>> {
     proxide_confind::load_pdb_f64(&path).ok().map(Arc::new)
 }
 
+/// Load path to 1DC7.pdb. Uses DC7_PDB_PATH env var or defaults to Mosaist testfiles.
+pub fn real_pdb_path_1dc7() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("DC7_PDB_PATH") {
+        std::path::PathBuf::from(p)
+    } else {
+        std::path::PathBuf::from("/home/marielle/repos/mosaist/testfiles/1DC7.pdb")
+    }
+}
+
+/// Load backbone from 1DC7.pdb fixture. Returns None if file not found.
+pub fn load_1dc7_backbone() -> Option<Arc<ProteinBackbone>> {
+    let path = real_pdb_path_1dc7();
+    if !path.exists() {
+        return None;
+    }
+    proxide_confind::load_pdb_f64(&path).ok().map(Arc::new)
+}
+
 /// Find the ResidueIndex for a given chain_id + res_id in a backbone.
 pub fn res_idx(bb: &ProteinBackbone, chain: &str, res_id: i32) -> proxide_confind::coords::ResidueIndex {
     let i = bb.ids
