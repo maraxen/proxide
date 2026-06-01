@@ -43,10 +43,11 @@ pub fn contact_degree_raw(
         None => AA_NAMES.iter().copied().collect(),
     };
 
-    let mut cd_raw: f64 = 0.0;
-    let mut tuples: Vec<ClashTuple> = Vec::new();
+    // First pass: collect clashing (rot_a, rot_b) pairs de-duplicated by rotamer identity.
+    // Mosaist uses clashing[rID][p[i]] = true to ensure each rotamer pair counts once
+    // regardless of how many atom-atom contacts they share. Proxide must match this.
+    let mut clashing: HashMap<Arc<RotamerId>, HashSet<Arc<RotamerId>>> = HashMap::new();
 
-    // Outer loop: aa at resA.
     for &aa_a in &AA_NAMES {
         if !aa_set_a.contains(aa_a) {
             continue;
@@ -56,7 +57,6 @@ pub fn contact_degree_raw(
             None => continue,
         };
 
-        // Inner loop: aa at resB.
         for &aa_b in &AA_NAMES {
             if !aa_set_b.contains(aa_b) {
                 continue;
@@ -66,30 +66,35 @@ pub fn contact_degree_raw(
                 None => continue,
             };
 
-            // Enumerate contacts: for each atom in grid_a, query grid_b.
             for ai in 0..grid_a.point_size() {
                 let rot_a = grid_a.get_tag(ai);
                 let point_a = grid_a.get_point(ai);
-                let hits = grid_b.points_within(point_a, 0.0, CONT_DIST);
-
-                for rot_b in hits {
-                    let prob_a = rotlib.rotamer_probability_by_id(rot_a).unwrap_or(0.0);
-                    let prop_a = aa_propensity(aa_a);
-                    let prob_b = rotlib.rotamer_probability_by_id(&rot_b).unwrap_or(0.0);
-                    let prop_b = aa_propensity(aa_b);
-
-                    cd_raw += prop_a * prop_b * prob_a * prob_b;
-
-                    tuples.push(ClashTuple {
-                        res_a,
-                        rot_a: rot_a.clone(),
-                        contrib_to_a: prop_b * prob_b,
-                        res_b,
-                        rot_b,
-                        contrib_to_b: prop_a * prob_a,
-                    });
+                for rot_b in grid_b.points_within(point_a, 0.0, CONT_DIST) {
+                    clashing.entry(rot_a.clone()).or_default().insert(rot_b);
                 }
             }
+        }
+    }
+
+    // Second pass: accumulate cd_raw and ClashTuples from unique rotamer pairs.
+    let mut cd_raw: f64 = 0.0;
+    let mut tuples: Vec<ClashTuple> = Vec::new();
+
+    for (rot_a, rot_b_set) in &clashing {
+        let prob_a = rotlib.rotamer_probability_by_id(rot_a).unwrap_or(0.0);
+        let prop_a = aa_propensity(&rot_a.aa);
+        for rot_b in rot_b_set {
+            let prob_b = rotlib.rotamer_probability_by_id(rot_b).unwrap_or(0.0);
+            let prop_b = aa_propensity(&rot_b.aa);
+            cd_raw += prop_a * prop_b * prob_a * prob_b;
+            tuples.push(ClashTuple {
+                res_a,
+                rot_a: rot_a.clone(),
+                contrib_to_a: prop_b * prob_b,
+                res_b,
+                rot_b: rot_b.clone(),
+                contrib_to_b: prop_a * prob_a,
+            });
         }
     }
 

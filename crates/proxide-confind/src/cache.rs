@@ -121,18 +121,19 @@ pub fn cache_residue_impl(
                     continue;
                 }
                 let hits = bb_grid.points_within(atom.xyz, 0.0, CLASH_DIST);
+                // Accumulate interference for ALL foreign residues in this atom's clash list
+                // (matches Mosaist: interference loop runs over full closeOnes before k-loop break).
+                let mut clashed_here = false;
                 for bb_atom_idx in hits {
                     let res_b = bb_atom_res[bb_atom_idx];
                     if res_b == ri {
-                        continue; // self-clash — skip
+                        continue;
                     }
+                    clashed_here = true;
                     prune = true;
-
                     if aa == "ALA" {
                         permanent_contacts_set.insert(bb_atom_idx);
                     }
-
-                    // First-encounter guard per resB per rotamer.
                     if !seen_res_b.contains(&res_b) {
                         seen_res_b.insert(res_b);
                         *interference
@@ -141,11 +142,10 @@ pub fn cache_residue_impl(
                             .entry(aa.to_string())
                             .or_insert(0.0) += aa_propensity(aa) * rot_prob / 100.0;
                     }
-
-                    if aa != "ALA" {
-                        // Non-ALA: stop after first backbone clash atom found.
-                        break 'atom_loop;
-                    }
+                }
+                // For non-ALA: exit after the first SC atom that clashes (matches Mosaist).
+                if clashed_here && aa != "ALA" {
+                    break 'atom_loop;
                 }
             }
 

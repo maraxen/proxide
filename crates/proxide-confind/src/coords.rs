@@ -227,8 +227,10 @@ fn fill_dihedrals(bb: &mut [ResidueBackbone], chain_map: &[usize]) {
         for (d_pos, &bb_i) in dense_to_bb.iter().enumerate() {
             let d = &dihedrals[d_pos];
             // phi=None at chain N-terminus; psi=None at chain C-terminus.
-            bb[bb_i].phi = d.phi.map(|r| r.to_degrees()).unwrap_or(9999.0);
-            bb[bb_i].psi = d.psi.map(|r| r.to_degrees()).unwrap_or(9999.0);
+            // Negate to match Mosaist's dihedral sign convention: Mosaist computes
+            // dihedral(p1-p2, p3-p2) with reversed first vector vs. atan2 formula.
+            bb[bb_i].phi = d.phi.map(|r| -r.to_degrees()).unwrap_or(9999.0);
+            bb[bb_i].psi = d.psi.map(|r| -r.to_degrees()).unwrap_or(9999.0);
         }
     }
 }
