@@ -12,9 +12,17 @@ use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+/// ConFind session for a single protein structure.
+///
+/// Holds the rotamer library, backbone geometry, spatial grids, and all
+/// per-residue caches accumulated during `contacts()` calls.
 pub struct ConFind {
+    /// Rotamer library used for sidechain enumeration.
     pub rotlib: Arc<RotamerLibrary>,
+    /// If `true`, treat any residue without a complete set of backbone atoms
+    /// as an error rather than skipping it silently.
     pub strict: bool,
+    /// Full protein backbone extracted from the processed structure.
     pub backbone: Arc<ProteinBackbone>,
 
     bb_grid: Arc<ProximityGrid<usize>>,   // tag = index into bb_atoms
@@ -264,6 +272,7 @@ impl ConFind {
             .ok_or(ConFindError::FreedomNotComputed(ri))
     }
 
+    /// Map a `ResidueIndex` back to its chain/sequence `ResidueId` for output.
     pub fn residue_id(&self, ri: ResidueIndex) -> &ResidueId {
         &self.backbone.ids[ri.0 as usize]
     }

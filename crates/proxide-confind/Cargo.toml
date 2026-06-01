@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "ConFind contact-degree algorithm — Rust/rayon reimplementation of Mosaist mstcondeg"
+keywords    = ["protein", "contact", "rotamer", "structural-biology"]
 
 [lib]
 crate-type = ["rlib"]

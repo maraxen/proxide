@@ -14,25 +14,41 @@ impl std::fmt::Display for ResidueIndex {
     }
 }
 
+/// Backbone geometry for a single protein residue in f64 precision.
+///
+/// Atom positions are `None` when the atom is absent from the PDB.
+/// Dihedral angles use the sentinel `9999.0` when the angle cannot be
+/// computed (terminal residues or missing predecessors/successors).
 #[derive(Debug, Clone)]
 pub struct ResidueBackbone {
+    /// Three-letter amino acid name (e.g. `"ALA"`).
     pub res_name: String,
+    /// N atom position in Å (world frame).
     pub n: Option<[f64; 3]>,
+    /// Cα atom position in Å (world frame).
     pub ca: Option<[f64; 3]>,
+    /// C atom position in Å (world frame).
     pub c: Option<[f64; 3]>,
+    /// O atom position in Å (world frame).
     pub o: Option<[f64; 3]>,
-    /// Degrees; 9999.0 if terminal or missing.
+    /// φ dihedral angle in degrees; `9999.0` if terminal or missing.
     pub phi: f64,
-    /// Degrees; 9999.0 if terminal or missing.
+    /// ψ dihedral angle in degrees; `9999.0` if terminal or missing.
     pub psi: f64,
 }
 
+/// Backbone geometry for an entire protein, extracted in f64 precision.
+///
+/// All three parallel vectors (`bb`, `ids`, `chain_map`) share the same
+/// length and index space, where index `i` corresponds to
+/// `ResidueIndex(i as u32)`.
 #[derive(Debug)]
 pub struct ProteinBackbone {
+    /// Per-residue backbone geometry.
     pub bb: Vec<ResidueBackbone>,
     /// Parallel to `bb`; identifies each residue for output.
     pub ids: Vec<ResidueId>,
-    /// Parallel to `bb`; maps residue_index -> chain_index.
+    /// Parallel to `bb`; maps residue index → chain index within the structure.
     pub chain_map: Vec<usize>,
 }
 

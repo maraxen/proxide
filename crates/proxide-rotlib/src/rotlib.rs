@@ -170,16 +170,21 @@ impl RotamerLibrary {
         Ok(RotamerLibrary { entries })
     }
 
+    /// Return `true` if the library contains rotamer data for amino acid `aa`.
     pub fn contains_aa(&self, aa: &str) -> bool {
         self.entries.contains_key(aa)
     }
 
+    /// Number of rotamers in the φ/ψ bin closest to `(phi, psi)` for amino acid `aa`.
     pub fn num_rotamers(&self, aa: &str, phi: f64, psi: f64) -> Result<usize, RotlibError> {
         let entry = self.entries.get(aa).ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
         let bin = self.backbone_bin(aa, phi, psi)? as usize;
         Ok(entry.rotamers[bin].probs.len())
     }
 
+    /// Probability of rotamer `rot_index` in the φ/ψ bin closest to `(phi, psi)`.
+    ///
+    /// Returns `Err(RotIndexOob)` if `rot_index ≥ num_rotamers`.
     pub fn rotamer_probability(&self, aa: &str, rot_index: usize, phi: f64, psi: f64) -> Result<f64, RotlibError> {
         let entry = self.entries.get(aa).ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
         let bin = self.backbone_bin(aa, phi, psi)? as usize;
@@ -202,6 +207,16 @@ impl RotamerLibrary {
         Ok(entry.rotamers[bin].probs[rot_index])
     }
 
+    /// Place rotamer `rot_index` of amino acid `aa` into world coordinates.
+    ///
+    /// Looks up canonical backbone-relative sidechain coordinates from the
+    /// library bin closest to `(phi, psi)`, then transforms them into the
+    /// world frame defined by the backbone atoms `(n, ca, c)` using
+    /// [`backbone_frame`](crate::frame::backbone_frame) and
+    /// [`Transform::switch_frames`](crate::frame::Transform::switch_frames).
+    ///
+    /// Returns a [`PlacedRotamer`](crate::rotamer_id::PlacedRotamer) whose
+    /// `atoms` field lists every sidechain heavy atom (excluding backbone).
     #[allow(clippy::too_many_arguments)]
     pub fn place_rotamer(&self, aa: &str, phi: f64, psi: f64, rot_index: usize, n: [f64; 3], ca: [f64; 3], c: [f64; 3]) -> Result<crate::rotamer_id::PlacedRotamer, RotlibError> {
         use crate::frame::{backbone_frame, Frame, Transform};
@@ -232,6 +247,10 @@ impl RotamerLibrary {
         })
     }
 
+    /// Ordered sidechain heavy-atom names for `aa` as stored in the library.
+    ///
+    /// The slice order matches the coordinate vectors returned by
+    /// [`place_rotamer`](RotamerLibrary::place_rotamer).
     pub fn sidechain_atom_names(&self, aa: &str) -> Result<&[String], RotlibError> {
         self.entries.get(aa)
             .map(|e| e.atom_names.as_slice())
