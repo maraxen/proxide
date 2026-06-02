@@ -12,6 +12,12 @@
 ## Research
 - [260602_rotlib-notebook-plan](research/260602_rotlib-notebook-plan.md) — NotebookLM research notebook plan: rotamer library + confind sources, prompts, and expected outputs for grounding project direction
 
+## Plans
+- [260602_rotlib-confind-actions](plans/260602_rotlib-confind-actions.md) — Post-NLM-synthesis action plan: rotlib and confind code/doc actions with citations
+
+## Decisions
+- [260602_contact-threshold-adr](decisions/260602_contact-threshold-adr.md) — ADR: CONTACT_THRESHOLD as public arg with cited const (vs. hard const)
+
 ## Specs
 - [260529_rotlib](specs/260529_rotlib.md) — `proxide-rotlib` crate: standalone Rust port of MSL RotamerLibrary — binary format, backbone binning, Frame/Transform placement
 - [260529_confind](specs/260529_confind.md) — `proxide-confind` crate: rayon ConFind reimplementation; depends on proxide-rotlib (rev 3)
