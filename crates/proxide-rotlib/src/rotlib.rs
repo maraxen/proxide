@@ -29,6 +29,10 @@ pub(crate) struct AaEntry {
     pub(crate) rotamers:        Vec<BinData>,
 }
 
+/// Map key for the cis-proline rotamer entry. Adjust if the sourced
+/// Dunbrack cis-PRO data uses a different key.
+const CIS_PRO_KEY: &str = "CPRO";
+
 /// Backbone-dependent rotamer library loaded from an MSL binary file.
 #[derive(Debug)]
 pub struct RotamerLibrary {
@@ -263,12 +267,13 @@ impl RotamerLibrary {
     /// (10° bin centers). The returned bin index may be passed to
     /// [`place_rotamer`](RotamerLibrary::place_rotamer).
     ///
-    /// # `cis_proline` fallback
+    /// # `cis_proline` handling
     ///
-    /// When `aa == "PRO"` and `cis_proline` is `true`, the library does not
-    /// contain a separate `CPRO` entry. A warning is emitted via `tracing::warn!`
-    /// and the standard PRO bin is returned. For all other amino acids the
-    /// `cis_proline` flag is ignored.
+    /// When `aa == "PRO"` and `cis_proline` is `true`:
+    /// - If the library contains a dedicated `CPRO` entry, routes to that entry (uses its bin grid).
+    /// - Otherwise, emits a warning via `tracing::warn!` and falls back to the standard PRO bin.
+    ///
+    /// For all other amino acids, the `cis_proline` flag is ignored.
     ///
     /// # Warning: sparse φ region
     ///
@@ -278,12 +283,22 @@ impl RotamerLibrary {
     /// region should be treated as a low-confidence estimate.
     pub fn backbone_bin(&self, aa: &str, phi: f64, psi: f64, cis_proline: bool) -> Result<u32, RotlibError> {
         use crate::binning::find_closest_angle;
-        if cis_proline && aa == "PRO" {
-            tracing::warn!(
-                "cis-PRO requested but library has no cis-PRO data; using standard PRO bin"
-            );
-        }
-        let entry = self.entries.get(aa)
+
+        // Determine effective key: use CPRO if cis-PRO is requested and available
+        let effective_aa = if cis_proline && aa == "PRO" {
+            if self.entries.contains_key(CIS_PRO_KEY) {
+                CIS_PRO_KEY
+            } else {
+                tracing::warn!(
+                    "cis-PRO requested but library has no cis-PRO data; using standard PRO bin"
+                );
+                "PRO"
+            }
+        } else {
+            aa
+        };
+
+        let entry = self.entries.get(effective_aa)
             .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
         // Returns default_bin (global argmax) — caller must provide real φ/ψ when backbone is resolved.
         if phi == 9999.0 || psi == 9999.0 {
@@ -314,7 +329,7 @@ mod tests {
     #[test]
     fn test_backbone_bin_sentinel_phi() {
         use std::collections::HashMap;
-        let mut entry = AaEntry {
+        let entry = AaEntry {
             atom_names: vec!["CB".to_string()],
             bin_phi_centers: vec![-120.0, -60.0, 60.0],
             bin_psi_centers: vec![-45.0, -20.0, 20.0, 45.0],
@@ -431,5 +446,67 @@ mod tests {
         assert_eq!(placed.atoms.len(), 2);
         assert_eq!(placed.atoms[0].name, "CB");
         assert_eq!(placed.atoms[1].name, "CG");
+    }
+
+    #[test]
+    fn test_backbone_bin_cis_pro_routing() {
+        use std::collections::HashMap;
+        // Create two entries: standard PRO and cis-PRO (CPRO)
+        // They will have different grids so we can verify the correct one is selected
+        let pro_entry = AaEntry {
+            atom_names: vec!["CB".to_string()],
+            bin_phi_centers: vec![-120.0, -60.0, 60.0],
+            bin_psi_centers: vec![-45.0, -20.0, 20.0, 45.0],
+            default_bin: 0,
+            rotamers: vec![
+                BinData { probs: vec![0.5], coords: vec![vec![[1.0, 2.0, 3.0]]] };
+                12
+            ],
+        };
+
+        let cpro_entry = AaEntry {
+            atom_names: vec!["CB".to_string()],
+            // Different grid for cis-PRO
+            bin_phi_centers: vec![-100.0, -40.0, 80.0],
+            bin_psi_centers: vec![-30.0, 0.0, 30.0, 60.0],
+            default_bin: 1,
+            rotamers: vec![
+                BinData { probs: vec![0.6], coords: vec![vec![[4.0, 5.0, 6.0]]] };
+                12
+            ],
+        };
+
+        let mut entries = HashMap::new();
+        entries.insert("PRO".to_string(), pro_entry.clone());
+        entries.insert("CPRO".to_string(), cpro_entry);
+        let lib = RotamerLibrary { entries };
+
+        // Test 1: cis_proline=true routes to CPRO
+        // Query with angles near -100, -30 (cis-PRO grid)
+        let result_cis = lib.backbone_bin("PRO", -100.0, -30.0, true);
+        assert!(result_cis.is_ok());
+        let bin_cis = result_cis.unwrap() as usize;
+        // The cis-PRO grid is 3×4 = 12 bins, -100 is at index 0, -30 is at index 0
+        // So we expect bin 0
+        assert_eq!(bin_cis, 0);
+
+        // Test 2: cis_proline=false routes to standard PRO
+        let result_trans = lib.backbone_bin("PRO", -120.0, -45.0, false);
+        assert!(result_trans.is_ok());
+        let bin_trans = result_trans.unwrap() as usize;
+        // The standard PRO grid is 3×4 = 12 bins, -120 is at index 0, -45 is at index 0
+        // So we expect bin 0
+        assert_eq!(bin_trans, 0);
+
+        // Test 3: cis_proline=true without CPRO entry falls back and logs warning
+        let mut entries_no_cpro = HashMap::new();
+        entries_no_cpro.insert("PRO".to_string(), pro_entry);
+        let lib_no_cpro = RotamerLibrary { entries: entries_no_cpro };
+
+        let result_fallback = lib_no_cpro.backbone_bin("PRO", -120.0, -45.0, true);
+        assert!(result_fallback.is_ok());
+        let bin_fallback = result_fallback.unwrap() as usize;
+        // Without CPRO, should fall back to PRO and return bin 0
+        assert_eq!(bin_fallback, 0);
     }
 }
