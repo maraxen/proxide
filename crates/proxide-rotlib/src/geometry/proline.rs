@@ -30,6 +30,8 @@ pub struct ProlineCoords {
     pub ccd_iterations: usize,
     /// Recovered χ1, χ2, χ3 angles from the built coordinates (degrees).
     pub recovered_chi: [f32; 3],
+    /// Solved CB-CG-CD ring angle θ (degrees) — the dependent DOF relaxed for closure.
+    pub solved_theta: f32,
 }
 
 /// Builder for proline sidechain coordinates.
@@ -115,6 +117,7 @@ impl ProlineBuilder {
             converged: true,
             ccd_iterations: 0, // Not used with angle-relaxation
             recovered_chi,
+            solved_theta: theta_deg,
         })
     }
 }
@@ -154,8 +157,8 @@ fn solve_cg_cd_angle(
             (theta_high, cd_high)
         };
         return Err(RotlibError::InvalidFormat(format!(
-            "proline ring closure: no solution found for CB-CG-CD angle. CD-N = {:.3} Å (ideal {:.3})",
-            distance_3d(best_cd, n), CD_N_IDEAL
+            "proline ring closure: no solution for CB-CG-CD angle in [90,130]°; best θ={:.1}° gives CD-N = {:.3} Å (ideal {:.3})",
+            best_theta, distance_3d(best_cd, n), CD_N_IDEAL
         )));
     }
 
