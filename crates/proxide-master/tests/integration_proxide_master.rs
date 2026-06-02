@@ -7,6 +7,7 @@
 //! AC-5: no false positives (all returned results satisfy RMSD ≤ epsilon)
 //! AC-6: serial/parallel parity
 //! AC-7: empty database search returns empty results
+//! AC-8: cargo check clean (#![deny(warnings)]) + public API surface pinned
 //! AC-9: norm_sq consistency
 
 use approx::assert_relative_eq;
@@ -313,4 +314,61 @@ fn ac9_norm_sq_consistency() {
         }
     }
     assert_relative_eq!(ns, manual, epsilon = 1e-5_f32);
+}
+
+// ---------------------------------------------------------------------------
+// AC-8: Cargo check clean (build-hygiene gate) + public API surface
+// ---------------------------------------------------------------------------
+
+/// AC-8 — `cargo check -p proxide-master` passes with `#![deny(warnings)]` in
+/// lib.rs. This is fundamentally a *build-time* guarantee: a clean compile of
+/// this crate (and of this test) IS the AC-8 assertion, because
+/// `#![deny(warnings)]` promotes every warning to a hard error. The runtime
+/// test below additionally pins the public re-export surface, so a regression
+/// in lib.rs wiring (a dropped or renamed `pub use`) fails loudly here rather
+/// than silently shrinking the public API.
+#[test]
+fn ac8_public_api_surface_compiles() {
+    use proxide_master::{BackboneAtom, Centered, KabschResult, PersistError, SearchResult};
+
+    // State markers + BackboneAtom enum.
+    let _atom: BackboneAtom = BackboneAtom::CA;
+
+    // Fragment<N, Raw> -> center() -> Fragment<N, Centered>.
+    let raw: Fragment<5, Raw> = Fragment::<5, Raw>::new(UBIQUITIN_1_5);
+    let (centered, _centroid): (Fragment<5, Centered>, [f32; 3]) =
+        raw.center().expect("centering should succeed");
+    let ns = centered.norm_sq();
+
+    // kabsch_rmsd -> KabschResult (rmsd + rotation).
+    let (centered_b, _) = Fragment::<5, Raw>::new(UBIQUITIN_6_10).center().unwrap();
+    let ns_b = centered_b.norm_sq();
+    let kr: KabschResult = kabsch_rmsd(&centered, ns, &centered_b, ns_b);
+    assert!(kr.rmsd.is_finite());
+    let _rot: [[f32; 3]; 3] = kr.rotation;
+
+    // FragmentDbBuilder -> FragmentDb -> search/search_serial -> SearchResult.
+    let mut builder = FragmentDbBuilder::<5>::new();
+    builder
+        .add_fragment(
+            Fragment::<5, Raw>::new(UBIQUITIN_6_10),
+            SourceLabel::new("AC8", 'A', 6, ' ', 10, ' '),
+        )
+        .expect("fragment should center");
+    let db: FragmentDb<5> = builder.build();
+    let results: Vec<SearchResult> = db.search(&centered, 100.0);
+    for r in &results {
+        let _ = (r.rmsd, &r.label, r.rotation);
+    }
+    let _ = db.search_serial(&centered, 100.0);
+
+    // AlreadyCenteredError variant is reachable on the public surface.
+    let zero: [[[f32; 3]; 4]; 5] = [[[0.0; 3]; 4]; 5];
+    match Fragment::<5, Raw>::new(zero).center() {
+        Err(AlreadyCenteredError { norm }) => assert!(norm < 1e-6),
+        Ok(_) => panic!("zero coords must be already-centered"),
+    }
+
+    // PersistError is part of the public surface (name the type).
+    let _persist_err_slot: Option<PersistError> = None;
 }

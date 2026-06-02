@@ -145,23 +145,17 @@ impl<const N: usize> FragmentDb<N> {
         // Reconstruct entries from PersistedEntry.
         let mut entries = Vec::with_capacity(persisted.entries.len());
         for persisted_entry in persisted.entries {
-            // Validate and convert coords Vec to fixed array.
-            if persisted_entry.coords.len() != N {
-                return Err(PersistError::ArityMismatch {
-                    expected: N,
-                    found: persisted_entry.coords.len(),
-                });
-            }
-
-            let mut coords: [[[f32; 3]; 4]; N] = unsafe {
-                // SAFETY: We've verified the length is correct above.
-                // Uninitialized array; we're about to fill it below.
-                std::mem::MaybeUninit::uninit().assume_init()
-            };
-
-            for (i, atoms) in persisted_entry.coords.iter().enumerate() {
-                coords[i] = *atoms;
-            }
+            // Convert coords Vec to fixed array — safe, length-checked.
+            // `TryFrom<Vec<T>> for [T; N]` hands back the Vec on a length
+            // mismatch, which we surface as an ArityMismatch.
+            let coords: [[[f32; 3]; 4]; N] =
+                persisted_entry
+                    .coords
+                    .try_into()
+                    .map_err(|v: Vec<[[f32; 3]; 4]>| PersistError::ArityMismatch {
+                        expected: N,
+                        found: v.len(),
+                    })?;
 
             entries.push(FragmentDbEntry {
                 coords,
@@ -280,7 +274,12 @@ mod tests {
         // Verify first entry.
         let entry1 = &loaded.entries[0];
         assert_eq!(entry1.label, label1, "first label should match");
-        assert_eq!(entry1.coords[0][0], coords1[0][0], "first coords should match");
+        // The DB stores *centered* coords, so the round-trip must reproduce the
+        // in-memory centered values (not the raw input `coords1`).
+        assert_eq!(
+            entry1.coords, db.entries[0].coords,
+            "first coords should round-trip exactly"
+        );
         assert_eq!(
             entry1.norm_sq, db.entries[0].norm_sq,
             "first norm_sq should match"
@@ -289,7 +288,10 @@ mod tests {
         // Verify second entry.
         let entry2 = &loaded.entries[1];
         assert_eq!(entry2.label, label2, "second label should match");
-        assert_eq!(entry2.coords[0][0], coords2[0][0], "second coords should match");
+        assert_eq!(
+            entry2.coords, db.entries[1].coords,
+            "second coords should round-trip exactly"
+        );
         assert_eq!(
             entry2.norm_sq, db.entries[1].norm_sq,
             "second norm_sq should match"
@@ -378,6 +380,7 @@ mod tests {
         let file = File::create(&temp_path).expect("failed to create temp file");
         let mut writer = BufWriter::new(file);
         bincode::serialize_into(&mut writer, &bad_db).expect("failed to encode");
+        drop(writer); // flush buffered bytes to disk before reading back
 
         // Try to load it.
         let result: Result<FragmentDb<5>, _> = FragmentDb::load(&temp_path);
@@ -409,6 +412,7 @@ mod tests {
         let file = File::create(&temp_path).expect("failed to create temp file");
         let mut writer = BufWriter::new(file);
         bincode::serialize_into(&mut writer, &bad_db).expect("failed to encode");
+        drop(writer); // flush buffered bytes to disk before reading back
 
         // Try to load it.
         let result: Result<FragmentDb<5>, _> = FragmentDb::load(&temp_path);
