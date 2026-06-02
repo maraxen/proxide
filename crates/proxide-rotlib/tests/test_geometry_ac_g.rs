@@ -191,12 +191,128 @@ fn test_ac_g_d_bond_lengths() {
     assert!((b_cd_n  - ccd_ideals::CD_N).abs()  <= 0.03, "CD-N closure");
 }
 
-// ─── AC-G(e): round-trip identity (deferred to P5) ───────────────────────────
+// ─── AC-G(e): round-trip identity ────────────────────────────────────────────
+//
+// AC-G(e) spec (§11, line 271): "place_rotamer onto a backbone equal to the
+// build-frame backbone returns the stored coords within ≤1e-2 Å."
+//
+// Strategy:
+//   1. Build proline sidechain coords using ProlineBuilder::build() with ENDO_CHI
+//      on the *identity* canonical backbone (N=[-1,0,0], CA=[0,0,0], C=[0,1,0]).
+//      This backbone gives backbone_frame == lab-identity frame, so
+//      place_rotamer's frame transform is the identity.
+//   2. Store those build() coords (CB, CG, CD) in a synthetic pb.zst library.
+//   3. Call place_rotamer("CPR", phi, psi, 0, false, n, ca, c) with the same
+//      identity backbone.
+//   4. Assert each returned atom xyz matches the stored build() coord within ≤1e-2 Å.
+//
+// Backbone choice:
+//   N=[-1,0,0], CA=[0,0,0], C=[0,1,0]
+//   x_raw = CA-N = [1,0,0] → x=[1,0,0]
+//   z_raw = x×(C-CA) = [1,0,0]×[0,1,0] = [0,0,1] → z=[0,0,1]
+//   y_raw = z×x = [0,0,1]×[1,0,0] = [0,1,0]
+//   origin = CA = [0,0,0]
+//   → backbone_frame = lab identity → switch_frames returns identity transform ✓
 
 #[test]
-#[ignore]
 fn test_ac_g_e_round_trip_identity() {
-    // Requires place_rotamer integration (P5).
-    // place_rotamer(PRO, φ, ψ, rot_index) → χ from Dunbrack →
-    // ProlineBuilder::build() → coords must match ≤1e-2 Å.
+    use prost::Message;
+    use proxide_rotlib::pb::rotlib_v1::{
+        RotamerLibrary as PbLib, ResidueEntry, Bin, Rotamer, Vec3, GeometryMode,
+    };
+    use proxide_rotlib::RotamerLibrary;
+    use proxide_rotlib::geometry::proline_template;
+
+    // Identity backbone (f32 for ProlineBuilder, f64 for place_rotamer)
+    let bb_identity_f32: [[f32; 3]; 3] = [
+        [-1.0,  0.0, 0.0],  // N
+        [ 0.0,  0.0, 0.0],  // CA
+        [ 0.0,  1.0, 0.0],  // C
+    ];
+    let n_f64  = [-1.0_f64, 0.0, 0.0];
+    let ca_f64 = [ 0.0_f64, 0.0, 0.0];
+    let c_f64  = [ 0.0_f64, 1.0, 0.0];
+
+    // Build proline sidechain on the identity backbone with ENDO_CHI.
+    let builder = proxide_rotlib::ProlineBuilder::new(proline_template());
+    let built = builder.build(&bb_identity_f32, ENDO_CHI)
+        .expect("ProlineBuilder::build failed on identity backbone");
+
+    // built.sidechain = [CB, CG, CD] in the identity backbone frame.
+    assert_eq!(built.sidechain.len(), 3, "ProlineBuilder must return 3 atoms (CB, CG, CD)");
+    let [cb_built, cg_built, cd_built] = [
+        built.sidechain[0],
+        built.sidechain[1],
+        built.sidechain[2],
+    ];
+
+    // Build a synthetic pb library with these coords stored in a CPR entry.
+    const ATTRIBUTION: &str =
+        "Contains information from the 2010 Backbone-Dependent Rotamer Library \
+         (http://dunbrack.fccc.edu/bbdep2010), made available under the ODC Attribution License.";
+
+    let pb_lib = PbLib {
+        version: 1,
+        provenance: "test-ac-g-e".to_string(),
+        attribution: ATTRIBUTION.to_string(),
+        data_license: "ODC-BY-1.0".to_string(),
+        geometry_mode: GeometryMode::Precomputed as i32,
+        residues: vec![ResidueEntry {
+            code: "CPR".to_string(),
+            atom_names: vec!["CB".to_string(), "CG".to_string(), "CD".to_string()],
+            num_chi: 3,
+            phi_centers: vec![-180.0],
+            psi_centers: vec![-180.0],
+            default_bin: 0,
+            bins: vec![Bin {
+                phi: -180.0,
+                psi: -180.0,
+                freq: 1.0,
+                rotamers: vec![Rotamer {
+                    prob: 0.6,
+                    chi: vec![],
+                    coords: vec![
+                        Vec3 { x: cb_built[0], y: cb_built[1], z: cb_built[2] },
+                        Vec3 { x: cg_built[0], y: cg_built[1], z: cg_built[2] },
+                        Vec3 { x: cd_built[0], y: cd_built[1], z: cd_built[2] },
+                    ],
+                }],
+            }],
+        }],
+    };
+
+    // Write to temp file and load.
+    let path = std::env::temp_dir().join(format!(
+        "acge_{}_{}.pb.zst",
+        std::process::id(),
+        "roundtrip"
+    ));
+    let encoded = pb_lib.encode_to_vec();
+    let compressed = zstd::encode_all(encoded.as_slice(), 3).expect("zstd compress");
+    std::fs::write(&path, &compressed).expect("write temp pb.zst");
+
+    let lib = RotamerLibrary::load_pb(&path).expect("load_pb failed");
+    std::fs::remove_file(&path).ok();
+
+    // Place rotamer using the same identity backbone.
+    let placed = lib.place_rotamer("CPR", -180.0, -180.0, 0, false, n_f64, ca_f64, c_f64)
+        .expect("place_rotamer CPR failed");
+    assert_eq!(placed.atoms.len(), 3, "placed CPR must have 3 atoms");
+
+    // Assert each placed atom xyz matches the stored build() coord within ≤1e-2 Å.
+    let stored_coords = [cb_built, cg_built, cd_built];
+    let atom_names    = ["CB", "CG", "CD"];
+
+    for (idx, (atom, &stored)) in placed.atoms.iter().zip(stored_coords.iter()).enumerate() {
+        for i in 0..3 {
+            let diff = (atom.xyz[i] - stored[i] as f64).abs();
+            assert!(
+                diff < 1e-2,
+                "AC-G(e): atom {} ({}) coord[{i}]: build()={:.6}, place_rotamer()={:.6}, diff={:.4e} > 1e-2 Å. \
+                 Backbone used: N={n_f64:?}, CA={ca_f64:?}, C={c_f64:?} (identity frame).",
+                idx, atom_names[idx],
+                stored[i], atom.xyz[i], diff
+            );
+        }
+    }
 }

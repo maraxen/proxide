@@ -1,3 +1,8 @@
+// Shared test-helper module: cargo compiles this file as its own test binary,
+// so items used only by other test binaries (or by #[ignore]'d real-data tests)
+// appear unused here. Suppress so `cargo check --all-targets` stays warning-free.
+#![allow(dead_code, unused_imports)]
+
 use std::io::Write;
 use proxide_rotlib::RotlibError;
 
