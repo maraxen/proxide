@@ -14,7 +14,7 @@ use crate::fragment::{AlreadyCenteredError, Fragment, Raw};
 ///
 /// Encodes PDB entry, chain identifier, and residue range in a compact,
 /// copy-friendly form.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SourceLabel {
     /// First 4 bytes of the PDB ID, zero-padded (ASCII).
     pub pdb_id: [u8; 4],
