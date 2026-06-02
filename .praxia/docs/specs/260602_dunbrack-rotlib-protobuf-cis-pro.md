@@ -266,8 +266,8 @@ not block this sprint.
 - **AC-G (strengthened).** For proline, with the Engh–Huber template:
   - (a) all 3 Dunbrack χ are **recovered** from the rebuilt coords within ±2°;
   - (b) **both** puckers build — `r1=1` (endo) and `r1=2` (exo) produce geometrically **distinct** CG positions (**≥0.5 Å apart**; published endo↔exo CG displacement ≈0.5–0.7 Å);
-  - (c) all five endocyclic bond angles within ±3° of ideal pyrrolidine; CD–N within ±0.03 Å of 1.47 Å;
-  - (d) rebuilt PRO ring heavy-atom RMSD vs idealized **CCD `PRO.cif`** ≤ **0.05 Å**;
+  - (c) ring bond angles within ±3° of CCD `PRO.cif` ideals (**~104–105°**, measured: N-CA-CB 104.7, CA-CB-CG 105.1, CB-CG-CD 105.1, CG-CD-N 104.7, CD-N-CA 104.1 — NOT 110°); CD–N within ±0.03 Å of **1.487 Å** (CCD);
+  - (d) ring **bond lengths** within ±0.02 Å of CCD ideals (N-CA 1.486, CA-CB 1.543, CB-CG 1.543, CG-CD 1.544, CD-N 1.487). NOTE: CCD `PRO.cif` is a *symmetric* idealization (χ2≈0°), so it is a bond/angle reference, **not** a whole-ring RMSD target for the χ2≈±35° Dunbrack puckers — ring fidelity is covered by (a) χ-recovery + (c) closure;
   - (e) **round-trip identity:** `place_rotamer` onto a backbone equal to the build-frame backbone returns the stored coords within **≤1e-2 Å**.
   - All numeric thresholds above are the AC-G pass conditions; A3 must report measured values, not a bare boolean.
 - **AC-3.** Converter emits `*.rotlib.pb.zst` whose `attribution`/`data_license` are populated (loader rejects empty `attribution`).
