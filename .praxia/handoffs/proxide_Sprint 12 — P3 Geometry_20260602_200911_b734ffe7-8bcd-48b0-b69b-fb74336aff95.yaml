@@ -1,0 +1,90 @@
+---
+workspace: proxide
+session_id: d86c104d-b571-4b7e-af46-f37768f69365
+status: in_progress
+immediately_relevant:
+- file: crates/proxide-rotlib/src/geometry/proline.rs
+  lines:
+  - 60
+  - 170
+  reason: 'build() + solve_cg_cd_angle(): angle-relaxation ring closure. CD-N closes at 1.487 but chi1 NOT recovered (57.5 vs 32.5) and ring angles ~71 deg -> NeRF convention bug lives here.'
+- file: crates/proxide-geometry/src/geometry/nerf.rs
+  lines:
+  - 18
+  - 94
+  reason: 'Nerf::place_atom (f32). The prime suspect: its exact torsion/angle convention. place_atom(prev=[A,B,C],bond,angle,torsion) should give dihedral A-B-C-D=torsion; verify the sign/offset against a hand reference.'
+- file: crates/proxide-rotlib/src/geometry/template.rs
+  lines:
+  - 95
+  - 145
+  reason: 'proline_template(): CCD-derived ideal geometry (bonds ~1.54, ring angles ~104.7 deg, CB improper). Engh-Huber placeholder superseded by CCD ideals.'
+- file: crates/proxide-rotlib/tests/test_geometry_ac_g.rs
+  lines:
+  - 1
+  - 270
+  reason: 'REAL AC-G tests (1 pass / 4 fail / 1 ignored). Thresholds: chi +/-2 deg, CG sep >=0.5 A, angles +/-3 deg of CCD ~104.7, CD-N +/-0.03 of 1.487, bonds +/-0.02, round-trip <=1e-2 (ignored, needs P5).'
+- file: .praxia/docs/research/260602_dunbrack-geometry-synthesis.jsonl
+  lines:
+  - 1
+  - 15
+  reason: '15 research records: CHARMM is the canonical param set (not Engh-Huber); pucker selected by chi1 sign (chi1>=0 endo, <0 exo); frame x=CA-N,z=x×(C-CA),y=z×x,origin=CA confirmed.'
+- file: .praxia/docs/specs/260602_dunbrack-rotlib-protobuf-cis-pro.md
+  lines:
+  - 160
+  - 275
+  reason: 'Oracle-APPROVED spec: §7 ring-closure algorithm, §10 risk-first phases + audit gates, §11 AC-G/AC-R (data-corrected to CCD ideals).'
+- file: .praxia/docs/dynamic_workflows/260602_dunbrack-rotlib-sprint.js
+  lines:
+  - 1
+  - 60
+  reason: 'The executable workflow (Sprint #12). Run: Workflow({scriptPath: this}) from a branch off clean main. P0->P1->P3->A3 gate->P2->P4->P5->A5->P6; research parallel.'
+active_dispatches: []
+task_id: 260602_proxcon_deferred4
+phase: Sprint 12 / P3 Geometry
+goal_statement: 'Land cis-PRO (CPR) in proxide-rotlib by converting Dunbrack 2010 (ODC-BY) to a proxide protobuf+zstd rotamer library (decision A: precompute coords). Current blocker is P3: build correct proline ring geometry (chi->Cartesian) so the A3 gate''s AC-G passes.'
+context_refs:
+- phase: Sprint 260602
+  task_id: 260602_master-rmsd-search
+  summary: 'Prior session: #783 cis-proline detection + #780 proxide-master, merged to main.'
+failed_attempts:
+- attempt_id: a1
+  description: 'P3 v1: NeRF reference-atom ordering CB=[N,CA,C], CG=[CA,CB,N], CD=[CB,CG,N]'
+  outcome: CB bonded to backbone C not CA; CG/CD bonded to N; chi recovery 141 deg off
+  reason_failed: Wrong NeRF ref ordering; NeRF bonds D to the 3rd ref atom
+  do_not_retry: true
+  evidence_ref: null
+- attempt_id: a2
+  description: 'P3 v1 closure: keep chi1+chi2 exact with Engh-Huber ideal angles, drift chi2 via CCD to close ring'
+  outcome: ring needs chi2 to drift 10.5 deg > 5 deg bound; builder correctly refuses
+  reason_failed: 'Over-determined: exact chi + ideal angles + closure can''t all hold; relaxing chi is the WRONG DOF (chi are the data)'
+  do_not_retry: true
+  evidence_ref: null
+- attempt_id: a3
+  description: 'P3 v2 (current, d07a277): relax CB-CG-CD ANGLE (not chi) via 1-D bisection to close; CCD-derived ideal geometry; discrete puckers by chi1 sign'
+  outcome: CD-N closes exactly (1.487) BUT chi1 still not recovered (57.5 vs 32.5) and ring angles ~71 vs ~105 -> coords wrong
+  reason_failed: Residual NeRF angle/torsion convention bug in CB improper and/or CG/CD placement; NOT a tolerance issue
+  do_not_retry: false
+  evidence_ref: null
+- attempt_id: wf1
+  description: Workflow research via librarian agent + in-workflow NotebookLM
+  outcome: librarian has no Write tool (synthesis.jsonl not written, recovered from returned text); notebooklm mcp tools absent from subagent schema (queries skipped, web/code fallback)
+  reason_failed: 'Agent tool roster: librarian lacks Write/Bash; session-MCP availability caveat for subagents'
+  do_not_retry: true
+  evidence_ref: null
+open_questions:
+- What is Nerf::place_atom's exact torsion sign/offset? Placing CG with torsion=chi1 yields recovered chi1=57.5 for input 32.5 (delta 25 deg) — convention mismatch to pin down with a hand-computed reference.
+- Is the AC-G test backbone (N=[0,0,0], CA=[1.458,0,0], C=[2.009,1.420,0]) consistent with backbone_frame and the recovered-chi computation?
+- 'Reconcile divergence: main=2f44ada (user''s parallel proline NeRF fix) vs sprint12-run=d07a277 (P3 v2) — which proline implementation is canonical?'
+deferred:
+- description: 'AC-G(e) round-trip identity test (currently #[ignore])'
+  rationale: Needs P5 place_rotamer integration to exercise the full place path
+  recommended_phase: P5
+- description: P2 schema, P4 converter, P5 loader/routing, A5, P6 verify
+  rationale: Gated on P3 proline geometry passing the A3 AC-G gate
+  recommended_phase: Sprint 12 post-P3
+- description: Full-library regeneration (all 20 residues) with CHARMM params to retire CC BY-NC-SA rotlib.bin runtime dependency
+  rationale: 'Out of scope for cis-PRO landing; research #820'
+  recommended_phase: roadmap
+lessons_refs:
+- .praxia/lessons.jsonl
+---
