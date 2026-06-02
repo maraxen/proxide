@@ -13,6 +13,7 @@ members = [
     "crates/proxide-wasm",
     "crates/proxide-rotlib",
     "crates/proxide-confind",
+    "crates/proxide-master",
 ]
 
 [workspace.package]
