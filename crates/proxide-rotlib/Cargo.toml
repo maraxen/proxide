@@ -10,12 +10,17 @@ keywords    = ["rotamer", "sidechain", "backbone", "structural-biology"]
 [lib]
 crate-type = ["rlib"]
 
+[[bin]]
+name = "convert_rotlib"
+path = "src/bin/convert_rotlib.rs"
+
 [dependencies]
 thiserror = { workspace = true }
 tracing   = "0.1"
 proxide-geometry = { path = "../proxide-geometry" }
 prost    = "0.13"
 zstd     = "0.13"
+clap = { version = "4.4", features = ["derive"] }
 
 [dependencies.serde]
 version  = "1"
