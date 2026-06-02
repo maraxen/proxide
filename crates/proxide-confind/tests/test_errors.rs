@@ -71,6 +71,8 @@ fn cache_residue_missing_n() {
         o: Some([1.1, 1.0, 0.0]),
         phi: 9999.0,
         psi: 9999.0,
+        omega: None,
+        is_cis_peptide: false,
     });
     let backbone = Arc::new(ProteinBackbone {
         bb: bb_vec,
@@ -111,6 +113,8 @@ fn cache_residue_missing_ca() {
         o: Some([1.1, 1.0, 0.0]),
         phi: 9999.0,
         psi: 9999.0,
+        omega: None,
+        is_cis_peptide: false,
     });
     let backbone = Arc::new(ProteinBackbone {
         bb: bb_vec,
@@ -150,6 +154,8 @@ fn cache_residue_missing_c() {
         o: Some([1.1, 1.0, 0.0]),
         phi: 9999.0,
         psi: 9999.0,
+        omega: None,
+        is_cis_peptide: false,
     });
     let backbone = Arc::new(ProteinBackbone {
         bb: bb_vec,

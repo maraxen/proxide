@@ -34,6 +34,8 @@ pub fn make_synthetic_backbone(n_res: usize, spacing: f64) -> Arc<ProteinBackbon
             o: o_pos,
             phi,
             psi,
+            omega: None,
+            is_cis_peptide: false,
         });
 
         ids.push(ResidueId {
@@ -77,6 +79,8 @@ pub fn make_synthetic_backbone_partial_atoms(
             o: o_pos,
             phi,
             psi,
+            omega: None,
+            is_cis_peptide: false,
         });
 
         ids.push(ResidueId {
@@ -106,6 +110,8 @@ pub fn make_synthetic_backbone_no_atoms(n_res: usize) -> Arc<ProteinBackbone> {
             o: None,
             phi: 9999.0,
             psi: 9999.0,
+            omega: None,
+            is_cis_peptide: false,
         });
 
         ids.push(ResidueId {
@@ -147,6 +153,8 @@ pub fn make_two_chain_backbone(n_res: usize, spacing: f64, chain_b_offset: [f64;
             o: o_pos,
             phi,
             psi,
+            omega: None,
+            is_cis_peptide: false,
         });
 
         ids.push(ResidueId {
@@ -180,6 +188,8 @@ pub fn make_two_chain_backbone(n_res: usize, spacing: f64, chain_b_offset: [f64;
             o: o_pos,
             phi,
             psi,
+            omega: None,
+            is_cis_peptide: false,
         });
 
         ids.push(ResidueId {

@@ -35,6 +35,11 @@ pub struct ResidueBackbone {
     pub phi: f64,
     /// ψ dihedral angle in degrees; `9999.0` if terminal or missing.
     pub psi: f64,
+    /// ω dihedral angle in degrees; `None` for the N-terminal residue of each chain or
+    /// when the preceding Cα/C atoms are absent.
+    pub omega: Option<f64>,
+    /// `true` iff `|omega| < 30.0°`; `false` when `omega` is `None`.
+    pub is_cis_peptide: bool,
 }
 
 /// Backbone geometry for an entire protein, extracted in f64 precision.
@@ -93,6 +98,8 @@ pub fn extract_f64_backbone(s: &ProcessedStructure) -> Result<ProteinBackbone, C
             o: o_pos,
             phi: 9999.0,
             psi: 9999.0,
+            omega: None,
+            is_cis_peptide: false,
         });
         ids.push(ResidueId {
             chain_id: resinfo.chain_id.clone(),
@@ -176,6 +183,8 @@ pub fn load_pdb_f64<P: AsRef<Path>>(path: P) -> Result<ProteinBackbone, ConFindE
             o: o_pos,
             phi: 9999.0,
             psi: 9999.0,
+            omega: None,
+            is_cis_peptide: false,
         });
         ids.push(ResidueId {
             chain_id: resinfo.chain_id.clone(),
@@ -189,7 +198,7 @@ pub fn load_pdb_f64<P: AsRef<Path>>(path: P) -> Result<ProteinBackbone, ConFindE
     Ok(ProteinBackbone { bb, ids, chain_map })
 }
 
-/// Compute phi/psi per chain segment and fill into `bb`.
+/// Compute phi/psi/omega per chain segment and fill into `bb`.
 fn fill_dihedrals(bb: &mut [ResidueBackbone], chain_map: &[usize]) {
     let n = bb.len();
     if n == 0 {
@@ -231,6 +240,11 @@ fn fill_dihedrals(bb: &mut [ResidueBackbone], chain_map: &[usize]) {
             // dihedral(p1-p2, p3-p2) with reversed first vector vs. atan2 formula.
             bb[bb_i].phi = d.phi.map(|r| -r.to_degrees()).unwrap_or(9999.0);
             bb[bb_i].psi = d.psi.map(|r| -r.to_degrees()).unwrap_or(9999.0);
+            // omega: convert radians -> degrees; None for N-terminal residue.
+            // No sign negation: omega is measured on the preceding peptide bond
+            // and the Mosaist sign convention does not apply to omega.
+            bb[bb_i].omega = d.omega.map(|r| r.to_degrees());
+            bb[bb_i].is_cis_peptide = bb[bb_i].omega.map_or(false, |w| w.abs() < 30.0);
         }
     }
 }
