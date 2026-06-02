@@ -1830,7 +1830,7 @@ fn test_distogram_1dc7_chain_a() {
             let ca = res.ca.unwrap();
             let c = res.c.unwrap();
             let placed = lib
-                .place_rotamer(&res.res_name, 9999.0, 9999.0, 0, n, ca, c)
+                .place_rotamer(&res.res_name, 9999.0, 9999.0, 0, false, n, ca, c)
                 .unwrap_or_else(|e| {
                     panic!("A{}/{}: place_rotamer failed: {e}", id.res_id, res.res_name)
                 });
