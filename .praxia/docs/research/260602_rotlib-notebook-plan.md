@@ -10,7 +10,7 @@ metadata:
 # NotebookLM Research Notebook Plan: Rotamer Libraries & Contact Degree
 
 **Date**: 2026-06-02
-**Status**: EXECUTED — notebooks created and sources loaded (2026-06-02)
+**Status**: COMPLETE — NLM queries run and synthesis written (2026-06-02)
 **Feeds into**: Project direction decisions for proxide-rotlib + proxide-confind extensions
 
 **Changes from v1** (oracle critique #1):
