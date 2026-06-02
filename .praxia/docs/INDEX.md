@@ -21,6 +21,7 @@
 ## Specs
 - [260529_rotlib](specs/260529_rotlib.md) — `proxide-rotlib` crate: standalone Rust port of MSL RotamerLibrary — binary format, backbone binning, Frame/Transform placement
 - [260529_confind](specs/260529_confind.md) — `proxide-confind` crate: rayon ConFind reimplementation; depends on proxide-rotlib (rev 3)
+- [260602_dunbrack-rotlib-protobuf-cis-pro](specs/260602_dunbrack-rotlib-protobuf-cis-pro.md) — Dunbrack 2010 → protobuf+zstd rotamer library; adds cis-PRO (CPR); MIT-code/ODC-BY-data; geometry engine (proline-first)
 
 ## Superpowers
 > Skill outputs live in `.praxia/docs/superpowers/plans/` and `.praxia/docs/superpowers/specs/`.
