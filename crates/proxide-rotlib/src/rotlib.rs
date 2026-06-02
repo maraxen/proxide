@@ -271,7 +271,7 @@ impl RotamerLibrary {
     /// # `cis_proline` handling
     ///
     /// When `aa == "PRO"` and `cis_proline` is `true`:
-    /// - If the library contains a dedicated `CPRO` entry, routes to that entry (uses its bin grid).
+    /// - If the library contains a dedicated `CPR` entry, routes to that entry (uses its bin grid).
     /// - Otherwise, emits a warning via `tracing::warn!` and falls back to the standard PRO bin.
     ///
     /// For all other amino acids, the `cis_proline` flag is ignored.
@@ -285,7 +285,7 @@ impl RotamerLibrary {
     pub fn backbone_bin(&self, aa: &str, phi: f64, psi: f64, cis_proline: bool) -> Result<u32, RotlibError> {
         use crate::binning::find_closest_angle;
 
-        // Determine effective key: use CPRO if cis-PRO is requested and available
+        // Determine effective key: use CPR if cis-PRO is requested and available
         let effective_aa = if cis_proline && aa == "PRO" {
             if self.entries.contains_key(CIS_PRO_KEY) {
                 CIS_PRO_KEY
@@ -452,7 +452,7 @@ mod tests {
     #[test]
     fn test_backbone_bin_cis_pro_routing() {
         use std::collections::HashMap;
-        // Create two entries: standard PRO and cis-PRO (CPRO)
+        // Create two entries: standard PRO and cis-PRO (CPR)
         // They will have different grids so we can verify the correct one is selected
         let pro_entry = AaEntry {
             atom_names: vec!["CB".to_string()],
@@ -479,10 +479,10 @@ mod tests {
 
         let mut entries = HashMap::new();
         entries.insert("PRO".to_string(), pro_entry.clone());
-        entries.insert("CPRO".to_string(), cpro_entry);
+        entries.insert("CPR".to_string(), cpro_entry);
         let lib = RotamerLibrary { entries };
 
-        // Test 1: cis_proline=true routes to CPRO
+        // Test 1: cis_proline=true routes to CPR
         // Query with angles near -100, -30 (cis-PRO grid)
         let result_cis = lib.backbone_bin("PRO", -100.0, -30.0, true);
         assert!(result_cis.is_ok());
@@ -499,7 +499,7 @@ mod tests {
         // So we expect bin 0
         assert_eq!(bin_trans, 0);
 
-        // Test 3: cis_proline=true without CPRO entry falls back and logs warning
+        // Test 3: cis_proline=true without CPR entry falls back and logs warning
         let mut entries_no_cpro = HashMap::new();
         entries_no_cpro.insert("PRO".to_string(), pro_entry);
         let lib_no_cpro = RotamerLibrary { entries: entries_no_cpro };
@@ -507,7 +507,7 @@ mod tests {
         let result_fallback = lib_no_cpro.backbone_bin("PRO", -120.0, -45.0, true);
         assert!(result_fallback.is_ok());
         let bin_fallback = result_fallback.unwrap() as usize;
-        // Without CPRO, should fall back to PRO and return bin 0
+        // Without CPR, should fall back to PRO and return bin 0
         assert_eq!(bin_fallback, 0);
     }
 }
