@@ -13,4 +13,13 @@ pub enum RotlibError {
 
     #[error("rotamer index {1} out of range for '{0}' (bin has {2})")]
     RotIndexOob(String, usize, usize),
+
+    #[error("protobuf decode error: {0}")]
+    Protobuf(#[from] prost::DecodeError),
+
+    #[error("missing required attribution field in rotamer library")]
+    MissingAttribution,
+
+    #[error("unsupported geometry mode: {0}")]
+    UnsupportedGeometryMode(i32),
 }
