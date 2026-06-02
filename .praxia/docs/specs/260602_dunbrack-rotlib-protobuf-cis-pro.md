@@ -1,7 +1,7 @@
 # Spec: Dunbrack 2010 → protobuf rotamer library, with cis-PRO support
 
 - **task_id:** `260602_proxcon_deferred4` (item 3) + follow-on
-- **Status:** DRAFT — one open decision (geometry storage A vs B, §9)
+- **Status:** REVIEWED (oracle round 1) — decisions A/5%/Engh-Huber locked (§13); revised for ring-closure algorithm, frame convention, f32/f64, risk-first ordering + audit gates
 - **Author:** orchestrator (proxcon session, 2026-06-02)
 - **Backlog:** #799
 - **Related:** `crates/proxide-rotlib`, memory `project-rotlib-path`
@@ -165,17 +165,32 @@ ODC-BY notice travels with the data. Floats match the source precision (f32).
 Required for `GEOMETRY_MODE=PRECOMPUTED` (at convert time) and/or `CHI_ONLY` (at
 load/place time). Lives in `crates/proxide-rotlib/src/geometry/`.
 
-- **Residue templates:** per-residue ideal internal coordinates — atom names,
-  connectivity, bond lengths, bond angles, and which 4 atoms define each χ. Sourced
-  from **standard published values** (e.g. Engh–Huber / CCD ideal geometry) — facts,
-  not MASTER-derived. v1 ships **PRO only**.
-- **Builder:** place backbone N,CA,C,O in the canonical frame, then build sidechain
-  atoms by NeRF/IC placement walking the χ tree.
-- **Proline ring closure (RISK):** proline's pyrrolidine ring (N–CA–CB–CG–CD–N) is
-  **closed**, so χ are not independent — naive open-chain χ rotation will not close
-  the ring. The builder must enforce ring closure (or use a small proline-specific
-  pucker model parameterized by the Dunbrack χ). This is the single hardest part of
-  v1 and must be validated geometrically (§11 AC-G).
+- **Reuse, don't reimplement:** the IC→Cartesian primitive is
+  `proxide_geometry::geometry::nerf::Nerf::place_atom` (verified **f32** signature,
+  returns `[f32;3]`). Build the sidechain in f32 via NeRF, convert to the `f64` coords
+  `BinData` uses; AC-G tolerances (≥1e-3 Å) are set so f32 rounding is immaterial. Do
+  **not** add a parallel f64 NeRF.
+- **Residue templates:** per-residue ideal internal coords (atoms, bonds, bond
+  lengths/angles, the 4 atoms defining each χ) from **standard published values** —
+  **Engh–Huber as a v1 PLACEHOLDER**, flagged for the research item (backlog #820,
+  §7 RESEARCH FLAG) which decides whether MASTER's convention needs a different param
+  set. v1 ships **PRO + CPR only**.
+- **Canonical frame (convention trap):** rebuilt coords MUST live in the same
+  backbone-relative frame `place_rotamer` assumes — `frame::backbone_frame(N,CA,C)`
+  (x=CA−N, z=x×(C−CA), y=z×x, origin=CA; matches MSL/MASTER, frame.rs). Place
+  idealized N,CA,C at canonical positions, build there, store. **Required test:**
+  `place_rotamer` onto a backbone equal to the build-frame backbone returns the stored
+  coords within tol (round-trip identity) — otherwise the rigid transform is wrong.
+- **Proline ring closure — NAMED algorithm (was the hand-waved risk):** the
+  pyrrolidine ring N–CA–CB–CG–CD–N is closed; the **two Dunbrack rotamers per (φ,ψ)
+  bin ARE the Cγ-endo / Cγ-exo puckers** — their χ sets have opposite signs
+  (CPR r1 χ=(32.5,−36.0,25.1) vs r2 (−20.3,34.0,−33.8)). Build CB,CG,CD by NeRF using
+  the rotamer's **endocyclic torsions** (χ1=N-CA-CB-CG, χ2=CA-CB-CG-CD, χ3=CB-CG-CD-N)
+  + ideal bond lengths/angles; select endo/exo by rotamer index `r1`. Because the χ
+  come from real closed rings, NeRF lands CD near N — **verify** CD–N ≈ 1.47 Å within
+  tol; if idealized geometry leaves residual closure error beyond tol, apply a minimal
+  **cyclic-coordinate-descent (CCD)** ring closure (or document the residual). Refs:
+  Ho et al. (proline pucker), Cremer–Pople puckering. Validated by §11 AC-G.
 
 ---
 
@@ -214,28 +229,47 @@ way; A keeps it out of the shipped library. B remains a future option (enables r
 
 ## 10. Phased implementation plan
 
-| Phase | Tasks | Gate / verification |
-|------|-------|---------------------|
-| **P1. Extract** | Tracked Python script (+bathos sidecar) parsing `cpr.bbdep.rotamers.lib` (and PRO/TPR for compare) → JSON (bins, probs, χ). License-clean, no geometry. | golden counts: 2 rotamers/bin for CPR; probabilities sum≈1 per bin; bin grid rectangular. |
-| **P2. Schema** | Add `prost`/`zstd` deps; `rotlib.proto`; generated types; round-trip unit test. | `cargo test` round-trips a synthetic `RotamerLibrary`. |
-| **P3. Geometry (PRO)** | Proline residue template + ring-closing builder. | **AC-G**: rebuilt PRO coords match a reference (idealized PDB proline) within tol; ring closes (CD–N bond length in range). |
-| **P4. Converter** | CLI: Dunbrack text → `*.rotlib.pb.zst`; embeds attribution; emits ODC-BY sidecar. Convert CPR (+PRO). | output loads via P5; attribution field non-empty. |
-| **P5. Loader + routing** | `load_pb`; route `num_rotamers`/`place_rotamer` to CPR; `RotlibError` variants. | **AC-R**: cis vs trans PRO give different rotamer probs/coords; all rotlib tests green. |
-| **P6. Verify + docs** | Cross-check vs MASTER `rotlib.bin` PRO entry (dev-only); README attribution; INDEX/memory. | parity report; `cargo test -p proxide-rotlib` + `--all-targets` clean. |
+Ordering is **risk-first**: the hardest phase (P3 geometry) runs early so failures
+surface before later work is built on it. Independent **audit gates** (a separate
+`reviewer` agent that re-runs tests + an external validation and reports its OWN
+measured numbers — never the implementer's pasted claim) follow the two
+correctness-critical phases, because an implementer self-attesting "tests pass" is
+not trusted (a fixer false-greened earlier this sprint).
 
-P1 is safe to start immediately under either §9 option.
+| # | Phase | Tasks | Gate |
+|---|------|-------|------|
+| 1 | **P1 Extract** | Tracked Python script (+bathos) parsing `ALL.bbdep.rotamers.lib` **filtered to T∈{CPR,PRO,TPR}** (5% stepdown) → JSON (bins/probs/χ). | AC-1. |
+| 2 | **P3 Geometry** | Reuse `Nerf::place_atom` (§7); proline template (Engh–Huber placeholder); endocyclic-χ ring build + CCD closure; endo/exo via `r1`; canonical-frame identity test. | **AC-G**. |
+| 3 | **A3 Geometry audit** | Independent `reviewer`: re-runs `cargo test -p proxide-rotlib`, runs external geometry validation (debug-dump coords; assert bonds/angles/closure/χ-recovery vs CCD `PRO.cif`), reports measured numbers. | AC-G confirmed by auditor — **blocks P4**. |
+| 4 | **P2 Schema** | `rotlib.proto`; `prost` (build.rs) + `zstd` deps; round-trip test. | AC-2. |
+| 5 | **P4 Converter** | Dunbrack text → `*.rotlib.pb.zst` (PRECOMPUTED coords from P3); embed attribution + sidecar. **Only after A3 passes.** | AC-3. |
+| 6 | **P5 Loader+routing** | `load_pb`; route `num_rotamers`/`place_rotamer` to CPR via one shared helper; `RotlibError` variants. | AC-R. |
+| 7 | **A5 Routing audit** | Independent `reviewer`: full `cargo test -p proxide-rotlib`, verifies AC-R **by identity** (not inequality), reports numbers. | AC-R confirmed by auditor. |
+| 8 | **P6 Verify+docs** | Cross-check rebuilt PRO vs **PDB CCD `PRO.cif`** (public-domain) — **NOT** MASTER; README ODC-BY notice + citation; `--all-targets` clean. | AC-4, AC-5. |
+
+P1 and P3 are safe to start immediately. The Research item (#820) runs in **parallel,
+read-only**, and feeds a FOLLOW-UP refinement of the Engh–Huber placeholder — it does
+not block this sprint.
 
 ---
 
 ## 11. Acceptance criteria
 
-- **AC-1.** `cpr.bbdep.rotamers.lib` parsed; per-bin probabilities sum to 1.0±1e-3; CPR has 2 rotamers/bin.
+- **AC-1.** `ALL.bbdep.rotamers.lib` parsed; T∈{CPR,PRO,TPR} all present; CPR has 2 rotamers/bin; per-bin Σprob = 1.0±1e-3; grid rectangular; PRO/CPR (φ,ψ) bin count recorded and matches the file.
 - **AC-2.** `rotlib.proto` round-trips losslessly through prost + zstd (`--long`).
-- **AC-G.** Geometry: rebuilt proline sidechain is chemically valid — all bond lengths/angles within ±tol of template; ring closure CD–N satisfied.
-- **AC-3.** Converter emits `*.rotlib.pb.zst` whose `attribution`/`data_license` fields are populated (loader rejects empty `attribution`).
-- **AC-R.** `place_rotamer("PRO", φ, ψ, ri, cis=true, …)` uses the CPR entry (different prob/coords from `cis=false`); `num_rotamers` likewise.
-- **AC-4.** `cargo test -p proxide-rotlib` and `cargo check --all-targets` pass, warning-free.
-- **AC-5.** Repo carries ODC-BY notice + citation where the data ships; no CC BY-NC-SA artifact is committed/redistributed.
+- **AC-G (strengthened).** For proline, with the Engh–Huber template:
+  - (a) all 3 Dunbrack χ are **recovered** from the rebuilt coords within ±2°;
+  - (b) **both** puckers build — `r1=1` (endo) and `r1=2` (exo) produce geometrically **distinct** CG positions (>0.3 Å apart);
+  - (c) all five endocyclic bond angles within ±3° of ideal pyrrolidine; CD–N within ±0.03 Å of 1.47 Å;
+  - (d) rebuilt PRO ring RMSD vs idealized **CCD `PRO.cif`** (public-domain) ≤ tol;
+  - (e) **round-trip identity:** `place_rotamer` onto a backbone equal to the build-frame backbone returns the stored coords within tol.
+- **AC-3.** Converter emits `*.rotlib.pb.zst` whose `attribution`/`data_license` are populated (loader rejects empty `attribution`).
+- **AC-R (strengthened).** With synthetic **identical** PRO & CPR grids:
+  - (1) `place_rotamer("PRO",φ,ψ,ri,cis=true)` coords **equal the CPR entry's stored coords** (identity, not mere inequality);
+  - (2) `num_rotamers("PRO",φ,ψ,cis=true)` equals the CPR bin's rotamer count;
+  - (3) on real data at (−180,−180), the placed cis rotamer χ1 is **closer to 32.5° than 27.3°**.
+- **AC-4.** `cargo test -p proxide-rotlib` and `cargo check -p proxide-rotlib --all-targets` pass, warning-free (also `cargo build -p proxide-master` — same `deny(warnings)`).
+- **AC-5.** Repo carries ODC-BY notice + citation where the data ships; **no** CC BY-NC-SA artifact (`rotlib.bin`) is committed/redistributed (verified via `git ls-files`).
 
 ---
 
@@ -251,9 +285,13 @@ P1 is safe to start immediately under either §9 option.
 
 ---
 
-## 13. Open questions
+## 13. Decisions (closed) & open questions
 
-1. **§9 A vs B** — confirm PRECOMPUTED (A) for v1? (recommended)
-2. Which stepdown is canonical for shipping? (default **5%** = Opt1-5, per Dunbrack benchmark guidance.)
-3. Ship per-residue `.pb.zst` or one library file? (lean: one file, all residues, once the geometry engine covers them; CPR+PRO-only interim file to unblock now.)
-4. Source of ideal residue geometry templates — adopt Engh–Huber values, or reuse any existing proxide-geometry/proxide-gaff params?
+**Closed (locked by user, 2026-06-02):**
+1. **§9 A vs B → A (PRECOMPUTED).** Coords baked at convert time; `place_rotamer` unchanged.
+2. **Canonical stepdown → 5% (Opt1-5).**
+3. **Geometry templates → Engh–Huber placeholder**, flagged for research (backlog #820) to match MASTER's convention; reuse `proxide-geometry` NeRF for the IC build.
+
+**Still open:**
+4. Ship per-residue `.pb.zst` or one library file? (lean: one file once the engine covers all residues; **CPR+PRO-only interim file** to unblock now.)
+5. Eventual full-library regeneration (all 20 residues) to retire the CC BY-NC-SA `rotlib.bin` runtime dependency — separate roadmap item.
