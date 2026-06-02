@@ -2020,6 +2020,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxide-master"
+version = "0.1.0-alpha.7"
+dependencies = [
+ "approx",
+ "nalgebra",
+ "rand",
+ "rayon",
+ "thiserror",
+]
+
+[[package]]
 name = "proxide-physics"
 version = "0.1.0-alpha.7"
 dependencies = [
