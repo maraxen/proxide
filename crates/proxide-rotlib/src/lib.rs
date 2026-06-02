@@ -2,10 +2,19 @@
 
 //! Backbone-dependent rotamer library for protein sidechain placement (proxide-rotlib).
 //!
-//! Loads and queries the MSL binary rotamer library format used by the
-//! Mosaist protein design suite.  For each amino acid type the library
-//! stores a rectangular φ/ψ grid of rotamer populations and canonical
-//! backbone-relative sidechain coordinates.
+//! Supports two loader paths:
+//!
+//! - **MSL binary format** (legacy, via `load()`): reads the binary rotamer library used by the
+//!   Mosaist protein design suite. For each amino acid type the library stores a rectangular
+//!   φ/ψ grid of rotamer populations and canonical backbone-relative sidechain coordinates.
+//! - **Dunbrack BBDEP2010 protobuf** (preferred, via `load_pb()`): loads precomputed rotamer
+//!   coordinates from the Dunbrack backbone-dependent rotamer library in compressed protobuf format.
+//!
+//! # Licensing
+//!
+//! Code is MIT-licensed. Rotamer data (coordinates and backbone-dependent statistics) derived
+//! from the Dunbrack 2010 backbone-dependent rotamer library is ODC-BY-1.0 (Open Data Commons
+//! Attribution License 1.0). See the crate README for full attribution and citation details.
 //!
 //! # Typical usage
 //!
@@ -25,6 +34,9 @@
 //! - Mosaist / MSL: <https://grigoryanlab.org/mosaist/>
 //! - Dunbrack RL Jr. "Rotamer libraries in the 21st century."
 //!   *Curr Opin Struct Biol.* 2002;12(4):431-440.
+//! - Shapovalov MV, Dunbrack RL Jr. "A smoothed backbone-dependent rotamer library for proteins
+//!   derived from adaptive kernel density estimates and regressions."
+//!   *Structure* 19(6):844–858 (2011).
 
 pub mod error;
 pub mod rotamer_id;
