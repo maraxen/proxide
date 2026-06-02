@@ -34,6 +34,11 @@ pub fn contact_degree_raw(
     aa_allowed_a: Option<&[&str]>,
     aa_allowed_b: Option<&[&str]>,
 ) -> Result<(f64, Vec<ClashTuple>), ConFindError> {
+    // MSL C++ bug note (contactDegree.cpp line 209):
+    // The C++ fast-path checks `aaAllowedA.empty() && aaAllowedA.empty()` — checking
+    // aaAllowedA twice instead of aaAllowedA && aaAllowedB. aa_allowed_a/b are always
+    // None in v1 (no seq_const), so no fast-path exists here. When seq_const is
+    // implemented, either replicate the bug for parity or diverge and document it.
     let aa_set_a: HashSet<&str> = match aa_allowed_a {
         Some(list) => list.iter().copied().collect(),
         None => AA_NAMES.iter().copied().collect(),
