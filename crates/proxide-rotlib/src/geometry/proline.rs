@@ -1,20 +1,22 @@
-//! Proline ring closure algorithm using NeRF + cyclic coordinate descent (CCD).
+//! Proline ring closure via angle-relaxation (P3 v2).
 //!
-//! Builds proline sidechain coordinates from χ angles, closing the pyrrolidine ring
-//! N-CA-CB-CG-CD-N via CCD if necessary.
+//! Builds proline sidechain coordinates from exact χ angles (from Dunbrack).
+//! Ring closure is achieved by solving the CB-CG-CD bond angle via 1-D root-finding
+//! to satisfy |CD−N| = 1.487 Å (ideal bond length). χ1 and χ2 are preserved exactly;
+//! the ring angle is the only degree of freedom relaxed.
 
 use crate::RotlibError;
 use super::template::ResidueTemplate;
 use proxide_geometry::geometry::nerf::Nerf;
 
-#[allow(dead_code)]
-const CCD_MAX_ITERATIONS: usize = 100;
-#[allow(dead_code)]
-const CCD_TOLERANCE_CD_N: f32 = 0.02; // Å
-#[allow(dead_code)]
-const CCD_IDEAL_CD_N: f32 = 1.47; // Å
-#[allow(dead_code)]
-const CCD_CHI_TOLERANCE: f32 = 5.0; // degrees
+/// Ideal CD-N bond length from CCD PRO.cif (Å).
+const CD_N_IDEAL: f32 = 1.487;
+/// Tolerance for ring closure |CD−N − ideal| (Å).
+const CD_N_TOLERANCE: f32 = 0.001;
+/// Max iterations for bisection root-find of CB-CG-CD angle.
+const ANGLE_SOLVE_MAX_ITER: usize = 100;
+/// Tolerance for bisection convergence (degrees).
+const ANGLE_SOLVE_TOL_DEG: f32 = 1e-4;
 
 /// Result of proline sidechain building.
 #[derive(Clone, Debug)]
@@ -42,27 +44,29 @@ impl ProlineBuilder {
         Self { template }
     }
 
-    /// Build proline sidechain from χ angles using NeRF + CCD ring closure.
+    /// Build proline sidechain from exact χ angles with ring closure via angle relaxation.
+    ///
+    /// # Algorithm
+    /// 1. Place CB: Nerf::place_atom([C, N, CA], CA-CB, N-CA-CB, improper C-N-CA-CB)
+    /// 2. Place CG: Nerf::place_atom([N, CA, CB], CB-CG, CA-CB-CG, **χ1 exact**)
+    /// 3. Solve CB-CG-CD angle θ via bisection to achieve |CD−N| = 1.487 Å
+    ///    - χ2 remains **exact** throughout
+    /// 4. Compute recovered χ angles from final coordinates.
     ///
     /// # Arguments
-    /// * `backbone_frame` - Coordinates of N, CA, C in the canonical backbone frame.
-    ///   Typically, N=[0,0,0], CA=[1.458,0,0], C=[2.0,1.42,0] (built by `frame::backbone_frame`).
+    /// * `backbone_frame` - Coordinates of [N, CA, C] in the canonical backbone frame.
+    ///   Typically, N=[0,0,0], CA≈[1.458,0,0], C≈[2.0,1.42,0].
     /// * `chi_angles` - [χ1, χ2, χ3] in degrees (from Dunbrack).
+    ///   χ3 is ignored; it is computed as a ring-closure constraint.
     ///
     /// # Returns
-    /// ProlineCoords with sidechain atoms (CB, CG, CD) and ring closure status.
-    ///
-    /// # Failures
-    /// - Ring cannot close within tolerance after CCD_MAX_ITERATIONS.
-    /// - CCD rotations drift more than ±5° from input χ values.
-    #[allow(unused_assignments)]
+    /// ProlineCoords with sidechain atoms (CB, CG, CD) and recovered χ angles.
+    /// If ring closure fails: error message includes achieved CD-N distance.
     pub fn build(&self, backbone_frame: &[[f32; 3]; 3], chi_angles: [f32; 3]) -> Result<ProlineCoords, RotlibError> {
-        // Extract backbone atoms in f32.
         let n_f32 = backbone_frame[0];
         let ca_f32 = backbone_frame[1];
         let c_f32 = backbone_frame[2];
 
-        // Get bond definitions.
         let cb_bond = self.template.bonds[4].ok_or_else(|| {
             RotlibError::InvalidFormat("proline template missing CB bond definition".to_string())
         })?;
@@ -73,105 +77,128 @@ impl ProlineBuilder {
             RotlibError::InvalidFormat("proline template missing CD bond definition".to_string())
         })?;
 
-        // Build initial coordinates using χ angles.
-        // CB: bonded to CA with fixed improper dihedral from template.
-        // prev=[C, N, CA], bond=CA-CB, angle=N-CA-CB, torsion=C-N-CA-CB (fixed backbone improper).
-        let cb_f32 = Nerf::place_atom(&[c_f32, n_f32, ca_f32], cb_bond.bond_length, cb_bond.bond_angle_deg, cb_bond.torsion_deg);
-        // CG: χ1 = N-CA-CB-CG, bonded to CB.
-        // prev=[N, CA, CB], bond=CB-CG, angle=CA-CB-CG, torsion=N-CA-CB-CG (=χ1).
-        let cg_f32 = Nerf::place_atom(&[n_f32, ca_f32, cb_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi_angles[0]);
+        // Build CB with fixed improper dihedral (C-N-CA-CB).
+        let cb_f32 = Nerf::place_atom(
+            &[c_f32, n_f32, ca_f32],
+            cb_bond.bond_length,
+            cb_bond.bond_angle_deg,
+            cb_bond.torsion_deg,
+        );
 
-        // CD: χ2 = CA-CB-CG-CD, bonded to CG.
-        // prev=[CA, CB, CG], bond=CG-CD, angle=CB-CG-CD, torsion=CA-CB-CG-CD (=χ2).
-        let mut cd_f32 = Nerf::place_atom(&[ca_f32, cb_f32, cg_f32], cd_bond.bond_length, cd_bond.bond_angle_deg, chi_angles[1]);
+        // Build CG with χ1 (exact).
+        let cg_f32 = Nerf::place_atom(
+            &[n_f32, ca_f32, cb_f32],
+            cg_bond.bond_length,
+            cg_bond.bond_angle_deg,
+            chi_angles[0], // χ1 exact
+        );
 
-        // Run ring closure if needed.
-        let mut ccd_iterations = 0;
-        let mut recovered_chi = chi_angles;
-        let mut cg_final = cg_f32;
+        // Solve CB-CG-CD angle θ to close the ring.
+        // We want to find θ such that |CD(θ) − N| = CD_N_IDEAL.
+        let theta_result = solve_cg_cd_angle(
+            ca_f32, cb_f32, cg_f32, n_f32,
+            cd_bond.bond_length,
+            chi_angles[1], // χ2 exact
+        )?;
 
-        // Check if ring is closed within tolerance.
-        let cd_n_dist = distance_3d(cd_f32, n_f32);
-        if (cd_n_dist - CCD_IDEAL_CD_N).abs() > CCD_TOLERANCE_CD_N {
-            // Run CCD to close the ring.
-            // Optimize χ2 to drive CD-N distance toward ideal (1.47 Å).
-            // χ3 is computed post-hoc as a ring-closure constraint.
-            let chi1 = chi_angles[0]; // χ1 is fixed during CCD
-            let mut chi2 = chi_angles[1];
+        let (theta_deg, cd_f32) = theta_result;
 
-            for iter in 0..CCD_MAX_ITERATIONS {
-                ccd_iterations = iter + 1;
+        // Compute recovered χ angles from final coordinates.
+        let chi1_recovered = compute_dihedral(n_f32, ca_f32, cb_f32, cg_f32);
+        let chi2_recovered = compute_dihedral(ca_f32, cb_f32, cg_f32, cd_f32);
+        let chi3_recovered = compute_dihedral(cb_f32, cg_f32, cd_f32, n_f32);
 
-                // Optimize χ2 (CA-CB-CG-CD): moves both CG and CD.
-                // Try incrementally adjusting chi2 to minimize CD-N distance error.
-                let step = 0.5; // degree step size
-                chi2 += step; // Try positive step
-
-                let cg_test = Nerf::place_atom(&[n_f32, ca_f32, cb_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi1);
-                let cd_test = Nerf::place_atom(&[ca_f32, cb_f32, cg_test], cd_bond.bond_length, cd_bond.bond_angle_deg, chi2);
-                let dist_test = distance_3d(cd_test, n_f32);
-
-                if (dist_test - CCD_IDEAL_CD_N).abs() < (distance_3d(cd_f32, n_f32) - CCD_IDEAL_CD_N).abs() {
-                    // Improved, keep this step
-                    cg_final = cg_test;
-                    cd_f32 = cd_test;
-                } else {
-                    // Negative step
-                    chi2 -= 2.0 * step;
-                    let cg_test2 = Nerf::place_atom(&[n_f32, ca_f32, cb_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi1);
-                    let cd_test2 = Nerf::place_atom(&[ca_f32, cb_f32, cg_test2], cd_bond.bond_length, cd_bond.bond_angle_deg, chi2);
-                    let dist_test2 = distance_3d(cd_test2, n_f32);
-
-                    if (dist_test2 - CCD_IDEAL_CD_N).abs() < (distance_3d(cd_f32, n_f32) - CCD_IDEAL_CD_N).abs() {
-                        cg_final = cg_test2;
-                        cd_f32 = cd_test2;
-                    } else {
-                        // Neither direction improved, revert chi2
-                        chi2 += step;
-                    }
-                }
-
-                // Check for convergence.
-                let final_dist = distance_3d(cd_f32, n_f32);
-                if (final_dist - CCD_IDEAL_CD_N).abs() <= CCD_TOLERANCE_CD_N {
-                    // Check χ drift from input values.
-                    if (chi2 - chi_angles[1]).abs() <= CCD_CHI_TOLERANCE {
-                        // Converged! (Only check chi2 for now; chi3 is post-hoc constraint)
-                        recovered_chi[0] = chi1;
-                        recovered_chi[1] = chi2;
-                        recovered_chi[2] = compute_dihedral(cb_f32, cg_final, cd_f32, n_f32);
-                        return Ok(ProlineCoords {
-                            sidechain: vec![cb_f32, cg_final, cd_f32],
-                            converged: true,
-                            ccd_iterations,
-                            recovered_chi,
-                        });
-                    }
-                }
-
-            }
-
-            // CCD failed to converge.
-            return Err(RotlibError::InvalidFormat(format!(
-                "proline ring closure failed: CD-N = {:.3} Å after {} iterations",
-                distance_3d(cd_f32, n_f32),
-                ccd_iterations
-            )));
-        }
-
-        // Ring is already closed; compute recovered χ values.
-        recovered_chi[0] = compute_dihedral(n_f32, ca_f32, cb_f32, cg_f32);
-        recovered_chi[1] = compute_dihedral(ca_f32, cb_f32, cg_f32, cd_f32);
-        recovered_chi[2] = compute_dihedral(cb_f32, cg_f32, cd_f32, n_f32);
+        let recovered_chi = [chi1_recovered, chi2_recovered, chi3_recovered];
 
         Ok(ProlineCoords {
             sidechain: vec![cb_f32, cg_f32, cd_f32],
             converged: true,
-            ccd_iterations,
+            ccd_iterations: 0, // Not used with angle-relaxation
             recovered_chi,
         })
     }
+}
 
+/// Solve the CB-CG-CD bond angle θ to close the proline ring.
+///
+/// Uses bisection to find θ ∈ [90°, 130°] such that |CD(θ) − N| ≈ CD_N_IDEAL.
+/// χ2 (CA-CB-CG-CD dihedral) is held exactly constant.
+///
+/// # Returns
+/// (θ in degrees, CD position in f32) or RotlibError if bisection fails.
+fn solve_cg_cd_angle(
+    ca: [f32; 3], cb: [f32; 3], cg: [f32; 3], n: [f32; 3],
+    cd_bond_len: f32, chi2_deg: f32,
+) -> Result<(f32, [f32; 3]), RotlibError> {
+    // Bisection bounds: angle must be in physically reasonable range.
+    let mut theta_low = 90.0_f32;
+    let mut theta_high = 130.0_f32;
+
+    // Evaluate at bounds.
+    let cd_low = Nerf::place_atom(&[ca, cb, cg], cd_bond_len, theta_low, chi2_deg);
+    let dist_low = distance_3d(cd_low, n);
+
+    let cd_high = Nerf::place_atom(&[ca, cb, cg], cd_bond_len, theta_high, chi2_deg);
+    let dist_high = distance_3d(cd_high, n);
+
+    // Check if a solution exists in this interval.
+    let error_low = dist_low - CD_N_IDEAL;
+    let error_high = dist_high - CD_N_IDEAL;
+
+    if (error_low * error_high) > 0.0 {
+        // Errors same sign — no root in [90°, 130°].
+        // Return best guess; actual distance will be reported in error.
+        let (best_theta, best_cd) = if error_low.abs() < error_high.abs() {
+            (theta_low, cd_low)
+        } else {
+            (theta_high, cd_high)
+        };
+        return Err(RotlibError::InvalidFormat(format!(
+            "proline ring closure: no solution found for CB-CG-CD angle. CD-N = {:.3} Å (ideal {:.3})",
+            distance_3d(best_cd, n), CD_N_IDEAL
+        )));
+    }
+
+    // Bisection loop.
+    for _iter in 0..ANGLE_SOLVE_MAX_ITER {
+        let theta_mid = (theta_low + theta_high) / 2.0;
+
+        // Check convergence.
+        if (theta_high - theta_low) < ANGLE_SOLVE_TOL_DEG {
+            let cd_final = Nerf::place_atom(&[ca, cb, cg], cd_bond_len, theta_mid, chi2_deg);
+            let dist_final = distance_3d(cd_final, n);
+            if (dist_final - CD_N_IDEAL).abs() <= CD_N_TOLERANCE {
+                return Ok((theta_mid, cd_final));
+            } else {
+                return Err(RotlibError::InvalidFormat(format!(
+                    "proline ring closure: bisection converged but tolerance not met. CD-N = {:.3} Å (ideal {:.3})",
+                    dist_final, CD_N_IDEAL
+                )));
+            }
+        }
+
+        // Evaluate at midpoint.
+        let cd_mid = Nerf::place_atom(&[ca, cb, cg], cd_bond_len, theta_mid, chi2_deg);
+        let dist_mid = distance_3d(cd_mid, n);
+        let error_mid = dist_mid - CD_N_IDEAL;
+
+        // Update interval.
+        if (error_low * error_mid) < 0.0 {
+            // Root in [theta_low, theta_mid]
+            theta_high = theta_mid;
+        } else {
+            // Root in [theta_mid, theta_high]
+            theta_low = theta_mid;
+        }
+    }
+
+    // Failed to converge.
+    let theta_final = (theta_low + theta_high) / 2.0;
+    let cd_final = Nerf::place_atom(&[ca, cb, cg], cd_bond_len, theta_final, chi2_deg);
+    Err(RotlibError::InvalidFormat(format!(
+        "proline ring closure: bisection max iterations. CD-N = {:.3} Å (ideal {:.3})",
+        distance_3d(cd_final, n), CD_N_IDEAL
+    )))
 }
 
 /// Compute Euclidean distance between two points.
