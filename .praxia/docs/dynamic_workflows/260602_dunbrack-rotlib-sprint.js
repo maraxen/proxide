@@ -3,6 +3,7 @@ export const meta = {
   description: 'Sprint #12: Dunbrack 2010 (ODC-BY) -> proxide protobuf+zstd rotamer library with cis-PRO (CPR). Risk-first ordering with independent reviewer audit gates. Decisions A/5%/Engh-Huber locked. Rev 2 (post oracle round 1).',
   phases: [
     { title: 'Research', detail: 'lit-review how MASTER derived rotlib.bin Cartesians (non-blocking, read-only; feeds follow-up #820)' },
+    { title: 'P0 Preflight', detail: 'assert Dunbrack input present + pin SHA256; vendor CCD PRO.cif (offline-safe)' },
     { title: 'P1 Extract', detail: 'parse ALL.bbdep.rotamers.lib (T in CPR/PRO/TPR) -> JSON' },
     { title: 'P3 Geometry', detail: 'proline chi->Cartesian via NeRF; endo/exo via r1; ring closure; Engh-Huber placeholder' },
     { title: 'A3 Geometry Audit', detail: 'independent reviewer re-runs tests + external geometry validation; GATES P4' },
@@ -106,12 +107,21 @@ async function research() {
   return agent(
     `Research (spec ${SPEC} §7 RESEARCH FLAG, backlog #820). READ-ONLY — report only, no edits.
 How did MASTER/SCWRL/Dunbrack derive the baked Cartesian sidechain coords in rotlib.bin from Dunbrack chi? Which ideal bond-length/angle param set (Engh-Huber? CHARMM? AMBER? SCWRL?), and how is proline ring closure treated? Triangulate mosaist (/home/marielle/repos/mosaist/src/mstrotlib.cpp), Shapovalov-Dunbrack 2011, SCWRL4/MASTER literature.
-Output: a decision-record recommending which ideal-geometry params proxide should adopt to match conventions, and whether the Engh-Huber placeholder is adequate or needs replacement. Feeds a follow-up sprint; does NOT block cis-PRO landing.`,
+Output: a decision-record recommending which ideal-geometry params proxide should adopt to match conventions, and whether the Engh-Huber placeholder is adequate or needs replacement. This feeds follow-up #820 ONLY — it cannot override the locked Engh-Huber placeholder decision for THIS sprint and does NOT block cis-PRO landing.`,
     { label: 'research-master-geometry', phase: 'Research', agentType: 'librarian' }
   )
 }
 
 async function build() {
+  // --- P0 Preflight (vendor reference + verify input; blocks all) -----------
+  await agent(
+    `P0 Preflight (spec §10 P0). Make the sprint's data prerequisites reproducible and offline-safe.
+1. Assert the Dunbrack input exists at ${DATA}. It is GITIGNORED — if absent, extract it from data/rotlibs/dunbrack2010-everything.tar.zst (zstd --long=31 -dc | tar -x the SimpleOpt1-5/ALL.bbdep.rotamers.lib member). Compute and record its SHA256.
+2. Vendor the validation reference: download RCSB CCD proline to crates/proxide-rotlib/tests/data/ccd/PRO.cif from https://files.rcsb.org/ligands/view/PRO.cif (public-domain CCD; license-clean) so A3/P6 read it from disk (CI/cluster is offline, reviewers have no network). Record its SHA256.
+Report both paths + SHA256s. If the download is unreachable, STOP and report — do not fabricate a reference.`,
+    { label: 'p0-preflight', phase: 'P0 Preflight', agentType: 'fixer' }
+  )
+
   // --- P1 Extract -----------------------------------------------------------
   const p1 = await agent(
     `P1 Extract (spec §5/§10, backlog #814, AC-1).${COMMON}
@@ -124,9 +134,9 @@ AC-1: all three of CPR/PRO/TPR present; CPR 2 rotamers/bin; each bin Sum(prob)=1
   await agent(
     `P3 Geometry — proline chi->Cartesian (spec §7/§10, backlog #816, AC-G). HIGHEST-RISK phase.${COMMON}
 REUSE proxide_geometry::geometry::nerf::Nerf::place_atom (it is f32 -> build in f32, convert to f64 for storage; do NOT add a parallel f64 NeRF). Add a proline residue template (atoms N,CA,C,O,CB,CG,CD; bonds; the 4-atom def per chi) with Engh-Huber ideal bond lengths/angles as a clearly-commented PLACEHOLDER (// PLACEHOLDER: Engh-Huber; backlog #820).
-RING CLOSURE — named algorithm (NOT generic): the two Dunbrack rotamers per bin ARE the Cgamma-endo/exo puckers (opposite chi signs). Build CB,CG,CD by NeRF using the rotamer's ENDOCYCLIC torsions chi1=N-CA-CB-CG, chi2=CA-CB-CG-CD, chi3=CB-CG-CD-N; select endo/exo by r1. Verify CD-N ~= 1.47A; if idealized geometry leaves residual closure error beyond tol, apply a minimal cyclic-coordinate-descent (CCD) ring closure or document residual. Refs: Ho et al. proline pucker; Cremer-Pople.
-FRAME (convention trap): store coords in frame::backbone_frame(N,CA,C) (x=CA-N, z=x x (C-CA), y=z x x, origin=CA) so place_rotamer's rigid transform is correct. Add a round-trip identity unit test: place_rotamer onto a backbone equal to the build-frame backbone returns the stored coords within tol.
-Add tests asserting AC-G (§11): chi recovered within +/-2 deg; BOTH puckers (r1=1,2) build and give distinct CG (>0.3A apart); endocyclic angles +/-3 deg; CD-N within +/-0.03A of 1.47A; RMSD vs idealized CCD PRO.cif <= tol; round-trip identity. cargo test -p proxide-rotlib.`,
+RING CLOSURE — named algorithm (NOT generic): the two Dunbrack rotamers per bin ARE the Cgamma-endo/exo puckers (opposite chi signs). Build CB,CG,CD by NeRF using the rotamer's ENDOCYCLIC torsions chi1=N-CA-CB-CG, chi2=CA-CB-CG-CD, chi3=CB-CG-CD-N; select endo/exo by r1. If |CD-N - 1.47| > 0.02A after the NeRF build, run CCD: iteratively rotate chi2 (moves CG,CD) then chi3 (moves CD) in small steps toward CD-N=1.47A; MAX 100 iterations; CONVERGE when |CD-N-1.47| <= 0.02A AND each chi stays within +/-5deg of its Dunbrack value. A rotamer that cannot converge within those bounds FAILS AC-G and is NOT shipped — there is no "document the residual" fallback. Refs: Ho et al. proline pucker; Cremer-Pople.
+FRAME (convention trap): store coords in frame::backbone_frame(N,CA,C) (x=CA-N, z=x x (C-CA), y=z x x, origin=CA) so place_rotamer's rigid transform is correct. Add a round-trip identity unit test: place_rotamer onto a backbone equal to the build-frame backbone returns the stored coords within 1e-2 A.
+Add tests asserting AC-G (§11) with PINNED tolerances: chi recovered within +/-2 deg; BOTH puckers (r1=1,2) build and give distinct CG (>=0.5A apart); endocyclic angles +/-3 deg; CD-N within +/-0.03A of 1.47A; rebuilt PRO ring heavy-atom RMSD vs the vendored crates/proxide-rotlib/tests/data/ccd/PRO.cif (from P0) <= 0.05A; round-trip identity <= 1e-2 A. cargo test -p proxide-rotlib.`,
     { label: 'p3-geometry', phase: 'P3 Geometry', agentType: 'fixer' }
   )
 
@@ -134,13 +144,13 @@ Add tests asserting AC-G (§11): chi recovered within +/-2 deg; BOTH puckers (r1
   const a3 = await agent(
     `A3 INDEPENDENT geometry audit of P3 (spec §10 A3 + §11 AC-G). You are a reviewer with Bash — do NOT trust the implementer; MEASURE yourself.
 1. Re-run \`cargo test -p proxide-rotlib\` and \`cargo check -p proxide-rotlib --all-targets\`; capture the real summary.
-2. Independently validate the rebuilt proline geometry: dump/recompute the proline rotamer coords and check, with your OWN script if needed (uv run python), against CCD PRO.cif (public-domain, NOT MASTER): chi recovery <=2 deg, BOTH puckers distinct (CG >0.3A apart), endocyclic angles within 3 deg, CD-N within 0.03A of 1.47A, RMSD vs PRO.cif within tol, and the round-trip identity test exists and passes.
-Report each AC-G sub-criterion with your measured number. Set ac_g_pass=true ONLY if all hold. This GATES the converter.`,
+2. Independently validate the rebuilt proline geometry against the vendored crates/proxide-rotlib/tests/data/ccd/PRO.cif (public-domain CCD, NOT MASTER) — dump/recompute coords with your OWN script if needed (uv run python). PINNED thresholds: chi recovery <=2 deg; BOTH puckers distinct (CG >=0.5A apart); endocyclic angles within 3 deg; CD-N within 0.03A of 1.47A; heavy-atom RMSD vs PRO.cif <= 0.05A; round-trip identity <= 1e-2A.
+Report each AC-G sub-criterion with your MEASURED number (chi_recovery_max_err_deg, cd_n_distance_ang, ccd_ref_rmsd_ang, etc.). Set ac_g_pass=true ONLY if every pinned threshold holds. This GATES the converter (a false pass ships wrong geometry).`,
     { label: 'a3-geometry-audit', phase: 'A3 Geometry Audit', agentType: 'reviewer', schema: GEOM_AUDIT_SCHEMA }
   )
   if (!a3 || !a3.ac_g_pass) {
-    log(`A3 GATE FAILED — geometry not validated (cd_n=${a3 && a3.cd_n_distance_ang}, chi_err=${a3 && a3.chi_recovery_max_err_deg}). Halting before P4; fix P3 and re-run.`)
-    return { halted_at: 'A3', geometry_audit: a3, extract: p1 }
+    log(`A3 GATE FAILED — geometry not validated (cd_n=${a3 && a3.cd_n_distance_ang}A, chi_err=${a3 && a3.chi_recovery_max_err_deg}deg, ccd_rmsd=${a3 && a3.ccd_ref_rmsd_ang}A). Blocking P4.`)
+    throw new Error(`A3 geometry gate failed (AC-G not met): ${a3 ? JSON.stringify(a3) : 'no audit returned'}. Fix P3 and re-run; converter (P4) must not bake unvalidated coords.`)
   }
 
   // --- P2 Schema ------------------------------------------------------------
@@ -162,14 +172,14 @@ Offline converter (Rust bin in proxide-rotlib, or tracked script): parse Dunbrac
     `P5 Loader + routing (spec §8/§10, backlog #818, AC-R).${COMMON}
 Add RotamerLibrary::load_pb(path): zstd --long decompress -> prost decode -> existing AaEntry/BinData map; reject empty attribution (RotlibError::MissingAttribution); add RotlibError::Protobuf. PRECOMPUTED -> read coords directly.
 FIX ROUTING GAP: today only backbone_bin is CPR-aware. Factor effective-key resolution into ONE helper used by backbone_bin, num_rotamers, AND place_rotamer (CPR when cis_proline && aa=="PRO" && CPR present).
-Tests for AC-R (strengthened, IDENTITY not inequality): with synthetic IDENTICAL PRO & CPR grids, place_rotamer(cis=true) coords EQUAL the CPR entry's stored coords; num_rotamers(cis=true) EQUALS the CPR bin rotamer count; on real data at (-180,-180) the placed cis chi1 is closer to 32.5 than 27.3. cargo test -p proxide-rotlib.`,
+load_pb MUST read PRECOMPUTED coords DIRECTLY (no NeRF rebuild on the read path), so the cis path returns the stored CPR coords. Tests for AC-R (IDENTITY not inequality): with synthetic IDENTICAL PRO & CPR grids, place_rotamer(cis=true) coords EQUAL the CPR entry's stored coords within 1e-6 A (bit-identity modulo the rigid transform); num_rotamers(cis=true) EQUALS the CPR bin rotamer count; on real data at (-180,-180) the placed cis chi1 is closer to 32.5 than 27.3. cargo test -p proxide-rotlib.`,
     { label: 'p5-loader', phase: 'P5 Loader', agentType: 'fixer' }
   )
 
   // --- A5 Routing audit -----------------------------------------------------
   const a5 = await agent(
     `A5 INDEPENDENT routing audit of P5 (spec §10 A5 + §11 AC-R). Reviewer with Bash — MEASURE yourself, do not trust the implementer.
-Re-run full \`cargo test -p proxide-rotlib\`. Verify AC-R by IDENTITY (not inequality): (1) cis coords == CPR entry stored coords; (2) num_rotamers(cis=true) == CPR bin count; (3) placed cis chi1 closer to 32.5 than 27.3 at (-180,-180). Confirm a SINGLE shared effective-key helper is used by backbone_bin, num_rotamers, AND place_rotamer (grep). Report measured numbers; ac_r_pass only if all hold.`,
+Re-run full \`cargo test -p proxide-rotlib\`. Verify AC-R by IDENTITY (not inequality): (1) cis coords == CPR entry stored coords within 1e-6 A (confirm load_pb does NOT rebuild coords on the read path); (2) num_rotamers(cis=true) == CPR bin count; (3) placed cis chi1 closer to 32.5 than 27.3 at (-180,-180). Confirm a SINGLE shared effective-key helper is used by backbone_bin, num_rotamers, AND place_rotamer (grep). Report measured numbers; ac_r_pass only if all hold.`,
     { label: 'a5-routing-audit', phase: 'A5 Routing Audit', agentType: 'reviewer', schema: ROUTING_AUDIT_SCHEMA }
   )
 
@@ -187,8 +197,12 @@ Report verdict fields + test summary.`,
   return { extract: p1, geometry_audit: a3, routing_audit: a5, verify: p6 }
 }
 
+// build() throws at the A3 gate on geometry failure; parallel() maps a throwing
+// thunk to null, so buildOut === null signals a hard failure (loud, not silent).
 const [researchOut, buildOut] = await parallel([research, build])
 
-log(`research done; build ${buildOut && buildOut.halted_at ? 'HALTED at ' + buildOut.halted_at : 'completed: tests_pass=' + (buildOut && buildOut.verify && buildOut.verify.all_tests_pass)}`)
+log(buildOut
+  ? `build completed: tests_pass=${buildOut.verify && buildOut.verify.all_tests_pass}, ac_r=${buildOut.routing_audit && buildOut.routing_audit.ac_r_pass}`
+  : `build FAILED (gate threw — likely A3 geometry). See run log; fix and re-run.`)
 
-return { sprint: 'Sprint #12 (260602-rotlib-protobuf)', spec: SPEC, research: researchOut, build: buildOut }
+return { sprint: 'Sprint #12 (260602-rotlib-protobuf)', spec: SPEC, research: researchOut, build: buildOut, build_failed: buildOut === null }

@@ -187,10 +187,15 @@ load/place time). Lives in `crates/proxide-rotlib/src/geometry/`.
   (CPR r1 χ=(32.5,−36.0,25.1) vs r2 (−20.3,34.0,−33.8)). Build CB,CG,CD by NeRF using
   the rotamer's **endocyclic torsions** (χ1=N-CA-CB-CG, χ2=CA-CB-CG-CD, χ3=CB-CG-CD-N)
   + ideal bond lengths/angles; select endo/exo by rotamer index `r1`. Because the χ
-  come from real closed rings, NeRF lands CD near N — **verify** CD–N ≈ 1.47 Å within
-  tol; if idealized geometry leaves residual closure error beyond tol, apply a minimal
-  **cyclic-coordinate-descent (CCD)** ring closure (or document the residual). Refs:
-  Ho et al. (proline pucker), Cremer–Pople puckering. Validated by §11 AC-G.
+  come from real closed rings, NeRF lands CD near N. **Ring closure (specified — no
+  escape hatch):** if `|CD–N − 1.47| > 0.02 Å` after the NeRF build, run
+  **cyclic-coordinate-descent (CCD)**: iteratively rotate χ2 (moves CG,CD) then χ3
+  (moves CD) in small steps to drive CD–N toward 1.47 Å; **max 100 iterations**;
+  **converge** when `|CD–N − 1.47| ≤ 0.02 Å` **AND** each χ stays within **±5°** of its
+  Dunbrack value (closure must NOT be absorbed into bond angles or large χ drift). A
+  rotamer that cannot converge within those bounds **fails AC-G and is not shipped** —
+  there is no "document the residual" fallback. Refs: Ho et al. (proline pucker),
+  Cremer–Pople puckering. Validated by §11 AC-G.
 
 ---
 
@@ -238,6 +243,7 @@ not trusted (a fixer false-greened earlier this sprint).
 
 | # | Phase | Tasks | Gate |
 |---|------|-------|------|
+| 0 | **P0 Preflight** | Assert the Dunbrack input exists at `data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib` (it is **gitignored** — if absent, extract from `data/rotlibs/dunbrack2010-everything.tar.zst` with `zstd --long=31`); pin its SHA256. Vendor the validation reference `crates/proxide-rotlib/tests/data/ccd/PRO.cif` from RCSB CCD (`https://files.rcsb.org/ligands/view/PRO.cif`, public-domain) so A3/P6 read it from disk (CI/cluster is offline). | input present + SHA pinned; `PRO.cif` vendored. **Blocks all.** |
 | 1 | **P1 Extract** | Tracked Python script (+bathos) parsing `ALL.bbdep.rotamers.lib` **filtered to T∈{CPR,PRO,TPR}** (5% stepdown) → JSON (bins/probs/χ). | AC-1. |
 | 2 | **P3 Geometry** | Reuse `Nerf::place_atom` (§7); proline template (Engh–Huber placeholder); endocyclic-χ ring build + CCD closure; endo/exo via `r1`; canonical-frame identity test. | **AC-G**. |
 | 3 | **A3 Geometry audit** | Independent `reviewer`: re-runs `cargo test -p proxide-rotlib`, runs external geometry validation (debug-dump coords; assert bonds/angles/closure/χ-recovery vs CCD `PRO.cif`), reports measured numbers. | AC-G confirmed by auditor — **blocks P4**. |
@@ -259,13 +265,14 @@ not block this sprint.
 - **AC-2.** `rotlib.proto` round-trips losslessly through prost + zstd (`--long`).
 - **AC-G (strengthened).** For proline, with the Engh–Huber template:
   - (a) all 3 Dunbrack χ are **recovered** from the rebuilt coords within ±2°;
-  - (b) **both** puckers build — `r1=1` (endo) and `r1=2` (exo) produce geometrically **distinct** CG positions (>0.3 Å apart);
+  - (b) **both** puckers build — `r1=1` (endo) and `r1=2` (exo) produce geometrically **distinct** CG positions (**≥0.5 Å apart**; published endo↔exo CG displacement ≈0.5–0.7 Å);
   - (c) all five endocyclic bond angles within ±3° of ideal pyrrolidine; CD–N within ±0.03 Å of 1.47 Å;
-  - (d) rebuilt PRO ring RMSD vs idealized **CCD `PRO.cif`** (public-domain) ≤ tol;
-  - (e) **round-trip identity:** `place_rotamer` onto a backbone equal to the build-frame backbone returns the stored coords within tol.
+  - (d) rebuilt PRO ring heavy-atom RMSD vs idealized **CCD `PRO.cif`** ≤ **0.05 Å**;
+  - (e) **round-trip identity:** `place_rotamer` onto a backbone equal to the build-frame backbone returns the stored coords within **≤1e-2 Å**.
+  - All numeric thresholds above are the AC-G pass conditions; A3 must report measured values, not a bare boolean.
 - **AC-3.** Converter emits `*.rotlib.pb.zst` whose `attribution`/`data_license` are populated (loader rejects empty `attribution`).
 - **AC-R (strengthened).** With synthetic **identical** PRO & CPR grids:
-  - (1) `place_rotamer("PRO",φ,ψ,ri,cis=true)` coords **equal the CPR entry's stored coords** (identity, not mere inequality);
+  - (1) `place_rotamer("PRO",φ,ψ,ri,cis=true)` coords **equal the CPR entry's stored coords within ≤1e-6 Å** (PRECOMPUTED coords are read directly by `load_pb` with NO rebuild on the read path, so this is bit-identity modulo the rigid transform — not a fresh NeRF build);
   - (2) `num_rotamers("PRO",φ,ψ,cis=true)` equals the CPR bin's rotamer count;
   - (3) on real data at (−180,−180), the placed cis rotamer χ1 is **closer to 32.5° than 27.3°**.
 - **AC-4.** `cargo test -p proxide-rotlib` and `cargo check -p proxide-rotlib --all-targets` pass, warning-free (also `cargo build -p proxide-master` — same `deny(warnings)`).
