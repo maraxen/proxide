@@ -10,7 +10,7 @@ metadata:
 # NotebookLM Research Notebook Plan: Rotamer Libraries & Contact Degree
 
 **Date**: 2026-06-02
-**Status**: APPROVED — oracle critique cycle complete (2 rounds); ready for user review and execution
+**Status**: EXECUTED — notebooks created and sources loaded (2026-06-02)
 **Feeds into**: Project direction decisions for proxide-rotlib + proxide-confind extensions
 
 **Changes from v1** (oracle critique #1):
@@ -24,6 +24,18 @@ metadata:
 - Added Mackenzie et al. 2016 PNAS as fallback P1 ConFind citation alongside Zheng 2014
 - Tightened Prompt A5 to name symmetric residues (PHE, TYR, ASP, GLU) explicitly
 - Narrowed Prompt B5 to Rosetta-packer vs. dTERMen comparison framing
+
+**Citation correction** (web search verification):
+- ConFind primary cite is **Zheng & Grigoryan (2017) PLoS ONE 12(5): e0178272** — NOT 2014 Structure
+- Confirmed directly from grigoryanlab.org/confind/ tool page
+- Mackenzie 2016 PNAS confirmed at pnas.org/doi/10.1073/pnas.1607178113
+- dTERMen paper: Zhou, Panaitiu & Grigoryan (2020) PNAS 117(2):1059–1068 added as Notebook B source
+
+**Execution** (2026-06-02):
+- Notebook A ID: 171c5c8b-8bae-48c1-9e6b-6cb3a45b7a8a
+- Notebook B ID: a2302b01-05b9-44b3-af62-58ea2e892298
+- Notebook A sources: 8 URL + 2 file + 1 text (rotlib code) = 11 sources
+- Notebook B sources: 9 URL + 2 file + 1 text (confind code) = 12 sources
 
 ---
 
@@ -161,7 +173,7 @@ the protein design applications that motivate implementing it.
 
 | Priority | Citation | Why |
 |----------|----------|-----|
-| P1 | **Zheng, Zhang & Grigoryan (2014)** — *(best candidate for primary ConFind citation — verify before adding; fallback: Mackenzie et al. 2016 below)*. *Structure* 23:961. | Primary citation for contact-degree metric if confirmed; grounds the CD formula and freedom scoring |
+| P1 | **Zheng & Grigoryan (2017)** — "Sequence statistics of tertiary structural motifs reflect protein stability." *PLoS ONE* 12(5): e0178272. DOI: 10.1371/journal.pone.0178272. **CONFIRMED** as primary ConFind cite by grigoryanlab.org/confind/ tool page. | Primary citation for contact-degree metric; grounds the CD formula and freedom scoring used in ConFind |
 | P1 | **Mackenzie, Zhou & Grigoryan (2016)** — "Tertiary alphabet for the observable protein structural universe." *PNAS* 113(47):E7438–E7447. DOI: 10.1073/pnas.1607178113 | Fallback P1 if Zheng 2014 cannot be verified; TERMs framework where contact degree is a core building block; high-confidence Grigoryan lab citation |
 | P1 | **Kulp et al. (2012)** — same MSL paper as Notebook A | ConFind is part of MSL; describes API surface and algorithmic motivation |
 | P2 | **Grigoryan & Keating (2008)** — "Structural specificity in coiled-coil interactions." *Current Opinion in Structural Biology* 18(4):477–483. DOI: 10.1016/j.sbi.2008.04.008 | Grigoryan lab context — where ConFind-style contact analysis is applied |
