@@ -176,9 +176,9 @@ impl RotamerLibrary {
     }
 
     /// Number of rotamers in the φ/ψ bin closest to `(phi, psi)` for amino acid `aa`.
-    pub fn num_rotamers(&self, aa: &str, phi: f64, psi: f64) -> Result<usize, RotlibError> {
+    pub fn num_rotamers(&self, aa: &str, phi: f64, psi: f64, cis_proline: bool) -> Result<usize, RotlibError> {
         let entry = self.entries.get(aa).ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
-        let bin = self.backbone_bin(aa, phi, psi, false)? as usize;
+        let bin = self.backbone_bin(aa, phi, psi, cis_proline)? as usize;
         Ok(entry.rotamers[bin].probs.len())
     }
 
@@ -218,13 +218,13 @@ impl RotamerLibrary {
     /// Returns a [`PlacedRotamer`](crate::rotamer_id::PlacedRotamer) whose
     /// `atoms` field lists every sidechain heavy atom (excluding backbone).
     #[allow(clippy::too_many_arguments)]
-    pub fn place_rotamer(&self, aa: &str, phi: f64, psi: f64, rot_index: usize, n: [f64; 3], ca: [f64; 3], c: [f64; 3]) -> Result<crate::rotamer_id::PlacedRotamer, RotlibError> {
+    pub fn place_rotamer(&self, aa: &str, phi: f64, psi: f64, rot_index: usize, cis_proline: bool, n: [f64; 3], ca: [f64; 3], c: [f64; 3]) -> Result<crate::rotamer_id::PlacedRotamer, RotlibError> {
         use crate::frame::{backbone_frame, Frame, Transform};
         use crate::rotamer_id::{PlacedAtom, PlacedRotamer, RotamerId};
 
         let entry = self.entries.get(aa)
             .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
-        let bin = self.backbone_bin(aa, phi, psi, false)? as usize;
+        let bin = self.backbone_bin(aa, phi, psi, cis_proline)? as usize;
         // bin is always valid (produced by backbone_bin which indexes entry.rotamers)
         let bin_data = &entry.rotamers[bin];
         let nr = bin_data.coords.len();
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn test_place_rotamer_unknown_aa() {
         let lib = RotamerLibrary { entries: std::collections::HashMap::new() };
-        let result = lib.place_rotamer("UNK", -60.0, -45.0, 0, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
+        let result = lib.place_rotamer("UNK", -60.0, -45.0, 0, false, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
         assert!(result.is_err());
         match result {
             Err(RotlibError::UnknownAa(aa)) => assert_eq!(aa, "UNK"),
@@ -384,7 +384,7 @@ mod tests {
         entries.insert("ALA".to_string(), entry);
         let lib = RotamerLibrary { entries };
 
-        let result = lib.place_rotamer("ALA", -120.0, -45.0, 5, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
+        let result = lib.place_rotamer("ALA", -120.0, -45.0, 5, false, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
         assert!(result.is_err());
         match result {
             Err(RotlibError::RotIndexOob(aa, idx, nr)) => {
@@ -421,7 +421,7 @@ mod tests {
         let ca = [0.0, 0.0, 0.0];
         let c = [0.0, 1.0, 0.0];
 
-        let result = lib.place_rotamer("VAL", -120.0, -45.0, 0, n, ca, c);
+        let result = lib.place_rotamer("VAL", -120.0, -45.0, 0, false, n, ca, c);
         assert!(result.is_ok());
         let placed = result.unwrap();
 

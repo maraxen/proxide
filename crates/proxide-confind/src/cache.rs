@@ -100,7 +100,7 @@ pub fn cache_residue_impl(
     let mut total_rotamers: usize = 0;
 
     for &aa in &AA_NAMES {
-        let nr = match rotlib.num_rotamers(aa, phi, psi) {
+        let nr = match rotlib.num_rotamers(aa, phi, psi, rb.is_cis_peptide) {
             Ok(n) => n,
             Err(_) => {
                 rotamer_grids.insert(aa.to_string(), None);
@@ -114,7 +114,7 @@ pub fn cache_residue_impl(
 
         for rot_index in 0..nr {
             let placed = rotlib
-                .place_rotamer(aa, phi, psi, rot_index, n, ca, c)
+                .place_rotamer(aa, phi, psi, rot_index, rb.is_cis_peptide, n, ca, c)
                 .map_err(ConFindError::RotlibError)?;
 
             let rot_id = Arc::new(placed.id.clone());

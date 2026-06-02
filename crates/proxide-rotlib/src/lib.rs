@@ -15,7 +15,7 @@
 //! let n = [0.0f64, 0.0, 0.0];
 //! let ca = [1.458, 0.0, 0.0];
 //! let c = [2.009, 1.420, 0.0];
-//! let placed = lib.place_rotamer("LEU", -60.0, -40.0, 0, n, ca, c).unwrap();
+//! let placed = lib.place_rotamer("LEU", -60.0, -40.0, 0, false, n, ca, c).unwrap();
 //! ```
 //!
 //! # References
