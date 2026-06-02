@@ -2144,6 +2144,7 @@ dependencies = [
 name = "proxide-rotlib"
 version = "0.1.0-alpha.7"
 dependencies = [
+ "clap",
  "prost",
  "prost-build",
  "proxide-geometry",
