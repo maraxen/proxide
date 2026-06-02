@@ -42,7 +42,7 @@ fn test_distogram_chain_a_small_pdb() {
     // Place CB for each residue (rot_index=0, sentinel phi/psi → default bin).
     let cb_positions: Vec<[f64; 3]> = chain_a.iter().map(|res| {
         let placed = lib
-            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, res.n, res.ca, res.c)
+            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, false, res.n, res.ca, res.c)
             .unwrap_or_else(|e| panic!("{}/{}: place_rotamer failed: {e}", res.chain, res.aa));
         placed.atoms.iter()
             .find(|a| a.name == "CB")
@@ -96,7 +96,7 @@ fn test_distogram_chain_b_small_pdb() {
     // Place CB for each residue (rot_index=0, sentinel phi/psi → default bin).
     let cb_positions: Vec<[f64; 3]> = chain_b.iter().map(|res| {
         let placed = lib
-            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, res.n, res.ca, res.c)
+            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, false, res.n, res.ca, res.c)
             .unwrap_or_else(|e| panic!("{}/{}: place_rotamer failed: {e}", res.chain, res.aa));
         placed.atoms.iter()
             .find(|a| a.name == "CB")
@@ -156,7 +156,7 @@ fn test_distogram_with_gly_and_pro() {
     // Test GLY: placing should return empty atoms.
     for res in &gly_residues {
         let placed = lib
-            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, res.n, res.ca, res.c)
+            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, false, res.n, res.ca, res.c)
             .unwrap_or_else(|e| panic!("GLY place_rotamer failed: {e}"));
         assert!(
             placed.atoms.is_empty(),
@@ -168,7 +168,7 @@ fn test_distogram_with_gly_and_pro() {
     // Test PRO: first atom should be "CD" (not "CB").
     for res in &pro_residues {
         let placed = lib
-            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, res.n, res.ca, res.c)
+            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, false, res.n, res.ca, res.c)
             .unwrap_or_else(|e| panic!("PRO place_rotamer failed: {e}"));
         assert!(
             !placed.atoms.is_empty(),
@@ -352,7 +352,7 @@ fn test_distogram_2zta_chain_a() {
     // Place CB for each non-GLY residue (rot_index=0, sentinel phi/psi → default bin).
     let cb_positions: Vec<[f64; 3]> = non_gly.iter().map(|res| {
         let placed = lib
-            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, res.n, res.ca, res.c)
+            .place_rotamer(&res.aa, 9999.0, 9999.0, 0, false, res.n, res.ca, res.c)
             .unwrap_or_else(|e| panic!("A{}/{}: place_rotamer failed: {e}", res.res_seq, res.aa));
         placed.atoms.iter()
             .find(|a| a.name == "CB")

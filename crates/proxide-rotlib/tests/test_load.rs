@@ -20,7 +20,7 @@ fn test_load_all_aa_names_present() {
 fn test_num_rotamers_sentinel_positive() {
     let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
     for &aa in AA_NAMES {
-        let n = lib.num_rotamers(aa, 9999.0, 9999.0).unwrap();
+        let n = lib.num_rotamers(aa, 9999.0, 9999.0, false).unwrap();
         assert!(n > 0, "{aa}: sentinel bin has 0 rotamers");
     }
 }

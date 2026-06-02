@@ -79,7 +79,7 @@ fn dihedral_angle(p1: [f64; 3], p2: [f64; 3], p3: [f64; 3], p4: [f64; 3]) -> f64
 #[test]
 fn test_place_ala_one_atom() {
     let (_lib_tmp, lib) = make_placement_lib();
-    let placed = lib.place_rotamer("ALA", 0.0, 0.0, 0, N, CA, C).unwrap();
+    let placed = lib.place_rotamer("ALA", 0.0, 0.0, 0, false, N, CA, C).unwrap();
     assert_eq!(placed.atoms.len(), 1);
     assert_eq!(placed.atoms[0].name, "CB");
 }
@@ -87,7 +87,7 @@ fn test_place_ala_one_atom() {
 #[test]
 fn test_place_arg_atom_count() {
     let (_lib_tmp, lib) = make_placement_lib();
-    let placed = lib.place_rotamer("ARG", 0.0, 0.0, 0, N, CA, C).unwrap();
+    let placed = lib.place_rotamer("ARG", 0.0, 0.0, 0, false, N, CA, C).unwrap();
     assert!(
         placed.atoms.len() >= 5,
         "expected >=5 atoms, got {}",
@@ -98,7 +98,7 @@ fn test_place_arg_atom_count() {
 #[test]
 fn test_place_no_backbone_atoms() {
     let (_lib_tmp, lib) = make_placement_lib();
-    let placed = lib.place_rotamer("ARG", 0.0, 0.0, 0, N, CA, C).unwrap();
+    let placed = lib.place_rotamer("ARG", 0.0, 0.0, 0, false, N, CA, C).unwrap();
     for atom in &placed.atoms {
         assert!(
             !["N", "CA", "C", "O"].contains(&atom.name.as_str()),
@@ -111,7 +111,7 @@ fn test_place_no_backbone_atoms() {
 #[test]
 fn test_place_correct_rotamer_id() {
     let (_lib_tmp, lib) = make_placement_lib();
-    let placed = lib.place_rotamer("ALA", 0.0, 0.0, 0, N, CA, C).unwrap();
+    let placed = lib.place_rotamer("ALA", 0.0, 0.0, 0, false, N, CA, C).unwrap();
     assert_eq!(
         placed.id,
         RotamerId {
@@ -125,7 +125,7 @@ fn test_place_correct_rotamer_id() {
 #[test]
 fn test_place_unknown_aa() {
     let (_lib_tmp, lib) = make_placement_lib();
-    let result = lib.place_rotamer("ZZZ", 0.0, 0.0, 0, N, CA, C);
+    let result = lib.place_rotamer("ZZZ", 0.0, 0.0, 0, false, N, CA, C);
     assert!(matches!(
         result,
         Err(RotlibError::UnknownAa(ref aa)) if aa == "ZZZ"
@@ -136,7 +136,7 @@ fn test_place_unknown_aa() {
 fn test_place_oob_rot_index() {
     let (_lib_tmp, lib) = make_placement_lib();
     // ALA has only 1 rotamer (rot=0); rot=99 is out of bounds
-    let result = lib.place_rotamer("ALA", 0.0, 0.0, 99, N, CA, C);
+    let result = lib.place_rotamer("ALA", 0.0, 0.0, 99, false, N, CA, C);
     assert!(matches!(
         result,
         Err(RotlibError::RotIndexOob(ref aa, 99, 1)) if aa == "ALA"
@@ -149,7 +149,7 @@ fn test_place_sentinel_uses_default_bin() {
     // phi=9999, psi=9999 -> sentinel -> default_bin
     // With only 1 bin, default_bin=0
     let placed = lib
-        .place_rotamer("ALA", 9999.0, 9999.0, 0, N, CA, C)
+        .place_rotamer("ALA", 9999.0, 9999.0, 0, false, N, CA, C)
         .unwrap();
     assert_eq!(placed.id.bin_index, 0);
 }
@@ -160,7 +160,7 @@ fn test_place_ala_cb_exact_coords() {
     // Backbone: N=[0,0,0], CA=[1.458,0,0], C=[1.980,1.418,0].
     // Expected lab-frame CB = [2.458, 0.0, 0.0] (derived analytically).
     let (_lib_tmp, lib) = make_placement_lib();
-    let placed = lib.place_rotamer("ALA", 0.0, 0.0, 0, N, CA, C).unwrap();
+    let placed = lib.place_rotamer("ALA", 0.0, 0.0, 0, false, N, CA, C).unwrap();
     let cb_xyz = placed.atoms[0].xyz;
     let expected = [2.458, 0.0, 0.0];
     for i in 0..3 {
@@ -178,7 +178,7 @@ fn test_place_all_aa_smoke() {
     ];
     let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
     for &aa in ALL_AA {
-        let placed = lib.place_rotamer(aa, 9999.0, 9999.0, 0, N, CA, C)
+        let placed = lib.place_rotamer(aa, 9999.0, 9999.0, 0, false, N, CA, C)
             .unwrap_or_else(|e| panic!("{aa}: place_rotamer failed: {e}"));
         let expected_na = lib.sidechain_atom_names(aa).unwrap().len();
         assert_eq!(placed.atoms.len(), expected_na, "{aa}: atom count mismatch");
@@ -207,7 +207,7 @@ fn test_place_parity_mosaist() {
 
     let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
     let placed = lib
-        .place_rotamer("ALA", 9999.0, 9999.0, 0, N, CA, C)
+        .place_rotamer("ALA", 9999.0, 9999.0, 0, false, N, CA, C)
         .unwrap();
 
     assert_eq!(placed.atoms.len(), 1, "ALA should have 1 atom (CB)");
@@ -254,12 +254,12 @@ fn test_place_met_real_phi_psi_small_pdb() {
     let lib = RotamerLibrary::load(&rotlib).unwrap();
 
     let placed = lib
-        .place_rotamer("MET", phi, psi, 0, met2.n, met2.ca, met2.c)
+        .place_rotamer("MET", phi, psi, 0, false, met2.n, met2.ca, met2.c)
         .unwrap();
 
     // Real φ/ψ must route to a different bin than sentinel (exercises grid lookup).
     let sentinel = lib
-        .place_rotamer("MET", 9999.0, 9999.0, 0, met2.n, met2.ca, met2.c)
+        .place_rotamer("MET", 9999.0, 9999.0, 0, false, met2.n, met2.ca, met2.c)
         .unwrap();
     assert_ne!(
         placed.id.bin_index,
