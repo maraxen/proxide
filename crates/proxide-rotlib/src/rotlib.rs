@@ -257,11 +257,23 @@ impl RotamerLibrary {
             .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))
     }
 
+    /// Look up the backbone-dependent bin index for `aa` at (`phi`, `psi`).
+    ///
+    /// Uses nearest-neighbour mapping into the Dunbrack BBdep 20°×20° grid
+    /// (10° bin centers). The returned bin index may be passed to
+    /// [`place_rotamer`](RotamerLibrary::place_rotamer).
+    ///
+    /// # Warning: sparse φ region
+    ///
+    /// Accuracy degrades for φ≥−30°: these bins have <3 crystallographic observations
+    /// in the Dunbrack library. Nearest-neighbor lookup is still correct but rotamer
+    /// probabilities in this region have poor statistical support. Placement in this
+    /// region should be treated as a low-confidence estimate.
     pub fn backbone_bin(&self, aa: &str, phi: f64, psi: f64) -> Result<u32, RotlibError> {
         use crate::binning::find_closest_angle;
         let entry = self.entries.get(aa)
             .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
-        // Sentinel: either angle is 9999.0 → return default_bin
+        // Returns default_bin (global argmax) — caller must provide real φ/ψ when backbone is resolved.
         if phi == 9999.0 || psi == 9999.0 {
             return Ok(entry.default_bin);
         }

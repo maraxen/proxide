@@ -4,7 +4,12 @@ pub fn is_backbone_or_hydrogen(name: &str) -> bool {
 }
 
 /// True iff `atom_name` counts as a sidechain atom in ConFind-style clash detection.
-/// CB is excluded for all AAs except ALA (doNotCountCB=true semantics).
+///
+/// CB is excluded from sidechain atom classification for all amino acids except ALA
+/// (doNotCountCB semantics). GLY has no rotamers (na=0 in the Dunbrack library) and
+/// place_rotamer will return zero sidechain atoms for GLY.
+///
+/// See also: GLY and ALA edge-case notes on [`RotamerLibrary::backbone_bin`].
 pub fn counts_as_sidechain(atom_name: &str, aa: &str) -> bool {
     if is_backbone_or_hydrogen(atom_name) { return false; }
     if atom_name == "CB" && aa != "ALA" { return false; }
