@@ -212,7 +212,10 @@ fn distance_3d(a: [f32; 3], b: [f32; 3]) -> f32 {
     (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
-/// Compute dihedral angle (degrees) from four points.
+/// Compute signed dihedral angle (degrees) from four points.
+///
+/// Sign matches NeRF convention: positive = clockwise looking along p1→p2.
+/// Uses atan2(|n1×n2| * sign(v2 · (n1×n2)), n1·n2).
 fn compute_dihedral(p0: [f32; 3], p1: [f32; 3], p2: [f32; 3], p3: [f32; 3]) -> f32 {
     let v1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
     let v2 = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
@@ -220,11 +223,12 @@ fn compute_dihedral(p0: [f32; 3], p1: [f32; 3], p2: [f32; 3], p3: [f32; 3]) -> f
 
     let n1 = cross(v1, v2);
     let n2 = cross(v2, v3);
+    let cross12 = cross(n1, n2);
 
-    let cross_mag = magnitude(cross(n1, n2));
-    let dot_prod = dot(n1, n2);
-    let dihedral_rad = dot_prod.atan2(cross_mag);
-    dihedral_rad * 180.0 / std::f32::consts::PI
+    let y_sign = if dot(v2, cross12) >= 0.0 { 1.0_f32 } else { -1.0_f32 };
+    let y = magnitude(cross12) * y_sign;
+    let x = dot(n1, n2);
+    y.atan2(x) * 180.0 / std::f32::consts::PI
 }
 
 fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
@@ -242,6 +246,7 @@ fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
 fn magnitude(a: [f32; 3]) -> f32 {
     (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt()
 }
+
 
 #[cfg(test)]
 mod tests {
