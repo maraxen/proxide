@@ -1,7 +1,7 @@
 # Spec: Dunbrack 2010 → protobuf rotamer library, with cis-PRO support
 
 - **task_id:** `260602_proxcon_deferred4` (item 3) + follow-on
-- **Status:** REVIEWED (oracle round 1) — decisions A/5%/Engh-Huber locked (§13); revised for ring-closure algorithm, frame convention, f32/f64, risk-first ordering + audit gates
+- **Status:** APPROVED (oracle, round 3 of critique→revise) — decisions A/5%/Engh-Huber locked (§13); ring-closure algorithm + CCD bounds, frame convention, f32/f64, risk-first ordering, independent reviewer audit gates, P0 preflight (vendored CCD PRO.cif), numeric AC-G/AC-R tolerances
 - **Author:** orchestrator (proxcon session, 2026-06-02)
 - **Backlog:** #799
 - **Related:** `crates/proxide-rotlib`, memory `project-rotlib-path`
