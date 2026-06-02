@@ -1,0 +1,67 @@
+---
+workspace: proxide
+session_id: d5b0c3a2-e3f3-4d72-8f2d-6fe57d100537
+status: in_progress
+immediately_relevant:
+- file: .praxia/docs/plans/260602_rotlib-confind-actions.md
+  lines:
+  - 1
+  - 50
+  reason: The full 12-action plan with file/line anchors and synthesis citations — read this before applying any code changes
+- file: .praxia/docs/decisions/260602_contact-threshold-adr.md
+  lines:
+  - 1
+  - 60
+  reason: 'ADR for CONTACT_THRESHOLD: pub const default + public arg; explains why CLASH_DIST/CONT_DIST are non-parameterizable while this threshold is not'
+- file: .praxia/synthesis.jsonl
+  lines:
+  - 1
+  - 12
+  reason: 12 JSONL records (A1-A6, B1-B6) — each has key_finding, decision, action, and confidence; ground truth for all remaining code changes
+- file: crates/proxide-confind/src/params.rs
+  lines:
+  - 1
+  - 20
+  reason: LO_COLL_PROB and HI_COLL_PROB already exist as pub consts — need empirical-origin doc added (synthesis:B2)
+- file: crates/proxide-confind/src/contact_list.rs
+  lines:
+  - 1
+  - 34
+  reason: CONTACT_THRESHOLD const goes here — entire file is 34 lines; add const before the struct (synthesis:B1)
+- file: crates/proxide-confind/src/cache.rs
+  lines:
+  - 64
+  - 90
+  reason: cache_residue_impl doc block (line 64); extend with Phase A non-skippable explanation (synthesis:B3)
+- file: crates/proxide-confind/src/parallel.rs
+  lines:
+  - 28
+  - 50
+  reason: contact_degree_raw; add comment at aa_allowed_a/b match blocks about future getConstrainedContacts C++ bug replication (synthesis:B4)
+active_dispatches: []
+task_id: 260602_rotlib-notebook-plan
+phase: Post-NLM-synthesis close
+goal_statement: 'Run NLM queries against the two built notebooks (A: rotlib theory, B: confind+design), extract grounded architecture decisions, produce a cited action plan and ADR, then apply the resulting code changes to proxide-rotlib and proxide-confind.'
+context_refs:
+- phase: NLM source-loading + fast research
+  task_id: 260602_rotlib-notebook-plan
+  summary: Built two notebooks (A=171c5c8b, B=a2302b01) with 16+17 sources each; 4 fast-research tasks imported additional sources; notebooks fully populated before this session
+failed_attempts: []
+open_questions:
+- 'Git topology: the worktree branch (worktree-snazzy-percolating-teapot) diverged from main before rotlib/confind were committed. How should the research artifacts be merged into main — cherry-pick individual commits or full branch merge?'
+- Should the plan doc and ADR live permanently in .praxia/docs/ on main, or should they be moved to a different tracking location once the actions are complete?
+deferred:
+- description: 'Debt #67 full implementation: backbone_bin cis_proline: bool param for PRO + omega detection in backbone parser'
+  rationale: Requires spec finalisation (spec update of 260529_rotlib.md) and real cis-PRO test fixture before implementation; not just a doc change
+  recommended_phase: Phase 7 or separate Debt#67 sprint
+- description: 'PlacedRotamer chi-angle field extension (chi_angles: Vec<f64>)'
+  rationale: NLM synthesis:A5 grounded the normalization policy but implementation is blocked on deciding whether to add chi output to v1 API
+  recommended_phase: Phase 7
+- description: proxide-master crate (backbone RMSD substructure search / TERM construction)
+  rationale: Roadmap item confirmed by NLM synthesis:B5; not yet in backlog; no dependency until confind is feature-complete
+  recommended_phase: Phase 8+
+- description: 'rotlib-fixture-expansion: add GLY/PRO PDB fixtures, 1DC7, 2ZTA, 1VII (turn coverage)'
+  rationale: Plan synthesis:A6 specifies exactly which files; can be done independently once confind changes are applied
+  recommended_phase: Next available session
+lessons_refs: []
+---
