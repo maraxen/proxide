@@ -12,8 +12,15 @@ pub struct BondDef {
     pub bond_length: f32,
     /// Bond angle (degrees) — defined by grandparent→parent→this.
     pub bond_angle_deg: f32,
-    /// Torsion angle (degrees) — defined by great_grandparent→grandparent→parent→this.
+    /// Torsion angle (degrees) — base value.
+    /// If `relative_chi` is None, this is the absolute dihedral (used for backbone atoms,
+    /// chi-defining atoms with placeholder 0.0, and rigid atoms like backbone O).
+    /// If `relative_chi` is Some(i), torsion = chi_values[i] + torsion_deg (used for
+    /// branch atoms whose orientation follows a chi angle with a fixed offset).
     pub torsion_deg: f32,
+    /// If Some(chi_idx), the actual torsion = chi_values[chi_idx] + torsion_deg.
+    /// Used for branch atoms (e.g. CG2 in VAL: torsion = chi1 + 120°).
+    pub relative_chi: Option<usize>,
 }
 
 /// Dihedral angle definition.
@@ -136,6 +143,8 @@ fn alanine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -143,6 +152,8 @@ fn alanine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.add_dihedral(DihedralDef {
@@ -167,6 +178,8 @@ fn serine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -174,13 +187,17 @@ fn serine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.417,
         bond_angle_deg: 111.1,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.add_dihedral(DihedralDef {
@@ -206,6 +223,8 @@ fn threonine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -213,20 +232,26 @@ fn threonine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.433,
         bond_angle_deg: 109.6,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 4,
         bond_length: 1.525,
         bond_angle_deg: 111.5,
-        torsion_deg: 120.0, // χ1 + 120° for gauche
+        torsion_deg: 120.0,
+
+        relative_chi: Some(0), // χ1 + 120° for gauche
     });
 
     t.add_dihedral(DihedralDef {
@@ -252,6 +277,8 @@ fn valine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -259,20 +286,26 @@ fn valine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.524,
         bond_angle_deg: 110.9,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 4,
         bond_length: 1.524,
         bond_angle_deg: 110.9,
-        torsion_deg: 120.0, // χ1 + 120° for gauche
+        torsion_deg: 120.0,
+
+        relative_chi: Some(0), // χ1 + 120° for gauche
     });
 
     t.add_dihedral(DihedralDef {
@@ -299,6 +332,8 @@ fn leucine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -306,27 +341,35 @@ fn leucine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.530,
         bond_angle_deg: 116.3,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.524,
         bond_angle_deg: 111.1,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 5,
         bond_length: 1.524,
         bond_angle_deg: 111.1,
-        torsion_deg: 120.0, // χ2 + 120° for second branch
+        torsion_deg: 120.0,
+
+        relative_chi: Some(1), // χ2 + 120° for second branch
     });
 
     t.add_dihedral(DihedralDef {
@@ -358,6 +401,8 @@ fn isoleucine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -365,27 +410,35 @@ fn isoleucine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.530,
         bond_angle_deg: 110.7,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 4,
         bond_length: 1.521,
         bond_angle_deg: 110.7,
-        torsion_deg: 120.0, // χ1 + 120° for CG2
+        torsion_deg: 120.0,
+
+        relative_chi: Some(0), // χ1 + 120° for CG2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 5,
         bond_length: 1.513,
         bond_angle_deg: 113.8,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.add_dihedral(DihedralDef {
@@ -417,6 +470,8 @@ fn methionine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -424,27 +479,35 @@ fn methionine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.530,
         bond_angle_deg: 114.1,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.807,
         bond_angle_deg: 112.7,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 6,
         bond_length: 1.791,
         bond_angle_deg: 100.9,
-        torsion_deg: 0.0, // χ3
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ3
     });
 
     t.add_dihedral(DihedralDef {
@@ -479,6 +542,8 @@ fn cysteine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -486,13 +551,17 @@ fn cysteine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.808,
         bond_angle_deg: 113.8,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.add_dihedral(DihedralDef {
@@ -529,6 +598,8 @@ fn aspartic_acid_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -536,27 +607,35 @@ fn aspartic_acid_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.516,
         bond_angle_deg: 113.3,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.249,
         bond_angle_deg: 118.8,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 5,
         bond_length: 1.249,
         bond_angle_deg: 118.8,
-        torsion_deg: 180.0, // χ2 + 180° for second carboxyl oxygen
+        torsion_deg: 180.0,
+
+        relative_chi: Some(1), // χ2 + 180° for second carboxyl oxygen
     });
 
     t.add_dihedral(DihedralDef {
@@ -588,6 +667,8 @@ fn asparagine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -595,27 +676,35 @@ fn asparagine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.516,
         bond_angle_deg: 116.4,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.231,
         bond_angle_deg: 120.8,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 5,
         bond_length: 1.328,
         bond_angle_deg: 116.5,
-        torsion_deg: 180.0, // χ2 + 180° for amide
+        torsion_deg: 180.0,
+
+        relative_chi: Some(1), // χ2 + 180° for amide
     });
 
     t.add_dihedral(DihedralDef {
@@ -648,6 +737,8 @@ fn glutamic_acid_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -655,34 +746,44 @@ fn glutamic_acid_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.516,
         bond_angle_deg: 114.2,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.516,
         bond_angle_deg: 116.3,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 6,
         bond_length: 1.249,
         bond_angle_deg: 118.8,
-        torsion_deg: 0.0, // χ3
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ3
     });
 
     t.set_bond(8, BondDef {
         parent_idx: 6,
         bond_length: 1.249,
         bond_angle_deg: 118.8,
-        torsion_deg: 180.0, // χ3 + 180° for second carboxyl oxygen
+        torsion_deg: 180.0,
+
+        relative_chi: Some(2), // χ3 + 180° for second carboxyl oxygen
     });
 
     t.add_dihedral(DihedralDef {
@@ -720,6 +821,8 @@ fn glutamine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -727,34 +830,44 @@ fn glutamine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.516,
         bond_angle_deg: 113.8,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.516,
         bond_angle_deg: 112.6,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 6,
         bond_length: 1.231,
         bond_angle_deg: 120.8,
-        torsion_deg: 0.0, // χ3
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ3
     });
 
     t.set_bond(8, BondDef {
         parent_idx: 6,
         bond_length: 1.328,
         bond_angle_deg: 116.5,
-        torsion_deg: 180.0, // χ3 + 180° for amide
+        torsion_deg: 180.0,
+
+        relative_chi: Some(2), // χ3 + 180° for amide
     });
 
     t.add_dihedral(DihedralDef {
@@ -794,6 +907,8 @@ fn phenylalanine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -801,48 +916,62 @@ fn phenylalanine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.502,
         bond_angle_deg: 113.8,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.384,
         bond_angle_deg: 120.7,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 5,
         bond_length: 1.384,
         bond_angle_deg: 120.7,
-        torsion_deg: 180.0, // χ2 + 180° for symmetric ring
+        torsion_deg: 180.0,
+
+        relative_chi: Some(1), // χ2 + 180° for symmetric ring
     });
 
     t.set_bond(8, BondDef {
         parent_idx: 6,
         bond_length: 1.382,
         bond_angle_deg: 120.7,
-        torsion_deg: 180.0, // ring closure
+        torsion_deg: 180.0,
+
+        relative_chi: None, // ring closure
     });
 
     t.set_bond(9, BondDef {
         parent_idx: 7,
         bond_length: 1.382,
         bond_angle_deg: 120.7,
-        torsion_deg: 180.0, // ring closure
+        torsion_deg: 180.0,
+
+        relative_chi: None, // ring closure
     });
 
     t.set_bond(10, BondDef {
         parent_idx: 8,
         bond_length: 1.382,
         bond_angle_deg: 120.0,
-        torsion_deg: 0.0, // aromatic ring
+        torsion_deg: 0.0,
+
+        relative_chi: None, // aromatic ring
     });
 
     t.add_dihedral(DihedralDef {
@@ -878,6 +1007,8 @@ fn tyrosine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -885,27 +1016,35 @@ fn tyrosine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.502,
         bond_angle_deg: 113.8,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.384,
         bond_angle_deg: 120.7,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 5,
         bond_length: 1.384,
         bond_angle_deg: 120.7,
-        torsion_deg: 180.0, // χ2 + 180°
+        torsion_deg: 180.0,
+
+        relative_chi: Some(1), // χ2 + 180°
     });
 
     t.set_bond(8, BondDef {
@@ -913,6 +1052,8 @@ fn tyrosine_template() -> ResidueTemplate {
         bond_length: 1.382,
         bond_angle_deg: 120.7,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(9, BondDef {
@@ -920,6 +1061,8 @@ fn tyrosine_template() -> ResidueTemplate {
         bond_length: 1.382,
         bond_angle_deg: 120.7,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(10, BondDef {
@@ -927,6 +1070,8 @@ fn tyrosine_template() -> ResidueTemplate {
         bond_length: 1.382,
         bond_angle_deg: 120.0,
         torsion_deg: 0.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(11, BondDef {
@@ -934,6 +1079,8 @@ fn tyrosine_template() -> ResidueTemplate {
         bond_length: 1.362,
         bond_angle_deg: 119.8,
         torsion_deg: 0.0,
+
+        relative_chi: None,
     });
 
     t.add_dihedral(DihedralDef {
@@ -971,6 +1118,8 @@ fn tryptophan_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -978,20 +1127,26 @@ fn tryptophan_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.498,
         bond_angle_deg: 113.6,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.365,
         bond_angle_deg: 127.1,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
@@ -999,6 +1154,8 @@ fn tryptophan_template() -> ResidueTemplate {
         bond_length: 1.430,
         bond_angle_deg: 126.6,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(8, BondDef {
@@ -1006,6 +1163,8 @@ fn tryptophan_template() -> ResidueTemplate {
         bond_length: 1.372,
         bond_angle_deg: 107.5,
         torsion_deg: 0.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(9, BondDef {
@@ -1013,6 +1172,8 @@ fn tryptophan_template() -> ResidueTemplate {
         bond_length: 1.415,
         bond_angle_deg: 107.1,
         torsion_deg: 0.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(10, BondDef {
@@ -1020,6 +1181,8 @@ fn tryptophan_template() -> ResidueTemplate {
         bond_length: 1.404,
         bond_angle_deg: 133.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(11, BondDef {
@@ -1027,6 +1190,8 @@ fn tryptophan_template() -> ResidueTemplate {
         bond_length: 1.404,
         bond_angle_deg: 120.0,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(12, BondDef {
@@ -1034,6 +1199,8 @@ fn tryptophan_template() -> ResidueTemplate {
         bond_length: 1.404,
         bond_angle_deg: 120.0,
         torsion_deg: 0.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(13, BondDef {
@@ -1041,6 +1208,8 @@ fn tryptophan_template() -> ResidueTemplate {
         bond_length: 1.404,
         bond_angle_deg: 120.0,
         torsion_deg: 0.0,
+
+        relative_chi: None,
     });
 
     t.add_dihedral(DihedralDef {
@@ -1074,6 +1243,8 @@ fn histidine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -1081,20 +1252,26 @@ fn histidine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.497,
         bond_angle_deg: 113.8,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.345,
         bond_angle_deg: 122.0,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
@@ -1102,6 +1279,8 @@ fn histidine_template() -> ResidueTemplate {
         bond_length: 1.354,
         bond_angle_deg: 131.0,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(8, BondDef {
@@ -1109,6 +1288,8 @@ fn histidine_template() -> ResidueTemplate {
         bond_length: 1.343,
         bond_angle_deg: 107.1,
         torsion_deg: 0.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(9, BondDef {
@@ -1116,6 +1297,8 @@ fn histidine_template() -> ResidueTemplate {
         bond_length: 1.338,
         bond_angle_deg: 110.5,
         torsion_deg: 0.0,
+
+        relative_chi: None,
     });
 
     t.add_dihedral(DihedralDef {
@@ -1148,6 +1331,8 @@ fn lysine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -1155,34 +1340,44 @@ fn lysine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.530,
         bond_angle_deg: 114.1,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.520,
         bond_angle_deg: 111.3,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 6,
         bond_length: 1.520,
         bond_angle_deg: 111.3,
-        torsion_deg: 0.0, // χ3
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ3
     });
 
     t.set_bond(8, BondDef {
         parent_idx: 7,
         bond_length: 1.489,
         bond_angle_deg: 111.9,
-        torsion_deg: 0.0, // χ4
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ4
     });
 
     t.add_dihedral(DihedralDef {
@@ -1227,6 +1422,8 @@ fn arginine_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 120.8,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     t.set_bond(4, BondDef {
@@ -1234,48 +1431,62 @@ fn arginine_template() -> ResidueTemplate {
         bond_length: 1.540,
         bond_angle_deg: 110.5,
         torsion_deg: -119.7,
+
+        relative_chi: None,
     });
 
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.530,
         bond_angle_deg: 114.1,
-        torsion_deg: 0.0, // χ1
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ1
     });
 
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.520,
         bond_angle_deg: 111.3,
-        torsion_deg: 0.0, // χ2
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ2
     });
 
     t.set_bond(7, BondDef {
         parent_idx: 6,
         bond_length: 1.460,
         bond_angle_deg: 112.0,
-        torsion_deg: 0.0, // χ3
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ3
     });
 
     t.set_bond(8, BondDef {
         parent_idx: 7,
         bond_length: 1.329,
         bond_angle_deg: 124.2,
-        torsion_deg: 0.0, // χ4
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ4
     });
 
     t.set_bond(9, BondDef {
         parent_idx: 8,
         bond_length: 1.326,
         bond_angle_deg: 120.0,
-        torsion_deg: 0.0, // χ4
+        torsion_deg: 0.0,
+
+        relative_chi: None, // χ4
     });
 
     t.set_bond(10, BondDef {
         parent_idx: 8,
         bond_length: 1.326,
         bond_angle_deg: 120.0,
-        torsion_deg: 180.0, // χ4 + 180° for second amino
+        torsion_deg: 180.0,
+
+        relative_chi: Some(3), // χ4 + 180° for second amino
     });
 
     t.add_dihedral(DihedralDef {
@@ -1334,6 +1545,8 @@ pub fn proline_template() -> ResidueTemplate {
         bond_length: 1.231,
         bond_angle_deg: 123.0,
         torsion_deg: 180.0,
+
+        relative_chi: None,
     });
 
     // Atom 4 (CB): parent=CA (idx 1), CA-CB bond = 1.543 Å, angle N-CA-CB = 104.7°
@@ -1344,7 +1557,9 @@ pub fn proline_template() -> ResidueTemplate {
         parent_idx: 1,
         bond_length: 1.543,
         bond_angle_deg: 104.7,
-        torsion_deg: -119.6, // Fixed improper dihedral (C-N-CA-CB), CCD value
+        torsion_deg: -119.6,
+
+        relative_chi: None, // Fixed improper dihedral (C-N-CA-CB), CCD value
     });
 
     // Atom 5 (CG): parent=CB (idx 4), CB-CG bond = 1.543 Å, angle CA-CB-CG = 105.1°
@@ -1353,7 +1568,9 @@ pub fn proline_template() -> ResidueTemplate {
         parent_idx: 4,
         bond_length: 1.543,
         bond_angle_deg: 105.1,
-        torsion_deg: 0.0, // placeholder; set by χ1 (exact)
+        torsion_deg: 0.0,
+
+        relative_chi: None, // placeholder; set by χ1 (exact)
     });
 
     // Atom 6 (CD): parent=CG (idx 5), CG-CD bond = 1.544 Å, angle CB-CG-CD = SOLVED
@@ -1364,7 +1581,9 @@ pub fn proline_template() -> ResidueTemplate {
         parent_idx: 5,
         bond_length: 1.544,
         bond_angle_deg: 105.1, // Initial guess; will be solved in ring closure
-        torsion_deg: 0.0, // placeholder; set by χ2 (exact)
+        torsion_deg: 0.0,
+
+        relative_chi: None, // placeholder; set by χ2 (exact)
     });
 
     // Dihedral definitions.
