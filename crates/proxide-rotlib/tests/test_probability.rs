@@ -160,7 +160,7 @@ fn test_prob_sum_real_rotlib() {
         assert!(lib.contains_aa(aa), "AA {} not in library", aa);
 
         // Check that default bin probabilities sum to <= 1.0
-        let nr = lib.num_rotamers(aa, 9999.0, 9999.0).unwrap();
+        let nr = lib.num_rotamers(aa, 9999.0, 9999.0, false).unwrap();
         let sum: f64 = (0..nr)
             .map(|i| lib.rotamer_probability(aa, i, 9999.0, 9999.0).unwrap())
             .sum();
