@@ -29,9 +29,10 @@ pub(crate) struct AaEntry {
     pub(crate) rotamers:        Vec<BinData>,
 }
 
-/// Map key for the cis-proline rotamer entry. Adjust if the sourced
-/// Dunbrack cis-PRO data uses a different key.
-const CIS_PRO_KEY: &str = "CPRO";
+/// Map key for the cis-proline rotamer entry. The Dunbrack 2010 backbone-
+/// dependent library codes cis-proline as `CPR` (and trans-proline as `TPR`);
+/// this must match whatever the loaded library names its cis-PRO entry.
+const CIS_PRO_KEY: &str = "CPR";
 
 /// Backbone-dependent rotamer library loaded from an MSL binary file.
 #[derive(Debug)]
