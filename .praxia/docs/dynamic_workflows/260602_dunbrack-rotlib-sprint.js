@@ -2,7 +2,7 @@ export const meta = {
   name: 'dunbrack-rotlib-protobuf-cis-pro',
   description: 'Sprint #12: Dunbrack 2010 (ODC-BY) -> proxide protobuf+zstd rotamer library with cis-PRO (CPR). Risk-first ordering with independent reviewer audit gates. Decisions A/5%/Engh-Huber locked. Rev 2 (post oracle round 1).',
   phases: [
-    { title: 'Research', detail: 'lit-review how MASTER derived rotlib.bin Cartesians (non-blocking, read-only; feeds follow-up #820)' },
+    { title: 'Research', detail: 'query existing NotebookLM rotamer notebooks + web/code; write synthesis.jsonl (non-blocking; feeds follow-up #820)' },
     { title: 'P0 Preflight', detail: 'assert Dunbrack input present + pin SHA256; vendor CCD PRO.cif (offline-safe)' },
     { title: 'P1 Extract', detail: 'parse ALL.bbdep.rotamers.lib (T in CPR/PRO/TPR) -> JSON' },
     { title: 'P3 Geometry', detail: 'proline chi->Cartesian via NeRF; endo/exo via r1; ring closure; Engh-Huber placeholder' },
@@ -35,6 +35,9 @@ export const meta = {
 
 const SPEC = '.praxia/docs/specs/260602_dunbrack-rotlib-protobuf-cis-pro.md'
 const DATA = 'data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib'
+const SYNTH = '.praxia/docs/research/260602_dunbrack-geometry-synthesis.jsonl'
+// Known rotamer/geometry-relevant NotebookLM notebooks (verified to exist this session):
+const NLM_NOTEBOOKS = 'PRIMARY "proxide: Rotamer Library Theory" id=171c5c8b-8bae-48c1-9e6b-6cb3a45b7a8a; SECONDARY "proxide: ConFind, Contact Degree & Protein Design" id=a2302b01-05b9-44b3-af62-58ea2e892298; "Protein Conformational State Metrics: Density-Based Evaluation" id=004a4e38-61ba-4b35-9350-45df33d33cef'
 
 const COMMON = `
 Read the spec first: ${SPEC} (authoritative; do not contradict it).
@@ -105,9 +108,16 @@ const VERIFY_SCHEMA = {
 // placeholder (backlog #820); does NOT gate the build.
 async function research() {
   return agent(
-    `Research (spec ${SPEC} §7 RESEARCH FLAG, backlog #820). READ-ONLY — report only, no edits.
-How did MASTER/SCWRL/Dunbrack derive the baked Cartesian sidechain coords in rotlib.bin from Dunbrack chi? Which ideal bond-length/angle param set (Engh-Huber? CHARMM? AMBER? SCWRL?), and how is proline ring closure treated? Triangulate mosaist (/home/marielle/repos/mosaist/src/mstrotlib.cpp), Shapovalov-Dunbrack 2011, SCWRL4/MASTER literature.
-Output: a decision-record recommending which ideal-geometry params proxide should adopt to match conventions, and whether the Engh-Huber placeholder is adequate or needs replacement. This feeds follow-up #820 ONLY — it cannot override the locked Engh-Huber placeholder decision for THIS sprint and does NOT block cis-PRO landing.`,
+    `Research (spec ${SPEC} §7 RESEARCH FLAG, backlog #820). Do NOT edit source code; you WILL write ONE artifact: ${SYNTH}.
+
+STEP 1 — NotebookLM (we already have rotamer notebooks). The mcp__notebooklm__* tools are deferred: load them via ToolSearch("select:mcp__notebooklm__refresh_auth,mcp__notebooklm__notebook_list,mcp__notebooklm__notebook_query"). Call refresh_auth first (tokens were refreshed on disk this session). Call notebook_list to confirm, then QUERY the known-relevant notebooks: ${NLM_NOTEBOOKS}. Use notebook_query (asks existing sources; NOT research_start) on each, asking: (a) how MASTER/SCWRL/Dunbrack derive baked Cartesian sidechain coords from chi; (b) which idealized bond-length/angle parameter set is used (Engh-Huber / CHARMM / AMBER / SCWRL); (c) how proline ring closure / Cgamma-endo-exo pucker is handled; (d) what backbone-relative frame convention places the rotamer. If any notebook_query errors (auth/headless), record the failure and continue.
+
+STEP 2 — Triangulate: web lit-review + mosaist code (/home/marielle/repos/mosaist/src/mstrotlib.cpp) + Shapovalov-Dunbrack 2011 + SCWRL4/MASTER literature.
+
+STEP 3 — WRITE ${SYNTH} (mkdir -p its dir): JSONL, ONE compact JSON object per line, schema:
+{"source": "...", "origin": "notebooklm"|"web"|"code", "notebook_id": "...optional...", "claim": "...", "evidence": "...", "relevance_to_P3_geometry": "...", "confidence": "high"|"medium"|"low"}
+
+RETURN a decision-record summary: which ideal-geometry params proxide should adopt to match MASTER's convention, and whether the Engh-Huber placeholder is adequate or needs replacement. This feeds follow-up #820 ONLY — it CANNOT override the locked Engh-Huber decision for THIS sprint and does NOT block cis-PRO landing.`,
     { label: 'research-master-geometry', phase: 'Research', agentType: 'librarian' }
   )
 }
