@@ -10,12 +10,16 @@ pub const CLASH_DIST: f64 = 2.0;
 /// contribute to the collision-probability accumulation.
 pub const CONT_DIST: f64 = 3.0;
 
-/// Lower bound on the collision-probability weight applied when two atoms
-/// are within `CONT_DIST`.
+/// Lower bound on the collision-probability weight used in freedom computation.
+///
+/// Empirically tuned in the Grigoryan lab MSL ConFind implementation.
+/// **Not calibrated against experimental flexibility measures (B-factors,
+/// NMR order parameters S²).** A `--freeB` mode is deferred to v2.
 pub const LO_COLL_PROB: f64 = 0.5;
 
-/// Upper bound on the collision-probability weight (applied at or below
-/// `CLASH_DIST`).
+/// Upper bound on the collision-probability weight (applied at or below `CLASH_DIST`).
+///
+/// Empirically tuned; see `LO_COLL_PROB` note.
 pub const HI_COLL_PROB: f64 = 2.0;
 
 /// 18 amino acids placed as rotamers (GLY and PRO excluded).
