@@ -13,6 +13,7 @@ crate-type = ["rlib"]
 [dependencies]
 thiserror = { workspace = true }
 tracing   = "0.1"
+proxide-geometry = { path = "../proxide-geometry" }
 
 [dependencies.serde]
 version  = "1"

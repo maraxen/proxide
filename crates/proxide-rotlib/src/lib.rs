@@ -30,9 +30,11 @@ pub mod frame;
 pub mod rotlib;
 pub mod binning;
 pub mod sidechain;
+pub mod geometry;
 
 pub use error::RotlibError;
 pub use rotamer_id::{RotamerId, PlacedRotamer, PlacedAtom};
 pub use rotlib::RotamerLibrary;
 pub use frame::{Frame, Transform, backbone_frame};
 pub use sidechain::{counts_as_sidechain, is_backbone_or_hydrogen};
+pub use geometry::{ResidueTemplate, ProlineBuilder};

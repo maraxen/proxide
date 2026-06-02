@@ -2062,6 +2062,7 @@ dependencies = [
 name = "proxide-rotlib"
 version = "0.1.0-alpha.7"
 dependencies = [
+ "proxide-geometry",
  "serde",
  "tempfile",
  "thiserror",
