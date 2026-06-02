@@ -1,0 +1,49 @@
+---
+workspace: proxide
+session_id: b9a14c82-0f4e-4e1a-a93c-5d2e8f17c301
+status: complete
+immediately_relevant:
+- file: crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs
+  lines:
+  - 77
+  - 107
+  reason: '#[ignore] drift harness measure_loadpb_drift_vs_master: load_pb vs MASTER REF_CONTACTS on small.pdb. Re-run via PROXIDE_ROTLIB_PB env or default artifact path; gate for #820.'
+- file: crates/proxide-confind/tests/test_parity_small_pdb.rs
+  lines:
+  - 156
+  - 220
+  reason: MASTER parity baseline (REF_CONTACTS, TOLERANCE=5e-4). Anchors the drift harness (passes via load()).
+- file: crates/proxide-rotlib/src/geometry/template.rs
+  lines:
+  - 107
+  - 130
+  reason: standard_residue_template covers all 19 non-proline rotameric residues; converter routes PRO/CPR/TPR to proline_template. Full library template coverage complete.
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 161
+  - 280
+  reason: Converter emits one combined library (all residues); run with --input ALL.bbdep.rotamers.lib --output proxide-rotlib-bbdep2010.pb.zst.
+- file: .praxia/docs/specs/260602_dunbrack-rotlib-protobuf-cis-pro.md
+  lines:
+  - 295
+  - 306
+  reason: 'Decision log: Q4 resolved (#4), full-lib done + confind migration gated on #820 (#5), drift root-cause open (#6).'
+active_dispatches: []
+task_id: 260602_rotlib_deferred_sprint
+phase: null
+goal_statement: 'Deferred-sprint of the 3 P6-deferred items, landed to main (merge e9e460c). (3) Full 22-residue ODC-BY protobuf library generated + AC-3 validated (740,629 entries, 11.9MB, input SHA aade9d4f). (2) Q4 resolved = one combined .pb.zst. (1) confind load_pb migration DEFERRED with empirical justification: measured contact-degree drift vs MASTER is large, gated on backlog #820. Production confind.rs unchanged (stays on load()).'
+context_refs: []
+failed_attempts: []
+open_questions: []
+deferred:
+- description: 'Migrate confind.rs load()->load_pb() to retire the rotlib.bin runtime dependency. Backlog #869.'
+  rationale: 'GATED on backlog #820: measured drift (max |delta| 0.223, 69% >5e-4, 13 missing pairs on small.pdb) makes it non-drop-in. confind stays on load() until geometry matches MASTER.'
+  recommended_phase: 'after #820'
+- description: 'Root-cause the confind drift: pure geometry (Engh-Huber vs MASTER) vs rotamer-set/atom-order/residue-variant semantics. Spec #6.'
+  rationale: 'Needed to scope #820''s acceptance criterion (confind drift <5e-4 of MASTER).'
+  recommended_phase: 'precursor to #820'
+- description: Decide whether to commit/ship/download the 11.9MB combined .pb.zst (currently gitignored, regenerable).
+  rationale: 'Coupled to the confind migration actually consuming it at runtime; premature until #869.'
+  recommended_phase: 'with #869'
+lessons_refs: []
+---
