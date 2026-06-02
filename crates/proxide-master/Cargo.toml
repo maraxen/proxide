@@ -1,0 +1,20 @@
+[package]
+name = "proxide-master"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Backbone RMSD substructure search (MASTER-style) — Kabsch superposition over fragment databases"
+keywords = ["protein", "rmsd", "structure", "search", "kabsch"]
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+nalgebra = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+rand = { workspace = true }
