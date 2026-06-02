@@ -7,4 +7,4 @@ pub mod template;
 pub mod proline;
 
 pub use template::ResidueTemplate;
-pub use proline::ProlineBuilder;
+pub use proline::{ProlineBuilder, ProlineCoords};

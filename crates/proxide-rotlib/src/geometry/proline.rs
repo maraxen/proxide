@@ -74,14 +74,16 @@ impl ProlineBuilder {
         })?;
 
         // Build initial coordinates using χ angles.
-        // CB: χ1 = N-CA-CB-CG
-        let cb_f32 = Nerf::place_atom(&[n_f32, ca_f32, c_f32], cb_bond.bond_length, cb_bond.bond_angle_deg, chi_angles[0]);
+        // CB: bonded to CA with fixed improper dihedral from template.
+        // prev=[C, N, CA], bond=CA-CB, angle=N-CA-CB, torsion=C-N-CA-CB (fixed backbone improper).
+        let cb_f32 = Nerf::place_atom(&[c_f32, n_f32, ca_f32], cb_bond.bond_length, cb_bond.bond_angle_deg, cb_bond.torsion_deg);
+        // CG: χ1 = N-CA-CB-CG, bonded to CB.
+        // prev=[N, CA, CB], bond=CB-CG, angle=CA-CB-CG, torsion=N-CA-CB-CG (=χ1).
+        let cg_f32 = Nerf::place_atom(&[n_f32, ca_f32, cb_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi_angles[0]);
 
-        // CG: χ2 = CA-CB-CG-CD
-        let cg_f32 = Nerf::place_atom(&[ca_f32, cb_f32, n_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi_angles[1]);
-
-        // CD: χ3 = CB-CG-CD-N
-        let mut cd_f32 = Nerf::place_atom(&[cb_f32, cg_f32, n_f32], cd_bond.bond_length, cd_bond.bond_angle_deg, chi_angles[2]);
+        // CD: χ2 = CA-CB-CG-CD, bonded to CG.
+        // prev=[CA, CB, CG], bond=CG-CD, angle=CB-CG-CD, torsion=CA-CB-CG-CD (=χ2).
+        let mut cd_f32 = Nerf::place_atom(&[ca_f32, cb_f32, cg_f32], cd_bond.bond_length, cd_bond.bond_angle_deg, chi_angles[1]);
 
         // Run ring closure if needed.
         let mut ccd_iterations = 0;
@@ -92,40 +94,52 @@ impl ProlineBuilder {
         let cd_n_dist = distance_3d(cd_f32, n_f32);
         if (cd_n_dist - CCD_IDEAL_CD_N).abs() > CCD_TOLERANCE_CD_N {
             // Run CCD to close the ring.
+            // Optimize χ2 to drive CD-N distance toward ideal (1.47 Å).
+            // χ3 is computed post-hoc as a ring-closure constraint.
+            let chi1 = chi_angles[0]; // χ1 is fixed during CCD
             let mut chi2 = chi_angles[1];
-            let mut chi3 = chi_angles[2];
 
             for iter in 0..CCD_MAX_ITERATIONS {
                 ccd_iterations = iter + 1;
 
-                // Rotate χ2 (moves CG, CD).
-                chi2 += 0.1;
-                let cg_new = Nerf::place_atom(&[ca_f32, cb_f32, n_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi2);
-                let cd_new = Nerf::place_atom(&[cb_f32, cg_new, n_f32], cd_bond.bond_length, cd_bond.bond_angle_deg, chi3);
+                // Optimize χ2 (CA-CB-CG-CD): moves both CG and CD.
+                // Try incrementally adjusting chi2 to minimize CD-N distance error.
+                let step = 0.5; // degree step size
+                chi2 += step; // Try positive step
 
-                let cd_n_dist_new = distance_3d(cd_new, n_f32);
-                if (cd_n_dist_new - CCD_IDEAL_CD_N).abs() < (cd_n_dist - CCD_IDEAL_CD_N).abs() {
-                    // Improved, keep this step.
-                    cg_final = cg_new;
-                    let _ = cd_new; // cd_f32 will be recalculated in χ3 rotation below
+                let cg_test = Nerf::place_atom(&[n_f32, ca_f32, cb_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi1);
+                let cd_test = Nerf::place_atom(&[ca_f32, cb_f32, cg_test], cd_bond.bond_length, cd_bond.bond_angle_deg, chi2);
+                let dist_test = distance_3d(cd_test, n_f32);
+
+                if (dist_test - CCD_IDEAL_CD_N).abs() < (distance_3d(cd_f32, n_f32) - CCD_IDEAL_CD_N).abs() {
+                    // Improved, keep this step
+                    cg_final = cg_test;
+                    cd_f32 = cd_test;
                 } else {
-                    // Revert and try negative step.
-                    chi2 -= 0.2;
-                    let cg_new2 = Nerf::place_atom(&[ca_f32, cb_f32, n_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi2);
-                    cg_final = cg_new2;
+                    // Negative step
+                    chi2 -= 2.0 * step;
+                    let cg_test2 = Nerf::place_atom(&[n_f32, ca_f32, cb_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi1);
+                    let cd_test2 = Nerf::place_atom(&[ca_f32, cb_f32, cg_test2], cd_bond.bond_length, cd_bond.bond_angle_deg, chi2);
+                    let dist_test2 = distance_3d(cd_test2, n_f32);
+
+                    if (dist_test2 - CCD_IDEAL_CD_N).abs() < (distance_3d(cd_f32, n_f32) - CCD_IDEAL_CD_N).abs() {
+                        cg_final = cg_test2;
+                        cd_f32 = cd_test2;
+                    } else {
+                        // Neither direction improved, revert chi2
+                        chi2 += step;
+                    }
                 }
 
-                // Rotate χ3 (moves CD).
-                chi3 += 0.1;
-                cd_f32 = Nerf::place_atom(&[cb_f32, cg_final, n_f32], cd_bond.bond_length, cd_bond.bond_angle_deg, chi3);
-
-                let cd_n_dist_final = distance_3d(cd_f32, n_f32);
-                if (cd_n_dist_final - CCD_IDEAL_CD_N).abs() <= CCD_TOLERANCE_CD_N {
-                    // Check χ drift.
-                    if (chi2 - chi_angles[1]).abs() <= CCD_CHI_TOLERANCE && (chi3 - chi_angles[2]).abs() <= CCD_CHI_TOLERANCE {
-                        // Converged!
+                // Check for convergence.
+                let final_dist = distance_3d(cd_f32, n_f32);
+                if (final_dist - CCD_IDEAL_CD_N).abs() <= CCD_TOLERANCE_CD_N {
+                    // Check χ drift from input values.
+                    if (chi2 - chi_angles[1]).abs() <= CCD_CHI_TOLERANCE {
+                        // Converged! (Only check chi2 for now; chi3 is post-hoc constraint)
+                        recovered_chi[0] = chi1;
                         recovered_chi[1] = chi2;
-                        recovered_chi[2] = chi3;
+                        recovered_chi[2] = compute_dihedral(cb_f32, cg_final, cd_f32, n_f32);
                         return Ok(ProlineCoords {
                             sidechain: vec![cb_f32, cg_final, cd_f32],
                             converged: true,
@@ -134,6 +148,7 @@ impl ProlineBuilder {
                         });
                     }
                 }
+
             }
 
             // CCD failed to converge.

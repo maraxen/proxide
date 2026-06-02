@@ -108,6 +108,7 @@ pub fn proline_template() -> ResidueTemplate {
     t.add_atom("CD");
 
     // Internal coordinates (Engh-Huber ideal values, placeholder).
+    // PLACEHOLDER: Engh-Huber; canonical match is CHARMM — see backlog #820 / synthesis.jsonl
     // Atoms 0-2 (N, CA, C) are backbone and have no BondDef.
     // Atom 3 (O): parent=C (idx 2), C-O bond ~1.23 Å, angle C-C-O ~123°, torsion N-CA-C-O ~180°
     t.set_bond(3, BondDef {
@@ -117,31 +118,31 @@ pub fn proline_template() -> ResidueTemplate {
         torsion_deg: 180.0,
     });
 
-    // Atom 4 (CB): parent=CA (idx 1), CA-CB bond ~1.53 Å, angle N-CA-CB ~110°
-    // torsion will be set by χ1
+    // Atom 4 (CB): parent=CA (idx 1), CA-CB bond ~1.53 Å, angle N-CA-CB ~104°
+    // torsion is the fixed backbone improper dihedral (C-N-CA-CB)
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.530,
-        bond_angle_deg: 110.0,
+        bond_angle_deg: 104.0,
+        torsion_deg: 120.0, // Fixed improper dihedral (C-N-CA-CB), standard sp3 geometry
+    });
+
+    // Atom 5 (CG): parent=CB (idx 4), CB-CG bond ~1.542 Å, angle CA-CB-CG ~104°
+    // torsion will be set by χ1 (N-CA-CB-CG)
+    t.set_bond(5, BondDef {
+        parent_idx: 4,
+        bond_length: 1.542,
+        bond_angle_deg: 104.0,
         torsion_deg: 0.0, // placeholder; set by χ1
     });
 
-    // Atom 5 (CG): parent=CB (idx 4), CB-CG bond ~1.50 Å, angle CA-CB-CG ~100°
-    // torsion will be set by χ2
-    t.set_bond(5, BondDef {
-        parent_idx: 4,
-        bond_length: 1.503,
-        bond_angle_deg: 104.0,
-        torsion_deg: 0.0, // placeholder; set by χ2
-    });
-
-    // Atom 6 (CD): parent=CG (idx 5), CG-CD bond ~1.50 Å, angle CB-CG-CD ~105°
-    // torsion will be set by χ3
+    // Atom 6 (CD): parent=CG (idx 5), CG-CD bond ~1.542 Å, angle CB-CG-CD ~106°
+    // torsion will be set by χ2 (CA-CB-CG-CD)
     t.set_bond(6, BondDef {
         parent_idx: 5,
-        bond_length: 1.503,
-        bond_angle_deg: 105.0,
-        torsion_deg: 0.0, // placeholder; set by χ3
+        bond_length: 1.542,
+        bond_angle_deg: 106.0,
+        torsion_deg: 0.0, // placeholder; set by χ2
     });
 
     // Dihedral definitions.
