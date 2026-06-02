@@ -279,7 +279,7 @@ impl RotamerLibrary {
     pub fn backbone_bin(&self, aa: &str, phi: f64, psi: f64, cis_proline: bool) -> Result<u32, RotlibError> {
         use crate::binning::find_closest_angle;
         if cis_proline && aa == "PRO" {
-            log::warn!(
+            tracing::warn!(
                 "cis-PRO requested but library has no cis-PRO data; using standard PRO bin"
             );
         }
