@@ -299,6 +299,9 @@ not block this sprint.
 2. **Canonical stepdown → 5% (Opt1-5).**
 3. **Geometry templates → Engh–Huber placeholder**, flagged for research (backlog #820) to match MASTER's convention; reuse `proxide-geometry` NeRF for the IC build.
 
+**Resolved in deferred sprint (2026-06-02, task 260602_rotlib_deferred_sprint):**
+4. **Q4 → one combined `.pb.zst`.** The geometry engine now covers all 22 rotameric residue codes (`standard_residue_template` for the 19 non-proline + `proline_template` for PRO/CPR/TPR), so the interim CPR+PRO-only constraint is retired. The converter emits a single `proxide-rotlib-bbdep2010.pb.zst` (all residues) — verified by the AC-3 full-library test (740,629 entries → 22 residue types, 11.9 MB compressed; input SHA256 `aade9d4f…34bdf`).
+5. **Full-library regeneration → DONE (generation validated); confind runtime migration → GATED on backlog #820.** The full 22-residue library generates and passes AC-3. However, swapping confind's production call-site (`confind.rs:22`) from `load()` (MASTER `rotlib.bin`) to `load_pb()` is **not drop-in safe**: measured contact-degree drift on `small.pdb` is large (max |Δ| 0.223, mean 0.021, 69% of 43 matched contacts exceed the 5e-4 parity tolerance, plus 13 MASTER pairs structurally absent). Reproduced by the `#[ignore]` harness `crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs` (anchored: the shared ConFind harness reproduces MASTER `REF_CONTACTS` to <5e-4 via `load()`). The migration therefore waits on #820 (Engh–Huber geometry tuned to MASTER's convention); confind stays on `load()` until then.
+
 **Still open:**
-4. Ship per-residue `.pb.zst` or one library file? (lean: one file once the engine covers all residues; **CPR+PRO-only interim file** to unblock now.)
-5. Eventual full-library regeneration (all 20 residues) to retire the CC BY-NC-SA `rotlib.bin` runtime dependency — separate roadmap item.
+6. Root-cause the drift: how much is pure geometry (Engh–Huber vs MASTER ideals) vs. rotamer-set / atom-order / residue-variant semantics? Needed to scope #820's acceptance criterion (target: confind drift within 5e-4 of MASTER).
