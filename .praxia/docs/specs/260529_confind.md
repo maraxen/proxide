@@ -1,16 +1,17 @@
 ---
 name: 260529_confind_spec
-description: Spec for proxide-confind crate — Rust/rayon reimplementation of ConFind contact-degree algorithm (rev 3 — rotlib extracted to proxide-rotlib, oracle-verified)
+description: Spec for proxide-confind crate — Rust/rayon reimplementation of ConFind contact-degree algorithm (rev 4 — cis-proline detection, omega field, backbone_bin cis_proline param)
 metadata:
   type: reference
 ---
 
-# Spec: `proxide-confind` Crate (Revision 3)
+# Spec: `proxide-confind` Crate (Revision 4)
 
 **Task ID**: `260529_confind`
 **Source reference**: `Grigoryanlab/Mosaist@450816a` — see `260529_confind_model.md` for full algorithmic derivation.
 **Oracle verdict on rev 2**: PASS (rev 2 addressed all blocking gaps from rev 1).
 **Rev 3 change**: `RotamerLibrary`, `Frame`/`Transform`, and `RotamerId` extracted to `proxide-rotlib` (separate crate). All other algorithmic content unchanged from rev 2.
+**Rev 4 change**: `ResidueBackbone` gains `omega: Option<f64>` and `is_cis_peptide: bool` fields; `backbone_bin` in `proxide-rotlib` gains a `cis_proline: bool` parameter (cis-PRO falls back to standard PRO — library has no cis-PRO entry). See §4a and §4c.
 
 ---
 
@@ -22,7 +23,7 @@ metadata:
 
 Types imported from `proxide-rotlib` in this crate:
 - `RotamerId` — (aa, bin_index, rot_index), `Ord` by `(aa, bin_index, rot_index)`
-- `RotamerLibrary` — load / backbone_bin / num_rotamers / rotamer_probability_by_id / place_rotamer
+- `RotamerLibrary` — load / backbone_bin(aa, phi, psi, cis_proline) / num_rotamers / rotamer_probability_by_id / place_rotamer
 - `PlacedRotamer`, `PlacedAtom`
 - `counts_as_sidechain(atom_name, aa) -> bool` — CB excluded for non-ALA; hydrogens excluded
 - `RotlibError`
@@ -135,13 +136,15 @@ pub struct ProteinBackbone {
 }
 
 pub struct ResidueBackbone {
-    pub res_name: String,
-    pub n:   Option<[f64; 3]>,
-    pub ca:  Option<[f64; 3]>,
-    pub c:   Option<[f64; 3]>,
-    pub o:   Option<[f64; 3]>,
-    pub phi: f64,   // degrees; 9999.0 if terminal or missing
-    pub psi: f64,
+    pub res_name:       String,
+    pub n:              Option<[f64; 3]>,
+    pub ca:             Option<[f64; 3]>,
+    pub c:              Option<[f64; 3]>,
+    pub o:              Option<[f64; 3]>,
+    pub phi:            f64,          // degrees; 9999.0 if terminal or missing
+    pub psi:            f64,          // degrees; 9999.0 if terminal or missing
+    pub omega:          Option<f64>,  // degrees; None for N-terminal or when preceding C is absent
+    pub is_cis_peptide: bool,         // true iff |omega| < 30.0°; false when omega is None
 }
 ```
 
@@ -150,12 +153,75 @@ pub struct ResidueBackbone {
 2. **Per-chain segmentation**: call `compute_backbone_dihedrals_f64` per chain segment (using `chain_map`). First residue of each chain → `phi = 9999.0`. Last residue → `psi = 9999.0`. Matches Mosaist `Residue::getPhi(false)`/`getPsi(false)` at chain termini.
 3. **None → sentinel**: `dihedrals.phi.map(|r| r.to_degrees()).unwrap_or(9999.0)`.
 
+**omega / is_cis_peptide population**: `compute_backbone_dihedrals_f64` already computes omega (currently discarded — `proxide-geometry/src/geometry/angles.rs:198`). Capture it during `extract_f64_backbone`:
+- Convert radians → degrees (same as phi/psi).
+- Store as `omega: Some(omega_deg)` for all residues except the N-terminal residue of each chain (which has no preceding C atom); those get `omega: None`.
+- `is_cis_peptide = omega.map_or(false, |w| w.abs() < 30.0)`
+- Sentinel rule: `omega == None` → `is_cis_peptide = false` (no inference from missing data).
+
 ### 4b. Residue indexing
 
 `ResidueIndex(u32)` — flat dense index into `ProteinBackbone::bb`, 0-based, protein residues only.
 
 - **Output identity**: `ProteinBackbone::ids[idx]`.
 - **Flanking check**: two residues are same-chain adjacent iff `chain_map[ri] == chain_map[rj]` **and** `|ri - rj| <= ignore_flanking`. `ProcessedStructure::from_raw` sorts within chain by `(res_id, insertion_code)`.
+
+### 4c. `backbone_bin` with cis-proline (Debt #67)
+
+The `backbone_bin` method in `proxide-rotlib` gains a fourth parameter:
+
+```rust
+pub fn backbone_bin(
+    &self,
+    aa: &str,
+    phi: f64,
+    psi: f64,
+    cis_proline: bool,
+) -> Result<u32, RotlibError>;
+```
+
+**Behaviour rules:**
+
+| Condition | Behaviour |
+|---|---|
+| `aa != "PRO"` | `cis_proline` is **ignored**; bin resolved from `(phi, psi)` as before |
+| `aa == "PRO" && !cis_proline` | Normal PRO bin lookup |
+| `aa == "PRO" && cis_proline` | **Fall back to standard PRO bin** (see note below); emit `tracing::warn!` once per call |
+
+**Library limitation (critical finding)**: The `rotlib.bin` fixture (`/home/marielle/repos/mosaist/testfiles/rotlib.bin`) contains **no cis-PRO entry**. Only standard `PRO` is present. There is no `CPRO` key or equivalent. Therefore:
+- Callers must **not** expect a separate bin for cis-PRO; no `RotlibError::UnknownAa("CPRO")` will be returned.
+- When `aa == "PRO" && cis_proline == true`, the implementation resolves the bin as if `aa == "PRO"` with the given `(phi, psi)` and emits:
+  ```rust
+  tracing::warn!(
+      phi, psi,
+      "cis-PRO requested but rotamer library has no cis-PRO entry; \
+       falling back to standard PRO bin"
+  );
+  ```
+- This is a documented best-effort behaviour: cis-PRO rotamer populations differ from trans-PRO, but in the absence of library data the standard PRO distribution is the only option.
+
+**Call-site in `proxide-confind`**: Inside `cache_residue`, the `backbone_bin` call becomes:
+
+```rust
+let bin = rotlib.backbone_bin(
+    aa,
+    backbone.phi,
+    backbone.psi,
+    backbone.is_cis_peptide && aa == "PRO",
+)?;
+```
+
+Only PRO residues with `is_cis_peptide == true` pass `cis_proline = true`. All other residues (including non-PRO with cis peptide bonds at a preceding residue) pass `false`.
+
+**Initializer sites requiring update** (10 total — all must add `omega` and `is_cis_peptide` fields):
+
+| File | Count | Notes |
+|---|---|---|
+| `crates/proxide-confind/src/coords.rs` | 2 | Production initializers in `extract_f64_backbone` |
+| `crates/proxide-confind/tests/test_errors.rs` | 3 | Test fixtures; use `omega: None, is_cis_peptide: false` unless the test specifically exercises cis-peptide logic |
+| `crates/proxide-confind/tests/common/mod.rs` | 5 | Shared test helpers; same default as above |
+
+All 10 sites must be updated atomically with the struct definition change. Partial updates will cause a compile error (`missing field`), which is the desired fail-fast signal.
 
 ---
 
@@ -361,7 +427,7 @@ pub fn cache_all(&self) -> Result<(), ConFindError> {
 
 `cache_residue` per residue:
 1. Get `phi`/`psi` from `backbone.bb[ri]`.
-2. For each aa in `AA_NAMES`: get `num_rotamers(aa, phi, psi)` from rotlib.
+2. For each aa in `AA_NAMES`: get `num_rotamers(aa, phi, psi)` from rotlib. (For PRO, pass `cis_proline = backbone.bb[ri].is_cis_peptide` to `backbone_bin` — but `num_rotamers` does not yet take that parameter; add it when extending `proxide-rotlib` for Debt #67. Until then, `backbone_bin` is the only method that takes `cis_proline`.)
 3. For each rotamer `ri` in `0..nr`:
    - Call `rotlib.place_rotamer(aa, phi, psi, ri, n, ca, c)` → `PlacedRotamer`.
    - For each `PlacedAtom` in `placed.atoms`: filter with `counts_as_sidechain(atom.name, aa)`.
