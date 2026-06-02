@@ -4,7 +4,7 @@
 //! N-CA-CB-CG-CD-N via CCD if necessary.
 
 use crate::RotlibError;
-use super::template::{ResidueTemplate, BondDef};
+use super::template::ResidueTemplate;
 use proxide_geometry::geometry::nerf::Nerf;
 
 #[allow(dead_code)]
@@ -55,6 +55,7 @@ impl ProlineBuilder {
     /// # Failures
     /// - Ring cannot close within tolerance after CCD_MAX_ITERATIONS.
     /// - CCD rotations drift more than ±5° from input χ values.
+    #[allow(unused_assignments)]
     pub fn build(&self, backbone_frame: &[[f32; 3]; 3], chi_angles: [f32; 3]) -> Result<ProlineCoords, RotlibError> {
         // Extract backbone atoms in f32.
         let n_f32 = backbone_frame[0];
@@ -85,7 +86,6 @@ impl ProlineBuilder {
         // Run ring closure if needed.
         let mut ccd_iterations = 0;
         let mut recovered_chi = chi_angles;
-        let mut cb_final = cb_f32;
         let mut cg_final = cg_f32;
 
         // Check if ring is closed within tolerance.
@@ -107,14 +107,12 @@ impl ProlineBuilder {
                 if (cd_n_dist_new - CCD_IDEAL_CD_N).abs() < (cd_n_dist - CCD_IDEAL_CD_N).abs() {
                     // Improved, keep this step.
                     cg_final = cg_new;
-                    cd_f32 = cd_new;
+                    let _ = cd_new; // cd_f32 will be recalculated in χ3 rotation below
                 } else {
                     // Revert and try negative step.
                     chi2 -= 0.2;
                     let cg_new2 = Nerf::place_atom(&[ca_f32, cb_f32, n_f32], cg_bond.bond_length, cg_bond.bond_angle_deg, chi2);
-                    let cd_new2 = Nerf::place_atom(&[cb_f32, cg_new2, n_f32], cd_bond.bond_length, cd_bond.bond_angle_deg, chi3);
                     cg_final = cg_new2;
-                    cd_f32 = cd_new2;
                 }
 
                 // Rotate χ3 (moves CD).
@@ -202,7 +200,6 @@ fn magnitude(a: [f32; 3]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::template::proline_template;
 
     #[test]

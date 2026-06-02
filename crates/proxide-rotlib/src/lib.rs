@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 //! Backbone-dependent rotamer library for protein sidechain placement (proxide-rotlib).
 //!
 //! Loads and queries the MSL binary rotamer library format used by the

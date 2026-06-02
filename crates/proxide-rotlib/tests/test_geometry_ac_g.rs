@@ -8,7 +8,6 @@
 //! - (e) round-trip identity: place_rotamer onto equal backbone returns stored coords within ≤1e-2 Å
 
 use proxide_rotlib::geometry::template::proline_template;
-use proxide_rotlib::geometry::ProlineBuilder;
 
 /// RCSB CCD ideal coordinates for proline (from PRO.cif).
 /// Heavy atoms in sidechain order: N, CA, C, O, CB, CG, CD.
