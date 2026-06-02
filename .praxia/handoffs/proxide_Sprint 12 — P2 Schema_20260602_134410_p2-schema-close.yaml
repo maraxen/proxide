@@ -1,0 +1,84 @@
+---
+workspace: proxide
+session_id: bg-260602-p2-schema
+status: in_progress
+immediately_relevant:
+- file: crates/proxide-rotlib/proto/rotlib.proto
+  lines: [1, 51]
+  reason: 'Complete proto3 schema — P4 converter writes RotamerLibrary messages using
+    these types.'
+- file: crates/proxide-rotlib/src/pb.rs
+  lines: [1, 11]
+  reason: 'pb::rotlib_v1 re-export. Use proxide_rotlib::rotlib_v1::RotamerLibrary
+    etc. in converter and loader.'
+- file: crates/proxide-rotlib/src/geometry/proline.rs
+  lines: [1, 130]
+  reason: 'ProlineBuilder::build(chi1, chi2, frame) — P4 converter calls this to
+    get PRECOMPUTED sidechain coords from Dunbrack chi values.'
+- file: crates/proxide-rotlib/src/geometry/template.rs
+  lines: [1, 50]
+  reason: 'proline_template() — provides atom names [CB, CG, CD] for ResidueEntry.atom_names
+    in P4.'
+- file: scripts/data/extract_dunbrack_rotamers.py
+  lines: [1, 80]
+  reason: 'P1 extractor — P4 converter reads its JSON output. Check if output exists
+    at data/rotlibs/SimpleOpt1-5/cpr_pro_tpr.json before P4 dispatch.'
+- file: .praxia/docs/specs/260602_dunbrack-rotlib-protobuf-cis-pro.md
+  lines: [235, 280]
+  reason: 'P4 spec: AC-3 (attribution required+validated), PRECOMPUTED decision,
+    ODC-BY sidecar requirement, zstd --long window doc.'
+active_dispatches: []
+task_id: 260602_proxcon_deferred4
+phase: Sprint 12 / P2 Schema
+goal_statement: 'Land cis-PRO (CPR) in proxide-rotlib by converting Dunbrack 2010
+  (ODC-BY) to a proxide protobuf+zstd rotamer library (decision A: precompute coords).
+  P3 geometry DONE (87/87 tests, commit 51a72a4 merged to main 823980e). P2 schema
+  DONE (90/90 tests, AC-2 passes, commit 669ae67 on worktree-p2-schema). Next: P4
+  Converter.'
+context_refs:
+- phase: Sprint 12 / P3 Geometry
+  task_id: 260602_proxcon_deferred4
+  summary: 'P3 done: compute_dihedral atan2 sign fix + angle_deg supplement fix +
+    backbone CCD ideal update. 87/87 tests. sprint12-run merged to main 823980e.'
+failed_attempts:
+- attempt_id: a1
+  description: 'P3 v1: NeRF reference-atom ordering CB=[N,CA,C], CG=[CA,CB,N], CD=[CB,CG,N]'
+  outcome: CB bonded to backbone C not CA; chi recovery 141 deg off
+  reason_failed: Wrong NeRF ref ordering; NeRF bonds D to the 3rd ref atom
+  do_not_retry: true
+- attempt_id: a2
+  description: 'P3 v1 closure: drift chi2 to close ring'
+  outcome: chi2 drift 10.5 deg > 5 deg bound; builder correctly refuses
+  reason_failed: 'Over-determined: exact chi + ideal angles + ring closure can''t
+    all hold; chi are the data'
+  do_not_retry: true
+- attempt_id: wf1
+  description: Workflow research via librarian agent + in-workflow NotebookLM
+  outcome: synthesis.jsonl not written (librarian has no Write tool)
+  reason_failed: 'Agent tool roster: librarian lacks Write/Bash; session-MCP absent
+    from subagents'
+  do_not_retry: true
+open_questions:
+- 'P4 input: does extract_dunbrack_rotamers.py output already exist at data/rotlibs/SimpleOpt1-5/cpr_pro_tpr.json?
+  If not, run the extractor before P4 dispatch. Check: ls data/rotlibs/SimpleOpt1-5/'
+- 'P4 PRECOMPUTED frame: ProlineBuilder::build() returns coords in backbone_frame
+  canonical frame (x=CA-N, z=x×(C-CA), y=z×x, origin=CA). Converter must store
+  these directly — place_rotamer rigid-transforms from that frame. Do NOT transform
+  again.'
+- 'P4 zstd: use zstd::encode_all with level 3 (not --ultra) for the library file;
+  document window size in provenance field.'
+deferred:
+- description: AC-G(e) round-trip identity test (currently #[ignore])
+  rationale: Needs P5 place_rotamer integration to exercise the full place path
+  recommended_phase: P5
+- description: All-targets warning cleanup (13 pre-existing warnings in helpers.rs
+    + other test files)
+  rationale: Pre-existing debt; AC-4 warning-free is a P6 gate
+  recommended_phase: P6
+- description: Full-library regeneration (all 20 residues) with CHARMM params to
+    retire CC BY-NC-SA rotlib.bin runtime dependency
+  rationale: 'Out of scope for cis-PRO landing; research #820'
+  recommended_phase: roadmap
+lessons_refs:
+- .praxia/lessons.jsonl
+---

@@ -1,0 +1,51 @@
+syntax = "proto3";
+package proxide.rotlib.v1;
+
+message RotamerLibrary {
+  uint32 version = 1;
+  string provenance = 2;
+  string attribution = 3;
+  string data_license = 4;
+  GeometryMode geometry_mode = 5;
+  repeated ResidueEntry residues = 6;
+}
+
+enum GeometryMode {
+  GEOMETRY_MODE_UNSPECIFIED = 0;
+  PRECOMPUTED = 1;
+  CHI_ONLY = 2;
+}
+
+message ResidueEntry {
+  string code = 1;
+  repeated string atom_names = 2;
+  uint32 num_chi = 3;
+  repeated double phi_centers = 4;
+  repeated double psi_centers = 5;
+  uint32 default_bin = 6;
+  repeated Bin bins = 7;
+}
+
+message Bin {
+  double phi = 1;
+  double psi = 2;
+  double freq = 3;
+  repeated Rotamer rotamers = 4;
+}
+
+message Rotamer {
+  float prob = 1;
+  repeated ChiValue chi = 2;
+  repeated Vec3 coords = 3;
+}
+
+message ChiValue {
+  float val = 1;
+  float sigma = 2;
+}
+
+message Vec3 {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}

@@ -14,11 +14,16 @@ crate-type = ["rlib"]
 thiserror = { workspace = true }
 tracing   = "0.1"
 proxide-geometry = { path = "../proxide-geometry" }
+prost    = "0.13"
+zstd     = "0.13"
 
 [dependencies.serde]
 version  = "1"
 optional = true
 features = ["derive"]
+
+[build-dependencies]
+prost-build = "0.13"
 
 [dev-dependencies]
 tempfile = "3"
