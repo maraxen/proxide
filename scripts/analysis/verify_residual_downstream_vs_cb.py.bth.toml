@@ -1,0 +1,32 @@
+[experiment]
+hypothesis = "θ=108.37° reduces CB distance to MASTER but increases terminal-atom distance"
+rationale = "MASTER's downstream bond angles differ from proxide's CHARMM angles. If CB frame angle alone were the issue, both CB and terminals would improve/worsen together. Mixed results (CB better, terminals worse) would indicate the residual is downstream geometry, not CB angle."
+measured_artifact = "per-residue CB and terminal-atom Euclidean distances in MASTER's canonical frame"
+
+[outcomes.pass]
+condition = "For ≥4 of {ARG, GLN, LYS, GLU, MET, LEU}: CB distance at θ=108.37° is SMALLER than at θ=113.5°, BUT terminal-atom distance is LARGER"
+reasoning = "CB closer + terminals farther means CB knob alone cannot clear the drift gate; the residual is downstream geometry."
+is_residual = true
+
+[outcomes.marginal]
+condition = "Mixed pattern: some residues confirm, others refute (2–3 confirm out of 6)"
+reasoning = "Inconclusive. Pattern could indicate heterogeneous geometry issues across residue types, or measurement noise."
+is_residual = false
+
+[outcomes.fail]
+condition = "For ≥4 of {ARG, GLN, LYS, GLU, MET, LEU}: CB distance at θ=108.37° is SMALLER AND terminal distance is SMALLER (hypothesis refuted)"
+reasoning = "If both improve at θ=108.37°, the CB angle is the primary lever. Conversely, if both worsen, neither angle helps."
+is_residual = false
+
+[result_schema]
+per_residue = { residue_code = "string", cb_dist_pb113_A = "float", cb_dist_pb108_A = "float", terminal_mean_dist_pb113_A = "float", terminal_mean_dist_pb108_A = "float" }
+per_residue.description = "Euclidean distance (Angstroms) from top-probability rotamer sidechain atoms to MASTER rotlib.bin in canonical frame"
+conclusion = "string describing hypothesis outcome (CONFIRMED/REFUTED/MIXED)"
+
+[result_schema.provenance]
+pb_cb113_sha256 = "efcdce6769a2f323c76029785723fdd533d1fcc6f3a0b5f61b954c49cd742558"
+pb_cb108_sha256 = "9c3b48882a9a45969d4b5ec3ad0d19ea6d26e31bf683089babb9d536857fe723"
+rotlib_bin_sha256 = "edabc73f9a9e9536fa0665fcf3820dbf22b05e646271e7c0a70b3d68b7f3a0da"
+python_deps = "None (uses only stdlib + extract_rotlib_geometry.parse_rotlib from proxide codebase)"
+script_commit_sha = "5a167a3 test(rotlib-audit): measure CA-origin residual vs MASTER (#869 Phase B)"
+measurement_date = "2026-06-03"
