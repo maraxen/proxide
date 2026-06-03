@@ -29,7 +29,11 @@ import logging
 import math
 import struct
 import sys
+import tempfile
 from pathlib import Path
+from typing import Any
+
+import zstandard
 
 logger = logging.getLogger("verify_residual_downstream_vs_cb")
 
@@ -37,6 +41,114 @@ logger = logging.getLogger("verify_residual_downstream_vs_cb")
 sys.path.insert(0, str(Path(__file__).parent))
 
 from extract_rotlib_geometry import parse_rotlib
+
+
+def compile_proto_runtime(proto_dir: Path, output_dir: Path) -> str:
+    """Compile rotlib.proto to Python at runtime, return module path."""
+    proto_file = proto_dir / "rotlib.proto"
+    if not proto_file.exists():
+        raise FileNotFoundError(f"rotlib.proto not found at {proto_file}")
+
+    import grpc_tools.protoc
+
+    ret = grpc_tools.protoc.main([
+        "protoc",
+        f"--proto_path={proto_dir}",
+        f"--python_out={output_dir}",
+        str(proto_file),
+    ])
+
+    if ret != 0:
+        raise RuntimeError(f"protoc failed with code {ret}")
+
+    return str(output_dir)
+
+
+def load_pb(path: Path) -> bytes:
+    """Load and decompress the .pb.zst file."""
+    logger.info(f"Loading {path}")
+    with open(path, "rb") as f:
+        compressed = f.read()
+
+    dctx = zstandard.ZstdDecompressor()
+    try:
+        raw = dctx.decompress(compressed, max_output_size=500_000_000)
+    except Exception as e:
+        logger.error(f"Failed to decompress: {e}")
+        raise
+
+    logger.info(f"Decompressed {len(compressed)} bytes -> {len(raw)} bytes")
+    return raw
+
+
+def import_rotlib_pb2(proto_py_path: str):
+    """Import rotlib_pb2 from compiled proto."""
+    sys.path.insert(0, proto_py_path)
+    import rotlib_pb2
+    return rotlib_pb2
+
+
+def parse_pb_file(path: Path, rotlib_pb2: Any) -> dict[str, dict]:
+    """Parse a proxide .pb.zst rotamer library using protobuf.
+
+    Returns dict in same structure as parse_rotlib:
+      {aa_code: {"nc": int, "na": int, "nb": int,
+        "atom_names": [str], "bins": [(phi, psi, freq)],
+        "rot_bins": [[{"prob": f, "chi": [(val, sigma)], "coords": [[x,y,z]]}]]}}
+    """
+    raw = load_pb(path)
+
+    # Parse protobuf
+    library = rotlib_pb2.RotamerLibrary()
+    library.ParseFromString(raw)
+
+    entries: dict[str, dict] = {}
+
+    for residue_entry in library.residues:
+        aa = residue_entry.code
+        nc = residue_entry.num_chi
+        na = len(residue_entry.atom_names)
+        nb = len(residue_entry.bins)
+
+        atom_names = list(residue_entry.atom_names)
+
+        # Parse phi/psi bins
+        bins = []
+        for bin_entry in residue_entry.bins:
+            phi = bin_entry.phi
+            psi = bin_entry.psi
+            freq = bin_entry.freq
+            bins.append((phi, psi, freq))
+
+        # Parse rotamers per bin
+        rot_bins = []
+        for bin_entry in residue_entry.bins:
+            rotamers = []
+            for rotamer_entry in bin_entry.rotamers:
+                prob = rotamer_entry.prob
+
+                # Chi angles with sigma
+                chi = []
+                for chi_val in rotamer_entry.chi:
+                    chi.append((chi_val.val, chi_val.sigma))
+
+                # Atomic coordinates
+                coords = []
+                for vec in rotamer_entry.coords:
+                    coords.append([vec.x, vec.y, vec.z])
+
+                rotamers.append({"prob": prob, "chi": chi, "coords": coords})
+
+            rot_bins.append(rotamers)
+
+        entries[aa] = {
+            "nc": nc, "na": na, "nb": nb,
+            "atom_names": atom_names,
+            "bins": bins, "rot_bins": rot_bins,
+        }
+        logger.debug("parsed pb %s: nc=%d na=%d nb=%d atoms=%s", aa, nc, na, nb, atom_names)
+
+    return entries
 
 
 # --- Canonical backbone frame ----------------------------------------
@@ -127,7 +239,7 @@ def get_bond_depth(atom_idx, atom_names, bonds_dict):
     return None
 
 
-def compare_libraries(pb1_path, pb2_path, rotlib_path, residues, dry_run=False):
+def compare_libraries(pb1_path, pb2_path, rotlib_path, residues, dry_run=False, rotlib_pb2=None):
     """Compare two proxide pb libraries against MASTER rotlib.bin.
 
     Args:
@@ -136,6 +248,7 @@ def compare_libraries(pb1_path, pb2_path, rotlib_path, residues, dry_run=False):
         rotlib_path: Path to MASTER rotlib.bin
         residues: List of residue codes to measure (e.g. ["ARG", "GLN", "LYS"])
         dry_run: If True, verify paths only and exit
+        rotlib_pb2: Compiled protobuf module (required for pb file parsing)
 
     Returns:
         dict with per-residue comparison data
@@ -153,10 +266,10 @@ def compare_libraries(pb1_path, pb2_path, rotlib_path, residues, dry_run=False):
 
     # Parse libraries
     logger.info("Parsing pb1 (θ=113.5°) from %s...", pb1_path)
-    pb1_data = parse_rotlib(pb1_path)
+    pb1_data = parse_pb_file(pb1_path, rotlib_pb2)
 
     logger.info("Parsing pb2 (θ=108.37°) from %s...", pb2_path)
-    pb2_data = parse_rotlib(pb2_path)
+    pb2_data = parse_pb_file(pb2_path, rotlib_pb2)
 
     logger.info("Parsing MASTER rotlib.bin from %s...", rotlib_path)
     master_data = parse_rotlib(rotlib_path)
@@ -291,9 +404,13 @@ def format_results_table(results):
         # Hypothesis test: CB closer (δ < 0) but terminals farther (δ > 0)?
         hypothesis_marker = ""
         if cb_delta < 0 and term_delta > 0:
-            hypothesis_marker = "✓ hypothesis"
+            hypothesis_marker = "✓ confirm"
+        elif cb_delta < 0 and term_delta < 0:
+            hypothesis_marker = "✗ refute (both improve)"
+        elif cb_delta > 0 and term_delta > 0:
+            hypothesis_marker = "✗ refute (both worsen)"
         elif cb_delta > 0 and term_delta < 0:
-            hypothesis_marker = "✗ refuted"
+            hypothesis_marker = "✗ refute (opposite)"
 
         lines.append(
             f"| {aa} | {cb_113:.4f} | {cb_108:.4f} | {cb_delta_str} | {term_113:.4f} | {term_108:.4f} | {term_delta_str} | {hypothesis_marker} |"
@@ -361,55 +478,75 @@ def main():
         success = _self_test()
         sys.exit(0 if success else 1)
 
-    # Parse residues
-    residues = [r.strip().upper() for r in args.residues.split(",")]
-    logger.info("Measuring residues: %s", residues)
+    # Compile proto once for pb file parsing
+    proto_dir = Path(__file__).parent.parent.parent / "crates" / "proxide-rotlib" / "proto"
+    logger.info("Compiling rotlib.proto from %s...", proto_dir)
 
-    # Compare libraries
-    results = compare_libraries(
-        args.pb113, args.pb108, args.rotlib, residues, dry_run=args.dry_run
-    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        proto_py_path = compile_proto_runtime(proto_dir, Path(tmpdir))
+        rotlib_pb2 = import_rotlib_pb2(proto_py_path)
 
-    if args.dry_run:
-        logger.info("DRY-RUN completed. No further analysis.")
-        sys.exit(0)
+        # Parse residues
+        residues = [r.strip().upper() for r in args.residues.split(",")]
+        logger.info("Measuring residues: %s", residues)
 
-    # Format and print results
-    table = format_results_table(results)
-    print(table)
-    print("")
+        # Compare libraries
+        results = compare_libraries(
+            args.pb113, args.pb108, args.rotlib, residues, dry_run=args.dry_run, rotlib_pb2=rotlib_pb2
+        )
 
-    # Summary
-    logger.info("Comparison complete. Analyzed %d residues.", len(results))
+        if args.dry_run:
+            logger.info("DRY-RUN completed. No further analysis.")
+            return
 
-    # Count hypothesis markers
-    confirm_count = 0
-    refute_count = 0
-    for aa in results:
-        data = results[aa]
-        cb_113 = data["cb_dist_pb113"]
-        cb_108 = data["cb_dist_pb108"]
-        term_113 = data["terminal_mean_dist_pb113"]
-        term_108 = data["terminal_mean_dist_pb108"]
+        # Format and print results
+        table = format_results_table(results)
+        print(table)
+        print("")
 
-        if cb_113 is not None and cb_108 is not None and term_113 is not None and term_108 is not None:
-            cb_delta = cb_108 - cb_113
-            term_delta = term_108 - term_113
-            if cb_delta < 0 and term_delta > 0:
-                confirm_count += 1
-            elif cb_delta > 0 and term_delta < 0:
-                refute_count += 1
+        # Summary
+        logger.info("Comparison complete. Analyzed %d residues.", len(results))
 
-    print("")
-    print("## CONCLUSION")
-    print("")
-    if confirm_count > refute_count:
-        print(f"HYPOTHESIS CONFIRMED: {confirm_count}/{len(results)} residues show CB closer at θ=108.37° but terminals farther.")
-        print("The residual drift is downstream sidechain geometry, not CB frame angle.")
-    elif refute_count > confirm_count:
-        print(f"HYPOTHESIS REFUTED: {refute_count}/{len(results)} residues show opposite pattern.")
-    else:
-        print(f"MIXED RESULTS: {confirm_count} confirm, {refute_count} refute. Pattern unclear.")
+        # Count hypothesis markers
+        confirm_count = 0
+        refute_both_improve = 0
+        refute_both_worsen = 0
+        refute_opposite = 0
+
+        for aa in results:
+            data = results[aa]
+            cb_113 = data["cb_dist_pb113"]
+            cb_108 = data["cb_dist_pb108"]
+            term_113 = data["terminal_mean_dist_pb113"]
+            term_108 = data["terminal_mean_dist_pb108"]
+
+            if cb_113 is not None and cb_108 is not None and term_113 is not None and term_108 is not None:
+                cb_delta = cb_108 - cb_113
+                term_delta = term_108 - term_113
+                if cb_delta < 0 and term_delta > 0:
+                    confirm_count += 1
+                elif cb_delta < 0 and term_delta < 0:
+                    refute_both_improve += 1
+                elif cb_delta > 0 and term_delta > 0:
+                    refute_both_worsen += 1
+                elif cb_delta > 0 and term_delta < 0:
+                    refute_opposite += 1
+
+        print("")
+        print("## CONCLUSION")
+        print("")
+        print(f"Results: {confirm_count} confirm hypothesis, {refute_both_improve} show both improve, "
+              f"{refute_both_worsen} show both worsen, {refute_opposite} show opposite pattern")
+        print("")
+
+        if confirm_count > 0 and (refute_both_improve + refute_both_worsen + refute_opposite) == 0:
+            print(f"HYPOTHESIS CONFIRMED: All {confirm_count} residues show CB closer at θ=108.37° but terminals farther.")
+            print("The residual drift is downstream sidechain geometry, not CB frame angle.")
+        elif refute_both_improve >= 4:
+            print(f"HYPOTHESIS REFUTED: {refute_both_improve}/{len(results)} residues show BOTH CB AND terminals improve at θ=108.37°.")
+            print("This suggests the N-CA-CB angle (at θ=108.37°) is part of the solution, not just a symptom.")
+        else:
+            print(f"MIXED RESULTS: Pattern unclear. Interpretation requires further investigation.")
 
 
 if __name__ == "__main__":
