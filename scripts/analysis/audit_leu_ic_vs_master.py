@@ -6,7 +6,7 @@ MEASUREMENT ONLY — do NOT edit template.rs / charmm_ic.rs / any production cod
 For LEU, measure all-atom internal coordinates (bonds, angles, torsions) from
 MASTER's stored Cartesian coordinates and compare against the template.rs fixed
 geometry. The audit computes:
-  - CB bond to CA, CB angle C-CA-CB, CB improper C-N-CA-CB
+  - CB bond to CA, CB angle N-CA-CB, CB improper C-N-CA-CB
   - CG bond to CB, CG angle CA-CB-CG (should equal chi1 rotamer value)
   - CD1 bond to CG, CD1 angle CB-CG-CD1 (should equal chi2)
   - CD2 bond to CG, CD2 angle CB-CG-CD2 (should equal chi2 + 120)
@@ -223,7 +223,10 @@ def audit_leu_rotamers(entry: dict, rotlib_path: Path, n_rotamers: int = 5) -> d
 
         # Compute internal coordinates
         cb_bond = bond_length(IDENTITY_CA, cb_coord)
-        cb_angle = bond_angle(IDENTITY_C, IDENTITY_CA, cb_coord)
+        # Template angle for CB is N-CA-CB (NeRF places CB via [C,N,CA] -> angle b-c-d = N-CA-CB).
+        # Using IDENTITY_C here was a bug: it measured C-CA-CB (118.9deg) and compared it to the
+        # N-CA-CB template value (110.5), producing a spurious ~8.4deg "mismatch".
+        cb_angle = bond_angle(IDENTITY_N, IDENTITY_CA, cb_coord)
         cb_improper_nerf = dihedral_nerf_deg(IDENTITY_C, IDENTITY_N, IDENTITY_CA, cb_coord)
 
         cg_bond = bond_length(cb_coord, cg_coord)
