@@ -9,7 +9,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use proxide_rotlib::pb::rotlib_v1;
-use proxide_rotlib::geometry::{standard_residue_template, proline_template, build_standard_sidechain, ProlineBuilder};
+use proxide_rotlib::geometry::{
+    standard_residue_template, proline_template, build_standard_sidechain, ProlineBuilder,
+    charmm_ic::{load_charmm_ideals, apply_charmm_ideals, map_template_to_charmm_name},
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "convert_rotlib")]
@@ -22,6 +25,10 @@ struct Args {
     /// Path to output protobuf file
     #[arg(long, default_value = "data/rotlibs/proxide-rotlib-bbdep2010.pb.zst")]
     output: PathBuf,
+
+    /// Path to CHARMM force field XML file
+    #[arg(long, default_value = "src/proxide/assets/charmm/charmm36_protein.xml")]
+    charmm_xml: PathBuf,
 }
 
 /// Parsed rotamer entry from Dunbrack text file.
@@ -38,6 +45,12 @@ struct DunbrackRotamer {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
+    // Load CHARMM ideals
+    eprintln!("Loading CHARMM force field ideals from {}...", args.charmm_xml.display());
+    let charmm_ideals = load_charmm_ideals(args.charmm_xml.to_str().unwrap())
+        .map_err(|e| format!("Failed to load CHARMM ideals: {}", e))?;
+    eprintln!("Loaded CHARMM force field");
+
     // Read and parse the input file
     eprintln!("Reading rotamer library from {}...", args.input.display());
     let rotamers = read_rotamer_library(&args.input)?;
@@ -47,8 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grouped = group_rotamers(rotamers);
     eprintln!("Grouped into {} residue entries", grouped.len());
 
-    // Build the protobuf
-    let lib = build_library(&grouped)?;
+    // Build the protobuf (with CHARMM IC application)
+    let lib = build_library(&grouped, &charmm_ideals)?;
     eprintln!("Built library with {} residue types", lib.residues.len());
 
     // Serialize and compress
@@ -145,11 +158,14 @@ fn group_rotamers(rotamers: Vec<DunbrackRotamer>) -> GroupedRotamers {
     grouped
 }
 
-/// Build the protobuf RotamerLibrary from grouped rotamers.
+/// Build the protobuf RotamerLibrary from grouped rotamers, applying CHARMM ICs.
 fn build_library(
     grouped: &GroupedRotamers,
+    charmm_ideals: &proxide_rotlib::geometry::charmm_ic::CharmmIdeals,
 ) -> Result<rotlib_v1::RotamerLibrary, Box<dyn std::error::Error>> {
     let mut residues = Vec::new();
+    let mut ic_overrides_count = 0;
+    let mut ic_misses_count = 0;
 
     // Canonical backbone frame for coordinate building
     let backbone_n = [0.0_f32, 0.0, 0.0];
@@ -158,12 +174,21 @@ fn build_library(
 
     for (res_code, bins) in grouped.iter() {
         // Get template
-        let template = if res_code == "PRO" || res_code == "TPR" || res_code == "CPR" {
+        let mut template = if res_code == "PRO" || res_code == "TPR" || res_code == "CPR" {
             proline_template()
         } else {
             standard_residue_template(res_code)
                 .ok_or_else(|| format!("Unknown residue code: {}", res_code))?
         };
+
+        // Apply CHARMM ideals to the template
+        let charmm_resname = map_template_to_charmm_name(&res_code);
+        if let Err(e) = apply_charmm_ideals(&mut template, charmm_ideals, &charmm_resname) {
+            eprintln!("Warning: could not apply CHARMM ICs to {}: {}", res_code, e);
+            ic_misses_count += 1;
+        } else {
+            ic_overrides_count += 1;
+        }
 
         // Determine num_chi from the template's dihedrals
         let num_chi = template.dihedrals.len() as u32;
@@ -279,6 +304,12 @@ fn build_library(
         geometry_mode: rotlib_v1::GeometryMode::Precomputed as i32,
         residues,
     };
+
+    // Print coverage summary
+    eprintln!(
+        "CHARMM IC coverage: {} residues processed, {} overridden, {} misses",
+        grouped.len(), ic_overrides_count, ic_misses_count
+    );
 
     Ok(lib)
 }
