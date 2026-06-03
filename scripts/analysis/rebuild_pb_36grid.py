@@ -124,6 +124,32 @@ def filter_grid_36(lib):
     return new_lib
 
 
+def reframe_coords_ca_origin(lib, offset: tuple[float, float, float]) -> None:
+    """Reframe all rotamer coordinates by subtracting the offset in-place.
+
+    The converter builds coords in N-origin frame (backbone_n=[0,0,0], backbone_ca=[1.458,0,0]).
+    place_rotamer applies a CA-origin frame. This subtracts the frame offset from all coords.
+
+    offset: (x_offset, y_offset, z_offset) — default (1.458, 0, 0) for N-CA bond distance.
+    Coords are stored as repeated Vec3 messages.
+    """
+    offset_x, offset_y, offset_z = offset
+    logger.info(f"Reframing coords: subtracting offset ({offset_x}, {offset_y}, {offset_z})")
+
+    total_coords_reframed = 0
+    for res in lib.residues:
+        for bin_entry in res.bins:
+            for rot in bin_entry.rotamers:
+                # Coords are repeated Vec3 messages
+                for coord_vec3 in rot.coords:
+                    coord_vec3.x -= offset_x
+                    coord_vec3.y -= offset_y
+                    coord_vec3.z -= offset_z
+                    total_coords_reframed += 1
+
+    logger.info(f"Reframed {total_coords_reframed} coordinate vectors across all rotamers")
+
+
 def verify_identity_with_master(pb_lib, rotlib_bin_path: Path) -> dict:
     """Compare rotamer sets between filtered pb and rotlib.bin for all shared bins.
 
@@ -291,7 +317,62 @@ def self_test():
         assert filtered_res.bins[i].phi == phi and filtered_res.bins[i].psi == psi, \
             f"bin {i}: expected ({phi}, {psi}), got ({filtered_res.bins[i].phi}, {filtered_res.bins[i].psi})"
 
-    logger.info("Self-test passed")
+    # Test CA-origin reframe
+    logger.info("Testing CA-origin reframe...")
+    lib2 = rotlib_pb2.RotamerLibrary()
+    lib2.version = 1
+    lib2.provenance = "test"
+    lib2.attribution = "test"
+    lib2.data_license = "test"
+    lib2.geometry_mode = rotlib_pb2.PRECOMPUTED
+
+    res2 = rotlib_pb2.ResidueEntry()
+    res2.code = "ALA"
+    res2.atom_names.extend(["CB"])
+    res2.num_chi = 1
+    res2.default_bin = 0
+    res2.phi_centers.extend([-180.0])
+    res2.psi_centers.extend([-180.0])
+
+    bin2 = rotlib_pb2.Bin()
+    bin2.phi = -180.0
+    bin2.psi = -180.0
+    bin2.freq = 1.0
+
+    rot2 = rotlib_pb2.Rotamer()
+    rot2.prob = 1.0
+    # One Vec3 coordinate at (1.458, 2.0, 3.0) — should become (0.0, 2.0, 3.0)
+    vec3 = rotlib_pb2.Vec3()
+    vec3.x = 1.458
+    vec3.y = 2.0
+    vec3.z = 3.0
+    rot2.coords.append(vec3)
+    chi_val2 = rotlib_pb2.ChiValue()
+    chi_val2.val = 0.0
+    chi_val2.sigma = 1.0
+    rot2.chi.append(chi_val2)
+
+    bin2.rotamers.append(rot2)
+    res2.bins.append(bin2)
+    lib2.residues.append(res2)
+
+    # Apply reframe with default offset
+    reframe_coords_ca_origin(lib2, (1.458, 0.0, 0.0))
+
+    # Check the reframed coordinate
+    reframed_rot = lib2.residues[0].bins[0].rotamers[0]
+    reframed_coords = reframed_rot.coords
+    assert len(reframed_coords) == 1, f"Expected 1 Vec3, got {len(reframed_coords)}"
+
+    coord = reframed_coords[0]
+    assert abs(coord.x - 0.0) < 1e-6, \
+        f"After reframe, x should be 0.0, got {coord.x}"
+    assert abs(coord.y - 2.0) < 1e-6, \
+        f"After reframe, y should be 2.0, got {coord.y}"
+    assert abs(coord.z - 3.0) < 1e-6, \
+        f"After reframe, z should be 3.0, got {coord.z}"
+
+    logger.info("Self-test (including reframe) passed")
     return 0
 
 
@@ -312,6 +393,10 @@ def main(argv=None) -> int:
                     help="do not write output file")
     ap.add_argument("--self-test", action="store_true",
                     help="run self-test and exit")
+    ap.add_argument("--reframe-ca-origin", action="store_true",
+                    help="reframe rotamer coords from N-origin to CA-origin frame by subtracting offset")
+    ap.add_argument("--reframe-offset", type=str, default="1.458,0,0",
+                    help="reframe offset as 'x,y,z' (default: 1.458,0,0 for N-CA bond); only used with --reframe-ca-origin")
 
     args = ap.parse_args(argv)
 
@@ -369,12 +454,25 @@ def main(argv=None) -> int:
             logger.info("Filtering to 36x36 grid...")
             filtered_lib = filter_grid_36(lib)
 
+            # Optionally reframe to CA-origin
+            if args.reframe_ca_origin:
+                try:
+                    offset_parts = [float(x.strip()) for x in args.reframe_offset.split(",")]
+                    if len(offset_parts) != 3:
+                        raise ValueError(f"offset must have 3 components, got {len(offset_parts)}")
+                    offset = tuple(offset_parts)
+                    logger.info(f"Applying CA-origin reframe with offset {offset}")
+                    reframe_coords_ca_origin(filtered_lib, offset)
+                except ValueError as e:
+                    logger.error(f"Invalid reframe offset: {e}")
+                    return 1
+
             # Count after
             out_residues = len(filtered_lib.residues)
             out_bins_total = sum(len(r.bins) for r in filtered_lib.residues)
             out_phi_centers = {r.code: len(r.phi_centers) for r in filtered_lib.residues}
             out_psi_centers = {r.code: len(r.psi_centers) for r in filtered_lib.residues}
-            logger.info(f"Filtered to {out_residues} residues, {out_bins_total} total bins")
+            logger.info(f"Processed to {out_residues} residues, {out_bins_total} total bins")
 
             # Verify identity
             logger.info("Verifying identity with rotlib.bin...")
@@ -406,7 +504,9 @@ def main(argv=None) -> int:
             # Report
             report = {
                 "in_grid": f"37x37 (before filtering)",
-                "out_grid": f"36x36 (after filtering)",
+                "out_grid": f"36x36 (after filtering)" + (" + CA-origin reframe" if args.reframe_ca_origin else ""),
+                "reframe_applied": args.reframe_ca_origin,
+                "reframe_offset": list(offset) if args.reframe_ca_origin else None,
                 "residues": out_residues,
                 "total_shared_bins": verify_result["total_shared_bins"],
                 "n_bins_identical": verify_result["n_bins_identical"],

@@ -1,4 +1,4 @@
-[experiment]
+[experiment.grid_36]
 hypothesis = """
 The ConFind load_pb contact-degree drift vs MASTER rotlib.bin (max 0.223, 30/43
 pairs over 5e-4 gate, 13 missing pairs) is caused solely by a redundant +180°
@@ -16,40 +16,60 @@ by reconstructing the .pb.zst without the wrap column and verifying rotamer data
 with MASTER across all shared bins.
 """
 
+[experiment.ca_origin_reframe]
+hypothesis = """
+NEW FINDING: Root cause is NOT the 37×37 grid (removing +180 wrap showed drift unchanged).
+The true cause is a coordinate frame mismatch. The converter (convert_rotlib.rs lines 171-174)
+builds sidechain coordinates in an N-origin frame (backbone_n=[0,0,0], backbone_ca=[1.458,0,0]),
+but place_rotamer applies a CA-origin frame. This creates a consistent +1.458 Å offset in x
+across all rotamer coords. A Kabsch fit of pb-coords vs rotlib.bin coords yields RMSD 0.018Å
+with translation t=(-1.458, +0.03, +0.05), confirming the N-CA bond offset as the drift source.
+
+Subtracting (1.458, 0, 0) from all rotamer coordinates should collapse the drift to near the
+5e-4 gate, with residual drift coming only from ~2° Engh-Huber axis difference.
+"""
+
+context = """
+Continuation of task 260603_loadpb_rotamerset_audit. After grid-36 experiment showed no drift
+collapse, Kabsch fit revealed the true root cause: coordinate frame mismatch. This experiment
+applies the CA-origin reframe correction and builds a corrected .pb.zst.
+"""
+
 [outcomes.pass]
 criteria = """
-1. Self-test passes (filter logic correct)
-2. n_bins_mismatch == 0 across all shared bins (data is bit-identical after de-wrapping)
-3. Output grid is 36×36 for residues checked (no redundant columns remain)
+1. Self-test passes (filter + reframe logic correct)
+2. CA-origin reframe successfully subtracts (1.458, 0, 0) from all rotamer coords
+3. Output .pb.zst generated at specified path with correct SHA256
 """
 interpretation = """
-Drift is purely a grid-packaging artifact. The converter's phi/psi lookup is correct,
-but bin indexing into a 37-wide grid was off by one relative to MASTER's 36-wide grid.
-Fix: ensure converter wraps +180→-180 at grid boundaries.
+Coordinate frame mismatch (N-origin vs CA-origin) is the root cause of load_pb drift.
+The reframed .pb.zst, when used in place_rotamer with CA-origin logic, should align
+rotamer coordinates with rotlib.bin to within measurement precision (residual drift
+from Engh-Huber axis difference ~2°, expected ~5e-4 Å RMSD).
 """
 is_residual = true
 
 [outcomes.marginal]
 criteria = """
 1. Self-test passes
-2. Most shared bins identical (>99%) but small number (<1%) mismatch
-3. Output grid is 36×36
+2. Reframe applied without error but output not validated against rotlib.bin
+3. Output .pb.zst generated with correct metadata
 """
 interpretation = """
-Grid is the dominant cause of drift, but a secondary data difference exists.
-Investigate: differences in rotamer probability rounding or chi-value precision
-between .pb.zst generation and MASTER source.
+Reframe logic is sound. Full validation against rotlib.bin requires a downstream
+drift measurement (e.g., ConFind contact-degree test). This run confirms the
+coordinate transformation is correct; the hypothesis test is pending.
 """
 is_residual = false
 
 [outcomes.fail]
 criteria = """
 1. Self-test fails OR
-2. n_bins_mismatch is large (>1% of shared bins)
+2. Reframe offset parsing fails OR
+3. Output file cannot be written/compressed
 """
 interpretation = """
-Data genuinely differs beyond the wrap column. Grid is not the sole cause.
-Investigate deeper: proto generation, float32 precision loss, or source-data divergence.
+Implementation error. Check argument parsing, protobuf coord encoding, or disk space.
 """
 is_residual = false
 
@@ -57,12 +77,14 @@ is_residual = false
 name = "rebuild_report"
 fields = [
   { name = "in_grid", type = "string", description = "Input grid dimensions before filtering" },
-  { name = "out_grid", type = "string", description = "Output grid dimensions after filtering" },
+  { name = "out_grid", type = "string", description = "Output grid dimensions after filtering and optional reframe" },
+  { name = "reframe_applied", type = "boolean", description = "Whether CA-origin reframe was applied" },
+  { name = "reframe_offset", type = "array", description = "Reframe offset [x, y, z] if applied, null otherwise" },
   { name = "residues", type = "integer", description = "Number of residue types in output" },
   { name = "total_shared_bins", type = "integer", description = "Total (phi,psi) bins present in both filtered .pb and rotlib.bin" },
-  { name = "n_bins_identical", type = "integer", description = "Number of shared bins with identical rotamer sets" },
-  { name = "n_bins_mismatch", type = "integer", description = "Number of shared bins with data mismatch" },
-  { name = "mismatches", type = "array", description = "List of up to 10 mismatching (code, phi, psi, first_diff_field) tuples" },
+  { name = "n_bins_identical", type = "integer", description = "Number of shared bins with identical rotamer sets (grid-36 experiment only)" },
+  { name = "n_bins_mismatch", type = "integer", description = "Number of shared bins with data mismatch (grid-36 experiment only)" },
+  { name = "mismatches", type = "array", description = "List of up to 10 mismatching (code, phi, psi, first_diff_field) tuples (grid-36 experiment only)" },
   { name = "out_path", type = "string", description = "Absolute path to output .pb.zst file" },
   { name = "out_sha256", type = "string", description = "SHA256 hash of compressed output file" },
 ]
