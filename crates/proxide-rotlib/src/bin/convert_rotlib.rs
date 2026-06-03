@@ -168,10 +168,10 @@ fn build_library(
     let mut ic_misses_count = 0;
     let mut ic_proline_skipped = 0;
 
-    // Canonical backbone frame for coordinate building
-    let backbone_n = [0.0_f32, 0.0, 0.0];
-    let backbone_ca = [1.458_f32, 0.0, 0.0];
-    let backbone_c = [2.009_f32, 1.420, 0.0];
+    // Canonical backbone frame (CA-origin): CA at origin, matches place_rotamer's backbone_frame
+    let backbone_n = [-1.458_f32, 0.0, 0.0];
+    let backbone_ca = [0.0_f32, 0.0, 0.0];
+    let backbone_c = [0.551_f32, 1.420, 0.0];
 
     for (res_code, bins) in grouped.iter() {
         // Get template
