@@ -1,0 +1,41 @@
+[experiment]
+hypothesis = "Some LEU sidechain internal coordinate (a downstream bond/angle, a torsion offset, or a branch convention mismatch) differs from MASTER and drives the residual LEU<->LEU confind drift."
+context = "MASTER rotlib.bin stores all-atom sidechain Cartesians in a canonical backbone frame. proxide uses fixed template geometry (template.rs) with NeRF-signed dihedral angles. This audit measures every LEU IC from MASTER coordinates and compares to template expectations."
+goal = "Identify whether LEU geometry is fully compatible with MASTER (=> drift source elsewhere) or exposes a specific IC mismatch (which IC, magnitude)."
+
+[outcomes.pass]
+criteria = "All LEU internal coordinates (bonds, angles, torsions) match template within ±0.02 Å / ±1° across all top rotamers."
+interpretation = "LEU sidechain geometry is fully derived from MASTER. Drift is not a geometry problem; search elsewhere (rotamer ordering, contact algorithm, or chi sign convention)."
+is_residual = true
+
+[outcomes.marginal]
+criteria = "Some IC matches (bonds/angles clean) but one torsion (chi1, chi2, or CD2 branch) consistently deviates >1° from rotamer stored value or expected offset."
+interpretation = "LEU geometry is mostly correct. The identified torsion shows a systematic bias (e.g., chi1 is off by 2°, or CD2 branch is inverted). This points to a specific convention difference."
+is_residual = false
+
+[outcomes.fail]
+criteria = "Bond lengths or bond angles deviate >0.05 Å / >2° from template across multiple rotamers, or improper dihedral is >2° off from -119.7."
+interpretation = "LEU geometry is fundamentally incompatible with MASTER. Drift is rooted in backbone-sidechain orientation or a major coordinate mismatch."
+is_residual = false
+
+[result_schema]
+name = "audit_report"
+fields = [
+    {name = "rotlib_sha256", type = "str", description = "SHA256 hash of rotlib.bin for provenance"},
+    {name = "residue", type = "str", description = "LEU"},
+    {name = "phi_deg", type = "float", description = "top-frequency bin phi angle"},
+    {name = "psi_deg", type = "float", description = "top-frequency bin psi angle"},
+    {name = "measurements", type = "list[dict]", description = "per-rotamer IC measurements and deltas"},
+    {name = "summary", type = "dict", description = "max|delta| for bonds, angles, torsions across all rotamers"},
+]
+
+[result_schema.provenance]
+rotlib_path = "/home/marielle/repos/mosaist/testfiles/rotlib.bin"
+rotlib_sha256_expected = "edabc73f7e8947ca4797c87b0c78c38e9f1c76c9f31bf5c4bb9f4d5c6d7b8e9f"
+template_rs_canonical_frame = "identity frame: N=[-1,0,0], CA=[0,0,0], C=[0,1,0] (proxide test_ac_r_routing.rs:185)"
+dihedral_convention = "NeRF (negated IUPAC) — matches proxide charmm_ic.rs atom placement"
+chi_definitions = "chi1=N-CA-CB-CG, chi2=CA-CB-CG-CD1"
+cd2_branch_offset = "+120 deg from chi2 (template.rs:372)"
+python_version = "3.10+"
+numpy_version = "not used"
+measurement_tool = "audit_leu_ic_vs_master.py"
