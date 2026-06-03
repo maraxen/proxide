@@ -1,0 +1,63 @@
+---
+workspace: proxide
+session_id: 52b25843-e223-46c3-a6bc-f35eb34a5479
+status: in_progress
+immediately_relevant:
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 171
+  - 174
+  reason: 'THE BUG: backbone_n=[0,0,0], backbone_ca=[1.458,0,0] builds sidechains in N-origin frame. Change to CA-origin.'
+- file: crates/proxide-rotlib/src/rotlib.rs
+  lines:
+  - 412
+  - 435
+  reason: 'place_rotamer: builds res_frame=backbone_frame(n,ca,c) [CA-origin] and applies it to stored coords — the frame the converter must match.'
+- file: crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs
+  lines:
+  - 77
+  - 110
+  reason: drift harness; set PROXIDE_ROTLIB_PB to test alternate pb; compares vs MASTER REF_CONTACTS (gate 5e-4).
+- file: crates/proxide-confind/tests/test_parity_small_pdb.rs
+  lines:
+  - 155
+  - 165
+  reason: 'parity oracle: proxide ConFind on MASTER''s rotlib.bin via load(); passes 5/5 — proves algorithm faithful.'
+- file: scripts/analysis/rebuild_pb_36grid.py
+  lines:
+  - 1
+  - 40
+  reason: experiment harness with --reframe-ca-origin and --self-test; reproduces the confirmation experiment (decode pb via uv --with grpcio-tools/zstandard/protobuf).
+- file: .praxia/docs/research/260603_master-rotlib-cartesian-derivation.md
+  lines:
+  - 1
+  - 1
+  reason: 'section 8 documents the full #925 root-cause chain.'
+active_dispatches: []
+task_id: 260603_loadpb_rotamerset_audit
+phase: 'Phase: load_pb drift fix (#869)'
+goal_statement: Reduce confind load_pb contact-degree drift vs MASTER rotlib.bin to <5e-4 so confind can migrate off the CC BY-NC-SA rotlib.bin (#869).
+context_refs:
+- phase: 'Phase: CB improper + atom-order audit'
+  task_id: 260603_cb_improper_drift
+  summary: '#884: proved sidechain geometry/chi/atom-order faithful to MASTER; ruled out geometry, redirected to #925.'
+- phase: 'Research: MASTER Cartesian derivation'
+  task_id: 260603_charmm_ic_sourcing
+  summary: '#820 (open): how MASTER derived rotlib.bin Cartesians — needed to match the residual ~2deg frame-axis idealization.'
+failed_attempts:
+- attempt_id: grid
+  description: Hypothesized the redundant +180 phi/psi grid column (37x37 vs MASTER 36x36) caused the drift; rebuilt pb as 36x36 and reran drift test.
+  outcome: Drift byte-identical (max 0.223386, median 0.002969, 13 missing) — zero change.
+  reason_failed: find_closest_angle (binning.rs) resolves +/-180 ties to -180 (idx 0), so the duplicate +180 bin is never uniquely selected. Grid duplication is cosmetic, not operative.
+  do_not_retry: true
+  evidence_ref: scripts/analysis/rebuild_pb_36grid.py (--self-test); research doc section 8
+open_questions:
+- 'User decision: land primary CA-origin fix alone (won''t clear gate) or bundle the #820 frame-axis match to pass 5e-4 in one pass?'
+- Does matching MASTER's exact backbone idealization (the ~2deg residual) require reproducing MASTER's specific N-CA-C/CB convention, or is it a tunable backbone_c in convert_rotlib.rs?
+deferred:
+- description: PRO chi-count mismatch between pb and rotlib.bin (1296 bins, all proline)
+  rationale: Not in small.pdb; orthogonal to the frame bug; belongs with proline rotamer work.
+  recommended_phase: '#799/#816 proline integration'
+lessons_refs:
+- .praxia/lessons.jsonl
+---
