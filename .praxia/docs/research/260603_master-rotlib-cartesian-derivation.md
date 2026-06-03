@@ -179,3 +179,33 @@ bond/angle equilibria.
 - `rotlib.bin` sha256 `edabc73f…a0da`; `charmm36_protein.xml` sha256 `94c665e4…f613d`.
 - Literature via NotebookLM notebook `171c5c8b` ("proxide: Rotamer Library Theory");
   MSL: Kulp et al. 2012 *J Comp Chem* 33:1645 (10.1002/jcc.22968).
+
+## 7. #884 resolution — CB improper FALSIFIED; LEU geometry + chi convention are faithful
+
+Follow-on investigation (task `260603_cb_improper_drift`) tested §5 suspects #1 and #2
+directly against MASTER's stored Cartesians. Both are **measurement-verified** (synthetic
+self-tests + CB-constancy invariant guard; convention disambiguated as NeRF = −IUPAC).
+
+**Frame:** MASTER/MSL and proxide use the *identical* backbone frame (origin=CA, x=CA−N,
+z=x×(C−CA); mosaist `mstrotlib.cpp:186`, proxide `frame.rs:115`), so MASTER's stored
+sidechains compare directly in the canonical identity frame N=[-1,0,0] CA=[0,0,0] C=[0,1,0].
+MASTER stores CB at a *single fixed* coord (0.479,−0.735,−1.241), std (0,0,0) across all
+rotamers and identical across residues — there is no per-residue CB orientation.
+
+**Suspect #1 — CB improper (C–N–CA–CB):** MASTER's value is **−120.64° (NeRF convention)**
+vs proxide's −119.7° placeholder → **Δ −0.94°. FALSIFIED** as the drift driver. The
+placeholder was already correct to ~1°. (`scripts/analysis/measure_master_cb_improper.py`.)
+
+**Suspect #2 — LEU all-atom IC + chi/atom-order audit** (LEU = max-drift pair, 0.212;
+`scripts/analysis/audit_leu_ic_vs_master.py`): bonds match within 0.02 Å; χ1, χ2, and the
+CD2 χ2+120 branch all match MASTER's stored chi within ~0.02° → **chi convention and atom
+order are faithful**. Largest residual is N–CA–CB = 108.37° vs template 110.5° (Δ −2.13°, a
+benign Engh-Huber-vs-CCD difference the §5 CHARMM swap already showed does not move drift).
+(An earlier audit pass reported a spurious 8.4° CB-angle mismatch — an artifact of measuring
+C–CA–CB instead of N–CA–CB; corrected in commit `ecdb5f7`.)
+
+**Conclusion:** sidechain *geometry* (bonds, angles, CB orientation) and the *chi/atom-order
+convention* are **not** the source of the confind `load_pb` drift. With §5 (bonds/angles) and
+both §7 suspects eliminated, the residual must lie in **rotamer-set composition / ordering /
+per-bin probabilities** or in the **`load_pb` contact-degree algorithm itself** — a new
+investigation (tracked as a fresh backlog item), not further IC geometry work.
