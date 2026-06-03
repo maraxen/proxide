@@ -9,6 +9,7 @@ pub mod charmm_ic;
 
 pub use template::{ResidueTemplate, proline_template, standard_residue_template};
 pub use proline::{ProlineBuilder, ProlineCoords};
+pub use charmm_ic::{CharmmIdeals, load_charmm_ideals, apply_charmm_ideals, map_template_to_charmm_name};
 
 use proxide_geometry::geometry::nerf::Nerf;
 

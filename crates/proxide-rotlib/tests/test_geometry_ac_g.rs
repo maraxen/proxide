@@ -7,13 +7,18 @@
 //! - AC_G_a: χ recovery — χ1 & χ2 within ±2°; χ3 reported
 //! - AC_G_b: Pucker distinction — endo/exo CG positions ≥0.5 Å apart
 //! - AC_G_c: Ring angles vs CCD ideals; template-set within ±3°, solved/emergent within ±6°
-//! - AC_G_d: Bond lengths within ±0.02 Å of CCD ideals
+//! - AC_G_d: Bond lengths within ±0.02 Å of CCD ideals (CD-N closure ±0.03)
 //! - AC_G_e: Round-trip identity — place_rotamer coords match build() coords ≤1e-2 Å
+//!
+//! Geometry source for PROLINE: CCD PRO.cif self-consistent ring. Proline keeps CCD (not
+//! CHARMM) because CHARMM's unstrained equilibrium ring angles break the single-DOF ring
+//! closure (solved CB-CG-CD collapses to ~85.5°). The 19 non-proline residues DO use
+//! CHARMM ideals via the converter (research #820). See module note in proline.rs.
 
 use proxide_rotlib::geometry::proline_template;
 use proxide_rotlib::geometry::ProlineBuilder;
 
-/// Expected ideal values from CCD PRO.cif (template placeholder; converter replaces with CHARMM)
+/// Expected ideal values from CCD PRO.cif (proline's self-consistent ring geometry).
 mod ccd_ideals {
     pub const N_CA: f32 = 1.486;
     pub const CA_CB: f32 = 1.543;
@@ -146,19 +151,15 @@ fn test_ac_g_c_ring_angles() {
     // Template-set angles are exact: ±3° holds.
     assert!((ang_n_ca_cb  - ccd_ideals::N_CA_CB).abs()  <= 3.0, "N-CA-CB");
     assert!((ang_ca_cb_cg - ccd_ideals::CA_CB_CG).abs() <= 3.0, "CA-CB-CG");
-    // CB-CG-CD is the SOLVED DOF; CG-CD-N/CD-N-CA emerge from ring geometry.
-    // CCD PRO.cif is a symmetric (χ≈0) idealization — puckered Dunbrack chi values
-    // (χ1=32.5°, χ2=−36°) naturally push these angles ~4-5° from the symmetric ideal,
-    // which is physically correct. ±6° covers the expected deviation. (spec §11 NOTE)
-    // CB-CG-CD tolerance widened to ±7° because ring closure target CD_N_IDEAL changed from CCD (1.487 Å)
-    // to CHARMM (1.455 Å), which shifts the solved angle; this will be corrected when the converter
-    // applies full CHARMM ICs. See spec T3.
-    assert!((ang_cb_cg_cd - ccd_ideals::CB_CG_CD).abs() <= 7.0,
-            "solved CB-CG-CD {:.1}° outside ±7° of ideal {:.1}°", ang_cb_cg_cd, ccd_ideals::CB_CG_CD);
-    assert!((ang_cg_cd_n  - ccd_ideals::CG_CD_N).abs()  <= 7.0,
-            "emergent CG-CD-N {:.1}° outside ±7° of ideal {:.1}°", ang_cg_cd_n, ccd_ideals::CG_CD_N);
-    assert!((ang_cd_n_ca  - ccd_ideals::CD_N_CA).abs()  <= 7.0,
-            "emergent CD-N-CA {:.1}° outside ±7° of ideal {:.1}°", ang_cd_n_ca, ccd_ideals::CD_N_CA);
+    // CB-CG-CD is the SOLVED DOF; CG-CD-N / CD-N-CA emerge from ring geometry. The puckered
+    // Dunbrack chi values (χ1=32.5°, χ2=−36°) push these ~4-5° from the symmetric CCD ideal,
+    // which is physically correct. ±6° covers the expected deviation (spec §11 NOTE).
+    assert!((ang_cb_cg_cd - ccd_ideals::CB_CG_CD).abs() <= 6.0,
+            "solved CB-CG-CD {:.1}° outside ±6° of ideal {:.1}°", ang_cb_cg_cd, ccd_ideals::CB_CG_CD);
+    assert!((ang_cg_cd_n  - ccd_ideals::CG_CD_N).abs()  <= 6.0,
+            "emergent CG-CD-N {:.1}° outside ±6° of ideal {:.1}°", ang_cg_cd_n, ccd_ideals::CG_CD_N);
+    assert!((ang_cd_n_ca  - ccd_ideals::CD_N_CA).abs()  <= 6.0,
+            "emergent CD-N-CA {:.1}° outside ±6° of ideal {:.1}°", ang_cd_n_ca, ccd_ideals::CD_N_CA);
 }
 
 // ─── AC-G(d): bond lengths ────────────────────────────────────────────────────
@@ -187,13 +188,12 @@ fn test_ac_g_d_bond_lengths() {
         println!("  {}: {:.4} Å (ideal {:.3} Å, err {:.4} Å)", label, got, ideal, (got-ideal).abs());
     }
 
-    assert!((b_n_ca  - ccd_ideals::N_CA).abs()  <= 0.02);
-    assert!((b_ca_cb - ccd_ideals::CA_CB).abs() <= 0.02);
-    assert!((b_cb_cg - ccd_ideals::CB_CG).abs() <= 0.02);
-    assert!((b_cg_cd - ccd_ideals::CG_CD).abs() <= 0.02);
-    // CD-N closure tolerance widened to ±0.04 Å because ring closure now targets CHARMM CD_N_IDEAL (1.455 Å)
-    // instead of CCD (1.487 Å); the achieved distance reflects the new target. See spec T3.
-    assert!((b_cd_n  - ccd_ideals::CD_N).abs()  <= 0.04, "CD-N closure (CHARMM target)");
+    assert!((b_n_ca  - ccd_ideals::N_CA).abs()  <= 0.02, "N-CA");
+    assert!((b_ca_cb - ccd_ideals::CA_CB).abs() <= 0.02, "CA-CB");
+    assert!((b_cb_cg - ccd_ideals::CB_CG).abs() <= 0.02, "CB-CG");
+    assert!((b_cg_cd - ccd_ideals::CG_CD).abs() <= 0.02, "CG-CD");
+    // CD-N is the ring-closure bond; the solver targets CCD CD_N_IDEAL = 1.487 Å.
+    assert!((b_cd_n  - ccd_ideals::CD_N).abs()  <= 0.03, "CD-N closure");
 }
 
 // ─── AC-G(e): round-trip identity ────────────────────────────────────────────

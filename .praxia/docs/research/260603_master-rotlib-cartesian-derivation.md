@@ -128,6 +128,43 @@ proxide already ships and parses the right source:
    spec's P6 — measure per-residue rebuilt-vs-MASTER coordinate RMSD and tune. Never
    redistribute `rotlib.bin` (CC BY-NC-SA); it stays a dev oracle only.
 
+## 5a. IMPLEMENTED + MEASURED (2026-06-03) — geometry-equilibria hypothesis FALSIFIED
+
+The fix was implemented (CHARMM ICs sourced from the bundled `charmm36_protein.xml` via
+`proxide_core::forcefield`, applied to the 19 non-proline residue templates at convert
+time; see `geometry/charmm_ic.rs`) and the drift harness re-run. **Result: the swap did
+not reduce the drift.**
+
+| Metric (small.pdb)      | Baseline (Engh-Huber/CCD) | After CHARMM (non-proline) |
+|-------------------------|---------------------------|----------------------------|
+| Max \|Δ\|               | 0.223                     | **0.212**                  |
+| Mean \|Δ\|              | 0.021                     | 0.020                      |
+| Median \|Δ\|            | 0.003                     | 0.003                      |
+| Count over 5e-4         | 69% (43)                  | **71% (42)**               |
+
+**Why ~no change — and why it's a real (negative) result:**
+- `small.pdb` contains **no proline** (residues: ARG MET LYS GLN LEU GLU ASP). The top
+  drift contacts are LEU↔LEU (Δ0.212), GLN↔ASP (Δ0.168), LYS/MET — **all residues that
+  WERE converted to exact CHARMM bonds+angles.** The drift barely moved.
+- The non-proline residues were *already* near-tetrahedral in Engh-Huber (~110° ≈ CHARMM),
+  so sourcing CHARMM bond/angle equilibria was nearly a no-op for them.
+- **Proline** — the one residue with a large (~5°) CCD-vs-MASTER angle gap — was kept on
+  CCD because CHARMM's unstrained equilibrium ring angles collapse the single-DOF ring
+  closure (solved CB-CG-CD → 85.5°, unphysical). And proline isn't even in this fixture.
+
+**Conclusion:** ideal bond-length/angle geometry is **not** the dominant driver of the
+confind `load_pb` contact-degree drift. The residual (~0.21 max, 71% over 5e-4) is
+dominated by something else — most plausibly:
+1. **CB improper / chi-independent torsions** (left unchanged at Engh-Huber/CCD): these set
+   sidechain *orientation*; a wrong improper rotates the whole sidechain and changes contact
+   degree even with perfect bonds/angles. Strongest suspect for the LEU↔LEU max drift.
+2. **Rotamer-set / atom-order / chi-convention / variant semantics** (spec open question #6).
+3. NeRF branch-torsion application and the shared backbone build frame.
+
+`#869` (confind→`load_pb` migration) therefore **cannot be unblocked by IC geometry alone**;
+the next lever is the improper/orientation torsions and a rotamer-set/atom-order audit, not
+bond/angle equilibria.
+
 ## 6. Open / follow-on
 
 - **Exact param source:** confirm whether MASTER used CHARMM IC tables (`.rtf` RESI

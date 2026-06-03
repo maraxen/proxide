@@ -166,6 +166,7 @@ fn build_library(
     let mut residues = Vec::new();
     let mut ic_overrides_count = 0;
     let mut ic_misses_count = 0;
+    let mut ic_proline_skipped = 0;
 
     // Canonical backbone frame for coordinate building
     let backbone_n = [0.0_f32, 0.0, 0.0];
@@ -181,13 +182,22 @@ fn build_library(
                 .ok_or_else(|| format!("Unknown residue code: {}", res_code))?
         };
 
-        // Apply CHARMM ideals to the template
-        let charmm_resname = map_template_to_charmm_name(&res_code);
-        if let Err(e) = apply_charmm_ideals(&mut template, charmm_ideals, &charmm_resname) {
-            eprintln!("Warning: could not apply CHARMM ICs to {}: {}", res_code, e);
-            ic_misses_count += 1;
+        // Apply CHARMM ideals to the template for the 19 non-proline residues.
+        // Proline keeps its CCD self-consistent ring: CHARMM's unstrained equilibrium ring
+        // angles break the single-DOF ring closure (solved CB-CG-CD -> ~85.5°). See #820
+        // research doc + proline.rs module note; CHARMM-for-proline is a scoped follow-up.
+        let is_proline = matches!(res_code.as_str(), "PRO" | "CPR" | "TPR");
+        if is_proline {
+            ic_proline_skipped += 1;
         } else {
-            ic_overrides_count += 1;
+            let charmm_resname = map_template_to_charmm_name(res_code);
+            match apply_charmm_ideals(&mut template, charmm_ideals, charmm_resname) {
+                Ok(applied) => ic_overrides_count += applied,
+                Err(e) => {
+                    eprintln!("Warning: could not apply CHARMM ICs to {}: {}", res_code, e);
+                    ic_misses_count += 1;
+                }
+            }
         }
 
         // Determine num_chi from the template's dihedrals
@@ -307,8 +317,8 @@ fn build_library(
 
     // Print coverage summary
     eprintln!(
-        "CHARMM IC coverage: {} residues processed, {} overridden, {} misses",
-        grouped.len(), ic_overrides_count, ic_misses_count
+        "CHARMM IC coverage: {} residues processed, {} IC fields overridden, {} misses, {} proline skipped (CCD ring retained)",
+        grouped.len(), ic_overrides_count, ic_misses_count, ic_proline_skipped
     );
 
     Ok(lib)

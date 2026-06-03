@@ -2,17 +2,23 @@
 //!
 //! Builds proline sidechain coordinates from exact χ angles (from Dunbrack).
 //! Ring closure is achieved by solving the CB-CG-CD bond angle via 1-D root-finding
-//! to satisfy |CD−N| = 1.455 Å (CHARMM ideal bond length). χ1 and χ2 are preserved exactly;
+//! to satisfy |CD−N| = 1.487 Å (CCD ideal bond length). χ1 and χ2 are preserved exactly;
 //! the ring angle is the only degree of freedom relaxed.
+//!
+//! NOTE (#820): proline retains CCD self-consistent ring geometry, NOT CHARMM. Forcing
+//! CHARMM's unstrained equilibrium ring angles (N-CA-CB 110.8°, CG-CD-N 110.5°, CD-N-CA
+//! 114.2°) into this single-DOF closure collapses the solved CB-CG-CD angle to ~85.5°
+//! (unphysical) — the ring over-opens and the strain dumps onto one angle. Adopting CHARMM
+//! for proline requires a multi-angle / minimization ring closure (see
+//! .praxia/docs/research/260603_master-rotlib-cartesian-derivation.md, follow-up).
 
 use crate::RotlibError;
 use super::template::ResidueTemplate;
 use proxide_geometry::geometry::nerf::Nerf;
 
-/// Ideal CD-N bond length from CHARMM (Å).
-/// Changed from CCD placeholder (1.487) to CHARMM ideal (1.455).
-/// See research doc 260603_master-rotlib-cartesian-derivation.md (#820).
-const CD_N_IDEAL: f32 = 1.455;
+/// Ideal CD-N bond length (Å) — CCD PRO.cif value; proline keeps self-consistent CCD
+/// ring geometry (see module note re: #820 CHARMM closure limitation).
+const CD_N_IDEAL: f32 = 1.487;
 /// Tolerance for ring closure |CD−N − ideal| (Å).
 const CD_N_TOLERANCE: f32 = 0.001;
 /// Max iterations for bisection root-find of CB-CG-CD angle.

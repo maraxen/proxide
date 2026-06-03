@@ -1,263 +1,225 @@
 //! Load CHARMM ideal internal coordinates from FFXML and apply to residue templates.
 //!
-//! Replaces Engh-Huber / CCD placeholder coordinates with CHARMM ideal bond lengths
-//! and bond angles, sourced from CHARMM36 force field parameters.
+//! Replaces the Engh-Huber / CCD placeholder bond lengths and bond angles in
+//! proxide-rotlib's residue templates with CHARMM ideal values, sourced from the
+//! bundled CHARMM36 protein force field (`src/proxide/assets/charmm/charmm36_protein.xml`).
+//! This matches the geometry MASTER/MSL used to bake `rotlib.bin` and is the path to
+//! reducing the confind `load_pb()` contact-degree drift (research #820 ->
+//! `.praxia/docs/research/260603_master-rotlib-cartesian-derivation.md`).
+//!
+//! The FFXML is parsed **once** in [`load_charmm_ideals`]; [`apply_charmm_ideals`] then
+//! mutates a template in place using the cached force field — no per-residue re-parse.
 
 use std::collections::HashMap;
 use crate::RotlibError;
 use super::template::ResidueTemplate;
+use proxide_core::forcefield::{ForceField, parse_forcefield_xml};
 
-/// CHARMM ideal internal coordinates for a residue.
+/// CHARMM ideal internal coordinates, parsed once from a force-field XML.
 ///
-/// Contains lookup maps for bond lengths and bond angles keyed by atom class pairs.
+/// Holds the parsed [`ForceField`] (for residue atom -> class resolution) plus fast
+/// lookup maps for bond lengths (Å) and bond angles (degrees) keyed by atom class.
 pub struct CharmmIdeals {
-    /// Bond length in Å: key = unordered pair of atom classes (sorted alphabetically)
+    ff: ForceField,
+    /// Bond length (Å), keyed by the class pair sorted lexicographically.
     bond_lengths: HashMap<(String, String), f32>,
-    /// Bond angle in degrees: key = (class1, class2_center, class3)
+    /// Bond angle (degrees), keyed by (class1, center_class, class3). Stored as parsed;
+    /// [`Self::bond_angle`] also tries the reversed terminal order.
     bond_angles: HashMap<(String, String, String), f32>,
 }
 
 impl CharmmIdeals {
-    /// Create empty CharmmIdeals.
-    fn new() -> Self {
-        Self {
-            bond_lengths: HashMap::new(),
-            bond_angles: HashMap::new(),
-        }
-    }
-
-    /// Look up a bond length by atom classes (in Å).
-    fn get_bond_length(&self, class1: &str, class2: &str) -> Option<f32> {
-        // Try both orderings (normalized by sorting)
-        let (c1, c2) = if class1 <= class2 {
-            (class1.to_string(), class2.to_string())
+    /// Bond length (Å) for the unordered class pair, if defined.
+    fn bond_length(&self, class_a: &str, class_b: &str) -> Option<f32> {
+        let key = if class_a <= class_b {
+            (class_a.to_string(), class_b.to_string())
         } else {
-            (class2.to_string(), class1.to_string())
+            (class_b.to_string(), class_a.to_string())
         };
-        self.bond_lengths.get(&(c1, c2)).copied()
+        self.bond_lengths.get(&key).copied()
     }
 
-    /// Look up a bond angle by atom classes (in degrees).
-    /// The second class is the central atom.
-    fn get_bond_angle(&self, class1: &str, class2_center: &str, class3: &str) -> Option<f32> {
-        // Try both orderings of the terminal atoms
-        if let Some(angle) = self.bond_angles.get(&(class1.to_string(), class2_center.to_string(), class3.to_string())) {
-            return Some(*angle);
-        }
-        // Try reversed
-        self.bond_angles.get(&(class3.to_string(), class2_center.to_string(), class1.to_string())).copied()
+    /// Bond angle (degrees) for (terminal, center, terminal); tries both terminal orders.
+    fn bond_angle(&self, class_a: &str, center: &str, class_c: &str) -> Option<f32> {
+        self.bond_angles
+            .get(&(class_a.to_string(), center.to_string(), class_c.to_string()))
+            .or_else(|| {
+                self.bond_angles
+                    .get(&(class_c.to_string(), center.to_string(), class_a.to_string()))
+            })
+            .copied()
+    }
+
+    /// Resolve a residue atom name to its CHARMM atom class via the cached force field.
+    fn class_of(&self, charmm_resname: &str, atom_name: &str) -> Option<String> {
+        let res = self.ff.get_residue(charmm_resname)?;
+        let atom = res.atoms.iter().find(|a| a.name == atom_name)?;
+        self.ff
+            .get_atom_type(&atom.atom_type)
+            .map(|t| t.class.clone())
+    }
+
+    /// CHARMM ideal N–CD bond length (Å) for a proline-family residue — the ring-closure
+    /// target for [`super::proline::ProlineBuilder`]. Returns `None` if the residue or
+    /// the N/CD classes are absent.
+    pub fn proline_cd_n_length(&self, charmm_resname: &str) -> Option<f32> {
+        let n_class = self.class_of(charmm_resname, "N")?;
+        let cd_class = self.class_of(charmm_resname, "CD")?;
+        self.bond_length(&n_class, &cd_class)
     }
 }
 
-/// Load CHARMM ideals from a force field XML file.
+/// Parse a force-field XML once and build the CHARMM ideal lookup tables.
 pub fn load_charmm_ideals(ffxml_path: &str) -> Result<CharmmIdeals, RotlibError> {
-    let ff = proxide_core::forcefield::parse_forcefield_xml(ffxml_path)
-        .map_err(|e| RotlibError::InvalidFormat(format!("Failed to parse FFXML: {}", e)))?;
+    let ff = parse_forcefield_xml(ffxml_path)
+        .map_err(|e| RotlibError::InvalidFormat(format!("Failed to parse FFXML {ffxml_path}: {e}")))?;
 
-    let mut ideals = CharmmIdeals::new();
-
-    // Build bond length map (class1-class2 -> length in Å)
+    let mut bond_lengths = HashMap::new();
     for bond in &ff.harmonic_bonds {
-        let length_angstrom = bond.length * 10.0; // Convert nm to Å
-        let (c1, c2) = if bond.class1 <= bond.class2 {
+        let length_a = bond.length * 10.0; // nm -> Å
+        let key = if bond.class1 <= bond.class2 {
             (bond.class1.clone(), bond.class2.clone())
         } else {
             (bond.class2.clone(), bond.class1.clone())
         };
-        ideals.bond_lengths.insert((c1, c2), length_angstrom);
+        bond_lengths.insert(key, length_a);
     }
 
-    // Build bond angle map (class1-class2_center-class3 -> angle in degrees)
+    let mut bond_angles = HashMap::new();
     for angle in &ff.harmonic_angles {
-        let angle_deg = angle.angle.to_degrees();
-        ideals.bond_angles.insert(
+        bond_angles.insert(
             (angle.class1.clone(), angle.class2.clone(), angle.class3.clone()),
-            angle_deg,
+            angle.angle.to_degrees(),
         );
     }
 
-    Ok(ideals)
+    Ok(CharmmIdeals { ff, bond_lengths, bond_angles })
 }
 
-/// Map template residue code to CHARMM residue name.
-/// Used by converter to look up residue parameters in the FFXML.
-pub fn map_template_to_charmm_name(template_code: &str) -> String {
+/// Map a proxide template residue code to its CHARMM36 FFXML residue name.
+///
+/// CHARMM36 splits histidine into tautomers (HSD/HSE/HSP) and has a single neutral
+/// cysteine (`CYS`); the proxide CYS/CYH/CYD variants share heavy-atom ring geometry,
+/// so they map to `CYS`, and HIS maps to the delta-protonated `HSD` (its ring bond
+/// lengths/angles match the other tautomers for IC purposes).
+pub fn map_template_to_charmm_name(template_code: &str) -> &'static str {
     match template_code {
-        "CYS" | "CYH" | "CYD" => "CYS".to_string(),
-        "HIS" => "HSD".to_string(),
-        _ => template_code.to_string(),
+        "CYS" | "CYH" | "CYD" => "CYS",
+        "HIS" => "HSD",
+        "ALA" => "ALA",
+        "ARG" => "ARG",
+        "ASN" => "ASN",
+        "ASP" => "ASP",
+        "GLN" => "GLN",
+        "GLU" => "GLU",
+        "ILE" => "ILE",
+        "LEU" => "LEU",
+        "LYS" => "LYS",
+        "MET" => "MET",
+        "PHE" => "PHE",
+        // Proline and its cis/trans peptide-bond variants share the CHARMM PRO topology.
+        "PRO" | "CPR" | "TPR" => "PRO",
+        "SER" => "SER",
+        "THR" => "THR",
+        "TRP" => "TRP",
+        "TYR" => "TYR",
+        "VAL" => "VAL",
+        // Unknown code: apply_charmm_ideals will find no FFXML residue and warn + no-op.
+        _ => "UNK",
     }
 }
 
-/// Apply CHARMM ideals to a residue template.
+/// Override a template's bond lengths and bond angles with CHARMM ideals, in place.
 ///
-/// For each atom with a BondDef, looks up the bond length and angle from CHARMM
-/// parameters using atom classes. Overrides the template's ideal values.
-/// Leaves torsion_deg and relative_chi unchanged.
+/// For each sidechain atom (index ≥ 3) with a `BondDef`, looks up the CHARMM bond
+/// length `(atom, parent)` and bond angle `(atom, parent, grandparent)`, where the
+/// grandparent (the angle's third atom `B`) is resolved with the SAME convention as
+/// [`super::build_standard_sidechain`] / `resolve_parent_chain`:
+///   * parent == CA (idx 1) → grandparent = N (idx 0)
+///   * parent == backbone C (idx 2) → grandparent = CA (idx 1)
+///   * parent is a sidechain atom → grandparent = `bonds[parent].parent_idx`
 ///
-/// # Arguments
-/// * `template` - The residue template to modify
-/// * `ideals` - CHARMM ideal internal coordinates
-/// * `charmm_resname` - CHARMM residue name (e.g., "ALA", "PRO", "HSD" for HIS)
+/// `torsion_deg` and `relative_chi` are left untouched (improper/branch torsions are not
+/// sourced from harmonic bond/angle terms). Misses are logged via `tracing::warn!` so
+/// IC coverage is auditable.
 pub fn apply_charmm_ideals(
     template: &mut ResidueTemplate,
     ideals: &CharmmIdeals,
     charmm_resname: &str,
-) -> Result<(), RotlibError> {
-    // Get residue template from ForceField to look up atom types
-    // Try multiple paths since this may be called from different contexts
-    let ff_path = "src/proxide/assets/charmm/charmm36_protein.xml";
-    let ff = proxide_core::forcefield::parse_forcefield_xml(ff_path)
-        .or_else(|_| {
-            proxide_core::forcefield::parse_forcefield_xml("../../../src/proxide/assets/charmm/charmm36_protein.xml")
-        })
-        .or_else(|_| {
-            proxide_core::forcefield::parse_forcefield_xml("../../../../src/proxide/assets/charmm/charmm36_protein.xml")
-        })
-        .map_err(|e| RotlibError::InvalidFormat(format!("Failed to parse FFXML: {}", e)))?;
-
-    // Get the residue template from the forcefield
-    let ff_residue = ff.get_residue(charmm_resname)
-        .ok_or_else(|| RotlibError::InvalidFormat(format!("Residue {} not found in FFXML", charmm_resname)))?;
-
-    // Build atom name -> atom type map
-    let mut atom_type_map: HashMap<String, String> = HashMap::new();
-    for ff_atom in &ff_residue.atoms {
-        atom_type_map.insert(ff_atom.name.clone(), ff_atom.atom_type.clone());
+) -> Result<usize, RotlibError> {
+    if ideals.ff.get_residue(charmm_resname).is_none() {
+        tracing::warn!("residue {charmm_resname} not found in CHARMM FFXML; template left unchanged");
+        return Ok(0);
     }
 
-    // Build atom type name -> class map
-    let mut type_class_map: HashMap<String, String> = HashMap::new();
-    for atom_type in &ff.atom_types {
-        type_class_map.insert(atom_type.name.clone(), atom_type.class.clone());
-    }
-
-    // First pass: collect parent indices and grandparent lookups to avoid borrow issues
     let mut updates: Vec<(usize, Option<f32>, Option<f32>)> = Vec::new();
 
     for atom_idx in 3..template.num_atoms() {
-        if let Some(bond) = template.bonds[atom_idx] {
-            let atom_name = &template.atom_names[atom_idx];
-            let parent_idx = bond.parent_idx;
-            let parent_name = &template.atom_names[parent_idx];
+        let Some(bond) = template.bonds[atom_idx] else { continue };
+        let atom_name = template.atom_names[atom_idx].clone();
+        let parent_idx = bond.parent_idx;
+        let parent_name = template.atom_names[parent_idx].clone();
 
-            // Get atom classes
-            let atom_class = atom_type_map.get(atom_name)
-                .and_then(|type_name| type_class_map.get(type_name).cloned());
-            let parent_class = atom_type_map.get(parent_name)
-                .and_then(|type_name| type_class_map.get(type_name).cloned());
+        // Grandparent (angle third atom B) — mirror resolve_parent_chain in mod.rs.
+        let grandparent_idx = match parent_idx {
+            1 => 0, // parent CA -> B = N
+            2 => 1, // parent backbone C -> B = CA
+            _ => template.bonds[parent_idx].map(|b| b.parent_idx).unwrap_or(0),
+        };
+        let grandparent_name = template.atom_names[grandparent_idx].clone();
 
-            // Look up bond length
-            let new_length = if let (Some(atom_cl), Some(parent_cl)) = (&atom_class, &parent_class) {
-                if let Some(length) = ideals.get_bond_length(atom_cl, parent_cl) {
-                    Some(length)
-                } else {
-                    tracing::warn!(
-                        "No CHARMM bond length found for {}-{} ({}-{})",
-                        atom_name, parent_name, atom_cl, parent_cl
-                    );
-                    None
-                }
-            } else {
+        let atom_class = ideals.class_of(charmm_resname, &atom_name);
+        let parent_class = ideals.class_of(charmm_resname, &parent_name);
+        let grandparent_class = ideals.class_of(charmm_resname, &grandparent_name);
+
+        let new_length = match (&atom_class, &parent_class) {
+            (Some(a), Some(p)) => ideals.bond_length(a, p).or_else(|| {
+                tracing::warn!("no CHARMM bond {atom_name}-{parent_name} ({a}-{p}) in {charmm_resname}");
                 None
-            };
+            }),
+            _ => None,
+        };
 
-            // Look up bond angle by resolving grandparent
-            let new_angle = if parent_idx == 1 {
-                // parent=CA: B=N, A=backbone_C
-                let grandparent_idx = 0;
-                let grandparent_name = &template.atom_names[grandparent_idx];
-                let grandparent_class = atom_type_map.get(grandparent_name)
-                    .and_then(|type_name| type_class_map.get(type_name).cloned());
+        let new_angle = match (&atom_class, &parent_class, &grandparent_class) {
+            (Some(a), Some(p), Some(g)) => ideals.bond_angle(a, p, g).or_else(|| {
+                tracing::warn!(
+                    "no CHARMM angle {atom_name}-{parent_name}-{grandparent_name} ({a}-{p}-{g}) in {charmm_resname}"
+                );
+                None
+            }),
+            _ => None,
+        };
 
-                if let (Some(gp_cl), Some(p_cl), Some(atom_cl)) = (&grandparent_class, &parent_class, &atom_class) {
-                    if let Some(angle) = ideals.get_bond_angle(gp_cl, p_cl, atom_cl) {
-                        Some(angle)
-                    } else {
-                        tracing::warn!(
-                            "No CHARMM angle found for {}-{}-{} ({}-{}-{})",
-                            grandparent_name, parent_name, atom_name, gp_cl, p_cl, atom_cl
-                        );
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else if parent_idx == 2 {
-                // parent=backbone_C: B=CA, A=N (O placement)
-                let grandparent_idx = 1;
-                let grandparent_name = &template.atom_names[grandparent_idx];
-                let grandparent_class = atom_type_map.get(grandparent_name)
-                    .and_then(|type_name| type_class_map.get(type_name).cloned());
-
-                if let (Some(gp_cl), Some(p_cl), Some(atom_cl)) = (&grandparent_class, &parent_class, &atom_class) {
-                    if let Some(angle) = ideals.get_bond_angle(gp_cl, p_cl, atom_cl) {
-                        Some(angle)
-                    } else {
-                        tracing::warn!(
-                            "No CHARMM angle found for {}-{}-{} ({}-{}-{})",
-                            grandparent_name, parent_name, atom_name, gp_cl, p_cl, atom_cl
-                        );
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                // Parent is sidechain; walk up via bonds
-                if let Some(b_bond) = template.bonds[parent_idx] {
-                    let grandparent_idx = b_bond.parent_idx;
-                    let grandparent_name = &template.atom_names[grandparent_idx];
-                    let grandparent_class = atom_type_map.get(grandparent_name)
-                        .and_then(|type_name| type_class_map.get(type_name).cloned());
-
-                    if let (Some(gp_cl), Some(p_cl), Some(atom_cl)) = (&grandparent_class, &parent_class, &atom_class) {
-                        if let Some(angle) = ideals.get_bond_angle(gp_cl, p_cl, atom_cl) {
-                            Some(angle)
-                        } else {
-                            tracing::warn!(
-                                "No CHARMM angle found for {}-{}-{} ({}-{}-{})",
-                                grandparent_name, parent_name, atom_name, gp_cl, p_cl, atom_cl
-                            );
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            };
-
-            updates.push((atom_idx, new_length, new_angle));
-        }
+        updates.push((atom_idx, new_length, new_angle));
     }
 
-    // Second pass: apply updates
+    let mut applied = 0usize;
     for (atom_idx, new_length, new_angle) in updates {
         if let Some(bond) = &mut template.bonds[atom_idx] {
             if let Some(length) = new_length {
                 bond.bond_length = length;
+                applied += 1;
             }
             if let Some(angle) = new_angle {
                 bond.bond_angle_deg = angle;
+                applied += 1;
             }
         }
     }
 
-    Ok(())
+    Ok(applied)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_map_template_to_charmm_name_only() {
-        // Unit test the mapping function (doesn't require FFXML file)
-        assert_eq!(map_template_to_charmm_name("CYS"), "CYS");
-        assert_eq!(map_template_to_charmm_name("CYH"), "CYS");
-        assert_eq!(map_template_to_charmm_name("HIS"), "HSD");
+    /// FFXML path anchored to the crate so tests pass regardless of CWD.
+    pub(crate) fn charmm_ffxml_path() -> String {
+        format!(
+            "{}/../../src/proxide/assets/charmm/charmm36_protein.xml",
+            env!("CARGO_MANIFEST_DIR")
+        )
     }
 
     #[test]
@@ -267,5 +229,14 @@ mod tests {
         assert_eq!(map_template_to_charmm_name("CYD"), "CYS");
         assert_eq!(map_template_to_charmm_name("HIS"), "HSD");
         assert_eq!(map_template_to_charmm_name("ALA"), "ALA");
+    }
+
+    #[test]
+    fn test_load_and_proline_cd_n() {
+        // Sanity-check the parser/lookup against the verified CHARMM proline ideals:
+        // N-CD = 1.455 Å (research #820). Confirms nm->Å conversion + class resolution.
+        let ideals = load_charmm_ideals(&charmm_ffxml_path()).expect("parse CHARMM36 FFXML");
+        let cd_n = ideals.proline_cd_n_length("PRO").expect("PRO N-CD bond");
+        assert!((cd_n - 1.455).abs() < 0.01, "PRO N-CD {cd_n:.3} Å != CHARMM 1.455");
     }
 }
