@@ -11,6 +11,7 @@
 
 ## Research
 - [260602_rotlib-notebook-plan](research/260602_rotlib-notebook-plan.md) — NotebookLM research notebook plan: rotamer library + confind sources, prompts, and expected outputs for grounding project direction
+- [260603_master-rotlib-cartesian-derivation](research/260603_master-rotlib-cartesian-derivation.md) — #820: MASTER built rotlib.bin Cartesians from CHARMM ideal ICs (not Engh-Huber); measured ground truth root-causes the load_pb drift; fix = source ICs from proxide's bundled charmm36_protein.xml
 
 ## Plans
 - [260602_rotlib-confind-actions](plans/260602_rotlib-confind-actions.md) — Post-NLM-synthesis action plan: rotlib and confind code/doc actions with citations

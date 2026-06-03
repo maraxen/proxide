@@ -1,0 +1,46 @@
+schema = "bathos/0.3"
+
+[experiment]
+slug = "extract_rotlib_geometry_820"
+title = "Root-cause confind load_pb drift: how MASTER derived rotlib.bin Cartesians"
+hypothesis = """
+MASTER/MSL built the Cartesian sidechain coordinates baked into rotlib.bin from
+CHARMM ideal internal coordinates (bond lengths/angles), NOT the Engh-Huber / CCD
+PRO.cif geometry that proxide-rotlib's template.rs currently uses as a placeholder.
+If true, the measured intra-sidechain bonds/angles in rotlib.bin should match
+tetrahedral/CHARMM-family ideals (C-C ~1.52-1.54 Å, sp3 angles ~108-111°, sp2 ~120°)
+and differ markedly from the CCD ring angles (~104-105°) in the placeholder. This
+geometry mismatch is the leading candidate for the confind contact-degree drift
+(max |Δ| 0.223 on small.pdb) that gates backlog #869 (migrate confind to load_pb).
+"""
+task_id = "260602_rotlib-confind-actions"
+backlog = "#820"
+
+[outcomes.pass]
+condition = "Measured rotlib.bin PRO ring angle is within 2° of CHARMM (108.5°) AND >3° away from the CCD placeholder (105.1°); ARG/LEU show clean tetrahedral sp3 (~110°) and sp2 (~120°) geometry; proxide's bundled charmm36_protein.xml parses to the same CHARMM ideals."
+reasoning = "Confirms CHARMM-family derivation and isolates the placeholder's ~5° angular error as the drift root cause; validates the fix source (proxide-bundled CHARMM36 FFXML via proxide_core forcefield parser)."
+
+[outcomes.marginal]
+condition = "Measured geometry is tetrahedral/CHARMM-like but the residual vs CHARMM harmonic equilibria exceeds ~0.02 Å / ~2°, implying rotlib.bin used CHARMM IC tables or post-build minimization rather than raw b0/θ0."
+reasoning = "Direction is confirmed (CHARMM, not CCD) but exact param source needs follow-up; converter must additionally validate rebuilt coords against rotlib.bin within drift tolerance."
+is_residual = true
+
+[outcomes.fail]
+condition = "Measured rotlib.bin geometry matches the CCD/Engh-Huber placeholder (ring angle ~105°) OR is closer to it than to CHARMM."
+reasoning = "Would falsify the CHARMM hypothesis; the drift would have to be attributed to atom-order/rotamer-set/variant semantics rather than ideal geometry."
+
+[result_schema]
+residue_codes = "list[str] — AA codes present in rotlib.bin"
+"measurements.<AA>.bonds_A" = "dict[str,float] — measured intra-sidechain bond lengths (Å)"
+"measurements.<AA>.angles_deg" = "dict[str,float] — measured bond angles (deg)"
+"measurements.<AA>.rot0_chi_deg" = "list[float] — chi angles of the highest-freq bin, rotamer 0"
+"pro_comparison" = "dict — PRO measured vs CHARMM vs CCD-placeholder, per bond/angle"
+"charmm36_ffxml" = "dict — PRO ideal bonds/angles parsed from proxide's bundled CHARMM36 FFXML"
+
+[result_schema.provenance]
+script_commit = "29dffd1 (worktree worktree-rotlib-820-research)"
+python_version = "3.12.3 (stdlib only: struct, math, xml.etree, json)"
+input_rotlib_bin = "edabc73f9a9e9536fa0665fcf3820dbf22b05e646271e7c0a70b3d68b7f3a0da"
+input_charmm36_protein_xml = "94c665e4e4610e6959b54e63e9d626cd2882f0e540444766959a47ecbb9f613d"
+rotlib_source = "/home/marielle/repos/mosaist/testfiles/rotlib.bin (MASTER/MSL, CC BY-NC-SA — dev cross-check only, never redistributed)"
+format_decoded_from = "mosaist/src/mstrotlib.cpp::readRotamerLibrary"
