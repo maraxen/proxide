@@ -1,0 +1,64 @@
+---
+workspace: proxide
+session_id: 2fe675fe-ccdf-4025-942a-ea4bfc82c21c
+status: in_progress
+immediately_relevant:
+- file: crates/proxide-rotlib/src/geometry/template.rs
+  lines:
+  - 319
+  - 386
+  reason: Per-residue templates; the CB improper torsion_deg (e.g. LEU CB at -119.7) is the prime suspect for the residual drift -- still Engh-Huber/CCD, NOT sourced from CHARMM
+- file: crates/proxide-rotlib/src/geometry/charmm_ic.rs
+  lines:
+  - 1
+  - 130
+  reason: Implemented CHARMM IC sourcing (bonds+angles only). apply_charmm_ideals deliberately leaves torsion_deg untouched; extending to impropers/orientation builds here
+- file: crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs
+  lines:
+  - 79
+  - 110
+  reason: Drift harness; reads PROXIDE_ROTLIB_PB env. small.pdb residues ARG MET LYS GLN LEU GLU ASP (NO proline). Top drift LEU5<->LEU5 0.212
+- file: .praxia/docs/research/260603_master-rotlib-cartesian-derivation.md
+  lines:
+  - 1
+  - 90
+  reason: 'Full #820 research + the measured falsification (sec 5a) + next-lever analysis (sec 6)'
+- file: scripts/analysis/extract_rotlib_geometry.py
+  lines:
+  - 1
+  - 60
+  reason: 'Parses MASTER rotlib.bin (CC BY-NC-SA, dev-only at /home/marielle/repos/mosaist/testfiles/rotlib.bin); extend to dump CB orientation/improper for the #884 comparison'
+active_dispatches: []
+task_id: 260603_charmm_ic_sourcing
+phase: CHARMM IC sourcing (820, 869)
+goal_statement: 'Reduce the confind load_pb contact-degree drift vs MASTER rotlib.bin to <5e-4 so confind can migrate off the CC BY-NC-SA rotlib.bin (backlog #869).'
+context_refs:
+- phase: Deferred sprint
+  task_id: 260602_rotlib_deferred_sprint
+  summary: 'Generated the full ODC-BY protobuf rotamer library + the load_pb-vs-MASTER drift harness that gates #869'
+failed_attempts:
+- attempt_id: a1
+  description: Source CHARMM bonds AND angles for proline ring, close via the existing single-DOF angle-relaxation to CHARMM CD-N=1.455
+  outcome: 'AC-G failed: solved CB-CG-CD collapsed to 85.5deg (unphysical), emergent CG-CD-N 124deg, CD-N-CA 94deg'
+  reason_failed: CHARMM unstrained equilibrium ring angles (110.8/108.5/110.5/114.2) over-open the proline ring; single-DOF closure dumps strain on one angle. CCD ~104.7deg is a self-consistent closed-ring set; CHARMM equilibria are not. Needs multi-angle/minimization closure.
+  do_not_retry: true
+  evidence_ref: null
+- attempt_id: a2
+  description: (Prior fixer pass) widen AC-G tolerances (6->7deg, 0.03->0.04A) to green proline tests after CD_N_IDEAL change
+  outcome: Tests green but meaningless -- masked the broken closure
+  reason_failed: Tolerance-widening to force green is a false-green; reverted. AC-G must validate at original tolerances.
+  do_not_retry: true
+  evidence_ref: null
+open_questions:
+- Is the CB improper torsion (C-N-CA-CB) the dominant drift driver? Need MASTER's baked CB orientation extracted from rotlib.bin to compare.
+- Are the rebuilt rotamers in the same order and chi-convention as MASTER's per-bin rotamer list (atom-order/variant semantics)?
+deferred:
+- description: Proline CHARMM geometry via multi-angle/minimization ring closure
+  rationale: 'Single-DOF closure can''t adopt CHARMM ring angles; proline absent from small.pdb so not on the immediate #869 critical path'
+  recommended_phase: '#884 follow-on'
+- description: Forcefield XML -> lossless compressed protobuf
+  rationale: 'Captured as praxia idea-001; design exploration, not on #869 path'
+  recommended_phase: later
+lessons_refs:
+- .praxia/lessons.jsonl
+---
