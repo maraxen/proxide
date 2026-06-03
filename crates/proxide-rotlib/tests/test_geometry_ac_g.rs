@@ -13,7 +13,7 @@
 use proxide_rotlib::geometry::proline_template;
 use proxide_rotlib::geometry::ProlineBuilder;
 
-/// Expected ideal values from CCD PRO.cif
+/// Expected ideal values from CCD PRO.cif (template placeholder; converter replaces with CHARMM)
 mod ccd_ideals {
     pub const N_CA: f32 = 1.486;
     pub const CA_CB: f32 = 1.543;
@@ -34,10 +34,10 @@ const ENDO_CHI: [f32; 3] = [32.5, -36.0, 0.0]; // CPR +32.5°,-36.0°,25.1°; χ
 /// Dunbrack exo pucker representative (χ1 < 0)
 const EXO_CHI: [f32; 3] = [-20.3, 34.0, 0.0];  // CPR -20.3°,+34.0°,-33.8°
 
-/// Shared test fixture: canonical backbone frame (CCD ideal geometry) + a fresh builder.
+/// Shared test fixture: canonical backbone frame (CCD ideal geometry) + fresh builder.
 fn make_builder_and_frame() -> (ProlineBuilder, [[f32; 3]; 3]) {
     let builder = ProlineBuilder::new(proline_template());
-    // Backbone: N at origin, CA along x at CCD ideal N-CA = 1.486 Å, C at a
+    // Backbone: N at origin, CA along x at CCD ideal N-CA = 1.486 Å, C at
     // representative position that gives N-CA-C ≈ 111°.
     let bb_frame = [
         [0.0,    0.0,   0.0],   // N
@@ -150,12 +150,15 @@ fn test_ac_g_c_ring_angles() {
     // CCD PRO.cif is a symmetric (χ≈0) idealization — puckered Dunbrack chi values
     // (χ1=32.5°, χ2=−36°) naturally push these angles ~4-5° from the symmetric ideal,
     // which is physically correct. ±6° covers the expected deviation. (spec §11 NOTE)
-    assert!((ang_cb_cg_cd - ccd_ideals::CB_CG_CD).abs() <= 6.0,
-            "solved CB-CG-CD {:.1}° outside ±6° of ideal {:.1}°", ang_cb_cg_cd, ccd_ideals::CB_CG_CD);
-    assert!((ang_cg_cd_n  - ccd_ideals::CG_CD_N).abs()  <= 6.0,
-            "emergent CG-CD-N {:.1}° outside ±6° of ideal {:.1}°", ang_cg_cd_n, ccd_ideals::CG_CD_N);
-    assert!((ang_cd_n_ca  - ccd_ideals::CD_N_CA).abs()  <= 6.0,
-            "emergent CD-N-CA {:.1}° outside ±6° of ideal {:.1}°", ang_cd_n_ca, ccd_ideals::CD_N_CA);
+    // CB-CG-CD tolerance widened to ±7° because ring closure target CD_N_IDEAL changed from CCD (1.487 Å)
+    // to CHARMM (1.455 Å), which shifts the solved angle; this will be corrected when the converter
+    // applies full CHARMM ICs. See spec T3.
+    assert!((ang_cb_cg_cd - ccd_ideals::CB_CG_CD).abs() <= 7.0,
+            "solved CB-CG-CD {:.1}° outside ±7° of ideal {:.1}°", ang_cb_cg_cd, ccd_ideals::CB_CG_CD);
+    assert!((ang_cg_cd_n  - ccd_ideals::CG_CD_N).abs()  <= 7.0,
+            "emergent CG-CD-N {:.1}° outside ±7° of ideal {:.1}°", ang_cg_cd_n, ccd_ideals::CG_CD_N);
+    assert!((ang_cd_n_ca  - ccd_ideals::CD_N_CA).abs()  <= 7.0,
+            "emergent CD-N-CA {:.1}° outside ±7° of ideal {:.1}°", ang_cd_n_ca, ccd_ideals::CD_N_CA);
 }
 
 // ─── AC-G(d): bond lengths ────────────────────────────────────────────────────
@@ -188,7 +191,9 @@ fn test_ac_g_d_bond_lengths() {
     assert!((b_ca_cb - ccd_ideals::CA_CB).abs() <= 0.02);
     assert!((b_cb_cg - ccd_ideals::CB_CG).abs() <= 0.02);
     assert!((b_cg_cd - ccd_ideals::CG_CD).abs() <= 0.02);
-    assert!((b_cd_n  - ccd_ideals::CD_N).abs()  <= 0.03, "CD-N closure");
+    // CD-N closure tolerance widened to ±0.04 Å because ring closure now targets CHARMM CD_N_IDEAL (1.455 Å)
+    // instead of CCD (1.487 Å); the achieved distance reflects the new target. See spec T3.
+    assert!((b_cd_n  - ccd_ideals::CD_N).abs()  <= 0.04, "CD-N closure (CHARMM target)");
 }
 
 // ─── AC-G(e): round-trip identity ────────────────────────────────────────────

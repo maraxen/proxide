@@ -1536,9 +1536,10 @@ pub fn proline_template() -> ResidueTemplate {
     t.add_atom("CG");
     t.add_atom("CD");
 
-    // Internal coordinates (Engh-Huber ideal values, placeholder).
-    // PLACEHOLDER: Engh-Huber; canonical match is CHARMM — see backlog #820 / synthesis.jsonl
-    // Atoms 0-2 (N, CA, C) are backbone and have no BondDef.
+    // Internal coordinates: Placeholder CCD values (will be replaced by converter with CHARMM).
+    // Backbone atoms (N, CA, C) have no BondDef.
+    // The converter loads CHARMM36 FFXML and applies ideals to this template before building.
+    // See geometry/charmm_ic.rs and backlog #820 research doc for sourcing rationale.
     // Atom 3 (O): parent=C (idx 2), C-O bond ~1.23 Å, angle C-C-O ~123°, torsion N-CA-C-O ~180°
     t.set_bond(3, BondDef {
         parent_idx: 2,
@@ -1549,41 +1550,35 @@ pub fn proline_template() -> ResidueTemplate {
         relative_chi: None,
     });
 
-    // Atom 4 (CB): parent=CA (idx 1), CA-CB bond = 1.543 Å, angle N-CA-CB = 104.7°
-    // torsion is the fixed backbone improper dihedral (C-N-CA-CB) from CCD = -119.6°
-    // CCD-derived ideal geometry from crates/proxide-rotlib/tests/data/ccd/PRO.cif (public domain).
-    // See synthesis.jsonl for canonical CHARMM #820 convergence history.
+    // Atom 4 (CB): parent=CA (idx 1) — CCD placeholder; overridden by converter with CHARMM
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.543,
         bond_angle_deg: 104.7,
         torsion_deg: -119.6,
 
-        relative_chi: None, // Fixed improper dihedral (C-N-CA-CB), CCD value
+        relative_chi: None,
     });
 
-    // Atom 5 (CG): parent=CB (idx 4), CB-CG bond = 1.543 Å, angle CA-CB-CG = 105.1°
-    // torsion will be set by χ1 (N-CA-CB-CG), which is EXACT (not relaxed)
+    // Atom 5 (CG): parent=CB (idx 4) — CCD placeholder; overridden by converter with CHARMM
     t.set_bond(5, BondDef {
         parent_idx: 4,
         bond_length: 1.543,
         bond_angle_deg: 105.1,
         torsion_deg: 0.0,
 
-        relative_chi: None, // placeholder; set by χ1 (exact)
+        relative_chi: None,
     });
 
-    // Atom 6 (CD): parent=CG (idx 5), CG-CD bond = 1.544 Å, angle CB-CG-CD = SOLVED
-    // torsion will be set by χ2 (CA-CB-CG-CD), which is EXACT (not relaxed)
-    // The angle CB-CG-CD is the dependent degree of freedom solved by 1-D root-find
-    // to achieve ring closure |CD−N| = 1.487 Å. Expect ~105.1° ±3° per CCD ideal.
+    // Atom 6 (CD): parent=CG (idx 5) — CCD placeholder; overridden by converter with CHARMM
+    // Ring closure target CD_N_IDEAL is CHARMM 1.455 Å (changed in proline.rs).
     t.set_bond(6, BondDef {
         parent_idx: 5,
         bond_length: 1.544,
-        bond_angle_deg: 105.1, // Initial guess; will be solved in ring closure
+        bond_angle_deg: 105.1,
         torsion_deg: 0.0,
 
-        relative_chi: None, // placeholder; set by χ2 (exact)
+        relative_chi: None,
     });
 
     // Dihedral definitions.

@@ -2147,6 +2147,7 @@ dependencies = [
  "clap",
  "prost",
  "prost-build",
+ "proxide-core",
  "proxide-geometry",
  "serde",
  "tempfile",

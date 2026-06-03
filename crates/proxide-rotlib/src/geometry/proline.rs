@@ -2,15 +2,17 @@
 //!
 //! Builds proline sidechain coordinates from exact χ angles (from Dunbrack).
 //! Ring closure is achieved by solving the CB-CG-CD bond angle via 1-D root-finding
-//! to satisfy |CD−N| = 1.487 Å (ideal bond length). χ1 and χ2 are preserved exactly;
+//! to satisfy |CD−N| = 1.455 Å (CHARMM ideal bond length). χ1 and χ2 are preserved exactly;
 //! the ring angle is the only degree of freedom relaxed.
 
 use crate::RotlibError;
 use super::template::ResidueTemplate;
 use proxide_geometry::geometry::nerf::Nerf;
 
-/// Ideal CD-N bond length from CCD PRO.cif (Å).
-const CD_N_IDEAL: f32 = 1.487;
+/// Ideal CD-N bond length from CHARMM (Å).
+/// Changed from CCD placeholder (1.487) to CHARMM ideal (1.455).
+/// See research doc 260603_master-rotlib-cartesian-derivation.md (#820).
+const CD_N_IDEAL: f32 = 1.455;
 /// Tolerance for ring closure |CD−N − ideal| (Å).
 const CD_N_TOLERANCE: f32 = 0.001;
 /// Max iterations for bisection root-find of CB-CG-CD angle.
@@ -96,7 +98,7 @@ impl ProlineBuilder {
         );
 
         // Solve CB-CG-CD angle θ to close the ring.
-        // We want to find θ such that |CD(θ) − N| = CD_N_IDEAL.
+        // We want to find θ such that |CD(θ) − N| = CD_N_IDEAL (CHARMM 1.455 Å).
         let theta_result = solve_cg_cd_angle(
             ca_f32, cb_f32, cg_f32, n_f32,
             cd_bond.bond_length,
@@ -134,8 +136,9 @@ fn solve_cg_cd_angle(
     cd_bond_len: f32, chi2_deg: f32,
 ) -> Result<(f32, [f32; 3]), RotlibError> {
     // Bisection bounds: angle must be in physically reasonable range.
-    let mut theta_low = 90.0_f32;
-    let mut theta_high = 130.0_f32;
+    // CHARMM angles are typically ~110°; expand range slightly to accommodate.
+    let mut theta_low = 80.0_f32;
+    let mut theta_high = 140.0_f32;
 
     // Evaluate at bounds.
     let cd_low = Nerf::place_atom(&[ca, cb, cg], cd_bond_len, theta_low, chi2_deg);

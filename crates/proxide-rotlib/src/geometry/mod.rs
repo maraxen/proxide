@@ -5,6 +5,7 @@
 
 pub mod template;
 pub mod proline;
+pub mod charmm_ic;
 
 pub use template::{ResidueTemplate, proline_template, standard_residue_template};
 pub use proline::{ProlineBuilder, ProlineCoords};
