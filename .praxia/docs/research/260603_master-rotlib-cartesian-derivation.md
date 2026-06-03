@@ -209,3 +209,50 @@ convention* are **not** the source of the confind `load_pb` drift. With §5 (bon
 both §7 suspects eliminated, the residual must lie in **rotamer-set composition / ordering /
 per-bin probabilities** or in the **`load_pb` contact-degree algorithm itself** — a new
 investigation (tracked as a fresh backlog item), not further IC geometry work.
+
+## 8. #925 resolution — load_pb drift root cause is a backbone-FRAME bug in the converter
+
+Follow-on investigation (task `260603_loadpb_rotamerset_audit`) localized the residual
+ConFind `load_pb` contact-degree drift (max 0.223, 30/43 pairs > 5e-4 gate, 13 missing
+pairs on small.pdb). All findings are measurement-verified (synthetic self-tests + the
+parity test as an independent oracle).
+
+**Isolation (algorithm & data exonerated).** The ConFind contact-degree algorithm and
+rotamer enumeration are line-for-line identical to MASTER (`parallel.rs:94/107` ≡
+`mstcondeg.cpp:265/272`; `cache.rs:103-115` ≡ `mstcondeg.cpp:122-124`). The parity test
+`test_parity_small_pdb` — proxide ConFind fed MASTER's *own* `rotlib.bin` via `load()` —
+passes 5/5 within 5e-4, proving the algorithm + MSL loader faithfully reproduce MASTER on
+identical input. So the entire `load_pb` drift is in the `.pb.zst` path. Per-bin rotamer
+data is otherwise identical: probs + chi are bit-identical for all shared interior/edge
+bins; both have 9 rotamers/bin for LEU with per-bin prob-sum 1.0.
+
+**Falsified suspect — grid.** The `.pb.zst` carries a redundant +180° φ/ψ wrap column
+(37×37 vs MASTER's 36×36; the +180 bin is a byte-duplicate of −180). Rebuilding the pb as
+36×36 left the drift **byte-identical** — `find_closest_angle` resolves ±180 ties to −180
+(idx 0), so the duplicate bin is never uniquely selected. Grid duplication is cosmetically
+wrong but operationally inert.
+
+**ROOT CAUSE — N-origin backbone frame (PRIMARY).** `convert_rotlib.rs:171-174` builds
+sidechain Cartesians with **N at the origin** (`backbone_n=[0,0,0]`, `backbone_ca=[1.458,0,0]`),
+i.e. an N-origin frame, but `place_rotamer` (`rotlib.rs:412`) applies a **CA-origin**
+`backbone_frame` to the stored coords. A Kabsch fit of pb-coords vs `rotlib.bin` coords gives
+**RMSD 0.018 Å** over 1800 atoms with translation **t = (−1.458, 0.03, 0.05)** (−1.458 Å =
+the N–CA bond) and a ~2° rotation. So every stored sidechain is mis-placed by ~1.458 Å in x
+after placement → the dominant drift. **Confirmation experiment** (`rebuild_pb_36grid.py
+--reframe-ca-origin`, subtract (1.458,0,0)): repairs contact topology (missing 13→2, matched
+43→54) and cuts median drift 3.3× (0.00297→0.00090).
+
+**RESIDUAL — Engh-Huber backbone idealization (SECONDARY, above gate).** After the
+translation fix the per-atom residual vs MASTER is mean 0.10 Å / max 0.18 Å, concentrated in
+long/charged sidechains (worst pairs A1↔A4 ARG-GLN 0.436, B4↔B7, A4↔A7) — the signature of a
+~2° rotation about CA. This is the converter's idealized backbone axes (the `backbone_c`
+direction / CHARMM-IC idealization) differing from MASTER's actual stored Cartesian frame —
+the still-open #820 "how MASTER derived rotlib.bin Cartesians" question.
+
+**Fix path (for #869).** (1) PRIMARY: change `convert_rotlib.rs` to build with **CA at the
+origin** (translation; high-confidence, dominant). (2) RESIDUAL: match MASTER's exact
+backbone frame axes to clear the 5e-4 gate (gated by #820). Regeneration is feasible — the
+Dunbrack source `data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib` is present.
+
+Artifacts: `scripts/analysis/rebuild_pb_36grid.py` (+ `.bth.toml`) — grid-rebuild and
+CA-origin reframe experiments with self-tests and per-bin identity verification.
