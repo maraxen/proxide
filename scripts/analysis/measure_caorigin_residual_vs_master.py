@@ -38,21 +38,17 @@ logger = logging.getLogger("measure_caorigin_residual_vs_master")
 
 def compile_proto_runtime(proto_dir: Path, output_dir: Path) -> str:
     """Compile rotlib.proto to Python at runtime, return module path."""
+    import subprocess
     proto_file = proto_dir / "rotlib.proto"
     if not proto_file.exists():
         raise FileNotFoundError(f"rotlib.proto not found at {proto_file}")
 
-    import grpc_tools.protoc
-
-    ret = grpc_tools.protoc.main([
-        "protoc",
-        f"--proto_path={proto_dir}",
-        f"--python_out={output_dir}",
-        str(proto_file),
-    ])
-
-    if ret != 0:
-        raise RuntimeError(f"protoc failed with code {ret}")
+    result = subprocess.run(
+        ["protoc", f"--proto_path={proto_dir}", f"--python_out={output_dir}", str(proto_file)],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"protoc failed: {result.stderr.decode()}")
 
     return str(output_dir)
 
