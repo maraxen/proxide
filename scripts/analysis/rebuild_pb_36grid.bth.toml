@@ -1,0 +1,77 @@
+[experiment]
+hypothesis = """
+The ConFind load_pb contact-degree drift vs MASTER rotlib.bin (max 0.223, 30/43
+pairs over 5e-4 gate, 13 missing pairs) is caused solely by a redundant +180°
+wrap column in proxide's protobuf rotamer library. The .pb.zst uses a 37×37
+grid (phi/psi centers -180..+180 inclusive), while MASTER uses 36×36 (-180..+170,
+with +180 wrapping to -180). The +180 bin is a byte-duplicate of the -180 bin.
+Removing it to create a 36×36 grid will collapse the drift to ~0, proving the
+grid-packaging artifact is the sole root cause.
+"""
+
+context = """
+Task 260603_loadpb_rotamerset_audit: root-cause measurement of ConFind contact-degree
+drift. Prior recon identified redundant grid column; this experiment tests the hypothesis
+by reconstructing the .pb.zst without the wrap column and verifying rotamer data identity
+with MASTER across all shared bins.
+"""
+
+[outcomes.pass]
+criteria = """
+1. Self-test passes (filter logic correct)
+2. n_bins_mismatch == 0 across all shared bins (data is bit-identical after de-wrapping)
+3. Output grid is 36×36 for residues checked (no redundant columns remain)
+"""
+interpretation = """
+Drift is purely a grid-packaging artifact. The converter's phi/psi lookup is correct,
+but bin indexing into a 37-wide grid was off by one relative to MASTER's 36-wide grid.
+Fix: ensure converter wraps +180→-180 at grid boundaries.
+"""
+is_residual = true
+
+[outcomes.marginal]
+criteria = """
+1. Self-test passes
+2. Most shared bins identical (>99%) but small number (<1%) mismatch
+3. Output grid is 36×36
+"""
+interpretation = """
+Grid is the dominant cause of drift, but a secondary data difference exists.
+Investigate: differences in rotamer probability rounding or chi-value precision
+between .pb.zst generation and MASTER source.
+"""
+is_residual = false
+
+[outcomes.fail]
+criteria = """
+1. Self-test fails OR
+2. n_bins_mismatch is large (>1% of shared bins)
+"""
+interpretation = """
+Data genuinely differs beyond the wrap column. Grid is not the sole cause.
+Investigate deeper: proto generation, float32 precision loss, or source-data divergence.
+"""
+is_residual = false
+
+[result_schema]
+name = "rebuild_report"
+fields = [
+  { name = "in_grid", type = "string", description = "Input grid dimensions before filtering" },
+  { name = "out_grid", type = "string", description = "Output grid dimensions after filtering" },
+  { name = "residues", type = "integer", description = "Number of residue types in output" },
+  { name = "total_shared_bins", type = "integer", description = "Total (phi,psi) bins present in both filtered .pb and rotlib.bin" },
+  { name = "n_bins_identical", type = "integer", description = "Number of shared bins with identical rotamer sets" },
+  { name = "n_bins_mismatch", type = "integer", description = "Number of shared bins with data mismatch" },
+  { name = "mismatches", type = "array", description = "List of up to 10 mismatching (code, phi, psi, first_diff_field) tuples" },
+  { name = "out_path", type = "string", description = "Absolute path to output .pb.zst file" },
+  { name = "out_sha256", type = "string", description = "SHA256 hash of compressed output file" },
+]
+
+[result_schema.provenance]
+rotlib_path = "/home/marielle/repos/mosaist/testfiles/rotlib.bin"
+rotlib_sha256_expected = "edabc73f9a9e9536fa0665fcf3820dbf22b05e646271e7c0a70b3d68b7f3a0da"
+in_pb_path = "/home/marielle/projects/proxide/data/rotlibs/proxide-rotlib-bbdep2010.pb.zst"
+proto_path = "crates/proxide-rotlib/proto/rotlib.proto"
+dependencies = "grpcio-tools, zstandard, protobuf (via uv --with)"
+measurement_tool = "scripts/analysis/rebuild_pb_36grid.py"
+task_id = "260603_loadpb_rotamerset_audit"
