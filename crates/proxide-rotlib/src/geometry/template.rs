@@ -1486,7 +1486,7 @@ fn arginine_template() -> ResidueTemplate {
         bond_angle_deg: 120.0,
         torsion_deg: 180.0,
 
-        relative_chi: Some(3), // χ4 + 180° for second amino
+        relative_chi: None, // guanidinium is planar; NH2 is always 180° from NH1
     });
 
     t.add_dihedral(DihedralDef {
