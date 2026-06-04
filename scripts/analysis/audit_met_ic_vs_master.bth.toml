@@ -1,0 +1,43 @@
+[experiment]
+hypothesis = "MET sidechain ICs in MASTER rotlib.bin match template.rs values (geometry faithful)"
+task_id = "260604_charmm_ic_820"
+script = "scripts/analysis/audit_met_ic_vs_master.py"
+created = "260604"
+
+[outcomes.pass]
+condition = "max|delta| for all bonds < 0.025 A and all angles < 3.0 deg"
+interpretation = "MET geometry is faithful — not the source of interior drift"
+is_residual = false
+
+[outcomes.fail]
+condition = "any bond delta > 0.025 A or any angle delta > 3.0 deg"
+interpretation = "MET has a significant geometry mismatch vs MASTER — candidate source of interior drift"
+is_residual = false
+
+[outcomes.inconclusive]
+condition = "deltas are large but in same direction as LEU (CB angle ~2 deg, CB bond ~0.020 A)"
+interpretation = "Geometry mismatch is real but may be insensitive like LEU — further probability comparison needed"
+is_residual = true
+
+[result_schema]
+residue = "string"
+phi_deg = "float"
+psi_deg = "float"
+bin_frequency = "float"
+n_rotamers_audited = "int"
+
+[result_schema.max_abs_delta_bonds_A]
+CB = "float"
+CG = "float"
+SD = "float"
+CE = "float"
+
+[result_schema.max_abs_delta_angles_deg]
+CB = "float"
+CG = "float"
+SD = "float"
+CE = "float"
+
+[result_schema.provenance]
+rotlib_sha256 = "edabc73f9a9e9536fa0665fcf3820dbf22b05e646271e7c0a70b3d68b7f3a0da"
+script_note = "audit_met_ic_vs_master.py — adapted from audit_leu_ic_vs_master.py"
