@@ -29,6 +29,11 @@ struct Args {
     /// Path to CHARMM force field XML file
     #[arg(long, default_value = "src/proxide/assets/charmm/charmm36_protein.xml")]
     charmm_xml: PathBuf,
+
+    /// IC source for sidechain geometry: "ccd" keeps CCD template values;
+    /// "charmm" applies CHARMM36 force field overrides.
+    #[arg(long, default_value = "ccd")]
+    ic_source: String,
 }
 
 /// Parsed rotamer entry from Dunbrack text file.
@@ -46,10 +51,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Load CHARMM ideals
-    eprintln!("Loading CHARMM force field ideals from {}...", args.charmm_xml.display());
-    let charmm_ideals = load_charmm_ideals(args.charmm_xml.to_str().unwrap())
-        .map_err(|e| format!("Failed to load CHARMM ideals: {}", e))?;
-    eprintln!("Loaded CHARMM force field");
+    let charmm_ideals = if args.ic_source == "charmm" {
+        eprintln!("Loading CHARMM force field ideals from {}...", args.charmm_xml.display());
+        Some(
+            load_charmm_ideals(args.charmm_xml.to_str().unwrap())
+                .map_err(|e| format!("Failed to load CHARMM ideals: {}", e))?,
+        )
+    } else {
+        eprintln!("IC source: ccd (using CCD template geometry; CHARMM overrides disabled)");
+        None
+    };
 
     // Read and parse the input file
     eprintln!("Reading rotamer library from {}...", args.input.display());
@@ -60,8 +71,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grouped = group_rotamers(rotamers);
     eprintln!("Grouped into {} residue entries", grouped.len());
 
-    // Build the protobuf (with CHARMM IC application)
-    let lib = build_library(&grouped, &charmm_ideals)?;
+    // Build the protobuf (with optional CHARMM IC application)
+    let lib = build_library(&grouped, charmm_ideals.as_ref())?;
     eprintln!("Built library with {} residue types", lib.residues.len());
 
     // Serialize and compress
@@ -161,7 +172,7 @@ fn group_rotamers(rotamers: Vec<DunbrackRotamer>) -> GroupedRotamers {
 /// Build the protobuf RotamerLibrary from grouped rotamers, applying CHARMM ICs.
 fn build_library(
     grouped: &GroupedRotamers,
-    charmm_ideals: &proxide_rotlib::geometry::charmm_ic::CharmmIdeals,
+    charmm_ideals: Option<&proxide_rotlib::geometry::charmm_ic::CharmmIdeals>,
 ) -> Result<rotlib_v1::RotamerLibrary, Box<dyn std::error::Error>> {
     let mut residues = Vec::new();
     let mut ic_overrides_count = 0;
@@ -189,9 +200,9 @@ fn build_library(
         let is_proline = matches!(res_code.as_str(), "PRO" | "CPR" | "TPR");
         if is_proline {
             ic_proline_skipped += 1;
-        } else {
+        } else if let Some(ideals) = charmm_ideals {
             let charmm_resname = map_template_to_charmm_name(res_code);
-            match apply_charmm_ideals(&mut template, charmm_ideals, charmm_resname) {
+            match apply_charmm_ideals(&mut template, ideals, charmm_resname) {
                 Ok(applied) => ic_overrides_count += applied,
                 Err(e) => {
                     eprintln!("Warning: could not apply CHARMM ICs to {}: {}", res_code, e);
