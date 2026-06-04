@@ -42,6 +42,7 @@ struct DunbrackRotamer {
     res_code: String,
     phi: f64,
     psi: f64,
+    count: u32,
     probability: f64,
     chi_values: [f32; 4],
     chi_sigmas: [f32; 4],
@@ -122,7 +123,7 @@ fn read_rotamer_library(path: &PathBuf) -> Result<Vec<DunbrackRotamer>, Box<dyn 
         let res_code = parts[0].to_string();
         let phi: f64 = parts[1].parse()?;
         let psi: f64 = parts[2].parse()?;
-        // parts[3]: count (skip)
+        let count: u32 = parts[3].parse().unwrap_or(0);
         // parts[4-7]: r1..r4 (skip)
         let probability: f64 = parts[8].parse()?;
         let chi1: f32 = parts[9].parse()?;
@@ -138,6 +139,7 @@ fn read_rotamer_library(path: &PathBuf) -> Result<Vec<DunbrackRotamer>, Box<dyn 
             res_code,
             phi,
             psi,
+            count,
             probability,
             chi_values: [chi1, chi2, chi3, chi4],
             chi_sigmas: [chi1_sig, chi2_sig, chi3_sig, chi4_sig],
@@ -288,13 +290,27 @@ fn build_library(
             proto_bins.push(rotlib_v1::Bin {
                 phi: phi_bin as f64,
                 psi: psi_bin as f64,
-                freq: 0.0, // Not computed; use 0 placeholder
+                freq: bins[&(phi_bin, psi_bin)].iter().map(|r| r.count as f64).sum(),
                 rotamers: proto_rotamers,
             });
         }
 
-        // Find the default bin (bin with highest frequency)
-        let default_bin = 0u32; // Placeholder
+        // default_bin = argmax total Dunbrack observation count, matching MASTER's binary loader.
+        // Terminal residues (phi/psi=9999) use this bin; without it they get extreme rotamers.
+        let mut bin_counts: Vec<((i32, i32), u64)> = bins.iter()
+            .map(|(&key, rots)| (key, rots.iter().map(|r| r.count as u64).sum()))
+            .collect();
+        bin_counts.sort_by(|a, b| b.1.cmp(&a.1));
+        let best_bin_key = bin_counts.first().map(|&(k, _)| k).unwrap_or((0, 0));
+        let default_bin = {
+            let best_phi_ind = phi_vals.iter()
+                .position(|&p| (p - best_bin_key.0 as f64).abs() < 1.0)
+                .unwrap_or(0) as u32;
+            let best_psi_ind = psi_vals.iter()
+                .position(|&p| (p - best_bin_key.1 as f64).abs() < 1.0)
+                .unwrap_or(0) as u32;
+            best_phi_ind * psi_vals.len() as u32 + best_psi_ind
+        };
 
         residues.push(rotlib_v1::ResidueEntry {
             code: res_code.clone(),
