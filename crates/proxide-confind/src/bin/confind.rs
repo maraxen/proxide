@@ -19,7 +19,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let opts = parse_args(&args)?;
 
     log::info!("loading rotamer library: {}", opts.rlib.display());
-    let rotlib = Arc::new(RotamerLibrary::load(&opts.rlib)?);
+    let rotlib = Arc::new(RotamerLibrary::load_pb(&opts.rlib)?);
 
     log::info!("loading PDB: {}", opts.pdb.display());
     let backbone = Arc::new(load_pdb_f64(&opts.pdb)?);
