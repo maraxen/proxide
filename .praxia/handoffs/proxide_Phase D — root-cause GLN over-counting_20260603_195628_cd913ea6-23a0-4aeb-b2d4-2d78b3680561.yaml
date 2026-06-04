@@ -1,0 +1,70 @@
+---
+workspace: proxide
+session_id: b3f7d219-4a82-4c91-8e0d-1c5a9f2e6b04
+status: in_progress
+immediately_relevant:
+- file: crates/proxide-rotlib/src/geometry/mod.rs
+  lines:
+  - 1
+  - 80
+  reason: 'CRITICAL: build_standard_sidechain — check if it uses the backbone_n/ca/c ARGS or its own internal N=[0,0,0] constants. Phase A fix in convert_rotlib only helps if the coords actually use the passed backbone.'
+- file: crates/proxide-rotlib/src/rotlib.rs
+  lines:
+  - 412
+  - 436
+  reason: 'place_rotamer: backbone_frame(n,ca,c) + switch_frames(res_frame, lab_frame) to transform canonical->lab. The convention here must match MASTER.'
+- file: crates/proxide-rotlib/src/frame.rs
+  lines:
+  - 109
+  - 126
+  reason: 'backbone_frame: origin=CA, X=CA-N, Z=X x (C-CA), Y=Z x X.'
+- file: crates/proxide-confind/src/cache.rs
+  lines:
+  - 80
+  - 207
+  reason: 'cache_residue_impl: calls place_rotamer for ALL 18 AA types at each backbone position; surviving SC atoms go into rotamer_grids.'
+- file: crates/proxide-confind/src/parallel.rs
+  lines:
+  - 28
+  - 112
+  reason: 'contact_degree_raw: loops grid_a x grid_b for all (aa_a, aa_b) pairs; accumulates cd_raw / denom.'
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 168
+  - 174
+  reason: 'Phase A fix: backbone_n=[-1.458,0,0], backbone_ca=[0,0,0], backbone_c=[0.551,1.420,0].'
+active_dispatches: []
+task_id: 260603_loadpb_frame_fix
+phase: Phase D — root-cause GLN over-counting
+goal_statement: 'Reduce ConFind load_pb contact-degree drift vs MASTER rotlib.bin to <5e-4 (issue #869). Phase A frame fix is in (commit 13f27e2), but drift is WORSE (0.382 max), not better. Need systematic atom-level diagnosis.'
+context_refs:
+- phase: Phase A-C
+  task_id: 260603_loadpb_frame_fix
+  summary: N-origin frame bug identified+fixed; CB angle hypothesis falsified; systematic atom-level diagnosis required
+failed_attempts:
+- attempt_id: a1
+  description: 'Phase A fix: changed backbone seed in convert_rotlib from N-origin to CA-origin'
+  outcome: Fresh Phase A pb has WORSE drift (max 0.382, 51 pairs) vs stale N-origin pb (max 0.212, 42 pairs). All top deviations involve GLN A4 (10-17x over-count).
+  reason_failed: Either Phase A fix had no effect (if build_standard_sidechain ignores the passed backbone) or it moved coords away from MASTER's accidentally-close N-origin positions. Unresolved.
+  do_not_retry: false
+  evidence_ref: null
+- attempt_id: a2
+  description: 'Phase C: pin CB angle to theta=108.37 deg (MASTER N-CA-CB) instead of CHARMM 113.5 deg'
+  outcome: Drift worse (max 0.382->0.457). BATHOS stop signal.
+  reason_failed: CB angle alone is not the lever. Confirmed by verify_residual_downstream_vs_cb.py experiment.
+  do_not_retry: true
+  evidence_ref: scripts/analysis/verify_residual_downstream_vs_cb.py.bth.toml
+- attempt_id: a3
+  description: Manual Python pairwise contact computation to reproduce 17x GLN over-count
+  outcome: Manual computation gives only 1.2x ratio — fails to reproduce the 17x.
+  reason_failed: Script only computed contacts for native AA type, not all 18 AA types at each backbone position (as the real pipeline does). Not a valid reproduction of the actual algorithm.
+  do_not_retry: false
+  evidence_ref: null
+open_questions:
+- Does build_standard_sidechain in geometry/mod.rs use the PASSED backbone_n/ca/c args or its own internal hardcoded N=[0,0,0] constants? If hardcoded, Phase A fix had zero effect.
+- Do proxide GLN canonical coords (pb file, phi=50/psi=40 bin) actually match MASTER rotlib.bin GLN canonical coords at the same bin? If no, geometry build is the source.
+- Is GLN A4 over-count from too many CONTACTS (atoms too close to partner) or too small a DENOMINATOR (weight_of_available_rotamers smaller than MASTER)?
+- Why does Phase A fix WORSEN drift — was N-origin accidentally closer to MASTER expectations?
+deferred: []
+lessons_refs: []
+---

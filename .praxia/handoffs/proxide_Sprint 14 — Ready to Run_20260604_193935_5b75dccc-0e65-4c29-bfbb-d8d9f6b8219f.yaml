@@ -1,0 +1,58 @@
+---
+workspace: proxide
+session_id: bd147e9b-cd72-4bcc-8e0e-9b6be254d522
+status: in_progress
+immediately_relevant:
+- file: .claude/workflows/sprint14-rotlib-ccd-migration.js
+  lines:
+  - 1
+  - 50
+  reason: 'The workflow to run — 6 phases: parallel CCD download, pb.zst regen, 1DC7 calibration, dual adversarial verifier gate, confind migration, final test'
+- file: .praxia/sprint_plans/260604_sprint-14-rotlib-ccd-migration.toml
+  lines:
+  - 1
+  - 50
+  reason: Sprint TOML with full fixer/reviewer prompts for tracks A (#1112), B (#1113), C (#869)
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 1
+  - 60
+  reason: 'Track A (#1112) code change: add .default_value(''ccd'') to --ic-source clap arg'
+- file: crates/proxide-rotlib/data/ccd/
+  lines:
+  - 1
+  - 1
+  reason: Target directory for the 19 missing CCD .cif files; only PRO.cif currently present
+- file: crates/proxide-confind/src/confind.rs
+  lines:
+  - 1
+  - 50
+  reason: 'Track C (#869) migration target: replace load() with load_pb() on production path'
+active_dispatches: []
+task_id: 260604_rotlib_multi_source
+phase: Sprint 14 — Ready to Run
+goal_statement: 'Execute Sprint 14: vendor 19 PDB CCD .cif files (CC0), regenerate Dunbrack+CCD pb.zst, calibrate contact detection on 1DC7 (precision/recall >= 0.90 at CD > 0.01), and migrate confind to load_pb() — fully retiring the CC-BY-NC-SA rotlib.bin runtime dependency.'
+context_refs:
+- phase: Phase D
+  task_id: 260604_charmm_ic_820
+  summary: 'Completed IC geometry root-cause analysis; established that Dunbrack+CCD has 0 contact flips at CD > 0.001 (production-ready); wrote multi-source arch spec at .praxia/docs/specs/260604_rotlib-multi-source-arch.md; logged backlog #1112-#1115'
+failed_attempts: []
+open_questions:
+- Does a MASTER 1DC7 reference contact file exist at tests/data/benchmark/? The calibration phase will block (gate_passes=false) if no reference is present — may need to generate it separately before running the workflow.
+- Is the worktree sprint14-compose branch intended to be merged to main, or should the workflow JS be cherry-picked directly?
+deferred:
+- description: 'RotlibSource trait + DunbrackSource refactor (backlog #1114)'
+  rationale: 'Phase 2 work; depends on #869 migration being complete first'
+  recommended_phase: Sprint 15 / Phase E
+- description: 'parse_master --validate flag + user-facing license docs (backlog #1115)'
+  rationale: Phase 3 work; useful once Dunbrack+CCD path is production-proven
+  recommended_phase: Sprint 15 / Phase E
+- description: 'praxia dw install-templates (backlog #983): enables dw emit to work cross-project'
+  rationale: Blocked on praxia repo work; workaround was writing workflow JS directly
+  recommended_phase: Praxia repo sprint
+- description: 'System-prep epic scoping (backlog #977)'
+  rationale: 'Separate meta-epic; start with NotebookLM research after #869 closes'
+  recommended_phase: Phase F / separate track
+lessons_refs:
+- .praxia/lessons.jsonl
+---

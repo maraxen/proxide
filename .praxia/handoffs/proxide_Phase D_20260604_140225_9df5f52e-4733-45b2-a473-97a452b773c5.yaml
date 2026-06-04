@@ -1,0 +1,48 @@
+---
+workspace: proxide
+session_id: 2f2025c9-fd7c-4582-a697-b2f3fd78bc11
+status: in_progress
+immediately_relevant:
+- file: crates/proxide-rotlib/src/rotlib.rs
+  lines:
+  - 355
+  - 365
+  reason: 'resolve_entry_bin: terminal residue (phi/psi=9999) → uses entry.default_bin; this is where divergence from MASTER''s terminal handling would manifest'
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 287
+  - 298
+  reason: 'default_bin calculation: argmax(observation_count) over BTreeMap-sorted bins; verify MASTER uses same convention'
+- file: crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs
+  lines:
+  - 1
+  - 60
+  reason: Drift gate test — MUST set PROXIDE_ROTLIB_PB to ABSOLUTE path or test silently skips
+active_dispatches: []
+task_id: 260604_charmm_ic_820
+phase: Phase D
+goal_statement: Close remaining 0.043 max|Δ| ConFind contact-degree drift between proxide load_pb() path and MASTER rotlib.bin reference (gate = 5e-4; currently 30/54 pairs over threshold, worst pair A1→A4 ARG-GLN = 0.043081).
+context_refs:
+- phase: Phase C
+  task_id: 260603_loadpb_rotamerset_audit
+  summary: Root-cause N-origin frame bug (FIXED at 68e4aa0); CHARMM harmonic ICs falsified; ARG NH2 relative_chi fixed; default_bin implemented; residual Kabsch rotation 2.515° still unexplained
+failed_attempts:
+- attempt_id: a1
+  description: Changed N-CA-CB angle 110.5°→108.34° in template.rs for all 18 CB bonds (commit 8aea196)
+  outcome: 'Drift worsened: 0.043→0.062819 on A1→A4 ARG-GLN pair'
+  reason_failed: The ~0.1–0.2 Å CB displacement does not move atoms across the 3.0 Å CONT_DIST threshold. Contact-degree is structurally insensitive to this perturbation.
+  do_not_retry: true
+  evidence_ref: 'lesson #112; Kabsch script output at /home/marielle/.claude/jobs/04534fbc/tmp/residual_measurement.json'
+- attempt_id: a2
+  description: Applied CHARMM harmonic IC θ₀=113.5° (NH1-CT1-CT2A) via charmm_ic.rs apply_charmm_ideals()
+  outcome: Drift worsened further (0.223→0.212, still worse than 110.5° baseline). Code remains disabled in convert_rotlib.rs.
+  reason_failed: 113.5° is further from MASTER geometry than 110.5°, not closer. CHARMM harmonic θ₀ ≠ MASTER IC equilibrium.
+  do_not_retry: true
+  evidence_ref: .praxia/docs/research/260603_master-rotlib-cartesian-derivation.md §5a
+open_questions:
+- Does MASTER's terminal-residue bin selection use argmax(observation_count) or some other strategy (e.g., mode of phi/psi distribution, or averaging over all bins)?
+- Are the rotamer probabilities (p values) in proxide's pb for ARG at default_bin identical to those in MASTER's rotlib.bin for the same bin index?
+- What is the contribution to 0.043 drift from non-terminal residues vs terminal (A1/A9)?
+deferred: []
+lessons_refs: []
+---
