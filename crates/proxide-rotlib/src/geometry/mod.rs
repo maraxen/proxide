@@ -16,6 +16,88 @@ pub use rtf_parser::parse_rtf_ic_table;
 pub use ccd_parser::parse_ccd_ic_table;
 
 use proxide_geometry::geometry::nerf::Nerf;
+use crate::pb::proxide::rotlib::v1::ResidueGeometryTable;
+use std::collections::HashMap;
+
+/// Apply IC geometry from a ResidueGeometryTable to a ResidueTemplate.
+///
+/// For each atom in the template (index >= 3), looks up the corresponding IC records
+/// in the geometry table and updates the template's BondDef with:
+/// - bond_length: extracted from IC records
+/// - bond_angle_deg: extracted from IC records
+/// - torsion_deg and relative_chi: preserved unchanged
+///
+/// # Arguments
+/// * `template` - mutable template to update
+/// * `table` - ResidueGeometryTable (pre-parsed) containing IC records
+///
+/// # Returns
+/// () on success, or warning/skip if IC records not found for specific atoms
+pub fn apply_ic_table(template: &mut ResidueTemplate, table: &ResidueGeometryTable) {
+    // Find the ResidueGeometry matching this template's code
+    let residue_geom = match table.residues.iter().find(|r| r.name == template.code) {
+        Some(rg) => rg,
+        None => {
+            tracing::warn!("No geometry for residue {} in table", template.code);
+            return;
+        }
+    };
+
+    // Build lookup maps for efficient access to IC records
+    // bond_map: (atom_j_name, atom_k_name) -> record that places atom_k with parent atom_j
+    let bond_map: HashMap<(String, String), &crate::pb::proxide::rotlib::v1::IcRecord> =
+        residue_geom.ic.iter()
+            .map(|rec| ((rec.atom_j.clone(), rec.atom_k.clone()), rec))
+            .collect();
+
+    // For each atom in the template (starting from index 3, after backbone atoms)
+    for atom_idx in 3..template.num_atoms() {
+        let atom_name = &template.atom_names[atom_idx].clone();
+
+        // Get the parent atom name
+        let parent_idx = match template.bonds[atom_idx] {
+            Some(bond) => bond.parent_idx,
+            None => continue, // No bond defined for this atom
+        };
+        let parent_name = &template.atom_names[parent_idx].clone();
+
+        // Look up the IC record that places this atom (where parent is atom_j and this is atom_k)
+        let ic_rec = match bond_map.get(&(parent_name.clone(), atom_name.clone())) {
+            Some(rec) => rec,
+            None => {
+                tracing::warn!(
+                    "No IC record for {} residue atom {} with parent {}",
+                    template.code, atom_name, parent_name
+                );
+                continue;
+            }
+        };
+
+        // Extract bond_angle_deg from theta_ijk (angle from grandparent through parent to this atom)
+        let bond_angle_deg = ic_rec.theta_ijk;
+
+        // Extract bond_length: look for the IC record where this atom becomes the parent
+        // (i.e., the record where atom_i == parent and atom_j == current atom)
+        let bond_length = residue_geom.ic.iter()
+            .find(|r| r.atom_i == *parent_name && r.atom_j == *atom_name)
+            .map(|rec| rec.b_ij)
+            .unwrap_or_else(|| {
+                // Fallback: use b_kl from the record placing this atom (bond to next atom)
+                tracing::debug!(
+                    "No successor record for {} atom {}; using b_kl as fallback",
+                    template.code, atom_name
+                );
+                ic_rec.b_kl
+            });
+
+        // Update the BondDef with the new IC geometry
+        // Keep torsion_deg and relative_chi unchanged
+        if let Some(bond) = &mut template.bonds[atom_idx] {
+            bond.bond_length = bond_length;
+            bond.bond_angle_deg = bond_angle_deg;
+        }
+    }
+}
 
 /// Build sidechain coordinates for a standard (non-proline) residue.
 ///
@@ -173,5 +255,100 @@ mod tests {
         let d_to_n = dist(o, N);
         assert!(d_to_c < 1.3, "O must be ~1.231 Å from backbone C, got {:.3}", d_to_c);
         assert!(d_to_n > 2.0, "O must not be bonded to N, got {:.3}", d_to_n);
+    }
+
+    #[test]
+    fn test_apply_ic_table_updates_bond_lengths() {
+        use crate::pb::proxide::rotlib::v1::{ResidueGeometryTable, ResidueGeometry, IcRecord};
+
+        // Create a minimal ResidueGeometryTable for testing
+        let table = ResidueGeometryTable {
+            source: "test".to_string(),
+            version: "test_v1".to_string(),
+            license: "test".to_string(),
+            citation: "test".to_string(),
+            residues: vec![
+                ResidueGeometry {
+                    name: "SER".to_string(),
+                    ic: vec![
+                        // O placement: N-CA-C-O
+                        IcRecord {
+                            atom_i: "N".to_string(),
+                            atom_j: "CA".to_string(),
+                            atom_k: "C".to_string(),
+                            atom_l: "O".to_string(),
+                            branch: false,
+                            b_ij: 1.458,  // N-CA bond (prerequisite)
+                            theta_ijk: 108.5,  // N-CA-C angle
+                            phi_ijkl: 180.0,   // N-CA-C-O dihedral
+                            theta_jkl: 120.8,  // CA-C-O angle
+                            b_kl: 1.231,  // C-O bond (consequent)
+                        },
+                        // CB placement: N-CA-CB-OG (parent=CA)
+                        IcRecord {
+                            atom_i: "N".to_string(),
+                            atom_j: "CA".to_string(),
+                            atom_k: "CB".to_string(),
+                            atom_l: "OG".to_string(),
+                            branch: false,
+                            b_ij: 1.458,  // N-CA bond
+                            theta_ijk: 110.5,  // N-CA-CB angle
+                            phi_ijkl: -119.7,  // dihedral
+                            theta_jkl: 111.1,  // CA-CB-OG angle
+                            b_kl: 1.417,  // CB-OG bond
+                        },
+                        // OG placement: CA-CB-OG-HG (parent=CB, child would be HG)
+                        IcRecord {
+                            atom_i: "CA".to_string(),
+                            atom_j: "CB".to_string(),
+                            atom_k: "OG".to_string(),
+                            atom_l: "HG".to_string(),
+                            branch: false,
+                            b_ij: 1.540,  // CA-CB bond
+                            theta_ijk: 111.1,  // CA-CB-OG angle
+                            phi_ijkl: 0.0,  // dihedral
+                            theta_jkl: 109.5,  // CB-OG-HG angle
+                            b_kl: 0.96,  // OG-HG bond
+                        },
+                        // HG placement: CB-OG-HG-* (parent=OG, for successor bond lookup)
+                        IcRecord {
+                            atom_i: "CB".to_string(),
+                            atom_j: "OG".to_string(),
+                            atom_k: "HG".to_string(),
+                            atom_l: "O".to_string(),  // dummy reference
+                            branch: false,
+                            b_ij: 1.417,  // CB-OG bond (this is what OG needs!)
+                            theta_ijk: 109.5,  // CB-OG-HG angle
+                            phi_ijkl: 180.0,  // dihedral
+                            theta_jkl: 104.5,  // OG-HG-* angle
+                            b_kl: 0.96,  // HG-* bond
+                        },
+                    ],
+                },
+            ],
+        };
+
+        // Get SER template and apply IC
+        let mut tmpl = standard_residue_template("SER").unwrap();
+
+        apply_ic_table(&mut tmpl, &table);
+
+        // CB should be updated with IC values
+        assert!(tmpl.bonds[4].is_some());
+        let cb_bond = tmpl.bonds[4].unwrap();
+        // bond_angle_deg should be theta_ijk from N-CA-CB-OG record = 110.5
+        assert!((cb_bond.bond_angle_deg - 110.5).abs() < 0.01,
+                "CB angle updated: expected ~110.5, got {}", cb_bond.bond_angle_deg);
+
+        // OG should be updated with IC values from CA-CB-OG-HG record (for angle)
+        // and CB-OG-HG-* record (for bond length)
+        assert!(tmpl.bonds[5].is_some());
+        let og_bond = tmpl.bonds[5].unwrap();
+        // bond_angle_deg should be theta_ijk from CA-CB-OG-HG = 111.1
+        assert!((og_bond.bond_angle_deg - 111.1).abs() < 0.01,
+                "OG angle updated: expected ~111.1, got {}", og_bond.bond_angle_deg);
+        // bond_length should be b_ij from CB-OG-HG-* record = 1.417
+        assert!((og_bond.bond_length - 1.417).abs() < 0.01,
+                "OG bond updated: expected ~1.417, got {}", og_bond.bond_length);
     }
 }
