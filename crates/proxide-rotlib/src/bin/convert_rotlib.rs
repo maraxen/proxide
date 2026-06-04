@@ -9,9 +9,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use proxide_rotlib::pb::rotlib_v1;
+use proxide_rotlib::pb::proxide::rotlib::v1::ResidueGeometryTable;
 use proxide_rotlib::geometry::{
     standard_residue_template, proline_template, build_standard_sidechain, ProlineBuilder,
-    charmm_ic::load_charmm_ideals,
+    apply_ic_table, rtf_parser::parse_rtf_ic_table, ccd_parser::parse_ccd_ic_table,
 };
 
 #[derive(Parser, Debug)]
@@ -26,9 +27,10 @@ struct Args {
     #[arg(long, default_value = "data/rotlibs/proxide-rotlib-bbdep2010.pb.zst")]
     output: PathBuf,
 
-    /// Path to CHARMM force field XML file
-    #[arg(long, default_value = "src/proxide/assets/charmm/charmm36_protein.xml")]
-    charmm_xml: PathBuf,
+    /// IC geometry source: "rtf:<path>" for CHARMM36 RTF, "ccd:<dir>" for PDB CCD directory.
+    /// If absent, Engh-Huber placeholder values in template.rs are used.
+    #[arg(long)]
+    ic_source: Option<String>,
 }
 
 /// Parsed rotamer entry from Dunbrack text file.
@@ -46,11 +48,34 @@ struct DunbrackRotamer {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Load CHARMM ideals
-    eprintln!("Loading CHARMM force field ideals from {}...", args.charmm_xml.display());
-    let charmm_ideals = load_charmm_ideals(args.charmm_xml.to_str().unwrap())
-        .map_err(|e| format!("Failed to load CHARMM ideals: {}", e))?;
-    eprintln!("Loaded CHARMM force field");
+    // Load IC geometry table (optional)
+    let ic_table: Option<ResidueGeometryTable> = match &args.ic_source {
+        Some(s) if s.starts_with("rtf:") => {
+            let path = &s["rtf:".len()..];
+            eprintln!("Loading CHARMM36 RTF IC table from {}...", path);
+            let table = parse_rtf_ic_table(path)
+                .map_err(|e| format!("Failed to parse RTF IC table: {}", e))?;
+            eprintln!("Loaded RTF IC table: {} residues (source={}, license={})",
+                table.residues.len(), table.source, table.license);
+            Some(table)
+        }
+        Some(s) if s.starts_with("ccd:") => {
+            let dir = &s["ccd:".len()..];
+            eprintln!("Loading PDB CCD IC table from {}...", dir);
+            let table = parse_ccd_ic_table(dir)
+                .map_err(|e| format!("Failed to parse CCD IC table: {}", e))?;
+            eprintln!("Loaded CCD IC table: {} residues (source={}, license={})",
+                table.residues.len(), table.source, table.license);
+            Some(table)
+        }
+        Some(other) => {
+            return Err(format!("Unknown --ic-source format '{}'. Use 'rtf:<path>' or 'ccd:<dir>'.", other).into());
+        }
+        None => {
+            eprintln!("No --ic-source specified; using Engh-Huber template defaults.");
+            None
+        }
+    };
 
     // Read and parse the input file
     eprintln!("Reading rotamer library from {}...", args.input.display());
@@ -61,8 +86,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grouped = group_rotamers(rotamers);
     eprintln!("Grouped into {} residue entries", grouped.len());
 
-    // Build the protobuf (with CHARMM IC application)
-    let lib = build_library(&grouped, &charmm_ideals)?;
+    // Build the protobuf
+    let lib = build_library(&grouped, ic_table.as_ref())?;
     eprintln!("Built library with {} residue types", lib.residues.len());
 
     // Serialize and compress
@@ -160,14 +185,13 @@ fn group_rotamers(rotamers: Vec<DunbrackRotamer>) -> GroupedRotamers {
     grouped
 }
 
-/// Build the protobuf RotamerLibrary from grouped rotamers, applying CHARMM ICs.
+/// Build the protobuf RotamerLibrary from grouped rotamers.
 fn build_library(
     grouped: &GroupedRotamers,
-    charmm_ideals: &proxide_rotlib::geometry::charmm_ic::CharmmIdeals,
+    ic_table: Option<&ResidueGeometryTable>,
 ) -> Result<rotlib_v1::RotamerLibrary, Box<dyn std::error::Error>> {
     let mut residues = Vec::new();
-    let ic_overrides_count = 0;
-    let ic_misses_count = 0;
+    let mut ic_applied_count = 0;
     let mut ic_proline_skipped = 0;
 
     // Canonical backbone frame (CA-origin): CA at origin, matches place_rotamer's backbone_frame
@@ -184,13 +208,18 @@ fn build_library(
                 .ok_or_else(|| format!("Unknown residue code: {}", res_code))?
         };
 
-        // CHARMM IC application disabled (#869): CHARMM36 harmonic θ0 for N-CA-CB (113.5°)
-        // diverges from MASTER's IC-table value (108.37°), making drift worse. The template
-        // default (110.5°, Engh-Huber) is closer to MASTER. Re-enable once the correct IC
-        // source (CHARMM IC tables, not harmonic force constants) is integrated.
-        let _ = charmm_ideals; // suppress unused warning
+        // Apply IC table geometry (RTF or CCD source) to override Engh-Huber placeholders.
+        // Proline is skipped: its ring geometry is managed by ProlineBuilder's CCD ring closure.
         let is_proline = matches!(res_code.as_str(), "PRO" | "CPR" | "TPR");
-        if is_proline {
+        let mut template = template;
+        if let Some(table) = ic_table {
+            if is_proline {
+                ic_proline_skipped += 1;
+            } else {
+                apply_ic_table(&mut template, table);
+                ic_applied_count += 1;
+            }
+        } else if is_proline {
             ic_proline_skipped += 1;
         }
 
@@ -325,14 +354,14 @@ fn build_library(
         data_license: "ODC-BY-1.0".to_string(),
         geometry_mode: rotlib_v1::GeometryMode::Precomputed as i32,
         residues,
-        geometry_source: String::new(),
-        geometry_license: String::new(),
+        geometry_source: ic_table.map(|t| t.source.clone()).unwrap_or_default(),
+        geometry_license: ic_table.map(|t| t.license.clone()).unwrap_or_default(),
     };
 
     // Print coverage summary
     eprintln!(
-        "CHARMM IC coverage: {} residues processed, {} IC fields overridden, {} misses, {} proline skipped (CCD ring retained)",
-        grouped.len(), ic_overrides_count, ic_misses_count, ic_proline_skipped
+        "IC geometry: {} residues processed, {} had IC table applied, {} proline skipped (ring closure retains geometry)",
+        grouped.len(), ic_applied_count, ic_proline_skipped
     );
 
     Ok(lib)

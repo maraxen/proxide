@@ -34,67 +34,78 @@ use std::collections::HashMap;
 /// # Returns
 /// () on success, or warning/skip if IC records not found for specific atoms
 pub fn apply_ic_table(template: &mut ResidueTemplate, table: &ResidueGeometryTable) {
-    // Find the ResidueGeometry matching this template's code
-    let residue_geom = match table.residues.iter().find(|r| r.name == template.code) {
+    // Find the ResidueGeometry matching this template's code.
+    // Try exact match first, then CHARMM name alias (HIS->HSD, CYS/CYH/CYD->CYS, etc.).
+    let residue_geom = table.residues.iter()
+        .find(|r| r.name == template.code)
+        .or_else(|| {
+            let charmm = charmm_ic::map_template_to_charmm_name(&template.code);
+            table.residues.iter().find(|r| r.name == charmm)
+        });
+
+    let residue_geom = match residue_geom {
         Some(rg) => rg,
         None => {
-            tracing::warn!("No geometry for residue {} in table", template.code);
+            tracing::warn!("No geometry for residue {} in IC table", template.code);
             return;
         }
     };
 
-    // Build lookup maps for efficient access to IC records
-    // bond_map: (atom_j_name, atom_k_name) -> record that places atom_k with parent atom_j
-    let bond_map: HashMap<(String, String), &crate::pb::proxide::rotlib::v1::IcRecord> =
-        residue_geom.ic.iter()
-            .map(|rec| ((rec.atom_j.clone(), rec.atom_k.clone()), rec))
-            .collect();
+    // RTF IC convention: `IC i j k l | b_ij θ_ijk φ θ_jkl b_kl`
+    //   The record PLACES atom l given anchors i, j, k:
+    //     bond length  parent(k) → atom(l) = b_kl
+    //     angle at parent k      (j-k-l)   = theta_jkl
+    //   An intermediate record with atom_k = X (no asterisk) also encodes:
+    //     angle at parent-of-X (i-j-k)     = theta_ijk  (angle from grandparent through parent to X)
+    //
+    // Hybrid lookup:
+    //   bond_length : atom_l == this_atom → b_kl         (always correct)
+    //   bond_angle  : atom_k == this_atom → theta_ijk    (correct for most atoms)
+    //                 fallback atom_l == this_atom → theta_jkl (terminal atoms like CE)
 
-    // For each atom in the template (starting from index 3, after backbone atoms)
+    type IcRef<'a> = &'a crate::pb::proxide::rotlib::v1::IcRecord;
+
+    // by_atom_l: last atom → record  (for bond lengths)
+    let by_atom_l: HashMap<&str, IcRef<'_>> = residue_geom.ic.iter()
+        .map(|rec| (rec.atom_l.as_str(), rec))
+        .collect();
+
+    // by_atom_k: (parent, atom) → record  (for bond angles via theta_ijk)
+    let by_atom_k: HashMap<(&str, &str), IcRef<'_>> = residue_geom.ic.iter()
+        .map(|rec| ((rec.atom_j.as_str(), rec.atom_k.as_str()), rec))
+        .collect();
+
     for atom_idx in 3..template.num_atoms() {
         let atom_name = &template.atom_names[atom_idx].clone();
+        let Some(bond_def) = template.bonds[atom_idx] else { continue };
+        let parent_name = &template.atom_names[bond_def.parent_idx].clone();
 
-        // Get the parent atom name
-        let parent_idx = match template.bonds[atom_idx] {
-            Some(bond) => bond.parent_idx,
-            None => continue, // No bond defined for this atom
-        };
-        let parent_name = &template.atom_names[parent_idx].clone();
+        // Bond length: from record placing this atom as atom_l; verify parent matches atom_k.
+        let bond_length = by_atom_l.get(atom_name.as_str())
+            .filter(|r| r.atom_k == *parent_name)
+            .map(|r| r.b_kl);
 
-        // Look up the IC record that places this atom (where parent is atom_j and this is atom_k)
-        let ic_rec = match bond_map.get(&(parent_name.clone(), atom_name.clone())) {
-            Some(rec) => rec,
-            None => {
-                tracing::warn!(
-                    "No IC record for {} residue atom {} with parent {}",
-                    template.code, atom_name, parent_name
-                );
-                continue;
+        // Bond angle: theta_ijk from record where atom_k == this_atom, atom_j == parent.
+        // Fallback: theta_jkl from atom_l record (works for terminal atoms with no atom_k record).
+        let bond_angle = by_atom_k.get(&(parent_name.as_str(), atom_name.as_str()))
+            .map(|r| r.theta_ijk)
+            .or_else(|| by_atom_l.get(atom_name.as_str())
+                .filter(|r| r.atom_k == *parent_name)
+                .map(|r| r.theta_jkl));
+
+        match (bond_length, bond_angle) {
+            (Some(bl), Some(ba)) => {
+                if let Some(bond) = &mut template.bonds[atom_idx] {
+                    bond.bond_length    = bl;
+                    bond.bond_angle_deg = ba;
+                }
             }
-        };
-
-        // Extract bond_angle_deg from theta_ijk (angle from grandparent through parent to this atom)
-        let bond_angle_deg = ic_rec.theta_ijk;
-
-        // Extract bond_length: look for the IC record where this atom becomes the parent
-        // (i.e., the record where atom_i == parent and atom_j == current atom)
-        let bond_length = residue_geom.ic.iter()
-            .find(|r| r.atom_i == *parent_name && r.atom_j == *atom_name)
-            .map(|rec| rec.b_ij)
-            .unwrap_or_else(|| {
-                // Fallback: use b_kl from the record placing this atom (bond to next atom)
+            _ => {
                 tracing::debug!(
-                    "No successor record for {} atom {}; using b_kl as fallback",
-                    template.code, atom_name
+                    "{}.{}: IC table miss (bond_length={}, bond_angle={}); geometry unchanged",
+                    template.code, atom_name, bond_length.is_some(), bond_angle.is_some()
                 );
-                ic_rec.b_kl
-            });
-
-        // Update the BondDef with the new IC geometry
-        // Keep torsion_deg and relative_chi unchanged
-        if let Some(bond) = &mut template.bonds[atom_idx] {
-            bond.bond_length = bond_length;
-            bond.bond_angle_deg = bond_angle_deg;
+            }
         }
     }
 }

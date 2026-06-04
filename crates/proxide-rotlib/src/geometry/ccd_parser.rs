@@ -183,8 +183,40 @@ fn parse_cif_file(path: &Path) -> Result<(HashMap<(String, String), f32>, HashMa
     Ok((bonds, angles))
 }
 
-/// Parse all CCD CIF files in a directory and return IC records for standard residues.
-pub fn parse_ccd_ic_table(ccd_dir: &str) -> Result<Vec<(String, Vec<IcRecord>)>, RotlibError> {
+/// Parse all CCD CIF files in a directory and return a ResidueGeometryTable (proto).
+///
+/// Wraps [`parse_ccd_ic_table_raw`] and converts local IcRecord to proto IcRecord.
+pub fn parse_ccd_ic_table(ccd_dir: &str) -> Result<crate::pb::proxide::rotlib::v1::ResidueGeometryTable, RotlibError> {
+    use crate::pb::proxide::rotlib::v1::{ResidueGeometryTable, ResidueGeometry, IcRecord as ProtoIcRecord};
+    let raw = parse_ccd_ic_table_raw(ccd_dir)?;
+    let residues = raw.into_iter().map(|(name, records)| {
+        ResidueGeometry {
+            name,
+            ic: records.into_iter().map(|r| ProtoIcRecord {
+                atom_i: r.atom_i,
+                atom_j: r.atom_j,
+                atom_k: r.atom_k,
+                atom_l: r.atom_l,
+                branch: r.branch,
+                b_ij: r.b_ij,
+                theta_ijk: r.theta_ijk,
+                phi_ijkl: r.phi_ijkl,
+                theta_jkl: r.theta_jkl,
+                b_kl: r.b_kl,
+            }).collect(),
+        }
+    }).collect();
+    Ok(ResidueGeometryTable {
+        source: "pdb_ccd".to_string(),
+        version: "pdb_ccd_2024".to_string(),
+        license: "CC0".to_string(),
+        citation: "doi:10.1093/nar/gku1178".to_string(),
+        residues,
+    })
+}
+
+/// Parse all CCD CIF files in a directory and return raw IC records (internal use).
+pub fn parse_ccd_ic_table_raw(ccd_dir: &str) -> Result<Vec<(String, Vec<IcRecord>)>, RotlibError> {
     let path = Path::new(ccd_dir);
     if !path.is_dir() {
         return Err(RotlibError::InvalidFormat(format!("{} is not a directory", ccd_dir)));

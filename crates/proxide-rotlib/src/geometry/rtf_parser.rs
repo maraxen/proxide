@@ -157,70 +157,62 @@ fn parse_ic_line(line: &str) -> Result<IcRecord, RotlibError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    // RTF file path — available in developer conda environment; not bundled in repo.
+    // Tests are #[ignore] so they skip in CI where the file is absent.
+    // Run with: cargo test -p proxide-rotlib -- --ignored
+    const RTF_PATH: &str = "/home/marielle/.local/share/mamba/envs/espaloma-bench/dat/chamber/top_all36_prot.rtf";
+
+    fn rtf_available() -> bool {
+        Path::new(RTF_PATH).exists()
+    }
 
     #[test]
+    #[ignore = "requires local CHARMM36 RTF at RTF_PATH (conda/AmberTools install)"]
     fn test_parse_rtf_ic_table_real_file() {
-        // Test with the actual CHARMM36 RTF file
-        let rtf_path = "/home/marielle/.local/share/mamba/envs/espaloma-bench/dat/chamber/top_all36_prot.rtf";
-        let result = parse_rtf_ic_table(rtf_path);
-
+        if !rtf_available() { return; }
+        let result = parse_rtf_ic_table(RTF_PATH);
         assert!(result.is_ok(), "Failed to parse RTF: {:?}", result);
         let table = result.unwrap();
-
         assert_eq!(table.source, "charmm36");
         assert_eq!(table.version, "charmm36_rtf");
-        assert!(!table.residues.is_empty(), "No residues parsed");
-
-        // Should have at least 20 standard amino acids
         assert!(table.residues.len() >= 20, "Expected at least 20 residues, got {}", table.residues.len());
     }
 
     #[test]
+    #[ignore = "requires local CHARMM36 RTF at RTF_PATH (conda/AmberTools install)"]
     fn test_parse_rtf_ic_table_has_met() {
-        let rtf_path = "/home/marielle/.local/share/mamba/envs/espaloma-bench/dat/chamber/top_all36_prot.rtf";
-        let table = parse_rtf_ic_table(rtf_path).expect("Parse RTF");
-
+        if !rtf_available() { return; }
+        let table = parse_rtf_ic_table(RTF_PATH).expect("Parse RTF");
         let met = table.residues.iter().find(|r| r.name == "MET");
         assert!(met.is_some(), "MET residue not found");
-
-        let met_res = met.unwrap();
-        assert!(!met_res.ic.is_empty(), "MET has no IC records");
+        assert!(!met.unwrap().ic.is_empty(), "MET has no IC records");
     }
 
     #[test]
+    #[ignore = "requires local CHARMM36 RTF at RTF_PATH (conda/AmberTools install)"]
     fn test_met_ce_bond() {
-        // Verify MET CE (carbon-sulfur) bond parameters from the spec
-        let rtf_path = "/home/marielle/.local/share/mamba/envs/espaloma-bench/dat/chamber/top_all36_prot.rtf";
-        let table = parse_rtf_ic_table(rtf_path).expect("Parse RTF");
-
-        let met = table.residues.iter().find(|r| r.name == "MET")
-            .expect("MET residue not found");
-
-        // Find IC record: CB CG SD CE
-        // Expected: b_ij=1.5460, theta_ijk=110.2800, phi=180.0, theta_jkl=98.94, b_kl=1.8206
-        let ce_record = met.ic.iter()
+        // Phase D reference: b(SD-CE)=1.8206 Å, θ(CG-SD-CE)=98.94°
+        if !rtf_available() { return; }
+        let table = parse_rtf_ic_table(RTF_PATH).expect("Parse RTF");
+        let met = table.residues.iter().find(|r| r.name == "MET").expect("MET not found");
+        let ce_rec = met.ic.iter()
             .find(|ic| ic.atom_i == "CB" && ic.atom_j == "CG" && ic.atom_k == "SD" && ic.atom_l == "CE");
-
-        assert!(ce_record.is_some(), "CB-CG-SD-CE IC record not found");
-
-        let ic = ce_record.unwrap();
-        assert!((ic.b_kl - 1.8206).abs() < 0.001, "CE bond length: expected ~1.8206 Å, got {}", ic.b_kl);
+        assert!(ce_rec.is_some(), "CB-CG-SD-CE IC record not found");
+        let ic = ce_rec.unwrap();
+        assert!((ic.b_kl - 1.8206).abs() < 0.001, "CE bond: expected ~1.8206 Å, got {}", ic.b_kl);
         assert!((ic.theta_jkl - 98.94).abs() < 0.1, "CE angle: expected ~98.94°, got {}", ic.theta_jkl);
     }
 
     #[test]
+    #[ignore = "requires local CHARMM36 RTF at RTF_PATH (conda/AmberTools install)"]
     fn test_all_20_standard_aa_present() {
-        let rtf_path = "/home/marielle/.local/share/mamba/envs/espaloma-bench/dat/chamber/top_all36_prot.rtf";
-        let table = parse_rtf_ic_table(rtf_path).expect("Parse RTF");
-
-        let standard_aa = [
-            "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HSD", "ILE",
-            "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
-        ];
-
-        for aa in &standard_aa {
-            let found = table.residues.iter().any(|r| r.name == *aa);
-            assert!(found, "Standard amino acid {} not found in parsed RTF", aa);
+        if !rtf_available() { return; }
+        let table = parse_rtf_ic_table(RTF_PATH).expect("Parse RTF");
+        for aa in &["ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HSD", "ILE",
+                    "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL"] {
+            assert!(table.residues.iter().any(|r| r.name == *aa), "{} not found in RTF table", aa);
         }
     }
 }
