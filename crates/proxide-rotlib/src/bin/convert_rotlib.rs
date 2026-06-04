@@ -325,6 +325,8 @@ fn build_library(
         data_license: "ODC-BY-1.0".to_string(),
         geometry_mode: rotlib_v1::GeometryMode::Precomputed as i32,
         residues,
+        geometry_source: String::new(),
+        geometry_license: String::new(),
     };
 
     // Print coverage summary

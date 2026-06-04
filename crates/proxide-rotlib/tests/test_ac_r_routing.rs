@@ -128,6 +128,8 @@ fn build_pro_cpr_library() -> PbLib {
         data_license: "ODC-BY-1.0".to_string(),
         geometry_mode: GeometryMode::Precomputed as i32,
         residues: vec![pro_entry, cpr_entry],
+        geometry_source: String::new(),
+        geometry_license: String::new(),
     }
 }
 
@@ -174,6 +176,8 @@ fn build_pro_only_library() -> PbLib {
         data_license: "ODC-BY-1.0".to_string(),
         geometry_mode: GeometryMode::Precomputed as i32,
         residues: vec![pro_entry],
+        geometry_source: String::new(),
+        geometry_license: String::new(),
     }
 }
 

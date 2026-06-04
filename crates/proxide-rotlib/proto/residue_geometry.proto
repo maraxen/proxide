@@ -1,0 +1,33 @@
+syntax = "proto3";
+package proxide.rotlib.v1;
+
+// Table of sidechain IC geometry for one force-field / geometry source.
+// Every table must carry non-empty source, license, and citation fields.
+message ResidueGeometryTable {
+  string source   = 1;  // "charmm36" | "pdb_ccd" | "amber_ff14sb" | "openff_ff14sb"
+  string version  = 2;  // e.g. "charmm36_jul2024", "pdb_ccd_2024"
+  string license  = 3;  // SPDX id or prose: "NOT-OSI: MacKerell lab academic only" | "CC0"
+  string citation = 4;  // DOI or BibTeX key for the source publication
+  repeated ResidueGeometry residues = 5;
+}
+
+// IC build tree for one amino acid residue.
+message ResidueGeometry {
+  string name = 1;          // "MET", "ARG", "PRO", etc.
+  repeated IcRecord ic = 2; // ordered: each record places atom_k given i, j, l placed
+}
+
+// One NERF placement record — mirrors CHARMM RTF IC format:
+//   i j *k l | b(i-j)  θ(i-j-k)  φ(i-j-k-l)  θ(j-k-l)  b(k-l)
+message IcRecord {
+  string atom_i    = 1;
+  string atom_j    = 2;
+  string atom_k    = 3;  // atom being placed
+  string atom_l    = 4;
+  bool   branch    = 5;  // true = asterisk in RTF (atom_k is a branch point)
+  float  b_ij      = 6;  // bond length i–j, Å
+  float  theta_ijk = 7;  // valence angle i–j–k, degrees
+  float  phi_ijkl  = 8;  // dihedral i–j–k–l, degrees
+  float  theta_jkl = 9;  // valence angle j–k–l, degrees
+  float  b_kl      = 10; // bond length k–l, Å
+}
