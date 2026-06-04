@@ -14,6 +14,10 @@ crate-type = ["rlib"]
 name = "convert_rotlib"
 path = "src/bin/convert_rotlib.rs"
 
+[[bin]]
+name = "parse_master"
+path = "src/bin/parse_master.rs"
+
 [dependencies]
 thiserror = { workspace = true }
 tracing   = "0.1"

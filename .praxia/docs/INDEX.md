@@ -24,10 +24,12 @@
 - [260529_rotlib](specs/260529_rotlib.md) — `proxide-rotlib` crate: standalone Rust port of MSL RotamerLibrary — binary format, backbone binning, Frame/Transform placement
 - [260529_confind](specs/260529_confind.md) — `proxide-confind` crate: rayon ConFind reimplementation; depends on proxide-rotlib (rev 3)
 - [260602_dunbrack-rotlib-protobuf-cis-pro](specs/260602_dunbrack-rotlib-protobuf-cis-pro.md) — Dunbrack 2010 → protobuf+zstd rotamer library; adds cis-PRO (CPR); MIT-code/ODC-BY-data; geometry engine (proline-first)
+- [260604_rotlib-ic-geometry-schema](specs/260604_rotlib-ic-geometry-schema.md) — Unified residue_geometry.proto (IcRecord build-tree schema, multi-source) + CHARMM36 RTF/CCD importers + parse_master dev tool (#987, #988); supersedes #976
 
 ## Dynamic Workflows
 > Executable Claude Code Workflow scripts (`Workflow({ scriptPath: ... })`). See [dynamic_workflows/INDEX.md](dynamic_workflows/INDEX.md).
 - [260602_dunbrack-rotlib-sprint.js](dynamic_workflows/260602_dunbrack-rotlib-sprint.js) — Sprint #12 executor: Dunbrack→protobuf rotlib + cis-PRO (Research ∥ P1→P6). Backlog #814–#820.
+- [260604_rotlib-ic-sprint13.js](dynamic_workflows/260604_rotlib-ic-sprint13.js) — Sprint #13 executor: residue_geometry.proto + RTF IC parser + CCD importer + convert_rotlib wiring + parse_master + confind migration. Backlog #987/#988/#869.
 
 ## Superpowers
 > Skill outputs live in `.praxia/docs/superpowers/plans/` and `.praxia/docs/superpowers/specs/`.

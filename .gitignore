@@ -74,3 +74,6 @@ praxia.toml
 
 # Coverage reports
 scripts/coverage/cobertura.xml
+
+# MASTER-derived data — CC-BY-NC-SA 4.0; NOT for redistribution
+*.master.pb.zst
