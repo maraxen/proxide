@@ -1,0 +1,93 @@
+---
+workspace: proxide
+session_id: bd147e9b-cd72-4bcc-8e0e-9b6be254d522
+status: in_progress
+task_id: 260604_rotlib_multi_source
+phase: Sprint 14 — Close / Frame-Fix Merge
+goal_statement: >
+  Merge loadpb-frame-fix branch fixes to main, cherry-pick Track C (#869) confind
+  migration, then rerun 1DC7 calibration to get clean precision/recall numbers with
+  the corrected geometry.
+summary: >
+  Sprint 14 workflow completed Tracks A (--ic-source ccd flag), B (19 CCD .cif
+  files vendored), and pb.zst regen (proxide-rotlib-dunbrack2010-ccd.pb.zst, 12.4 MB,
+  commit c3a45bf). Track C (fb5a4ae: confind load_pb migration) is committed only on
+  worktree-sprint14-compose, not yet on main. Calibration ran but
+  drift_max_delta=0.211829 reflects the pre-existing N-origin frame bug (not a Sprint
+  14 regression); the loadpb-frame-fix worktree reduces this to ~0.043. Next session:
+  cherry-pick Track C to main, audit and merge the three frame-fix commits (ARG NH2,
+  default_bin, CHARMM ICs disabled), run drift test to confirm ~0.043, then rerun
+  calibration for production-quality precision/recall numbers.
+next_steps:
+  - "cherry-pick fb5a4ae (Track C / #869: confind load_pb migration) onto main — it
+    is on worktree-sprint14-compose branch only; git cherry-pick fb5a4ae from main"
+  - "audit loadpb-frame-fix commits (ARG NH2 relative_chi=None fix, default_bin argmax
+    fix, CHARMM ICs disabled) and merge to main"
+  - "run drift test to verify max|Δ| ~0.043: cargo test -p proxide-confind
+    measure_loadpb_drift_vs_master -- --ignored --nocapture with PROXIDE_ROTLIB_PB set"
+  - "rerun 1DC7 calibration (workflow Phase 4-5) against frame-fixed pb.zst for clean
+    precision/recall numbers"
+  - "close backlog #869; update #987/#988 status after merge"
+immediately_relevant:
+  - file: crates/proxide-confind/src/bin/confind.rs
+    lines: [20, 25]
+    reason: >
+      Track C change (load_pb at line 22) is on worktree-sprint14-compose as commit
+      fb5a4ae; cherry-pick to main to land it.
+  - file: .claude/workflows/sprint14-rotlib-ccd-migration.js
+    lines: [1, 60]
+    reason: >
+      Sprint 14 workflow file (in worktree-sprint14-compose branch); Phase 4 (1DC7
+      calibration) and Phase 5 (adversarial verifier gate) are the phases to re-run
+      after frame-fix merge.
+  - file: crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs
+    lines: [79, 110]
+    reason: >
+      Drift test (measure_loadpb_drift_vs_master, marked #[ignore]); reads
+      PROXIDE_ROTLIB_PB env var; run after merge to verify frame-fix brings
+      max|Δ| to ~0.043.
+active_dispatches: []
+context_refs:
+  - phase: "Sprint 14 — Ready to Run"
+    task_id: 260604_rotlib_multi_source
+    summary: >
+      Workflow written and oracle-approved (3 critique rounds); Tracks A+B+pb.zst
+      completed on main; Track C commit fb5a4ae on worktree branch only.
+  - phase: Phase D
+    task_id: 260604_charmm_ic_820
+    summary: >
+      IC geometry root-cause audit; loadpb-frame-fix worktree has ARG NH2 +
+      default_bin + CHARMM ICs fixes reducing drift 0.457→0.043.
+failed_attempts:
+  - attempt_id: n-ca-cb-angle-adjustment
+    description: N-CA-CB angle adjustment in frame-fix worktree as drift root cause
+    outcome: FALSIFIED — did not reduce drift
+    reason_failed: >
+      Root cause was ARG NH2 relative_chi assignment (should be None, not Some(3)) and
+      default_bin argmax, not N-CA-CB angle geometry.
+    do_not_retry: true
+    evidence_ref: /home/marielle/.claude/projects/-home-marielle-projects-proxide/memory/project-869-frame-fix.md
+open_questions:
+  - >
+    After frame-fix merge, will 1DC7 calibration precision/recall clear 0.90 at
+    CD > 0.01? The geometry was already CCD before the frame-fix; frame-fix primarily
+    improves Dunbrack CHARMM drift, so the CCD calibration path may be unaffected.
+  - >
+    Should loadpb-frame-fix commits for #987 (CCD IC pipeline) and #988 (parse_master)
+    be merged alongside the three core fixes, or deferred to Sprint 15?
+deferred:
+  - description: "RotlibSource trait + DunbrackSource refactor (backlog #1114)"
+    rationale: Phase 2 work; depends on #869 migration being complete first
+    recommended_phase: Sprint 15 / Phase E
+  - description: "parse_master --validate flag + user-facing license docs (backlog #1115)"
+    rationale: Phase 3 work; useful once Dunbrack+CCD path is production-proven
+    recommended_phase: Sprint 15 / Phase E
+  - description: "System-prep epic scoping (backlog #977)"
+    rationale: Separate meta-epic; start with NotebookLM research after #869 closes
+    recommended_phase: Phase F / separate track
+  - description: "praxia dw install-templates (backlog #983): enables dw emit cross-project"
+    rationale: Blocked on praxia repo work
+    recommended_phase: Praxia repo sprint
+lessons_refs:
+  - .praxia/lessons.jsonl
+---
