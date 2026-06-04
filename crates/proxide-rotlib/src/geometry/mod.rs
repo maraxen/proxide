@@ -7,11 +7,13 @@ pub mod template;
 pub mod proline;
 pub mod charmm_ic;
 pub mod rtf_parser;
+pub mod ccd_parser;
 
 pub use template::{ResidueTemplate, proline_template, standard_residue_template};
 pub use proline::{ProlineBuilder, ProlineCoords};
 pub use charmm_ic::{CharmmIdeals, load_charmm_ideals, apply_charmm_ideals, map_template_to_charmm_name};
 pub use rtf_parser::parse_rtf_ic_table;
+pub use ccd_parser::parse_ccd_ic_table;
 
 use proxide_geometry::geometry::nerf::Nerf;
 
