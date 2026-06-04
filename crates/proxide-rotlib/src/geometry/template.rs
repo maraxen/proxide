@@ -150,7 +150,7 @@ fn alanine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -185,7 +185,7 @@ fn serine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -230,7 +230,7 @@ fn threonine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -284,7 +284,7 @@ fn valine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -339,7 +339,7 @@ fn leucine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -408,7 +408,7 @@ fn isoleucine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -477,7 +477,7 @@ fn methionine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -549,7 +549,7 @@ fn cysteine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -605,7 +605,7 @@ fn aspartic_acid_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -674,7 +674,7 @@ fn asparagine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -744,7 +744,7 @@ fn glutamic_acid_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -828,7 +828,7 @@ fn glutamine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -914,7 +914,7 @@ fn phenylalanine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -1014,7 +1014,7 @@ fn tyrosine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -1125,7 +1125,7 @@ fn tryptophan_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -1250,7 +1250,7 @@ fn histidine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -1338,7 +1338,7 @@ fn lysine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
@@ -1429,7 +1429,7 @@ fn arginine_template() -> ResidueTemplate {
     t.set_bond(4, BondDef {
         parent_idx: 1,
         bond_length: 1.540,
-        bond_angle_deg: 110.5,
+        bond_angle_deg: 108.34,
         torsion_deg: -119.7,
 
         relative_chi: None,
