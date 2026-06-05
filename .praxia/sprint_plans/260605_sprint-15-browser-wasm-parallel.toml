@@ -1,0 +1,13 @@
+tracks = []
+
+[sprint]
+sprint_id = "260605_sprint-15-browser-wasm-parallel"
+sprint_num = 1
+name = "260605_sprint-15-browser-wasm-parallel"
+description = "Browser WASM parallelism for proxide: WASI gate narrowing (quick win), spike to validate std::thread::scope on wasm32+atomics, then proxide-parallel-rt crate + build config + dep wiring + call-site updates + init_parallel JS exposure. Spec: .praxia/docs/specs/260605_browser-wasm-parallel.md"
+context = "[MANUAL: paste recon findings here before running emit-sprint]"
+max_fix_retries = 1
+
+[orchestration]
+sequential = []
+concurrent = []

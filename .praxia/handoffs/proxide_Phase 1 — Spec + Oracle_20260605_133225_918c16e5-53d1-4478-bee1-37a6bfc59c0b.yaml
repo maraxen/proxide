@@ -1,0 +1,59 @@
+---
+workspace: proxide
+session_id: c550d081-orx-wasm-260605
+status: in_progress
+immediately_relevant:
+- file: .praxia/docs/specs/260605_browser-wasm-parallel.md
+  lines:
+  - 1
+  - 240
+  reason: 'Full spec: architecture, Cargo setup, build pipeline, 6 open risks, acceptance criteria, implied backlog items — oracle reads this first'
+- file: crates/proxide-confind/src/parallel.rs
+  lines:
+  - 134
+  - 212
+  reason: All 5 parallel call sites in confind with the current num_threads(1) wasm32 gate — the call-site transformation target
+- file: crates/proxide-wasm/Cargo.toml
+  lines:
+  - 1
+  - 20
+  reason: WASM entry crate — where wasm-bindgen-rayon dep and init_parallel export go
+- file: Cargo.toml
+  lines:
+  - 1
+  - 60
+  reason: Workspace deps — orx-parallel = 2 is already here; rayon fully removed; new proxide-parallel-rt member will be added here
+active_dispatches: []
+task_id: 260605_browser-wasm-parallel
+phase: Phase 1 — Spec + Oracle
+goal_statement: 'Implement real browser WASM parallelism for proxide: orx-parallel + wasm-bindgen-rayon via a new proxide-parallel-rt runtime crate, replacing the current num_threads(1) sequential gate on all wasm32-unknown-unknown targets.'
+context_refs:
+- phase: Migration (260604 session)
+  task_id: 260604_orx-parallel-wasm
+  summary: rayon to orx-parallel migration complete across confind/io/master on branch worktree-orx-parallel-wasm; 288 tests green; 4 commits
+failed_attempts:
+- attempt_id: a1
+  description: rayon-core-wasm as WASM-compatible rayon-core replacement
+  outcome: Confirmed dead end via research
+  reason_failed: Stale (Feb 2023), same links=rayon-core singleton so cannot coexist with rayon-core, no threading capability beyond rayon-core fallback
+  do_not_retry: true
+  evidence_ref: .praxia/docs/specs/260605_browser-wasm-parallel.md
+- attempt_id: a2
+  description: Use orx-parallel num_threads(1) as WASM parallel execution
+  outcome: Sequential only — confirmed by research
+  reason_failed: build-std + atomics flags do not create Web Workers; num_threads(1) is only a sequential fallback, not real parallelism
+  do_not_retry: true
+  evidence_ref: .praxia/docs/specs/260605_browser-wasm-parallel.md
+open_questions:
+- 'Risk #1: After wasm-bindgen-rayon init_thread_pool (build_global), does a subsequent rayon::ThreadPoolBuilder::new().build() (local pool) inherit the Web Worker spawn_handler? This determines whether the proxide-parallel-rt OnceLock<ThreadPool> architecture works.'
+- 'Risk #3: Can rust-toolchain.toml be scoped to only the crates/proxide-wasm/ subdirectory to avoid forcing nightly on all non-wasm crate development?'
+- Is orx-parallel's with_pool() accepting rayon::ThreadPool directly or does it require the rayon-core feature + rayon_core::ThreadPool?
+deferred:
+- description: Add parallelism to proxide-physics (O(N^2) Coulomb/LJ) and proxide-geometry (distance matrices)
+  rationale: Additive new parallelism, not migration — lower priority than completing the browser WASM path
+  recommended_phase: Phase 3 (after browser WASM path validated)
+- description: 'WASI gate narrowing: change #[cfg(target_arch = wasm32)] to #[cfg(all(target_arch = wasm32, target_os = unknown))]'
+  rationale: Small independent change, can be done as quick win before or after oracle critique
+  recommended_phase: Phase 2 (quick win alongside sprint composition)
+lessons_refs: []
+---
