@@ -1,5 +1,5 @@
 #[cfg(feature = "parallel")]
-use rayon::prelude::*;
+use orx_parallel::{IntoParIter, ParIter};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -62,10 +62,12 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
         .collect();
 
     #[cfg(feature = "parallel")]
-    let results: Vec<(String, Vec<i8>, Vec<bool>)> = raw_records
-        .into_par_iter()
-        .map(|(header, seq_lines)| tokenize_record(header, seq_lines, &aa_to_id))
-        .collect();
+    let results: Vec<(String, Vec<i8>, Vec<bool>)> = {
+        let par = raw_records.into_par().map(|(header, seq_lines)| tokenize_record(header, seq_lines, &aa_to_id));
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let par = par.num_threads(proxide_parallel_rt::num_threads());
+        par.collect()
+    };
 
     #[cfg(not(feature = "parallel"))]
     let results: Vec<(String, Vec<i8>, Vec<bool>)> = raw_records

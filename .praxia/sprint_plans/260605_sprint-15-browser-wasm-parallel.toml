@@ -1,13 +1,472 @@
-tracks = []
-
 [sprint]
 sprint_id = "260605_sprint-15-browser-wasm-parallel"
-sprint_num = 1
-name = "260605_sprint-15-browser-wasm-parallel"
-description = "Browser WASM parallelism for proxide: WASI gate narrowing (quick win), spike to validate std::thread::scope on wasm32+atomics, then proxide-parallel-rt crate + build config + dep wiring + call-site updates + init_parallel JS exposure. Spec: .praxia/docs/specs/260605_browser-wasm-parallel.md"
-context = "[MANUAL: paste recon findings here before running emit-sprint]"
-max_fix_retries = 1
+sprint_num = 15
+name = "sprint-15-browser-wasm-parallel"
+description = "Browser WASM parallelism for proxide: WASI gate narrowing (quick win), spike to validate std::thread::scope on wasm32+atomics, then proxide-parallel-rt crate + build config + dep wiring + call-site updates + init_parallel JS exposure."
+context = '''
+Spec: .praxia/docs/specs/260605_browser-wasm-parallel.md
+task_id: 260605_browser-wasm-parallel
+Branch: worktree-orx-parallel-wasm (clean; 288 tests green)
+
+MECHANISM SUMMARY:
+orx-parallel 2.4.0 spawns via std::thread::scope internally. With nightly + build-std +
+-C target-feature=+atomics,+bulk-memory, std is rebuilt so std::thread::scope uses
+SharedArrayBuffer-backed Web Workers on wasm32-unknown-unknown. No rayon, no wasm-bindgen-rayon.
+
+JS calls init_parallel(navigator.hardwareConcurrency) (synchronous) -> stores n in
+proxide-parallel-rt AtomicUsize -> all par() sites call .num_threads(proxide_parallel_rt::num_threads()).
+
+Track A (WASI narrowing) and Track B (spike) are independent and run concurrently.
+Tracks C and D depend on B passing; they run concurrently after B.
+Track E depends on C+D. Track F depends on A+E. Track G depends on C+F.
+'''
+max_fix_retries = 2
+
+[[tracks]]
+id = "a"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1176"
+phase_name = "Track A — WASI gate narrowing: #[cfg(wasm32)] -> #[cfg(all(wasm32, target_os=\"unknown\"))] (#1176)"
+fixer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: A | backlog: #1176
+
+## Goal
+Narrow all 10 wasm32 parallel gates from `target_arch = "wasm32"` to
+`all(target_arch = "wasm32", target_os = "unknown")`. This ensures wasm32-wasip1-threads
+builds use full std::thread parallelism rather than the browser-specific num_threads injection.
+Independent quick win — does not require the spike or the new crate.
+
+## Why
+`target_os = "unknown"` is the browser target. WASI targets set target_os to "wasi" —
+the narrower gate correctly excludes them.
+
+## All 10 sites (grep first, then change)
+Run: grep -rn 'num_threads(1)' crates/ to find all sites. The files are:
+  crates/proxide-confind/src/confind.rs
+  crates/proxide-confind/src/parallel.rs
+  crates/proxide-io/src/formatters/full.rs
+  crates/proxide-io/src/formats/fasta.rs
+  crates/proxide-master/src/search.rs
+
+For each match inside a `let par = par.num_threads(1)` block, change the cfg attribute above it:
+  #[cfg(target_arch = "wasm32")]
+to:
+  #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+
+Do NOT change any other #[cfg(target_arch = "wasm32")] guards unrelated to the num_threads gate.
+
+## Acceptance criteria
+1. grep -rn 'cfg(target_arch = "wasm32")' crates/ | grep num_threads  ->  ZERO lines
+2. grep -rn 'all(target_arch = "wasm32", target_os = "unknown")' crates/ | grep num_threads  ->  10 lines
+3. cargo test -p proxide-confind -p proxide-io -p proxide-master exits 0
+4. cargo check --target wasm32-unknown-unknown -p proxide-confind exits 0
+'''
+reviewer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: A | backlog: #1176
+
+## Verification steps
+
+### Grep checks (fixed to account for multi-line cfg + call)
+grep -rn '#\[cfg(all(target_arch = "wasm32", target_os = "unknown")' crates/ | grep -v '//' | wc -l
+— must return exactly 10
+
+grep -rn 'cfg(target_arch = "wasm32")' crates/ | grep -v 'target_os' | grep num_threads
+— must return ZERO lines (no old broad gate with num_threads)
+
+### Test suite
+cargo test -p proxide-confind -p proxide-io -p proxide-master
+— exits 0
+
+### wasm32 compile check
+cargo check --target wasm32-unknown-unknown -p proxide-confind
+— exits 0 (target_os="unknown" on this target, so the cfg fires correctly)
+
+### Scope of change
+git diff HEAD — must touch ONLY the cfg attributes; no logic changes, no new deps
+'''
+return_key = "1176"
+
+[[tracks]]
+id = "b"
+is_research = true
+
+[[tracks.items]]
+backlog_id = "1170"
+phase_name = "Track B — Spike: verify std::thread::scope runs on Web Workers with wasm32+atomics (#1170)"
+fixer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: B | backlog: #1170
+
+## Goal
+Prove that nightly + build-std + +atomics,+bulk-memory enables std::thread::scope + s.spawn
+on wasm32-unknown-unknown and produces a binary with SharedArrayBuffer TLS exports.
+Required empirical precondition before Tracks C-G.
+
+## Validation approach (compilation + binary inspection)
+A browser run is not required. Validate at the compilation and binary level.
+
+### Step 1 — Ensure .cargo/config.toml has wasm build flags
+cat .cargo/config.toml must show +atomics,+bulk-memory under [target.wasm32-unknown-unknown].
+If Track D is not yet done, create it now as described in Track D before proceeding.
+
+### Step 2 — Attempt wasm32 compilation
+rustup run nightly-2025-11-15 cargo check --target wasm32-unknown-unknown -p proxide-wasm
+Record whether this succeeds or produces an error.
+
+### Step 3 — Check for TLS exports in binary (if step 2 succeeded)
+rustup run nightly-2025-11-15 cargo build --target wasm32-unknown-unknown -p proxide-wasm --release
+wasm-objdump -x target/wasm32-unknown-unknown/release/proxide_wasm.wasm | grep -E "(tls|__wasm_init)"
+(If wasm-objdump is unavailable, use: wasm-nm target/wasm32-unknown-unknown/release/proxide_wasm.wasm)
+
+### Step 4 — Document findings
+Write .praxia/docs/research/260605_wasm-thread-scope-spike.md with:
+- Commands run and their exit codes
+- Whether __wasm_init_tls or equivalent TLS symbols are present
+- PASS or FAIL verdict with evidence
+- If FAIL: exact error, recommended next step
+
+## Acceptance criteria
+1. Compilation succeeds on nightly-2025-11-15 with build-std + atomics
+2. __wasm_init_tls present in .wasm binary (confirms SharedArrayBuffer TLS support)
+3. .praxia/docs/research/260605_wasm-thread-scope-spike.md exists with PASS verdict
+4. No temporary test code left in any source file
+'''
+reviewer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: B | backlog: #1170
+
+## Verification steps
+
+### Research doc
+cat .praxia/docs/research/260605_wasm-thread-scope-spike.md
+— must exist with a clear PASS or FAIL verdict
+
+### If PASS
+- Doc must show the cargo/wasm-pack command that succeeded
+- Doc must show wasm-objdump (or wasm-nm) output confirming __wasm_init_tls or TLS export
+- No spike test code left in source: grep "SPIKE" crates/ -r  ->  zero lines
+
+### If FAIL (sprint blocker)
+- Mark as blocker: Tracks C, D, E, F, G must NOT proceed
+- Surface the failure to the user before continuing the sprint
+
+### Workspace cleanliness
+git diff HEAD — must show only the new .praxia/docs/research/ file; no source changes
+'''
+return_key = "1170"
+
+[[tracks]]
+id = "c"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1171"
+phase_name = "Track C — Create proxide-parallel-rt crate (AtomicUsize thread-count registry) (#1171)"
+fixer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: C | backlog: #1171
+
+PREREQUISITE: Track B must have PASS verdict before starting.
+
+## Goal
+Create the proxide-parallel-rt workspace crate: a minimal AtomicUsize thread-count registry.
+No external dependencies.
+
+## Files to create
+
+### crates/proxide-parallel-rt/Cargo.toml
+```toml
+[package]
+name = "proxide-parallel-rt"
+edition.workspace = true
+version.workspace = true
+description = "Minimal parallel runtime: thread-count registry for wasm32 builds"
+```
+
+### crates/proxide-parallel-rt/src/lib.rs
+```rust
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static NUM_THREADS: AtomicUsize = AtomicUsize::new(1);
+
+pub fn set_num_threads(n: usize) {
+    NUM_THREADS.store(n.max(1), Ordering::Relaxed);
+}
+
+pub fn num_threads() -> usize {
+    NUM_THREADS.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_is_one() {
+        assert_eq!(num_threads(), 1);
+    }
+
+    #[test]
+    fn set_and_get() {
+        set_num_threads(4);
+        assert_eq!(num_threads(), 4);
+        set_num_threads(1);
+    }
+
+    #[test]
+    fn zero_clamps_to_one() {
+        set_num_threads(0);
+        assert_eq!(num_threads(), 1);
+        set_num_threads(1);
+    }
+}
+```
+
+## Workspace registration
+In root Cargo.toml, add "crates/proxide-parallel-rt" to the members array.
+
+## Acceptance criteria
+1. cargo build -p proxide-parallel-rt exits 0
+2. cargo test -p proxide-parallel-rt -- --test-threads=1 exits 0 (3 tests pass)
+3. cargo check --target wasm32-unknown-unknown -p proxide-parallel-rt exits 0
+4. cargo test --workspace exits 0 (no regressions)
+'''
+reviewer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: C | backlog: #1171
+
+## Verification steps
+
+ls crates/proxide-parallel-rt/src/lib.rs crates/proxide-parallel-rt/Cargo.toml  ->  both exist
+grep "proxide-parallel-rt" Cargo.toml  ->  in members array
+cargo test -p proxide-parallel-rt -- --test-threads=1  ->  3 tests pass
+cargo check --target wasm32-unknown-unknown -p proxide-parallel-rt  ->  exits 0
+grep "dependencies" crates/proxide-parallel-rt/Cargo.toml  ->  no [dependencies] section (no external deps)
+cargo test --workspace  ->  exits 0
+'''
+return_key = "1171"
+
+[[tracks]]
+id = "d"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1172"
+phase_name = "Track D — Add .cargo/config.toml wasm build flags; no root rust-toolchain.toml (#1172)"
+fixer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: D | backlog: #1172
+
+PREREQUISITE: Track B must have PASS verdict before starting.
+
+## Goal
+Add .cargo/config.toml at the workspace root with wasm32 build flags.
+Do NOT add rust-toolchain.toml at workspace root.
+
+## Check existing state
+ls .cargo/config.toml
+If it exists, ADD these sections without removing existing content.
+If it does not exist, create .cargo/ directory and the file.
+
+## Content to add
+```toml
+# Requires nightly for build-std:
+#   rustup run nightly-2025-11-15 wasm-pack build --target web -p proxide-wasm
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C", "target-feature=+atomics,+bulk-memory",
+    "-C", "link-arg=--shared-memory",
+    "-C", "link-arg=--max-memory=1073741824",
+    "-C", "link-arg=--import-memory",
+    "-C", "link-arg=--export=__wasm_init_tls",
+    "-C", "link-arg=--export=__tls_size",
+    "-C", "link-arg=--export=__tls_align",
+    "-C", "link-arg=--export=__tls_base",
+]
+
+[unstable]
+build-std = ["panic_abort", "std"]
+```
+
+## Acceptance criteria
+1. cat .cargo/config.toml shows +atomics,+bulk-memory and build-std entries
+2. ls rust-toolchain.toml  ->  "No such file" (no root toolchain file)
+3. cargo build --workspace (stable, native) exits 0
+'''
+reviewer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: D | backlog: #1172
+
+## Verification steps
+
+cat .cargo/config.toml  ->  contains [target.wasm32-unknown-unknown] and [unstable] build-std
+grep "atomics" .cargo/config.toml  ->  returns the +atomics line
+ls rust-toolchain.toml 2>&1  ->  "No such file or directory"
+cargo build --workspace  ->  exits 0, no new errors
+'''
+return_key = "1172"
+
+[[tracks]]
+id = "e"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1174"
+phase_name = "Track E — Wire proxide-parallel-rt wasm-gated dep into confind, io, master (#1174)"
+fixer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: E | backlog: #1174
+
+PREREQUISITES: Track C (#1171, crate created) and Track D (#1172, config.toml added) both done.
+
+## Goal
+Add proxide-parallel-rt as a wasm-gated dependency to the three parallel crates.
+IMPORTANT: Use the narrowed gate `cfg(all(target_arch = "wasm32", target_os = "unknown"))`
+to exclude WASI targets (which handle getrandom differently and have full thread support).
+
+### crates/proxide-confind/Cargo.toml — add section:
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+proxide-parallel-rt = { path = "../proxide-parallel-rt" }
+
+### crates/proxide-master/Cargo.toml — add same section:
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+proxide-parallel-rt = { path = "../proxide-parallel-rt" }
+
+### crates/proxide-io/Cargo.toml — add as optional dep tied to the parallel feature:
+In [dependencies], add:
+  proxide-parallel-rt = { path = "../proxide-parallel-rt", optional = true }
+In [features], find the existing `parallel = [...]` line and append "dep:proxide-parallel-rt":
+  parallel = ["dep:orx-parallel", "dep:proxide-parallel-rt"]
+
+NOTE: proxide-io also has existing getrandom and other WASM-gated deps. These should remain
+under the broad `cfg(target_arch = "wasm32")` for now (they are handled transitively).
+Focus ONLY on proxide-parallel-rt narrowing.
+
+## Acceptance criteria
+1. cargo build -p proxide-confind -p proxide-master exits 0
+2. cargo build -p proxide-io exits 0
+3. cargo build -p proxide-io --features parallel exits 0
+4. cargo check --target wasm32-unknown-unknown -p proxide-confind exits 0
+5. cargo test --workspace exits 0
+'''
+reviewer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: E | backlog: #1174
+
+## Verification steps
+
+### Gate narrowing (CRITICAL: must use all(wasm32, target_os="unknown"), not just wasm32)
+grep -A3 'cfg(all(target_arch = "wasm32", target_os = "unknown")' crates/proxide-confind/Cargo.toml  ->  shows proxide-parallel-rt
+grep -A3 'cfg(all(target_arch = "wasm32", target_os = "unknown")' crates/proxide-master/Cargo.toml  ->  shows proxide-parallel-rt
+grep "proxide-parallel-rt" crates/proxide-io/Cargo.toml  ->  appears as optional AND in parallel feature
+
+### Build checks
+cargo build -p proxide-confind -p proxide-master  ->  exits 0
+cargo build -p proxide-io --features parallel  ->  exits 0
+cargo build -p proxide-io --no-default-features  ->  exits 0 (proxide-parallel-rt absent)
+cargo check --target wasm32-unknown-unknown -p proxide-confind  ->  exits 0
+
+### Workspace cleanliness
+cargo test --workspace  ->  exits 0
+git diff HEAD  ->  touches ONLY proxide-*/{Cargo.toml,src/lib.rs}; no other files modified
+'''
+return_key = "1174"
+
+[[tracks]]
+id = "f"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1173"
+phase_name = "Track F — Update 10 parallel gates: num_threads(1) -> num_threads(proxide_parallel_rt::num_threads()) (#1173)"
+fixer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: F | backlog: #1173
+
+PREREQUISITES: Track A (#1176, gates narrowed) and Track E (#1174, dep wired) both done.
+
+## Goal
+Replace all 10 `num_threads(1)` calls (now inside `all(wasm32, target_os="unknown")` gates)
+with `num_threads(proxide_parallel_rt::num_threads())`.
+
+## Procedure
+1. grep -rn 'num_threads(1)' crates/proxide-confind/src crates/proxide-io/src crates/proxide-master/src
+   — enumerate all 10 sites
+2. For each, change:
+     let par = par.num_threads(1);
+   to:
+     let par = par.num_threads(proxide_parallel_rt::num_threads());
+   Use full path; no `use` import needed.
+
+Files: confind.rs (~2), parallel.rs (~3), formatters/full.rs (~2), fasta.rs (~1), search.rs (~2)
+
+## Acceptance criteria
+1. grep -rn 'num_threads(1)' crates/  ->  ZERO lines
+2. grep -rn 'num_threads(proxide_parallel_rt' crates/  ->  exactly 10 lines
+3. cargo test -p proxide-confind -p proxide-io -p proxide-master exits 0
+4. cargo check --target wasm32-unknown-unknown -p proxide-confind exits 0
+5. cargo check --target wasm32-unknown-unknown -p proxide-master exits 0
+'''
+reviewer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: F | backlog: #1173
+
+## Verification steps
+
+grep -rn 'num_threads(1)' crates/  ->  ZERO lines
+grep -rn 'num_threads(proxide_parallel_rt' crates/  ->  exactly 10 lines
+cargo test -p proxide-confind -p proxide-io -p proxide-master  ->  exits 0
+cargo check --target wasm32-unknown-unknown -p proxide-confind  ->  exits 0
+cargo check --target wasm32-unknown-unknown -p proxide-master  ->  exits 0
+git diff HEAD  ->  touches only the 10 num_threads(1) lines, nothing else
+'''
+return_key = "1173"
+
+[[tracks]]
+id = "g"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1175"
+phase_name = "Track G — Expose init_parallel(n) synchronous wasm_bindgen fn in proxide-wasm (#1175)"
+fixer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: G | backlog: #1175
+
+PREREQUISITES: Track C (#1171, crate created) and Track F (#1173, call sites updated) both done.
+
+## Goal
+Expose a synchronous `init_parallel(n: usize)` JS-callable function from proxide-wasm.
+
+### crates/proxide-wasm/Cargo.toml — add to [dependencies]:
+proxide-parallel-rt = { path = "../proxide-parallel-rt" }
+
+### crates/proxide-wasm/src/lib.rs — add near other #[wasm_bindgen] exports:
+```rust
+/// Set the number of threads for parallel iterators.
+/// Call before any parallel work: `init_parallel(navigator.hardwareConcurrency)`.
+#[wasm_bindgen]
+pub fn init_parallel(num_threads: usize) {
+    proxide_parallel_rt::set_num_threads(num_threads);
+}
+```
+
+Synchronous — no async, no await, no Promise. Intentional.
+
+## Acceptance criteria
+1. grep "init_parallel" crates/proxide-wasm/src/lib.rs  ->  finds the function
+2. grep "async fn init_parallel" crates/proxide-wasm/src/lib.rs  ->  ZERO lines
+3. grep "proxide-parallel-rt" crates/proxide-wasm/Cargo.toml  ->  finds the dep
+4. cargo build -p proxide-wasm exits 0
+5. cargo test --workspace exits 0
+'''
+reviewer_prompt = '''
+task_id: 260605_browser-wasm-parallel | track: G | backlog: #1175
+
+## Verification steps
+
+grep -A5 "fn init_parallel" crates/proxide-wasm/src/lib.rs  ->  shows #[wasm_bindgen] + set_num_threads
+grep "async fn init_parallel" crates/proxide-wasm/src/lib.rs  ->  ZERO lines
+grep "proxide-parallel-rt" crates/proxide-wasm/Cargo.toml  ->  in [dependencies], not optional
+cargo build -p proxide-wasm  ->  exits 0
+cargo test --workspace  ->  exits 0
+git diff HEAD  ->  touches only proxide-wasm/src/lib.rs and proxide-wasm/Cargo.toml
+'''
+return_key = "1175"
 
 [orchestration]
-sequential = []
-concurrent = []
+# A+B+C+D can overlap; E->F->G are sequential tail
+# Prerequisite ordering is encoded in each track's fixer_prompt PREREQUISITE lines
+sequential = ["e", "f", "g"]
+concurrent = ["a", "b", "c", "d"]

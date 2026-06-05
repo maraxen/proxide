@@ -5,7 +5,7 @@ use crate::error::ConFindError;
 use crate::params::{aa_propensity, AA_NAMES, CONT_DIST};
 use dashmap::DashMap;
 use proxide_rotlib::{RotamerId, RotamerLibrary};
-use rayon::prelude::*;
+use orx_parallel::{IntoParIter, ParIter};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -134,26 +134,34 @@ pub fn run_phases_b_c(
     // B1 — collect canonical pairs where BOTH endpoints are in the query set.
     // Filtering here prevents NotCached errors when neighbors outside the subset
     // were not cached by the caller.
-    let pairs: Vec<(ResidueIndex, ResidueIndex)> = residues
-        .par_iter()
-        .flat_map(|&ri| {
+    let pairs: Vec<(ResidueIndex, ResidueIndex)> = {
+        let residues_vec: Vec<ResidueIndex> = residues.to_vec();
+        let par = residues_vec.into_par().flat_map(|ri| {
             let of_interest = &of_interest;
             neighbors_fn(ri)
-                .into_par_iter()
+                .into_iter()
                 .filter(move |&rj| rj > ri && of_interest.contains(&rj))
                 .map(move |rj| (ri, rj))
-        })
-        .collect();
+        });
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let par = par.num_threads(proxide_parallel_rt::num_threads());
+        par.collect()
+    };
 
     // B1 — compute CD for each pair in parallel.
-    let pair_results: Vec<(f64, Vec<ClashTuple>)> = pairs
-        .par_iter()
-        .map(|&(ri, rj)| {
+    let pair_results: Vec<(f64, Vec<ClashTuple>)> = {
+        let pairs_owned = pairs.clone();
+        let par = pairs_owned.into_par().map(|(ri, rj)| {
             let ca = cache_map.get(&ri).ok_or(ConFindError::NotCached(ri))?;
             let cb = cache_map.get(&rj).ok_or(ConFindError::NotCached(rj))?;
             contact_degree_raw(ri, rj, &ca, &cb, rotlib, None, None)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        });
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let par = par.num_threads(proxide_parallel_rt::num_threads());
+        par.collect::<Vec<_>>()
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?
+    };
 
     // B2 — sequential collProb merge.
     let mut coll_prob_local: HashMap<ResidueIndex, HashMap<Arc<RotamerId>, f64>> = HashMap::new();
@@ -183,9 +191,9 @@ pub fn run_phases_b_c(
     }
 
     // Phase C — freedom (parallel over residues, after B2 completes).
-    residues
-        .par_iter()
-        .try_for_each(|&ri| -> Result<(), ConFindError> {
+    {
+        let residues_vec: Vec<ResidueIndex> = residues.to_vec();
+        let par = residues_vec.into_par().map(|ri| -> Result<(), ConFindError> {
             let cp = coll_prob_out.get(&ri).ok_or(ConFindError::NotCached(ri))?;
             let cache = cache_map.get(&ri).ok_or(ConFindError::NotCached(ri))?;
             let f = crate::freedom::compute_freedom(
@@ -198,7 +206,13 @@ pub fn run_phases_b_c(
             );
             freedom_out.insert(ri, f);
             Ok(())
-        })?;
+        });
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let par = par.num_threads(proxide_parallel_rt::num_threads());
+        par.collect::<Vec<_>>()
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+    }
 
     // Build ContactList.
     let mut contact = ContactList::default();

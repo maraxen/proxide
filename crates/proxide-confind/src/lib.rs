@@ -1,6 +1,6 @@
 //! Contact-degree algorithm for protein residue pairs (proxide-confind).
 //!
-//! Implements the ConFind contact-degree metric — a Rust/rayon port of
+//! Implements the ConFind contact-degree metric — a Rust/orx-parallel port of
 //! Mosaist's `mstcondeg`. Given a protein backbone and a rotamer library,
 //! ConFind estimates how much rotamer freedom each residue loses due to
 //! sidechain clashes with its neighbours.
@@ -11,7 +11,7 @@
 //!   those clashing with backbone atoms, and store crowdedness
 //!   (fraction pruned).
 //! - **Phase B — contacts:** for each residue pair within the cutoff,
-//!   enumerate cross-rotamer clashes in parallel (rayon) to compute
+//!   enumerate cross-rotamer clashes in parallel (orx-parallel) to compute
 //!   collision probabilities.
 //! - **Phase C — freedom:** aggregate collision probabilities into a scalar
 //!   rotamer-freedom value per residue.

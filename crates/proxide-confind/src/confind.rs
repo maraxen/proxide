@@ -8,7 +8,7 @@ use crate::params::{CLASH_DIST, DCUT, HI_COLL_PROB, LO_COLL_PROB};
 use dashmap::DashMap;
 use proxide_core::processing::residues::ResidueId;
 use proxide_rotlib::{RotamerId, RotamerLibrary};
-use rayon::prelude::*;
+use orx_parallel::{IntoParIter, ParIter};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -79,7 +79,7 @@ impl ConFind {
         self.backbone.bb.len()
     }
 
-    /// Phase A: cache one residue (idempotent, rayon-safe).
+    /// Phase A: cache one residue (idempotent, thread-safe).
     pub fn cache_residue(&self, ri: ResidueIndex) -> Result<(), ConFindError> {
         if self.cache.contains_key(&ri) {
             return Ok(());
@@ -97,10 +97,15 @@ impl ConFind {
 
     /// Phase A: cache all residues in parallel.
     pub fn cache_all(&self) -> Result<(), ConFindError> {
-        (0..self.backbone.bb.len() as u32)
-            .into_par_iter()
-            .map(ResidueIndex)
-            .try_for_each(|ri| self.cache_residue(ri))
+        let n = self.backbone.bb.len() as u32;
+        let indices: Vec<u32> = (0..n).collect();
+        let par = indices.into_par().map(|i| self.cache_residue(ResidueIndex(i)));
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let par = par.num_threads(proxide_parallel_rt::num_threads());
+        par.collect::<Vec<_>>()
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map(|_| ())
     }
 
     /// CA–CA neighbors of ri within DCUT.
@@ -139,9 +144,15 @@ impl ConFind {
         cd_cut: f64,
     ) -> Result<ContactList, ConFindError> {
         // Ensure all queried residues are cached.
-        residues
-            .par_iter()
-            .try_for_each(|&ri| self.cache_residue(ri))?;
+        {
+            let residues_vec: Vec<ResidueIndex> = residues.to_vec();
+            let par = residues_vec.into_par().map(|ri| self.cache_residue(ri));
+            #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+            let par = par.num_threads(proxide_parallel_rt::num_threads());
+            par.collect::<Vec<_>>()
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?;
+        }
 
         run_phases_b_c(
             residues,

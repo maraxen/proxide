@@ -49,3 +49,10 @@ pub fn smiles_to_params(smiles: &str) -> Result<String, JsValue> {
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
+
+/// Set the number of threads for parallel iterators.
+/// Call before any parallel work: `init_parallel(navigator.hardwareConcurrency)`.
+#[wasm_bindgen]
+pub fn init_parallel(num_threads: usize) {
+    proxide_parallel_rt::set_num_threads(num_threads);
+}

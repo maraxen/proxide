@@ -3,7 +3,7 @@
 use crate::db::{FragmentDb, SourceLabel};
 use crate::fragment::{Centered, Fragment};
 use crate::kabsch::kabsch_rmsd;
-use rayon::prelude::*;
+use orx_parallel::{ParallelizableCollection, ParIter};
 
 // ---------------------------------------------------------------------------
 // SearchResult
@@ -33,24 +33,18 @@ impl<const N: usize> FragmentDb<N> {
         let query_norm_sq = query.norm_sq();
 
         // Reconstruct a Fragment<N, Centered> view from each entry for kabsch_rmsd.
-        let mut results: Vec<SearchResult> = self
-            .entries
-            .par_iter()
-            .filter_map(|entry| {
-                // Re-wrap raw coords slice as a Fragment<N, Centered>.
-                let db_frag = wrap_centered(entry.coords);
-                let kr = kabsch_rmsd(query, query_norm_sq, &db_frag, entry.norm_sq);
-                if kr.rmsd <= epsilon {
-                    Some(SearchResult {
-                        rmsd: kr.rmsd,
-                        label: entry.label.clone(),
-                        rotation: kr.rotation,
-                    })
-                } else {
-                    None
-                }
+        let par = self.entries.par().flat_map(|entry| {
+            let db_frag = wrap_centered(entry.coords);
+            let kr = kabsch_rmsd(query, query_norm_sq, &db_frag, entry.norm_sq);
+            (kr.rmsd <= epsilon).then(|| SearchResult {
+                rmsd: kr.rmsd,
+                label: entry.label.clone(),
+                rotation: kr.rotation,
             })
-            .collect();
+        });
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let par = par.num_threads(proxide_parallel_rt::num_threads());
+        let mut results: Vec<SearchResult> = par.collect();
 
         results.sort_unstable_by(|a, b| {
             a.rmsd
@@ -107,32 +101,23 @@ impl<const N: usize> FragmentDb<N> {
         let query_norm = query_norm_sq.sqrt();
         let epsilon_sq_m = epsilon * epsilon * ((N * 4) as f32);
 
-        let mut results: Vec<SearchResult> = self
-            .entries
-            .par_iter()
-            .filter_map(|entry| {
-                let entry_norm = entry.norm_sq.sqrt();
-                let norm_diff = query_norm - entry_norm;
-
-                // Pre-filter: if (||A|| - ||B||)² > ε² · M, RMSD > ε, skip Kabsch.
-                if norm_diff * norm_diff > epsilon_sq_m {
-                    return None;
-                }
-
-                // Passed pre-filter: run Kabsch.
-                let db_frag = wrap_centered(entry.coords);
-                let kr = kabsch_rmsd(query, query_norm_sq, &db_frag, entry.norm_sq);
-                if kr.rmsd <= epsilon {
-                    Some(SearchResult {
-                        rmsd: kr.rmsd,
-                        label: entry.label.clone(),
-                        rotation: kr.rotation,
-                    })
-                } else {
-                    None
-                }
+        let par = self.entries.par().flat_map(|entry| {
+            let entry_norm = entry.norm_sq.sqrt();
+            let norm_diff = query_norm - entry_norm;
+            if norm_diff * norm_diff > epsilon_sq_m {
+                return None;
+            }
+            let db_frag = wrap_centered(entry.coords);
+            let kr = kabsch_rmsd(query, query_norm_sq, &db_frag, entry.norm_sq);
+            (kr.rmsd <= epsilon).then(|| SearchResult {
+                rmsd: kr.rmsd,
+                label: entry.label.clone(),
+                rotation: kr.rotation,
             })
-            .collect();
+        });
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let par = par.num_threads(proxide_parallel_rt::num_threads());
+        let mut results: Vec<SearchResult> = par.collect();
 
         results.sort_unstable_by(|a, b| {
             a.rmsd

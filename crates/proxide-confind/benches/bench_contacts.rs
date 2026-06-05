@@ -13,7 +13,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 /// The benchmark would measure:
 /// - Time to compute all contacts for a structure
 /// - Time to compute contact degrees
-/// - Parallel efficiency of rayon work distribution
+/// - Parallel efficiency of orx-parallel work distribution
 /// - Grid query performance at scale
 /// - Memory usage during parallel phases
 ///

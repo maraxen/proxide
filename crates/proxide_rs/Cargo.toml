@@ -36,7 +36,6 @@ rand_distr.workspace = true
 
 # Optional dependencies
 reqwest = { workspace = true, optional = true }
-rayon = { workspace = true, optional = true }
 bytemuck = "1.25.0"
 
 [features]
@@ -45,5 +44,5 @@ fetching = ["proxide-io/fetching", "dep:reqwest"]
 hdf5 = ["proxide-io/hdf5"]
 foldcomp = ["proxide-io/foldcomp"]
 xtc = ["proxide-io/xtc"]
-parallel = ["proxide-io/parallel", "dep:rayon"]
+parallel = ["proxide-io/parallel"]
 full = ["fetching", "hdf5", "foldcomp", "xtc", "parallel"]

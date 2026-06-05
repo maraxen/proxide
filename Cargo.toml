@@ -14,6 +14,7 @@ members = [
     "crates/proxide-rotlib",
     "crates/proxide-confind",
     "crates/proxide-master",
+    "crates/proxide-parallel-rt",
 ]
 
 [workspace.package]
@@ -39,7 +40,7 @@ nom = "7.1"
 quick-xml = "0.31"
 flate2 = "1.0"
 memmap2 = "0.9"
-rayon = "1.10"
+orx-parallel = "2"
 log = "0.4"
 pyo3-log = "0.11"
 thiserror = "1.0"

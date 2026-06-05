@@ -12,7 +12,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 nalgebra = { workspace = true }
-rayon = { workspace = true }
+orx-parallel = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 bincode = { workspace = true }
@@ -21,6 +21,10 @@ bincode = { workspace = true }
 approx = { workspace = true }
 rand = { workspace = true }
 criterion = { workspace = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+proxide-parallel-rt = { path = "../proxide-parallel-rt" }
+getrandom = { version = "0.2", features = ["js"] }
 
 [[bench]]
 name = "search_bench"

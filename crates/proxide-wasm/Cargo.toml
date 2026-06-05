@@ -21,6 +21,7 @@ once_cell.workspace = true
 proxide-core = { path = "../proxide-core", default-features = false }
 proxide-gaff = { path = "../proxide-gaff" }
 proxide-io = { path = "../proxide-io", default-features = false, features = ["pdb"] }
+proxide-parallel-rt = { path = "../proxide-parallel-rt" }
 serde-wasm-bindgen = "0.6"
 
 [[bin]]

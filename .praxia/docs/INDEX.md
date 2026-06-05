@@ -23,6 +23,7 @@
 - [260529_rotlib](specs/260529_rotlib.md) — `proxide-rotlib` crate: standalone Rust port of MSL RotamerLibrary — binary format, backbone binning, Frame/Transform placement
 - [260529_confind](specs/260529_confind.md) — `proxide-confind` crate: rayon ConFind reimplementation; depends on proxide-rotlib (rev 3)
 - [260602_dunbrack-rotlib-protobuf-cis-pro](specs/260602_dunbrack-rotlib-protobuf-cis-pro.md) — Dunbrack 2010 → protobuf+zstd rotamer library; adds cis-PRO (CPR); MIT-code/ODC-BY-data; geometry engine (proline-first)
+- [260605_browser-wasm-parallel](specs/260605_browser-wasm-parallel.md) — Browser WASM parallelism: orx-parallel + wasm-bindgen-rayon + proxide-parallel-rt; 6 open risks; awaiting oracle critique
 
 ## Dynamic Workflows
 > Executable Claude Code Workflow scripts (`Workflow({ scriptPath: ... })`). See [dynamic_workflows/INDEX.md](dynamic_workflows/INDEX.md).

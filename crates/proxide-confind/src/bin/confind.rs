@@ -24,11 +24,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("loading PDB: {}", opts.pdb.display());
     let backbone = Arc::new(load_pdb_f64(&opts.pdb)?);
 
-    if let Some(n) = opts.threads {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(n)
-            .build_global()
-            .ok();
+    // orx-parallel doesn't have a global thread pool configuration;
+    // thread count is set per-call via .num_threads() on the par iterator.
+    if let Some(_n) = opts.threads {
+        log::info!("note: thread count is configured per-operation in orx-parallel");
     }
 
     let cf = ConFind::new(rotlib, backbone.clone(), false);

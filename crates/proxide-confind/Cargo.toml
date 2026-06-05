@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "ConFind contact-degree algorithm — Rust/rayon reimplementation of Mosaist mstcondeg"
+description = "ConFind contact-degree algorithm — Rust/orx-parallel reimplementation of Mosaist mstcondeg"
 keywords    = ["protein", "contact", "rotamer", "structural-biology"]
 
 [lib]
@@ -27,7 +27,7 @@ proxide-core     = { path = "../proxide-core" }
 proxide-geometry = { path = "../proxide-geometry" }
 proxide-io       = { path = "../proxide-io" }
 proxide-rotlib   = { path = "../proxide-rotlib" }
-rayon            = { workspace = true }
+orx-parallel     = { workspace = true }
 dashmap          = "6"
 thiserror        = { workspace = true }
 log              = { workspace = true }
@@ -41,6 +41,10 @@ features  = ["derive"]
 approx    = { workspace = true }
 tempfile  = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+proxide-parallel-rt = { path = "../proxide-parallel-rt" }
+getrandom = { version = "0.2", features = ["js"] }
 
 [features]
 default = []
