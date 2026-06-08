@@ -2,13 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use proxide_rotlib::RotamerId;
 
-/// Compute the freedom score for one residue.
+/// Compute rotamer freedom score: the fraction of conformational space uncontested by backbone or neighbors.
 ///
-/// `coll_prob`: map from rotamer ID → accumulated collision probability.
-/// `n_surviving`: surviving rotamer count for this residue.
-/// `n_library`: total library rotamer count for this residue.
-///
-/// Returns freedom type 2 by default (used by ConFind v1).
+/// Freedom quantifies sidechain conformational flexibility: 0 = fully constrained, 1 = completely free.
+/// Surviving rotamers and collision probability combine to estimate available rotamer space.
 pub fn compute_freedom(
     coll_prob: &HashMap<Arc<RotamerId>, f64>,
     n_surviving: usize,

@@ -36,6 +36,7 @@ pub struct ConFind {
 }
 
 impl ConFind {
+    /// Initialize a ConFind session with rotamer library, backbone geometry, and `strict` flag.
     pub fn new(
         rotlib: Arc<RotamerLibrary>,
         backbone: Arc<ProteinBackbone>,
@@ -75,6 +76,7 @@ impl ConFind {
         }
     }
 
+    /// Return the number of residues in the backbone.
     pub fn n_residues(&self) -> usize {
         self.backbone.bb.len()
     }
@@ -95,7 +97,7 @@ impl ConFind {
         Ok(())
     }
 
-    /// Phase A: cache all residues in parallel.
+    /// Phase A: cache all residues in parallel (idempotent, thread-safe).
     pub fn cache_all(&self) -> Result<(), ConFindError> {
         let n = self.backbone.bb.len() as u32;
         let indices: Vec<u32> = (0..n).collect();
@@ -121,7 +123,7 @@ impl ConFind {
             .collect()
     }
 
-    /// Compute CD for one pair; emit ClashTuples for Phase B2 collProb accumulation.
+    /// Compute contact degree for one residue pair and emit collision tuples for phase B2.
     pub fn contact_degree_with_clashes(
         &self,
         res_a: ResidueIndex,

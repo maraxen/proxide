@@ -40,7 +40,7 @@ pub const AA_NAMES: [&str; 18] = [
     "SER", "THR", "TRP", "TYR", "VAL",
 ];
 
-/// Background propensity (percent) matching Mosaist's `aaProp` table.
+/// Return background amino-acid propensity (percent) matching Mosaist's `aaProp` table.
 pub fn aa_propensity(aa: &str) -> f64 {
     match aa {
         "ALA" => 7.73,

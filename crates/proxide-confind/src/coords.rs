@@ -57,8 +57,9 @@ pub struct ProteinBackbone {
     pub chain_map: Vec<usize>,
 }
 
-/// Extract backbone from ProcessedStructure, widening f32 -> f64.
-/// Single f32->f64 boundary; no f32 appears in proxide-confind past this point.
+/// Extract backbone from ProcessedStructure, widening f32 to f64 for full-precision computation.
+///
+/// This is the single f32→f64 boundary; no f32 appears in proxide-confind past this point.
 pub fn extract_f64_backbone(s: &ProcessedStructure) -> Result<ProteinBackbone, ConFindError> {
     let mut bb: Vec<ResidueBackbone> = Vec::new();
     let mut ids: Vec<ResidueId> = Vec::new();
@@ -113,7 +114,7 @@ pub fn extract_f64_backbone(s: &ProcessedStructure) -> Result<ProteinBackbone, C
     Ok(ProteinBackbone { bb, ids, chain_map })
 }
 
-/// Parse a PDB re-reading cols 30-54 as f64 to recover full text precision.
+/// Parse a PDB file reading coordinate columns 30–54 as f64 for full text precision.
 pub fn load_pdb_f64<P: AsRef<Path>>(path: P) -> Result<ProteinBackbone, ConFindError> {
     use proxide_core::processing::residues::ProcessedStructure;
 

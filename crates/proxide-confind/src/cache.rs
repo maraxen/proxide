@@ -6,7 +6,7 @@ use proxide_rotlib::{counts_as_sidechain, RotamerId, RotamerLibrary};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-/// Per-residue data computed in Phase A.
+/// Per-residue rotamer cache computed in phase A: surviving rotamers, grids, and interference data.
 pub struct ResidueCache {
     pub surviving_rotamers: Vec<Arc<RotamerId>>,
     /// Per-aa proximity grid of surviving heavy-SC atoms.
@@ -21,7 +21,7 @@ pub struct ResidueCache {
     pub permanent_contacts: Vec<usize>,
 }
 
-/// Sum of aaProp[aa] * rotP over surviving rotamers of `res` in `available_aa`.
+/// Return sum of amino-acid propensity times rotamer probability over surviving rotamers in the available set.
 pub fn weight_of_available_rotamers(
     cache: &ResidueCache,
     rotlib: &RotamerLibrary,
@@ -46,7 +46,7 @@ pub fn weight_of_available_amino_acids(available_aa: &HashSet<&str>) -> f64 {
     available_aa.iter().map(|aa| aa_propensity(aa)).sum::<f64>() / 100.0
 }
 
-/// Build the backbone atom flat vector and a per-atom ResidueIndex lookup.
+/// Build flattened backbone atom coordinate vector and residue index mapping.
 pub fn build_bb_atoms(backbone: &ProteinBackbone) -> (Vec<[f64; 3]>, Vec<ResidueIndex>) {
     let mut atoms: Vec<[f64; 3]> = Vec::new();
     let mut atom_res: Vec<ResidueIndex> = Vec::new();
