@@ -1,0 +1,73 @@
+---
+workspace: proxide
+session_id: c78e2df4-sprint16-plan-oracle
+status: in_progress
+immediately_relevant:
+- file: .praxia/dynamic_workflows/260608_sprint-16-rotlib-source-pyobindings.js
+  lines:
+  - 1
+  - 50
+  reason: Oracle-approved sprint runner. A/B/C sequential (proxide-rotlib), D isolated worktree concurrent (proxide-py).
+- file: .praxia/sprint_plans/260608_sprint-16-rotlib-source-pyobindings.toml
+  lines:
+  - 1
+  - 30
+  reason: 'Source TOML. Regenerate JS with: praxia dw emit-sprint .praxia/sprint_plans/260608_sprint-16-rotlib-source-pyobindings.toml'
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 30
+  - 78
+  reason: '#1114: DunbrackRotamer struct (38-46) and ic_source matching (52-78) to be replaced by RotlibSource trait + DunbrackSource'
+- file: crates/proxide-rotlib/src/bin/parse_master.rs
+  lines:
+  - 23
+  - 31
+  reason: '#1115: Args struct has only --input/--output; --validate not yet added'
+- file: crates/proxide-rotlib/tests/test_ac_r_routing.rs
+  lines:
+  - 1
+  - 50
+  reason: '#819: existing CPR tests (build_pro_cpr_library ~line 44); new test must NOT use this helper'
+- file: crates/proxide_py/src/lib.rs
+  lines:
+  - 72
+  - 146
+  reason: '#1306: _proxider registration point; py_confind/py_rotlib/py_frag to be added here'
+active_dispatches: []
+task_id: 260608_sprint-16-rotlib-source-pyobindings
+phase: Sprint 16 — Ready to Run
+goal_statement: 'Execute Sprint 16: RotlibSource trait (#1114), parse_master --validate (#1115), PRO P6 verify+docs (#819), Python bindings skeleton (#1306).'
+context_refs:
+- phase: repo-cleanup
+  task_id: 260608_repo-cleanup-status-audit
+  summary: Merged all worktrees into main, renamed proxide-master→proxide-frag, closed 9 stale backlog items
+- phase: Sprint 14
+  task_id: 260604_rotlib_multi_source
+  summary: RTF/CCD IC importers merged; convert_rotlib --ic-source URI wired; confind migrated to load_pb()
+- phase: Sprint 15
+  task_id: 260605_browser_wasm_parallel
+  summary: orx-parallel migration + proxide-parallel-rt + init_parallel WASM export
+failed_attempts:
+- attempt_id: dw-emit-wrong-command
+  description: Used `praxia dw emit <sprint_id>` instead of `praxia dw emit-sprint <path>`
+  outcome: 'Error: template has no [template_to_js] mapping'
+  reason_failed: '`praxia dw emit` emits PCW YAML templates only; sprint TOML requires `praxia dw emit-sprint`'
+  do_not_retry: true
+  evidence_ref: null
+- attempt_id: toml-backslash-escaping
+  description: Used `\.` in TOML triple-quoted basic strings for grep regex patterns
+  outcome: 'TOML parse error: invalid escape sequence'
+  reason_failed: TOML basic strings treat `\` as escape char; regex `\.` must be written as `\\.` in TOML `"""` strings
+  do_not_retry: true
+  evidence_ref: null
+open_questions: []
+deferred:
+- description: '#977 EPIC META: Comprehensive system-prep audit'
+  rationale: Orphaned epic, no sub-items; needs decomposition before dispatch
+  recommended_phase: post-Sprint-16 planning
+lessons_refs: []
+next_steps:
+- 'Merge worktree into main: from main checkout run `git merge worktree-ancient-hopping-kazoo`, then run `Workflow(scriptPath: ''.praxia/dynamic_workflows/260608_sprint-16-rotlib-source-pyobindings.js'')`'
+- 'After sprint completes: close #1114, #1115, #819, #1306 with backlog update status:completed'
+- 'Decompose #977 EPIC (Comprehensive system-prep audit) — undecomposed, no sub-items, cannot dispatch as-is'
+---
