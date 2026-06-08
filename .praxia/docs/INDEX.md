@@ -1,5 +1,8 @@
 # proxide Internal Docs
 
+## Handoffs
+- [260601_proxide-parity-handoff](handoffs/260601_proxide-parity-handoff.md) — Session close: worktree pruning, ignored test fixes, constrained_contacts API; next = Mosaist parity test
+
 ## Notes
 - [260529_confind_model](notes/260529_confind_model.md) — Ground-truth algorithmic reference for ConFind (mstcondeg.cpp): parameter defaults, 4-phase cache pipeline, CD formula, freedom types, interference, bb-interaction, CLI I/O contract, parallelization hazard map
 

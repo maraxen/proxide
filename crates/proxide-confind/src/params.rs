@@ -10,13 +10,29 @@ pub const CLASH_DIST: f64 = 2.0;
 /// contribute to the collision-probability accumulation.
 pub const CONT_DIST: f64 = 3.0;
 
-/// Lower bound on the collision-probability weight applied when two atoms
-/// are within `CONT_DIST`.
-pub const LO_COLL_PROB: f64 = 0.5;
+/// Lower bound on the collision-probability weight used in freedom computation.
+///
+/// Empirically tuned in the Grigoryan lab MSL ConFind implementation.
+/// **Not calibrated against experimental flexibility measures (B-factors,
+/// NMR order parameters S²).** A `--freeB` mode (B-factor-calibrated freedom)
+/// is deferred to v2.
+///
+/// See ConFind freedom formula: `freedom_type=2` default.
+pub const LO_COLL_PROB_CUT: f64 = 0.5;
 
-/// Upper bound on the collision-probability weight (applied at or below
-/// `CLASH_DIST`).
-pub const HI_COLL_PROB: f64 = 2.0;
+/// Deprecated alias for [`LO_COLL_PROB_CUT`].
+#[deprecated(since = "0.1.0", note = "Use `LO_COLL_PROB_CUT` instead.")]
+pub const LO_COLL_PROB: f64 = LO_COLL_PROB_CUT;
+
+/// Upper bound on the collision-probability weight (applied at or below `CLASH_DIST`).
+///
+/// Empirically tuned; see [`LO_COLL_PROB_CUT`] note. Not calibrated against
+/// experimental flexibility measures (B-factors, NMR order parameters S²).
+pub const HI_COLL_PROB_CUT: f64 = 2.0;
+
+/// Deprecated alias for [`HI_COLL_PROB_CUT`].
+#[deprecated(since = "0.1.0", note = "Use `HI_COLL_PROB_CUT` instead.")]
+pub const HI_COLL_PROB: f64 = HI_COLL_PROB_CUT;
 
 /// 18 amino acids placed as rotamers (GLY and PRO excluded).
 pub const AA_NAMES: [&str; 18] = [

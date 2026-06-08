@@ -63,6 +63,32 @@ pub fn build_bb_atoms(backbone: &ProteinBackbone) -> (Vec<[f64; 3]>, Vec<Residue
 
 /// Cache one residue: place all rotamers, prune backbone clashes, accumulate interference.
 ///
+/// # Why Phase A pruning is non-skippable
+///
+/// Phase A backbone-clash pruning (`CLASH_DIST = 2.0 Å`) is non-skippable: backbone-clashing
+/// rotamers must be excluded from the `weight_of_available_rotamers` denominator before contact
+/// degree is computed. Including them would inflate the denominator and dilute all CD values.
+/// `crowdedness = fraction_pruned` is a free byproduct.
+///
+/// More precisely, the CD formula is:
+///
+/// ```text
+/// CD(i,j) = Σ aaProp_a * rotP_a * aaProp_b * rotP_b  /  W_a * W_b
+/// ```
+///
+/// where `W_a = Σ aaProp * rotP` over **surviving** rotamers of residue i.
+///
+/// If backbone-clashing rotamers were retained (Phase A skipped):
+/// 1. `W_a` would be inflated — physically impossible states would dilute all
+///    CD values, making every position appear more exposed than it is.
+/// 2. False sidechain–sidechain contacts would arise from clashing rotamers that
+///    can never coexist with the backbone.
+///
+/// `CLASH_DIST = 2.0 Å` is a hard vdW exclusion threshold, not a tunable approximation.
+/// `fraction_pruned` (crowdedness) is a free byproduct with zero additional compute cost.
+///
+/// # Thread safety
+///
 /// Thread-safe: reads from shared grids; writes only into `cache_out` and `interf_out`
 /// which are per-residue slots.
 #[allow(clippy::too_many_arguments)]
