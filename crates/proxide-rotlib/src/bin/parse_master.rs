@@ -26,6 +26,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use proxide_rotlib::RotamerLibrary;
+use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
 #[command(name = "parse_master")]
@@ -49,17 +50,20 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize tracing subscriber for structured logging
+    tracing_subscriber::fmt::init();
+
     let args = Args::parse();
 
-    // License warning — always to stderr before any processing
+    // License warning — to stderr before any processing
     eprintln!("WARNING: output is CC-BY-NC-SA 4.0 (Mosaist/Grigoryan lab). Do NOT commit or redistribute.");
 
     // Load the binary rotamer library
-    eprintln!("Loading MASTER library from {}...", args.input.display());
+    info!("Loading MASTER library from {}", args.input.display());
     let master_lib = RotamerLibrary::load(&args.input)?;
 
     // Convert to protobuf format
-    eprintln!("Converting {} residues to protobuf...", master_lib.residue_codes().len());
+    info!("Converting {} residues to protobuf", master_lib.residue_codes().len());
 
     let pb_lib = master_lib.to_protobuf(
         "master_precomputed".to_string(),
@@ -70,84 +74,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encoded = pb_lib.encode_to_vec();
 
     // Compress with zstd
-    eprintln!("Compressing with zstd...");
+    info!("Compressing with zstd");
     let compressed = zstd::encode_all(encoded.as_slice(), 0)?;
 
     // Write to output file
-    eprintln!("Writing {} bytes to {}...", compressed.len(), args.output.display());
+    info!("Writing {} bytes to {}", compressed.len(), args.output.display());
     let mut output_file = File::create(&args.output)?;
     output_file.write_all(&compressed)?;
 
-    eprintln!("Done. Output: {}", args.output.display());
+    info!("Done. Output: {}", args.output.display());
 
     // Validation: if --validate flag is set, run drift test
     if args.validate {
-        eprintln!("\n--- Running validation ---");
+        info!("Running validation");
         run_validation(&args.output)?;
     }
 
+    // License warning — to stderr after processing
     eprintln!("WARNING: output is CC-BY-NC-SA 4.0 (Mosaist/Grigoryan lab). Do NOT commit or redistribute.");
 
     Ok(())
 }
 
-/// Run drift validation against small.pdb.
-/// Loads the freshly written .pb.zst, runs confind, and measures max|delta| vs MASTER reference.
+/// Run validation to confirm the protobuf library loads successfully.
+/// This checks that the output is not corrupted and can be used immediately.
+/// The full drift test (comparing contact degrees against MASTER) is in the
+/// confind test suite: crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs
 fn run_validation(pb_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    // Check ROTLIB_PATH env var
-    let rotlib_path_str = match std::env::var("ROTLIB_PATH") {
+    // Check ROTLIB_PATH env var is set (confirms MASTER library is available)
+    let _rotlib_path_str = match std::env::var("ROTLIB_PATH") {
         Ok(p) => p,
         Err(_) => {
-            eprintln!("ROTLIB_PATH not set; skipping validation.");
+            warn!("ROTLIB_PATH not set; skipping validation");
             return Ok(());
         }
     };
 
-    let rotlib_path = PathBuf::from(&rotlib_path_str);
-    if !rotlib_path.exists() {
-        eprintln!("ROTLIB_PATH {} does not exist; skipping validation.", rotlib_path.display());
-        return Ok(());
-    }
-
-    // Try to find small.pdb test fixture
-    let small_pdb_candidates = &[
-        PathBuf::from("crates/proxide-confind/tests/data/small.pdb"),
-        PathBuf::from("tests/data/small.pdb"),
-    ];
-
-    let small_pdb_path = small_pdb_candidates
-        .iter()
-        .find(|p| p.exists())
-        .cloned();
-
-    if small_pdb_path.is_none() {
-        eprintln!("small.pdb test fixture not found; skipping validation.");
-        return Ok(());
-    }
-
-    let small_pdb_path = small_pdb_path.unwrap();
-    eprintln!("Loading test fixture from {}", small_pdb_path.display());
-
     // Load the freshly written output .pb.zst
-    eprintln!("Loading protobuf library from {}", pb_path.display());
+    info!("Loading protobuf library from {}", pb_path.display());
     let pb_lib = RotamerLibrary::load_pb(pb_path)?;
 
-    // Load small.pdb using a simple PDB parser (inline here to avoid test helper imports)
-    // For now, we'll use a minimal approach: just measure that the library loads and has content
+    // Verify the library loaded successfully and has content
     let n_residues = pb_lib.residue_codes().len();
-    eprintln!("Loaded {} residue types from protobuf", n_residues);
+    info!("Loaded {} residue types from protobuf", n_residues);
 
-    // Compute a simple validation metric: can we get rotamers for a common AA?
+    // Sanity check: verify we can query a common AA
     let test_aa = "ALA";
     if pb_lib.contains_aa(test_aa) {
         let n_rot = pb_lib.num_rotamers(test_aa, -60.0, -45.0, false)?;
-        eprintln!("Sample check: {} rotamers for {} at (-60, -45)", n_rot, test_aa);
+        info!("Sample check: {} rotamers for {} at (-60, -45)", n_rot, test_aa);
 
-        // For a full drift test, we'd need to integrate ConFind here.
-        // For now, just report success if the library loaded and has data.
-        eprintln!("\nVALIDATE max|delta|: 0.000000 (threshold 5e-4: PASS)");
+        // Confirm the library is valid
+        println!("VALIDATE max|delta|: N/A (stub — full drift test in confind test suite; library loaded OK)");
+        info!("Validation complete: protobuf library loads successfully");
     } else {
-        eprintln!("VALIDATE: unable to test (missing {}", test_aa);
+        warn!("VALIDATE: library does not contain ALA");
         return Ok(());
     }
 

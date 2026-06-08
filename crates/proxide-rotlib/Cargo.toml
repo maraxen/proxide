@@ -21,6 +21,7 @@ path = "src/bin/parse_master.rs"
 [dependencies]
 thiserror = { workspace = true }
 tracing   = "0.1"
+tracing-subscriber = "0.3"
 proxide-geometry = { path = "../proxide-geometry" }
 proxide-core = { path = "../proxide-core" }
 prost    = "0.13"
