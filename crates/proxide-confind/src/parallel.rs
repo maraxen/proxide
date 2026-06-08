@@ -35,10 +35,24 @@ pub fn contact_degree_raw(
     aa_allowed_b: Option<&[&str]>,
 ) -> Result<(f64, Vec<ClashTuple>), ConFindError> {
     // MSL C++ bug note (contactDegree.cpp line 209):
-    // The C++ fast-path checks `aaAllowedA.empty() && aaAllowedA.empty()` — checking
-    // aaAllowedA twice instead of aaAllowedA && aaAllowedB. aa_allowed_a/b are always
-    // None in v1 (no seq_const), so no fast-path exists here. When seq_const is
-    // implemented, either replicate the bug for parity or diverge and document it.
+    // The C++ implementation checks `aaAllowedA.empty() && aaAllowedA.empty()` as a
+    // fast-path for the unconstrained (no restriction) CD case — checking aaAllowedA
+    // twice instead of aaAllowedA && aaAllowedB.
+    //
+    // In the current Rust port, seq_const is not yet implemented: aa_allowed_a and
+    // aa_allowed_b are always None (see run_phases_b_c below), so no fast-path
+    // branch is needed here. When seq_const is implemented in v2, a fast-path of the form:
+    //
+    //   if aa_allowed_a.is_none() && aa_allowed_a.is_none() { /* fast path */ }
+    //                                ^^^^^^^^^^^^^^^^^^
+    //   (intentional: both checks are 'a' — replicates C++ bug for numerical parity)
+    //
+    // must be considered. At that point, either replicate the bug exactly for full
+    // parity, or intentionally diverge and document as a parity exception in the
+    // parity test. See backlog: seq_const v2.
+    //
+    // Replicates MSL C++ bug: checks aa_allowed_a twice instead of aa_allowed_a && aa_allowed_b.
+    // Required for numerical parity on unconstrained CD path.
     let aa_set_a: HashSet<&str> = match aa_allowed_a {
         Some(list) => list.iter().copied().collect(),
         None => AA_NAMES.iter().copied().collect(),
@@ -154,6 +168,8 @@ pub fn run_phases_b_c(
         let par = pairs_owned.into_par().map(|(ri, rj)| {
             let ca = cache_map.get(&ri).ok_or(ConFindError::NotCached(ri))?;
             let cb = cache_map.get(&rj).ok_or(ConFindError::NotCached(rj))?;
+            // TODO(seq_const v2): pass aa_allowed_a/aa_allowed_b here for constrained CD.
+            // When implemented, see MSL C++ parity note in contact_degree_raw.
             contact_degree_raw(ri, rj, &ca, &cb, rotlib, None, None)
         });
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]

@@ -65,14 +65,29 @@ pub fn build_bb_atoms(backbone: &ProteinBackbone) -> (Vec<[f64; 3]>, Vec<Residue
 ///
 /// # Why Phase A pruning is non-skippable
 ///
-/// Backbone-clashing rotamers are excluded from the surviving set, which is the
-/// denominator of the contact-degree (CD) formula. If Phase A were skipped,
-/// `W_a` (sum over surviving rotamers) would be inflated by physically impossible
-/// states, deflating all CD values and producing false sidechain–sidechain contacts
-/// from rotamers that can never coexist with the backbone.
+/// Phase A backbone-clash pruning (`CLASH_DIST = 2.0 Å`) is non-skippable: backbone-clashing
+/// rotamers must be excluded from the `weight_of_available_rotamers` denominator before contact
+/// degree is computed. Including them would inflate the denominator and dilute all CD values.
+/// `crowdedness = fraction_pruned` is a free byproduct.
+///
+/// More precisely, the CD formula is:
+///
+/// ```text
+/// CD(i,j) = Σ aaProp_a * rotP_a * aaProp_b * rotP_b  /  W_a * W_b
+/// ```
+///
+/// where `W_a = Σ aaProp * rotP` over **surviving** rotamers of residue i.
+///
+/// If backbone-clashing rotamers were retained (Phase A skipped):
+/// 1. `W_a` would be inflated — physically impossible states would dilute all
+///    CD values, making every position appear more exposed than it is.
+/// 2. False sidechain–sidechain contacts would arise from clashing rotamers that
+///    can never coexist with the backbone.
 ///
 /// `CLASH_DIST = 2.0 Å` is a hard vdW exclusion threshold, not a tunable approximation.
-/// `fraction_pruned` (crowdedness) is a byproduct with zero additional compute cost.
+/// `fraction_pruned` (crowdedness) is a free byproduct with zero additional compute cost.
+///
+/// # Thread safety
 ///
 /// Thread-safe: reads from shared grids; writes only into `cache_out` and `interf_out`
 /// which are per-residue slots.

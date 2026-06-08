@@ -4,7 +4,7 @@ use crate::coords::{ProteinBackbone, ResidueIndex};
 use crate::error::ConFindError;
 use crate::grid::ProximityGrid;
 use crate::parallel::{contact_degree_raw, run_phases_b_c};
-use crate::params::{CLASH_DIST, DCUT, HI_COLL_PROB, LO_COLL_PROB};
+use crate::params::{CLASH_DIST, DCUT, HI_COLL_PROB_CUT, LO_COLL_PROB_CUT};
 use dashmap::DashMap;
 use proxide_core::processing::residues::ResidueId;
 use proxide_rotlib::{RotamerId, RotamerLibrary};
@@ -162,8 +162,8 @@ impl ConFind {
             |ri| self.neighbors(ri),
             &self.coll_prob,
             &self.freedom,
-            LO_COLL_PROB,
-            HI_COLL_PROB,
+            LO_COLL_PROB_CUT,
+            HI_COLL_PROB_CUT,
         )
     }
 
