@@ -87,7 +87,10 @@ impl<const N: usize> Fragment<N, Raw> {
 
         // Subtract centroid.
         let mut centered_coords = self.coords;
+        // Use range loops because N is const generic; iter_mut() over const arrays is not ergonomic.
+        #[allow(clippy::needless_range_loop)]
         for r in 0..N {
+            #[allow(clippy::needless_range_loop)]
             for at in 0..4 {
                 centered_coords[r][at][0] -= centroid[0];
                 centered_coords[r][at][1] -= centroid[1];
