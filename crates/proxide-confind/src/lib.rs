@@ -33,8 +33,8 @@
 //! # References
 //!
 //! - Mosaist protein design suite: <https://grigoryanlab.org/mosaist/>
-//! - Grigoryan G, Keating AE. "Structural specificity in coiled-coil
-//!   interactions." *Curr Opin Struct Biol.* 2008;18(4):477-483.
+//! - Grigoryan G, DeGrado WF. "Probing designability via a generalized model of helical bundle
+//!   geometry." *J Mol Biol.* 2011;405(4):1079-1100.
 
 pub mod cache;
 pub mod confind;
