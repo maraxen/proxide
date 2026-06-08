@@ -96,7 +96,7 @@ impl CifParser {
         let mut in_quotes = false;
         let mut chars = line.chars().peekable();
 
-        while let Some(c) = chars.next() {
+        for c in chars.by_ref() {
             match c {
                 '\'' | '"' => {
                     in_quotes = !in_quotes;
@@ -121,8 +121,14 @@ impl CifParser {
     }
 }
 
+/// Bond map: (atom1, atom2) -> ideal distance
+type BondMap = HashMap<(String, String), f32>;
+
+/// Angle map: (atom1, center, atom3) -> ideal angle
+type AngleMap = HashMap<(String, String, String), f32>;
+
 /// Parse a CIF file and extract bond and angle ideal values.
-fn parse_cif_file(path: &Path) -> Result<(HashMap<(String, String), f32>, HashMap<(String, String, String), f32>), RotlibError> {
+fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
     let content = fs::read_to_string(path)
         .map_err(|e| RotlibError::InvalidFormat(format!("Failed to read CIF file {}: {}", path.display(), e)))?;
 
