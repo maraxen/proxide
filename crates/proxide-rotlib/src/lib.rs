@@ -46,6 +46,7 @@ pub mod binning;
 pub mod sidechain;
 pub mod geometry;
 pub mod pb;
+pub mod rotlib_source;
 
 pub use error::RotlibError;
 pub use rotamer_id::{RotamerId, PlacedRotamer, PlacedAtom};
