@@ -205,6 +205,42 @@ fn measure_loadpb_drift_vs_master() {
         if matched_count > 0 { (exceeding_tolerance * 100) / matched_count } else { 0 }
     ));
     report.push_str("\n");
+    // Classify terminal residues: residue 1 (N-terminal) or max res_id per chain (C-terminal).
+    // From REF_CONTACTS the chains are A and B, each with res_ids 1..7.
+    let terminal_res_ids: std::collections::HashSet<(String, i32)> = {
+        let mut m = std::collections::HashMap::<String, (i32, i32)>::new();
+        for &(ca, ra, cb, rb, _) in REF_CONTACTS {
+            let e = m.entry(ca.to_string()).or_insert((i32::MAX, i32::MIN));
+            e.0 = e.0.min(ra); e.1 = e.1.max(ra);
+            let e = m.entry(cb.to_string()).or_insert((i32::MAX, i32::MIN));
+            e.0 = e.0.min(rb); e.1 = e.1.max(rb);
+        }
+        m.iter().flat_map(|(ch, &(mn, mx))| {
+            [ch.clone(), ch.clone()].into_iter().zip([mn, mx])
+        }).collect()
+    };
+
+    let is_terminal = |chain: &str, res: i32| terminal_res_ids.contains(&(chain.to_string(), res));
+
+    let above_threshold: Vec<_> = largest_drift.iter()
+        .filter(|(_, _, _, _, _, _, d)| *d >= TOLERANCE)
+        .collect();
+
+    let terminal_involved = above_threshold.iter()
+        .filter(|(ca, ra, cb, rb, _, _, _)| is_terminal(ca, *ra) || is_terminal(cb, *rb))
+        .count();
+    let interior_only = above_threshold.len() - terminal_involved;
+
+    report.push_str(&format!("All {} pairs above threshold ({:.0e}):\n", above_threshold.len(), TOLERANCE));
+    report.push_str(&format!("  Terminal-residue involved: {}\n", terminal_involved));
+    report.push_str(&format!("  Interior-only:             {}\n\n", interior_only));
+
+    for (i, (ca, ra, cb, rb, actual, reference, delta)) in above_threshold.iter().enumerate() {
+        let flag = if is_terminal(ca, *ra) || is_terminal(cb, *rb) { " [TERMINAL]" } else { "" };
+        report.push_str(&format!("  {}. {},{} → {},{}{}\n", i + 1, ca, ra, cb, rb, flag));
+        report.push_str(&format!("     Actual:    {:.6}  Reference: {:.6}  Δ: {:.6}\n", actual, reference, delta));
+    }
+    report.push_str("\n");
     report.push_str("Top 10 largest-drift contacts:\n");
     report.push_str("\n");
 

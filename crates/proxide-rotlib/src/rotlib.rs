@@ -469,6 +469,91 @@ impl RotamerLibrary {
         let (_, bin) = self.resolve_entry_bin(aa, phi, psi, cis_proline)?;
         Ok(bin as u32)
     }
+
+    /// Get all residue codes present in the library.
+    pub fn residue_codes(&self) -> Vec<String> {
+        self.entries.keys().cloned().collect()
+    }
+
+    /// Convert MASTER library to protobuf format. Used by parse_master binary.
+    pub fn to_protobuf(&self, geometry_source: String, geometry_license: String) -> crate::pb::rotlib_v1::RotamerLibrary {
+        let mut residues = Vec::new();
+
+        for (code, entry) in &self.entries {
+            // Collect phi/psi centers
+            let phi_centers = entry.bin_phi_centers.clone();
+            let psi_centers = entry.bin_psi_centers.clone();
+
+            // Convert bins: linear array to protobuf structure
+            let mut bins = Vec::new();
+
+            for (bin_idx, bin_data) in entry.rotamers.iter().enumerate() {
+                // Reconstruct phi, psi from linear index (phi-major order: phi_ind * n_psi + psi_ind)
+                let n_psi = psi_centers.len();
+                let phi_ind = bin_idx / n_psi;
+                let psi_ind = bin_idx % n_psi;
+
+                let phi = phi_centers[phi_ind];
+                let psi = psi_centers[psi_ind];
+
+                // Convert rotamers within this bin
+                let mut rotamers = Vec::new();
+
+                for (rot_idx, prob) in bin_data.probs.iter().enumerate() {
+                    let coords = &bin_data.coords[rot_idx];
+                    let coord_vec = coords
+                        .iter()
+                        .map(|&[x, y, z]| crate::pb::rotlib_v1::Vec3 {
+                            x: x as f32,
+                            y: y as f32,
+                            z: z as f32,
+                        })
+                        .collect();
+
+                    rotamers.push(crate::pb::rotlib_v1::Rotamer {
+                        prob: *prob as f32,
+                        chi: Vec::new(), // No explicit chi in PRECOMPUTED mode
+                        coords: coord_vec,
+                    });
+                }
+
+                bins.push(crate::pb::rotlib_v1::Bin {
+                    phi,
+                    psi,
+                    freq: 0.0, // Not available from MASTER; placeholder
+                    rotamers,
+                });
+            }
+
+            // Build ResidueEntry
+            let residue_entry = crate::pb::rotlib_v1::ResidueEntry {
+                code: code.clone(),
+                atom_names: entry.atom_names.clone(),
+                num_chi: 0, // Not tracked in MASTER binary
+                phi_centers,
+                psi_centers,
+                default_bin: entry.default_bin,
+                bins,
+            };
+
+            residues.push(residue_entry);
+        }
+
+        crate::pb::rotlib_v1::RotamerLibrary {
+            version: 1,
+            provenance: "Mosaist Grigoryan lab; testfiles/rotlib.bin; NON-COMMERCIAL ONLY; \
+                NOT FOR REDISTRIBUTION"
+                .to_string(),
+            attribution: "Mosaist (https://github.com/Grigoryanlab/Mosaist), CC-BY-NC-SA 4.0, \
+                Grigoryan lab, Dartmouth"
+                .to_string(),
+            data_license: "CC-BY-NC-SA-4.0".to_string(),
+            geometry_mode: crate::pb::rotlib_v1::GeometryMode::Precomputed as i32,
+            residues,
+            geometry_source,
+            geometry_license,
+        }
+    }
 }
 
 #[cfg(test)]

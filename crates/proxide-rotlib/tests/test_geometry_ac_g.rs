@@ -284,6 +284,8 @@ fn test_ac_g_e_round_trip_identity() {
                 }],
             }],
         }],
+        geometry_source: String::new(),
+        geometry_license: String::new(),
     };
 
     // Write to temp file and load.

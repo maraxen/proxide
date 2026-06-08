@@ -239,4 +239,49 @@ mod tests {
         let cd_n = ideals.proline_cd_n_length("PRO").expect("PRO N-CD bond");
         assert!((cd_n - 1.455).abs() < 0.01, "PRO N-CD {cd_n:.3} Å != CHARMM 1.455");
     }
+
+    #[test]
+    fn test_glu_cb_angle_after_charmm_ideals() {
+        // Verify apply_charmm_ideals sets the correct bond_angle_deg for GLU CB (idx 4).
+        // Expected: NH1-CT1-CT2A = 113.5° from CHARMM36 FFXML.
+        use crate::geometry::template::standard_residue_template;
+        let ideals = load_charmm_ideals(&charmm_ffxml_path()).expect("parse CHARMM36 FFXML");
+        let mut template = standard_residue_template("GLU").expect("GLU template");
+
+        // Before: Engh-Huber placeholder (110.5°)
+        let before = template.bonds[4].expect("CB bond").bond_angle_deg;
+
+        let applied = apply_charmm_ideals(&mut template, &ideals, "GLU").expect("apply ideals");
+
+        let after = template.bonds[4].expect("CB bond after").bond_angle_deg;
+        eprintln!("GLU CB bond_angle_deg: before={before:.3} after={after:.3} applied={applied}");
+
+        // CHARMM NH1-CT1-CT2A = 113.5°; must differ from placeholder 110.5°
+        assert!(
+            (after - 113.5).abs() < 0.5,
+            "GLU CB angle after CHARMM = {after:.3}°, expected ~113.5°"
+        );
+    }
+
+    #[test]
+    fn test_charmm_angle_lookup_direct() {
+        // Directly verify the class-lookup chain for GLU CB works end-to-end.
+        let ideals = load_charmm_ideals(&charmm_ffxml_path()).expect("parse CHARMM36 FFXML");
+
+        let cb_class = ideals.class_of("GLU", "CB");
+        let ca_class = ideals.class_of("GLU", "CA");
+        let n_class  = ideals.class_of("GLU", "N");
+        eprintln!("GLU classes: CB={cb_class:?} CA={ca_class:?} N={n_class:?}");
+
+        assert_eq!(cb_class.as_deref(), Some("CT2A"), "CB class");
+        assert_eq!(ca_class.as_deref(), Some("CT1"),  "CA class");
+        assert_eq!(n_class.as_deref(),  Some("NH1"),  "N class");
+
+        let angle = ideals.bond_angle("CT2A", "CT1", "NH1");
+        eprintln!("CT2A-CT1-NH1 angle = {angle:?}°");
+        assert!(
+            angle.map(|a| (a - 113.5).abs() < 0.5).unwrap_or(false),
+            "angle not found or wrong: {angle:?}"
+        );
+    }
 }

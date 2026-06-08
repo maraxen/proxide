@@ -1,0 +1,151 @@
+[experiment]
+hypothesis = """
+After fixing the primary load_pb drift bug (CA-at-origin seed), a residual remains:
+max |Δ| 0.382, worst pairs all long/charged sidechains (A1<->A4 ARG-GLN, etc).
+
+ROOT CAUSE CANDIDATES:
+  (a) Uniform N-CA-CB angle offset (proxide template angle consistently wrong by ~2°)
+  (b) Single global backbone-axis rotation (frame is rotated uniformly)
+  (c) Per-residue scatter (no simple structural fix)
+  (d) Other (leverage-arm combination, bin-specific biases, etc)
+
+This measurement pipeline measures these structural parameters directly from
+the CA-origin pb and MASTER rotlib.bin to isolate the residual's nature.
+"""
+
+[outcomes.pass]
+condition = """
+The measurement completes without fatal errors.
+At least 10 shared residues measured across pb and rotlib.bin.
+Both N-CA-CB angles and Kabsch fits computed successfully.
+"""
+signals = [
+  "ncacb_analysis.std_delta_deg < 0.5 → hypothesis (a): uniform angle offset",
+  "rotation_analysis.global_rotation_deg > 0.5 with consistent axis → hypothesis (b): global rotation",
+  "lever_arm linear_fit.slope_rmsd_per_A > 0.01 → rotation signature present",
+  "per-residue Kabsch angles + axes clustered vs scattered → distinguish (b) from (c)",
+]
+interpretation = """
+If std(Δ_angle) < 0.5°, the residual is a uniform N-CA-CB offset:
+  Residues consistently use a template angle 2° too open/closed vs MASTER.
+  FIX: adjust template angle in geometry/template.rs by mean_delta_deg.
+
+If global_rotation_deg > 0.5° with per-residue rotations clustering,
+the residual is a backbone-axis rotation:
+  Single global frame misalignment (frame origin/axis offset).
+  FIX: adjust backbone seed or frame reorientation in place_rotamer.
+
+If both scatter significantly, or lever-arm slope ~ 0:
+  Residual is not a simple structural fix; may require:
+    - Per-residue angle tuning (more complex)
+    - Downstream geometry (improper angles, etc)
+    - Non-structural factor (bin-specific biases)
+"""
+is_residual = true
+
+[outcomes.marginal]
+condition = """
+Measurement completes but:
+  - < 10 shared residues, OR
+  - Mixed signals (some uniform offset + some rotation scatter), OR
+  - Global rotation significant but no clear axis
+"""
+signals = [
+  "Mixed std(Δ_angle) and rotation_deg suggest multiple failure modes",
+  "Insufficient residue sampling for robust conclusion",
+]
+interpretation = """
+Result is inconclusive. Consider:
+  1. Expanding measurement to all 20 residues (not just small.pdb subset)
+  2. Checking if high-frequency bins differ from low-frequency
+  3. Checking per-chi-bin variability (different χ1 states may have different offsets)
+  4. Measuring bond angles beyond N-CA-CB (CB-CG-CD, etc) for fuller geometry picture
+"""
+is_residual = false
+
+[outcomes.fail]
+condition = """
+Fatal errors prevent measurement:
+  - pb file corrupted or missing
+  - rotlib.bin missing or unreadable
+  - proto compilation fails
+  - < 3 shared residues measured
+  - Kabsch fit fails or produces NaN
+"""
+signals = [
+  "FileNotFoundError, ParseError, RuntimeError in logs",
+  "RMSD = NaN or rotation_angle = NaN in output",
+]
+interpretation = """
+Measurement infrastructure broken. Debug:
+  1. Verify pb and rotlib.bin paths exist and are readable
+  2. Run proto compile step in isolation (rebuild_pb_36grid.py --self-test)
+  3. Check that both libraries have consistent residue coverage
+  4. Verify Kabsch implementation on known test case (--self-test)
+"""
+is_residual = false
+
+[result_schema]
+ncacb_angles = {
+  "<residue_code>": {
+    pb_ncacb_deg = "float: N-CA-CB angle from pb",
+    master_ncacb_deg = "float: N-CA-CB angle from rotlib.bin",
+    delta_deg = "float: pb angle - master angle",
+    best_bin_phi = "float: phi center of most-populated shared bin",
+    best_bin_psi = "float: psi center of most-populated shared bin",
+    best_bin_freq = "float: frequency of that bin",
+  },
+}
+
+per_residue_kabsch = {
+  "<residue_code>": {
+    rmsd_A = "float: RMSD after fitting pb coords to master coords",
+    rotation_angle_deg = "float: rotation angle in degrees",
+    rotation_axis = "list[float]: unit vector of rotation axis",
+    translation_A = "list[float]: translation vector in Angstroms",
+  },
+}
+
+global_kabsch = {
+  n_matched_atoms = "int: total atoms pooled across residues/bins",
+  rmsd_A = "float: global RMSD",
+  rotation_angle_deg = "float: global rotation angle",
+  rotation_axis = "list[float]: global rotation axis (unit vector)",
+  translation_A = "list[float]: global translation",
+}
+
+ncacb_analysis = {
+  mean_delta_deg = "float: mean N-CA-CB offset across residues",
+  std_delta_deg = "float: standard deviation of offsets (< 0.5° → uniform)",
+  interpretation = "string: 'uniform offset' or 'per-residue scatter'",
+}
+
+rotation_analysis = {
+  global_rotation_deg = "float: magnitude of global rotation",
+  is_significant = "bool: true if > 0.5°",
+}
+
+lever_arm_analysis = {
+  "0_1A" = { n_atoms = "int", mean_rmsd_A = "float", median_rmsd_A = "float", max_rmsd_A = "float" },
+  "1_2A" = { n_atoms = "int", mean_rmsd_A = "float", median_rmsd_A = "float", max_rmsd_A = "float" },
+  "2_3A" = { n_atoms = "int", mean_rmsd_A = "float", median_rmsd_A = "float", max_rmsd_A = "float" },
+  "3_4A" = { n_atoms = "int", mean_rmsd_A = "float", median_rmsd_A = "float", max_rmsd_A = "float" },
+  "4plus_A" = { n_atoms = "int", mean_rmsd_A = "float", median_rmsd_A = "float", max_rmsd_A = "float" },
+  linear_fit = {
+    slope_rmsd_per_A = "float: positive slope indicates rotation signature",
+    interpretation = "string: 'positive slope indicates lever-arm signature (rotation)'",
+  },
+}
+
+conclusion = "string: one-line diagnosis of residual's nature (a/b/c/d)"
+
+[result_schema.provenance]
+pb_path = "string: /home/marielle/projects/proxide/.claude/worktrees/loadpb-frame-fix/data/rotlibs/proxide-rotlib-bbdep2010.pb.zst"
+pb_sha256 = "PLACEHOLDER_RUN_TO_FILL"
+rotlib_bin_path = "string: /home/marielle/repos/mosaist/testfiles/rotlib.bin"
+rotlib_bin_sha256 = "0xedabc73f9a9e9536fa0665fcf3820dbf22b05e646271e7c0a70b3d68b7f3a0da (from task context)"
+script_path = "string: scripts/analysis/measure_caorigin_residual_vs_master.py"
+script_commit_sha = "PLACEHOLDER_RUN_TO_FILL"
+python_version = "3.11+"
+numpy_version = "1.26+"
+scipy_version = "1.10+"

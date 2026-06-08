@@ -12,6 +12,7 @@
 ## Research
 - [260602_rotlib-notebook-plan](research/260602_rotlib-notebook-plan.md) — NotebookLM research notebook plan: rotamer library + confind sources, prompts, and expected outputs for grounding project direction
 - [260603_master-rotlib-cartesian-derivation](research/260603_master-rotlib-cartesian-derivation.md) — #820: MASTER built rotlib.bin Cartesians from CHARMM ideal ICs (not Engh-Huber); measured ground truth root-causes the load_pb drift; fix = source ICs from proxide's bundled charmm36_protein.xml
+- [260603_branch-torsion-offset-diagnostic](research/260603_branch-torsion-offset-diagnostic.md) — #869 diagnostic: measure branch atom torsion offsets in MASTER rotlib.bin; hypothesis = failing residues (GLU/PHE/ASP/LEU/VAL/MET) have offset != template constant; pass = confines error source; fail = error from bond angles or CB placement
 
 ## Plans
 - [260602_rotlib-confind-actions](plans/260602_rotlib-confind-actions.md) — Post-NLM-synthesis action plan: rotlib and confind code/doc actions with citations
@@ -23,11 +24,13 @@
 - [260529_rotlib](specs/260529_rotlib.md) — `proxide-rotlib` crate: standalone Rust port of MSL RotamerLibrary — binary format, backbone binning, Frame/Transform placement
 - [260529_confind](specs/260529_confind.md) — `proxide-confind` crate: rayon ConFind reimplementation; depends on proxide-rotlib (rev 3)
 - [260602_dunbrack-rotlib-protobuf-cis-pro](specs/260602_dunbrack-rotlib-protobuf-cis-pro.md) — Dunbrack 2010 → protobuf+zstd rotamer library; adds cis-PRO (CPR); MIT-code/ODC-BY-data; geometry engine (proline-first)
+- [260604_rotlib-ic-geometry-schema](specs/260604_rotlib-ic-geometry-schema.md) — Unified residue_geometry.proto (IcRecord build-tree schema, multi-source) + CHARMM36 RTF/CCD importers + parse_master dev tool (#987, #988); supersedes #976
 - [260605_browser-wasm-parallel](specs/260605_browser-wasm-parallel.md) — Browser WASM parallelism: orx-parallel + wasm-bindgen-rayon + proxide-parallel-rt; 6 open risks; awaiting oracle critique
 
 ## Dynamic Workflows
 > Executable Claude Code Workflow scripts (`Workflow({ scriptPath: ... })`). See [dynamic_workflows/INDEX.md](dynamic_workflows/INDEX.md).
 - [260602_dunbrack-rotlib-sprint.js](dynamic_workflows/260602_dunbrack-rotlib-sprint.js) — Sprint #12 executor: Dunbrack→protobuf rotlib + cis-PRO (Research ∥ P1→P6). Backlog #814–#820.
+- [260604_rotlib-ic-sprint13.js](dynamic_workflows/260604_rotlib-ic-sprint13.js) — Sprint #13 executor: residue_geometry.proto + RTF IC parser + CCD importer + convert_rotlib wiring + parse_master + confind migration. Backlog #987/#988/#869.
 
 ## Superpowers
 > Skill outputs live in `.praxia/docs/superpowers/plans/` and `.praxia/docs/superpowers/specs/`.

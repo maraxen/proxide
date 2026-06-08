@@ -8,6 +8,8 @@ message RotamerLibrary {
   string data_license = 4;
   GeometryMode geometry_mode = 5;
   repeated ResidueEntry residues = 6;
+  string geometry_source = 7;  // ResidueGeometryTable.source used to build coords
+  string geometry_license = 8; // ResidueGeometryTable.license of that source
 }
 
 enum GeometryMode {
