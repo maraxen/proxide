@@ -366,6 +366,57 @@ fn test_ac_r_fallback_no_cpr_entry() {
     );
 }
 
+/// AC-R fallback place_rotamer: when a library has PRO but no CPR,
+/// place_rotamer("PRO",...,cis=true) falls back to PRO coords without panic,
+/// returning identical coords to place_rotamer("PRO",...,cis=false).
+#[test]
+fn test_cpr_fallback_when_cpro_absent() {
+    let pb_lib = build_pro_only_library();
+    let path = write_pb_lib(&pb_lib, "cpr_fallback");
+
+    let lib = RotamerLibrary::load_pb(&path).expect("load_pb failed");
+    std::fs::remove_file(&path).ok();
+
+    assert!(!lib.contains_aa("CPR"), "precondition: no CPR entry");
+
+    // Identity backbone: N=[-1,0,0], CA=[0,0,0], C=[0,1,0]
+    let n  = [-1.0_f64, 0.0, 0.0];
+    let ca = [ 0.0_f64, 0.0, 0.0];
+    let c  = [ 0.0_f64, 1.0, 0.0];
+
+    // place_rotamer with cis=false (trans PRO)
+    let p_normal = lib.place_rotamer("PRO", -180.0, -180.0, 0, false, n, ca, c)
+        .expect("place_rotamer PRO cis=false failed");
+
+    // place_rotamer with cis=true (fallback: no CPR, so uses PRO)
+    let p_cis = lib.place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
+        .expect("place_rotamer PRO cis=true with no CPR must not panic");
+
+    // Verify atom counts match
+    assert_eq!(
+        p_normal.atoms.len(),
+        p_cis.atoms.len(),
+        "atom count must match in fallback: normal={}, cis={}",
+        p_normal.atoms.len(),
+        p_cis.atoms.len()
+    );
+
+    // Verify coords match within tolerance (1e-6 Å)
+    for (atom_normal, atom_cis) in p_normal.atoms.iter().zip(p_cis.atoms.iter()) {
+        for i in 0..3 {
+            assert!(
+                (atom_normal.xyz[i] - atom_cis.xyz[i]).abs() < 1e-6,
+                "fallback PRO(cis) must return same coords as PRO(trans) when CPRO absent: \
+                 atom '{}' coord[{i}]: normal={:.9}, cis={:.9}, diff={:.2e} >= 1e-6",
+                atom_normal.name,
+                atom_normal.xyz[i],
+                atom_cis.xyz[i],
+                (atom_normal.xyz[i] - atom_cis.xyz[i]).abs()
+            );
+        }
+    }
+}
+
 // ─── AC-R(3): real data, artifact-gated #[ignore] ─────────────────────────────
 
 /// AC-R(3): Real Dunbrack 2010 BBdep library — cis-proline χ1 check.

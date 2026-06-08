@@ -21,6 +21,13 @@ This attribution is recorded in the `RotamerLibrary.attribution` field of every 
 
 The MASTER/Mosaist `rotlib.bin` file (published under CC BY-NC-SA) is **not** redistributed by this crate. All rotamer coordinates are rebuilt from the Dunbrack ODC-BY text library using standard protein geometry, ensuring the ODC-BY license applies to the derived coordinates.
 
+### Data Attribution
+
+This crate ships pre-built rotamer libraries derived from:
+
+- **Dunbrack BBDEP 2010 (SimpleOpt1-5)** — Shapovalov & Dunbrack (2011), *Structure* 19(6):844–858. License: **ODC-BY-1.0** (Open Data Commons Attribution). Attribution: "Contains data from the Dunbrack Backbone-Dependent Rotamer Library."
+- **PDB Chemical Component Dictionary (CCD)** — RCSB PDB. License: **CC0-1.0**.
+
 ### ODC-BY-1.0 License
 
 Full text: https://opendatacommons.org/licenses/by/1-0/
