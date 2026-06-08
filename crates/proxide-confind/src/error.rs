@@ -1,5 +1,6 @@
 use crate::coords::ResidueIndex;
 
+/// Error type for ConFind operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ConFindError {
     #[error("residue {0:?} not cached — call cache_residue first")]

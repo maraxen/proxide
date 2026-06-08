@@ -14,7 +14,7 @@ pub struct ResidueCache {
     pub rotamer_grids: HashMap<String, Option<ProximityGrid<Arc<RotamerId>>>>,
     pub fraction_pruned: f64,
     pub n_library_rotamers: usize,
-    /// interference[resB_idx][aa] = accumulated aaP * rotP / 100
+    /// interference[resB_idx][`aa`] = accumulated aaP * rotP / 100
     pub interference: HashMap<ResidueIndex, HashMap<String, f64>>,
     /// Backbone atoms permanently clashed by any ALA rotamer of self.
     /// Stores raw backbone atom indices for constrained-contacts lookup.
@@ -41,7 +41,7 @@ pub fn weight_of_available_rotamers(
         .sum()
 }
 
-/// Sum of aaProp[aa] for each aa in `available_aa`, divided by 100.
+/// Sum of `aaProp` for each amino acid in `available_aa`, divided by 100.
 pub fn weight_of_available_amino_acids(available_aa: &HashSet<&str>) -> f64 {
     available_aa.iter().map(|aa| aa_propensity(aa)).sum::<f64>() / 100.0
 }
