@@ -3,7 +3,6 @@
 /// Reads a rotamer source (e.g., Dunbrack text file), groups rotamers by (residue, phi, psi),
 /// builds sidechain coordinates using template geometry and NeRF, and serializes to
 /// compressed protobuf.
-
 use clap::Parser;
 use std::fs::File;
 use std::io::Write;
@@ -208,7 +207,7 @@ fn build_library(
             .atom_names
             .iter()
             .skip(4) // Skip N, CA, C, O
-            .map(|s| s.clone())
+            .cloned()
             .collect();
 
         // Build proto bins

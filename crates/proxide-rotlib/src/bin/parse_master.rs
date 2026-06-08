@@ -19,12 +19,11 @@
 /// distribute it to others.
 ///
 /// WARNING: Output carries CC-BY-NC-SA license. Do NOT commit to version control.
-
 use clap::Parser;
 use prost::Message;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use proxide_rotlib::RotamerLibrary;
 use tracing::{info, warn};
 
@@ -100,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// This checks that the output is not corrupted and can be used immediately.
 /// The full drift test (comparing contact degrees against MASTER) is in the
 /// confind test suite: crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs
-fn run_validation(pb_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn run_validation(pb_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Check ROTLIB_PATH env var is set (confirms MASTER library is available)
     let _rotlib_path_str = match std::env::var("ROTLIB_PATH") {
         Ok(p) => p,
