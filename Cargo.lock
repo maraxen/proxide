@@ -2204,6 +2204,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxide-frag"
+version = "0.1.0-alpha.7"
+dependencies = [
+ "approx",
+ "bincode",
+ "criterion",
+ "getrandom 0.2.17",
+ "nalgebra",
+ "orx-parallel",
+ "proxide-parallel-rt",
+ "rand",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "proxide-gaff"
 version = "0.1.0-alpha.7"
 dependencies = [
@@ -2247,22 +2263,6 @@ dependencies = [
  "quick-xml",
  "reqwest",
  "tempfile",
- "thiserror",
-]
-
-[[package]]
-name = "proxide-master"
-version = "0.1.0-alpha.7"
-dependencies = [
- "approx",
- "bincode",
- "criterion",
- "getrandom 0.2.17",
- "nalgebra",
- "orx-parallel",
- "proxide-parallel-rt",
- "rand",
- "serde",
  "thiserror",
 ]
 

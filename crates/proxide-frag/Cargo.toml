@@ -1,10 +1,10 @@
 [package]
-name = "proxide-master"
+name = "proxide-frag"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Backbone RMSD substructure search (MASTER-style) — Kabsch superposition over fragment databases"
+description = "Backbone fragment search — Kabsch RMSD over fixed-length fragment databases (MASTER-style)"
 keywords = ["protein", "rmsd", "structure", "search", "kabsch"]
 
 [lib]

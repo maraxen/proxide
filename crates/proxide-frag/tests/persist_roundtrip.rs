@@ -1,4 +1,4 @@
-use proxide_master::*;
+use proxide_frag::*;
 use std::env;
 
 #[test]
@@ -48,7 +48,7 @@ fn test_persist_roundtrip() {
     assert_eq!(db.len(), 1, "Database should have 1 entry");
 
     // Save to temp file
-    let temp_path = env::temp_dir().join("proxide_master_persist_roundtrip_integration.bin");
+    let temp_path = env::temp_dir().join("proxide_frag_persist_roundtrip_integration.bin");
     db.save(&temp_path).expect("Failed to save");
 
     // Load it back
@@ -104,7 +104,7 @@ fn test_persist_arity_mismatch() {
     let db = builder.build();
 
     // Save to temp file
-    let temp_path = env::temp_dir().join("proxide_master_persist_arity_mismatch_integration.bin");
+    let temp_path = env::temp_dir().join("proxide_frag_persist_arity_mismatch_integration.bin");
     db.save(&temp_path).expect("Failed to save");
 
     // Try to load with N=4 (wrong arity)

@@ -87,7 +87,7 @@ with non-standard requirements pass their own value.
   threshold without re-running ConFind.
 - `CONTACT_THRESHOLD` has no coupling to the residue cache; it is applied once at output
   filtering. Varying it never invalidates cached data.
-- `proxide-master` (the forthcoming TERM construction crate) can import `CONTACT_THRESHOLD`
+- `proxide-frag` (the forthcoming TERM construction crate) can import `CONTACT_THRESHOLD`
   from `proxide-confind` and use it as its default, establishing a single source of truth.
 - Consistent with how the Grigoryan lab tools expose the threshold: it is a named parameter
   in the MSL CLI, not a sealed constant.
@@ -145,11 +145,11 @@ requirements:
 The API should express canonical behavior via a named constant, not enforce it via
 encapsulation.
 
-### Single source of truth for proxide-master
+### Single source of truth for proxide-frag
 
-`proxide-master` (the forthcoming TERM construction crate, backlog item B5) will need to
+`proxide-frag` (the forthcoming TERM construction crate, backlog item B5) will need to
 know the canonical contact threshold to define TERM segments from the ConFind contact graph.
-If `CONTACT_THRESHOLD` is a `pub const` in `proxide-confind`, `proxide-master` imports it:
+If `CONTACT_THRESHOLD` is a `pub const` in `proxide-confind`, `proxide-frag` imports it:
 
 ```rust
 use proxide_confind::CONTACT_THRESHOLD;
@@ -199,7 +199,7 @@ let loose_contacts = contacts.filter(0.01);   // broad sampling
 
 No recomputation of ConFind is required; the same `ContactList` is re-filtered.
 
-### proxide-master TERM construction
+### proxide-frag TERM construction
 
 Imports `CONTACT_THRESHOLD` from `proxide-confind` and uses it as the default threshold
 for TERM neighborhood construction. Researchers may override it for non-standard TERM
@@ -207,7 +207,7 @@ density experiments.
 
 ### Documentation
 
-All uses of `0.02` as a literal in `proxide-confind` and `proxide-master` tests are
+All uses of `0.02` as a literal in `proxide-confind` and `proxide-frag` tests are
 replaced with `CONTACT_THRESHOLD`. The citation (Zheng & Grigoryan 2017, eq. 9) appears
 in the const doc comment and is rendered by `cargo doc`.
 
@@ -230,4 +230,4 @@ neighborhood construction.
 - synthesis:B1 — canonical source for this decision
 - synthesis:B6 — RotlibRegistry closed; single-library architecture confirmed
 - Plan: `.praxia/docs/plans/260602_rotlib-confind-actions.md`, actions B1, B5
-- Future crate: `proxide-master` (backlog item B5) — principal downstream consumer
+- Future crate: `proxide-frag` (backlog item B5) — principal downstream consumer

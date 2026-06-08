@@ -1,12 +1,12 @@
 ---
 session_id: 98a30224
-topic: Design the proxide-master crate: backbone RMSD substructure search (MASTER-style) — data structures, search algorithm, API surface, and integration with proxide
+topic: Design the proxide-frag crate: backbone RMSD substructure search (MASTER-style) — data structures, search algorithm, API surface, and integration with proxide
 task_type: constrained-technical
 winner: Pre-centering at build time + full 3D coordinates stored + phantom-typed Fragment&lt;Centered&gt;/Fragment&lt;Raw&gt; to encode centroid state in the type system. Enables the fast inner-product RMSD form (RMSD² = (||A||² + ||B||²)/N − 2·max_σ(SVD(AᵀB))/N), preserves full geometry for downstream use (alignment transform recoverable), and eliminates the centering footgun via compile-time enforcement. Database stores pre-centered coords + centroid vector per fragment so the original geometry can be reconstructed.
 created_at: 2026-06-02T14:58:34.071912+00:00
 ---
 
-# Brainstorm: Design the proxide-master crate: backbone RMSD substructure search (MASTER-style) — data structures, search algorithm, API surface, and integration with proxide
+# Brainstorm: Design the proxide-frag crate: backbone RMSD substructure search (MASTER-style) — data structures, search algorithm, API surface, and integration with proxide
 
 ## Problem Frame
 Fixed constraints:

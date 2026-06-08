@@ -340,7 +340,7 @@ impl ContactList {
 **Why.** synthesis:B1 — CD threshold 0.02 defines "poised to interact" in dTERMen;
 the current `cd_cut` parameter in `run_phases_b_c` (parallel.rs line 113) applies it at
 construction time, coupling it to the computation. Exposing it as a named const enables
-downstream callers (proxide-master and others) to vary TERM tightness without re-running
+downstream callers (proxide-frag and others) to vary TERM tightness without re-running
 ConFind. See also ADR: `260602_contact-threshold-adr.md`.
 
 **Success criteria.**
@@ -501,12 +501,12 @@ Zheng & Grigoryan (2017).
 
 ---
 
-### B5 — Backlog item: proxide-master crate
+### B5 — Backlog item: proxide-frag crate
 
 **What.** Register a new backlog item in the project backlog system:
 
 ```
-[P2] proxide-master — backbone RMSD substructure search over a curated PDB fragment library
+[P2] proxide-frag — backbone RMSD substructure search over a curated PDB fragment library
 
 Category: research
 Difficulty: extended
@@ -530,7 +530,7 @@ Description:
 **Why.** synthesis:B5 — Rosetta packer uses physics-based pairwise-decomposable energies.
 dTERMen uses ConFind contact degree to define TERM neighborhoods, then MASTER for backbone
 RMSD matching, then sequence statistics from matched fragments. The next crate after
-proxide-confind is proxide-master, not a packer. Source: Zheng & Grigoryan (2017) for
+proxide-confind is proxide-frag, not a packer. Source: Zheng & Grigoryan (2017) for
 dTERMen; Zhou et al. (2015) *Structure* 23:2376 for MASTER.
 
 **Success criteria.**
@@ -582,7 +582,7 @@ Source: Dunbrack (2010) *Structure* 18:1456–1467; Shapovalov & Dunbrack (2011)
 
 Two new backlog items are produced by this synthesis:
 
-### Backlog Item 1: proxide-master crate
+### Backlog Item 1: proxide-frag crate
 
 | Field       | Value                                           |
 |-------------|------------------------------------------------|

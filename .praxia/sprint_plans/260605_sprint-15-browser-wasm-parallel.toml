@@ -48,7 +48,7 @@ Run: grep -rn 'num_threads(1)' crates/ to find all sites. The files are:
   crates/proxide-confind/src/parallel.rs
   crates/proxide-io/src/formatters/full.rs
   crates/proxide-io/src/formats/fasta.rs
-  crates/proxide-master/src/search.rs
+  crates/proxide-frag/src/search.rs
 
 For each match inside a `let par = par.num_threads(1)` block, change the cfg attribute above it:
   #[cfg(target_arch = "wasm32")]
@@ -60,7 +60,7 @@ Do NOT change any other #[cfg(target_arch = "wasm32")] guards unrelated to the n
 ## Acceptance criteria
 1. grep -rn 'cfg(target_arch = "wasm32")' crates/ | grep num_threads  ->  ZERO lines
 2. grep -rn 'all(target_arch = "wasm32", target_os = "unknown")' crates/ | grep num_threads  ->  10 lines
-3. cargo test -p proxide-confind -p proxide-io -p proxide-master exits 0
+3. cargo test -p proxide-confind -p proxide-io -p proxide-frag exits 0
 4. cargo check --target wasm32-unknown-unknown -p proxide-confind exits 0
 '''
 reviewer_prompt = '''
@@ -76,7 +76,7 @@ grep -rn 'cfg(target_arch = "wasm32")' crates/ | grep -v 'target_os' | grep num_
 — must return ZERO lines (no old broad gate with num_threads)
 
 ### Test suite
-cargo test -p proxide-confind -p proxide-io -p proxide-master
+cargo test -p proxide-confind -p proxide-io -p proxide-frag
 — exits 0
 
 ### wasm32 compile check
@@ -323,7 +323,7 @@ to exclude WASI targets (which handle getrandom differently and have full thread
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 proxide-parallel-rt = { path = "../proxide-parallel-rt" }
 
-### crates/proxide-master/Cargo.toml — add same section:
+### crates/proxide-frag/Cargo.toml — add same section:
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 proxide-parallel-rt = { path = "../proxide-parallel-rt" }
 
@@ -338,7 +338,7 @@ under the broad `cfg(target_arch = "wasm32")` for now (they are handled transiti
 Focus ONLY on proxide-parallel-rt narrowing.
 
 ## Acceptance criteria
-1. cargo build -p proxide-confind -p proxide-master exits 0
+1. cargo build -p proxide-confind -p proxide-frag exits 0
 2. cargo build -p proxide-io exits 0
 3. cargo build -p proxide-io --features parallel exits 0
 4. cargo check --target wasm32-unknown-unknown -p proxide-confind exits 0
@@ -351,11 +351,11 @@ task_id: 260605_browser-wasm-parallel | track: E | backlog: #1174
 
 ### Gate narrowing (CRITICAL: must use all(wasm32, target_os="unknown"), not just wasm32)
 grep -A3 'cfg(all(target_arch = "wasm32", target_os = "unknown")' crates/proxide-confind/Cargo.toml  ->  shows proxide-parallel-rt
-grep -A3 'cfg(all(target_arch = "wasm32", target_os = "unknown")' crates/proxide-master/Cargo.toml  ->  shows proxide-parallel-rt
+grep -A3 'cfg(all(target_arch = "wasm32", target_os = "unknown")' crates/proxide-frag/Cargo.toml  ->  shows proxide-parallel-rt
 grep "proxide-parallel-rt" crates/proxide-io/Cargo.toml  ->  appears as optional AND in parallel feature
 
 ### Build checks
-cargo build -p proxide-confind -p proxide-master  ->  exits 0
+cargo build -p proxide-confind -p proxide-frag  ->  exits 0
 cargo build -p proxide-io --features parallel  ->  exits 0
 cargo build -p proxide-io --no-default-features  ->  exits 0 (proxide-parallel-rt absent)
 cargo check --target wasm32-unknown-unknown -p proxide-confind  ->  exits 0
@@ -383,7 +383,7 @@ Replace all 10 `num_threads(1)` calls (now inside `all(wasm32, target_os="unknow
 with `num_threads(proxide_parallel_rt::num_threads())`.
 
 ## Procedure
-1. grep -rn 'num_threads(1)' crates/proxide-confind/src crates/proxide-io/src crates/proxide-master/src
+1. grep -rn 'num_threads(1)' crates/proxide-confind/src crates/proxide-io/src crates/proxide-frag/src
    — enumerate all 10 sites
 2. For each, change:
      let par = par.num_threads(1);
@@ -396,9 +396,9 @@ Files: confind.rs (~2), parallel.rs (~3), formatters/full.rs (~2), fasta.rs (~1)
 ## Acceptance criteria
 1. grep -rn 'num_threads(1)' crates/  ->  ZERO lines
 2. grep -rn 'num_threads(proxide_parallel_rt' crates/  ->  exactly 10 lines
-3. cargo test -p proxide-confind -p proxide-io -p proxide-master exits 0
+3. cargo test -p proxide-confind -p proxide-io -p proxide-frag exits 0
 4. cargo check --target wasm32-unknown-unknown -p proxide-confind exits 0
-5. cargo check --target wasm32-unknown-unknown -p proxide-master exits 0
+5. cargo check --target wasm32-unknown-unknown -p proxide-frag exits 0
 '''
 reviewer_prompt = '''
 task_id: 260605_browser-wasm-parallel | track: F | backlog: #1173
@@ -407,9 +407,9 @@ task_id: 260605_browser-wasm-parallel | track: F | backlog: #1173
 
 grep -rn 'num_threads(1)' crates/  ->  ZERO lines
 grep -rn 'num_threads(proxide_parallel_rt' crates/  ->  exactly 10 lines
-cargo test -p proxide-confind -p proxide-io -p proxide-master  ->  exits 0
+cargo test -p proxide-confind -p proxide-io -p proxide-frag  ->  exits 0
 cargo check --target wasm32-unknown-unknown -p proxide-confind  ->  exits 0
-cargo check --target wasm32-unknown-unknown -p proxide-master  ->  exits 0
+cargo check --target wasm32-unknown-unknown -p proxide-frag  ->  exits 0
 git diff HEAD  ->  touches only the 10 num_threads(1) lines, nothing else
 '''
 return_key = "1173"

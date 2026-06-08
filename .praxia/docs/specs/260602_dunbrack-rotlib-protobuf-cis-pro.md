@@ -275,7 +275,7 @@ not block this sprint.
   - (1) `place_rotamer("PRO",φ,ψ,ri,cis=true)` coords **equal the CPR entry's stored coords within ≤1e-6 Å** (PRECOMPUTED coords are read directly by `load_pb` with NO rebuild on the read path, so this is bit-identity modulo the rigid transform — not a fresh NeRF build);
   - (2) `num_rotamers("PRO",φ,ψ,cis=true)` equals the CPR bin's rotamer count;
   - (3) on real data at (−180,−180), the placed cis rotamer χ1 is **closer to 32.5° than 27.3°**.
-- **AC-4.** `cargo test -p proxide-rotlib` and `cargo check -p proxide-rotlib --all-targets` pass, warning-free (also `cargo build -p proxide-master` — same `deny(warnings)`).
+- **AC-4.** `cargo test -p proxide-rotlib` and `cargo check -p proxide-rotlib --all-targets` pass, warning-free (also `cargo build -p proxide-frag` — same `deny(warnings)`).
 - **AC-5.** Repo carries ODC-BY notice + citation where the data ships; **no** CC BY-NC-SA artifact (`rotlib.bin`) is committed/redistributed (verified via `git ls-files`).
 
 ---

@@ -28,7 +28,7 @@ pub enum PersistError {
     #[error("bincode error: {0}")]
     Bincode(#[from] bincode::Error),
 
-    /// Magic number mismatch (file is not a proxide-master database)
+    /// Magic number mismatch (file is not a proxide-frag database)
     #[error("bad magic number: {found:#010x} (expected {MAGIC:#010x})")]
     BadMagic { found: u32 },
 
@@ -262,7 +262,7 @@ mod tests {
         let db = builder.build();
 
         // Save to temp file.
-        let temp_path = env::temp_dir().join("proxide_master_persist_roundtrip.bin");
+        let temp_path = env::temp_dir().join("proxide_frag_persist_roundtrip.bin");
         db.save(&temp_path).expect("failed to save database");
 
         // Load it back.
@@ -344,7 +344,7 @@ mod tests {
         let db = builder.build();
 
         // Save to temp file.
-        let temp_path = env::temp_dir().join("proxide_master_persist_arity_mismatch.bin");
+        let temp_path = env::temp_dir().join("proxide_frag_persist_arity_mismatch.bin");
         db.save(&temp_path).expect("failed to save database");
 
         // Try to load with N=4 (wrong arity).
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn test_bad_magic_number() {
         // Create a corrupt file with wrong magic number.
-        let temp_path = env::temp_dir().join("proxide_master_persist_bad_magic.bin");
+        let temp_path = env::temp_dir().join("proxide_frag_persist_bad_magic.bin");
 
         let bad_db = PersistedDb {
             magic: 0xDEADBEEF,
@@ -400,7 +400,7 @@ mod tests {
     #[test]
     fn test_version_mismatch() {
         // Create a file with wrong version number.
-        let temp_path = env::temp_dir().join("proxide_master_persist_version_mismatch.bin");
+        let temp_path = env::temp_dir().join("proxide_frag_persist_version_mismatch.bin");
 
         let bad_db = PersistedDb {
             magic: MAGIC,

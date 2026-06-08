@@ -11,7 +11,7 @@ revised: 260605
 ## Summary
 
 Enable real multi-threaded parallel execution in browser WASM (wasm32-unknown-unknown) for
-the orx-parallel call sites in proxide-confind, proxide-io, and proxide-master. The mechanism
+the orx-parallel call sites in proxide-confind, proxide-io, and proxide-frag. The mechanism
 is: nightly Rust + `build-std` + `-C target-feature=+atomics,+bulk-memory`, which rebuilds
 `std` so that `std::thread::scope` + `s.spawn` use SharedArrayBuffer-backed Web Workers.
 No rayon, no wasm-bindgen-rayon — orx-parallel's existing spawn path works natively once
@@ -48,7 +48,7 @@ on it (wasm-gated) to read the configured count without depending on `proxide-wa
 ```
 proxide-confind  ──┐
 proxide-io       ──┤──► proxide-parallel-rt  (AtomicUsize NUM_THREADS)
-proxide-master   ──┘
+proxide-frag   ──┘
 
 proxide-wasm ──► proxide-parallel-rt  (calls set_num_threads from JS)
 ```
@@ -71,7 +71,7 @@ members = [
 ]
 ```
 
-**Each parallel crate** (`proxide-confind`, `proxide-io`, `proxide-master`) — add wasm-gated dep:
+**Each parallel crate** (`proxide-confind`, `proxide-io`, `proxide-frag`) — add wasm-gated dep:
 ```toml
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 proxide-parallel-rt = { path = "../proxide-parallel-rt" }
@@ -149,8 +149,8 @@ the `.cargo/config.toml` enforces `+atomics,+bulk-memory` for all wasm32 targets
 | `crates/proxide-io/src/formatters/full.rs` | ~81 | Full formatter par iter #1 |
 | `crates/proxide-io/src/formatters/full.rs` | ~92 | Full formatter par iter #2 |
 | `crates/proxide-io/src/formats/fasta.rs` | ~68 | FASTA parallel records |
-| `crates/proxide-master/src/search.rs` | ~46 | Search flat_map |
-| `crates/proxide-master/src/search.rs` | ~119 | Search prefiltered flat_map |
+| `crates/proxide-frag/src/search.rs` | ~46 | Search flat_map |
+| `crates/proxide-frag/src/search.rs` | ~119 | Search prefiltered flat_map |
 
 Note: `proxide-io` parallelism is feature-gated (`parallel = ["dep:orx-parallel"]`). The
 `proxide-parallel-rt` dep must be added under the same feature gate:

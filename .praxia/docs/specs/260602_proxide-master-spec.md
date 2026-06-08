@@ -4,7 +4,7 @@ created: 260602
 status: ready-for-impl
 ---
 
-# Spec: proxide-master — Backbone RMSD Substructure Search
+# Spec: proxide-frag — Backbone RMSD Substructure Search
 
 Pure-Rust MASTER-style backbone fragment search library. Implements exact Kabsch
 RMSD over fixed-length backbone fragments, with phantom-typed centroid state and
@@ -15,7 +15,7 @@ Rayon-parallel database search.
 ## 1. Crate Layout
 
 ```
-crates/proxide-master/
+crates/proxide-frag/
   Cargo.toml
   src/
     lib.rs        — crate root; pub re-exports; no logic
@@ -34,7 +34,7 @@ No binary target. No `mod.rs` nesting — all modules are flat siblings under
 
 ```toml
 [package]
-name = "proxide-master"
+name = "proxide-frag"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -50,7 +50,7 @@ thiserror = { workspace = true }
 approx = { workspace = true }
 ```
 
-**Workspace Cargo.toml addition required:** add `"crates/proxide-master"` to the
+**Workspace Cargo.toml addition required:** add `"crates/proxide-frag"` to the
 `[workspace] members` list.
 
 ---
@@ -424,7 +424,7 @@ baseline. A lower-bound pre-filter is deferred pending profiling.
 ## 6. `lib.rs` Public Surface
 
 ```rust
-// crates/proxide-master/src/lib.rs
+// crates/proxide-frag/src/lib.rs
 
 #![deny(warnings)]
 
@@ -455,7 +455,7 @@ types that helper must produce, not the helper itself.
 
 **Precision:** `ResidueBackbone` stores coordinates as `f64`. The fragment stores
 `f32`. The conversion (`f64 → f32`) happens in the consumer, not inside
-`proxide-master`. This is consistent with the existing `proxide-confind` pattern
+`proxide-frag`. This is consistent with the existing `proxide-confind` pattern
 where the single precision boundary is explicit.
 
 **Missing atoms:** `ResidueBackbone` uses `Option<[f64; 3]>` for each atom. If
@@ -507,7 +507,7 @@ labels, same sort order) for the same query and database.
 `Vec`.
 
 ### AC-8: Cargo check clean
-`cargo check -p proxide-master` passes with `#![deny(warnings)]` in `lib.rs`.
+`cargo check -p proxide-frag` passes with `#![deny(warnings)]` in `lib.rs`.
 
 ### AC-9: norm_sq consistency
 `Fragment::<N, Centered>::norm_sq()` equals the manual sum-of-squares computed

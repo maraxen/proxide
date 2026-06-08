@@ -1,4 +1,4 @@
-//! Integration tests for proxide-master — acceptance criteria AC-1 through AC-9.
+//! Integration tests for proxide-frag — acceptance criteria AC-1 through AC-9.
 //!
 //! AC-1: phantom type enforcement (Raw cannot be passed where Centered is required)
 //! AC-2: double-centering guard (AlreadyCenteredError if centroid ≈ 0)
@@ -11,7 +11,7 @@
 //! AC-9: norm_sq consistency
 
 use approx::assert_relative_eq;
-use proxide_master::{
+use proxide_frag::{
     AlreadyCenteredError, Fragment, FragmentDb, FragmentDbBuilder, Raw, SourceLabel,
     kabsch_rmsd,
 };
@@ -320,7 +320,7 @@ fn ac9_norm_sq_consistency() {
 // AC-8: Cargo check clean (build-hygiene gate) + public API surface
 // ---------------------------------------------------------------------------
 
-/// AC-8 — `cargo check -p proxide-master` passes with `#![deny(warnings)]` in
+/// AC-8 — `cargo check -p proxide-frag` passes with `#![deny(warnings)]` in
 /// lib.rs. This is fundamentally a *build-time* guarantee: a clean compile of
 /// this crate (and of this test) IS the AC-8 assertion, because
 /// `#![deny(warnings)]` promotes every warning to a hard error. The runtime
@@ -329,7 +329,7 @@ fn ac9_norm_sq_consistency() {
 /// than silently shrinking the public API.
 #[test]
 fn ac8_public_api_surface_compiles() {
-    use proxide_master::{BackboneAtom, Centered, KabschResult, PersistError, SearchResult};
+    use proxide_frag::{BackboneAtom, Centered, KabschResult, PersistError, SearchResult};
 
     // State markers + BackboneAtom enum.
     let _atom: BackboneAtom = BackboneAtom::CA;

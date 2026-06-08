@@ -5,7 +5,7 @@
 //! generous (ε=5.0) cutoff thresholds.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use proxide_master::{Fragment, FragmentDb, FragmentDbBuilder, Raw, SourceLabel};
+use proxide_frag::{Fragment, FragmentDb, FragmentDbBuilder, Raw, SourceLabel};
 use rand::{Rng, SeedableRng};
 
 /// Build a random FragmentDb<5> with N fragments using a fixed RNG seed.
@@ -31,7 +31,7 @@ fn build_random_db(n: usize, seed: u64) -> FragmentDb<5> {
 }
 
 /// Generate a centered query fragment.
-fn random_query(seed: u64) -> Fragment<5, proxide_master::Centered> {
+fn random_query(seed: u64) -> Fragment<5, proxide_frag::Centered> {
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let mut coords: [[[f32; 3]; 4]; 5] = [[[0.0; 3]; 4]; 5];
     for r in 0..5 {
