@@ -23,7 +23,7 @@ use clap::Parser;
 use prost::Message;
 use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use proxide_rotlib::RotamerLibrary;
 use tracing::{info, warn};
 
@@ -41,11 +41,6 @@ struct Args {
     /// Path to output protobuf file (.pb.zst)
     #[arg(long)]
     output: PathBuf,
-
-    /// Validate output: run drift test against small.pdb and report max|delta|.
-    /// Requires ROTLIB_PATH env var pointing to Mosaist rotlib.bin.
-    #[arg(long, default_value_t = false)]
-    validate: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -83,55 +78,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Done. Output: {}", args.output.display());
 
-    // Validation: if --validate flag is set, run drift test
-    if args.validate {
-        info!("Running validation");
-        run_validation(&args.output)?;
-    }
-
     // License warning — to stderr after processing
     warn!("output is CC-BY-NC-SA 4.0 (Mosaist/Grigoryan lab). Do NOT commit or redistribute.");
 
     Ok(())
 }
-
-/// Run validation to confirm the protobuf library loads successfully.
-/// Checks that the output is not corrupted and can be used immediately.
-/// Note: Full drift measurement against contact degrees requires proxide-confind,
-/// which has a circular dependency with proxide-rotlib. For comprehensive drift validation,
-/// run the confind test suite: cargo test -p proxide-confind --test test_drift_loadpb_small_pdb
-fn run_validation(pb_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    // Check ROTLIB_PATH env var is set (confirms MASTER library is available)
-    let _rotlib_path_str = match std::env::var("ROTLIB_PATH") {
-        Ok(p) => p,
-        Err(_) => {
-            warn!("ROTLIB_PATH not set; skipping validation");
-            return Ok(());
-        }
-    };
-
-    // Load the freshly written output .pb.zst
-    info!("Loading protobuf library from {}", pb_path.display());
-    let pb_lib = RotamerLibrary::load_pb(pb_path)?;
-
-    // Verify the library loaded successfully and has content
-    let n_residues = pb_lib.residue_codes().len();
-    info!("Loaded {} residue types from protobuf", n_residues);
-
-    // Sanity check: verify we can query a common AA
-    let test_aa = "ALA";
-    if pb_lib.contains_aa(test_aa) {
-        let n_rot = pb_lib.num_rotamers(test_aa, -60.0, -45.0, false)?;
-        info!("Sample check: {} rotamers for {} at (-60, -45)", n_rot, test_aa);
-
-        // Confirm the library is valid (basic sanity check)
-        println!("VALIDATE max|delta|: N/A PASS (library loads and queries OK; full drift test in confind suite)");
-        info!("Validation complete: protobuf library loads successfully");
-    } else {
-        warn!("VALIDATE: library does not contain ALA");
-        println!("VALIDATE max|delta|: N/A FAIL (ALA not found in library)");
-        return Ok(());
-    }
-
-    Ok(())
-}
+// Drift validation note: Full validation against contact degrees requires proxide-confind,
+// which has a circular dependency with proxide-rotlib. For comprehensive drift validation,
+// run the confind test suite:
+//
+//   cargo test -p proxide-confind --test test_drift_loadpb_small_pdb
+//
+// This test compares computed contact degrees against reference values from Mosaist
+// and enforces a max|delta| <= 1e-4 threshold.
