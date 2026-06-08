@@ -244,7 +244,7 @@ fn fill_dihedrals(bb: &mut [ResidueBackbone], chain_map: &[usize]) {
             // No sign negation: omega is measured on the preceding peptide bond
             // and the Mosaist sign convention does not apply to omega.
             bb[bb_i].omega = d.omega.map(|r| r.to_degrees());
-            bb[bb_i].is_cis_peptide = bb[bb_i].omega.map_or(false, |w| w.abs() < 30.0);
+            bb[bb_i].is_cis_peptide = bb[bb_i].omega.is_some_and(|w| w.abs() < 30.0);
         }
     }
 }
