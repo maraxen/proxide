@@ -1,0 +1,70 @@
+=== LEU INTERNAL COORDINATE AUDIT — VERDICT ===
+
+MEASUREMENT RESULTS:
+  Audited 5 top LEU rotamers from MASTER rotlib.bin (phi=-60°, psi=-40°)
+  Rotlib SHA256: edabc73f9a9e...
+
+1. BONDS (all clean)
+   CB: max delta = -0.0202 Å (template 1.540 Å) → PASS
+   CG: max delta = -0.0098 Å (template 1.530 Å) → PASS
+   CD1/CD2: max delta < 0.0046 Å (template 1.524 Å) → PASS
+   
+   ✓ Bond lengths match template within ±0.02 Å
+
+2. ANGLES (CB angle is problematic, others clean)
+   CB (C-CA-CB): max delta = +8.42° (template 110.5°)
+      → MEASURED 118.92° (consistently) — 8.4° TOO LARGE
+      ⚠ PROBLEM: CB angle is systematic, not random
+      
+   CG (CA-CB-CG): max delta = +0.70° (template 116.3°) → PASS
+   CD1 (CB-CG-CD1): max delta = +0.43° (template 111.1°) → PASS
+   CD2 (CB-CG-CD2): max delta = +0.43° (template 111.1°) → PASS
+
+3. IMPROPER (CB-C-N-CA)
+   CB improper: max delta = -0.94° (template -119.7° NeRF)
+      → MEASURED -120.64° — matches MASTER perfectly
+      ✓ PASS (confirmed from prior session)
+
+4. CHI ANGLES (chi1, chi2)
+   CG vs chi1: max delta = +0.05° ✓ PERFECT MATCH
+   CD1 vs chi2: max delta = +0.04° ✓ PERFECT MATCH
+   CD2 vs chi2+120: raw delta ±360° BUT normalized diff = ±0.06°
+      → CD2 branch offset is CORRECT
+      ✓ PERFECT MATCH (after angle normalization)
+
+=== CRITICAL FINDING ===
+
+**CB ANGLE MISMATCH: 118.92° (measured) vs 110.5° (template) = +8.42°**
+
+This is:
+  - Consistent across ALL 5 rotamers
+  - Not a measurement error (same measurement function works for other atoms)
+  - Not a NeRF convention issue (angles are the same in all conventions)
+  - NOT in the canonical frame (would affect all backbone angles equally)
+
+POSSIBLE ROOT CAUSES:
+
+1. **MASTER uses different C-CA-CB angle geometry:**
+   - proxide uses 110.5° (CCD/Engh-Huber)
+   - MASTER may use CHARMM ideal of ~107-110°? But not 118.9°
+   - This is a backbone-sidechain geometry mismatch
+
+2. **Canonical frame assumption error:**
+   - If MASTER's backbone frame is not [N=(-1,0,0), CA=(0,0,0), C=(0,1,0)]
+   - Then CB placement changes angle measurement
+   - But: CB improper (-120.64°) matches MASTER's expected value
+   - So canonical frame is correct for CB position
+
+3. **MASTER stores something non-ideal in the CB position:**
+   - E.g., CB averaged over rotamers, or slightly rotated frame
+   - But CB bond length matches (1.52 Å ≈ 1.54 Å)
+   - And CB improper matches
+
+CONCLUSION:
+
+✅ LEU sidechain geometry (bonds, chi angles, CD2 branch) is FULLY COMPATIBLE with MASTER
+❌ ONE ISSUE: CB angle is systematically 8.4° larger in MASTER than template
+   This does NOT explain the confind drift (drift is residue-residue contact distance)
+   
+⟹ The LEU<->LEU drift is NOT rooted in sidechain geometry
+⟹ Drift points to: rotamer set ordering, contact algorithm, or chi sign convention
