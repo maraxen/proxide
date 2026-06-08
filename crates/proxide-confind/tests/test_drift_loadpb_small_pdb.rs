@@ -68,7 +68,7 @@ const REF_CONTACTS: &[(&str, i32, &str, i32, f64)] = &[
     ("B", 6, "B", 7, 0.001298),
 ];
 
-const TOLERANCE: f64 = 5e-4;
+const TOLERANCE: f64 = 1e-4;
 
 fn all_res(cf: &ConFind) -> Vec<proxide_confind::ResidueIndex> {
     (0..cf.n_residues() as u32).map(proxide_confind::ResidueIndex).collect()
@@ -184,6 +184,14 @@ fn measure_loadpb_drift_vs_master() {
     } else {
         sorted_deltas[sorted_deltas.len() / 2]
     };
+
+    // Enforce drift threshold: max_delta must not exceed TOLERANCE
+    assert!(
+        max_delta <= TOLERANCE,
+        "max|delta| {:.6} exceeds threshold {:.0e}",
+        max_delta,
+        TOLERANCE
+    );
 
     // Build drift report
     let mut report = String::new();
