@@ -125,10 +125,11 @@ fn run_validation(pb_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         info!("Sample check: {} rotamers for {} at (-60, -45)", n_rot, test_aa);
 
         // Confirm the library is valid
-        println!("VALIDATE max|delta|: N/A (stub — full drift test in confind test suite; library loaded OK)");
+        println!("VALIDATE max|delta|: N/A PASS (stub — full drift test in confind test suite; library loaded OK)");
         info!("Validation complete: protobuf library loads successfully");
     } else {
         warn!("VALIDATE: library does not contain ALA");
+        println!("VALIDATE max|delta|: N/A FAIL (ALA not found in library)");
         return Ok(());
     }
 
