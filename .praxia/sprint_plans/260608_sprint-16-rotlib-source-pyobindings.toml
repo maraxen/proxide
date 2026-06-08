@@ -1,0 +1,109 @@
+[sprint]
+sprint_id = "260608_sprint-16-rotlib-source-pyobindings"
+sprint_num = 1
+name = "260608_sprint-16-rotlib-source-pyobindings"
+description = ""
+context = "[MANUAL: paste recon findings here before running emit-sprint]"
+max_fix_retries = 1
+
+[[tracks]]
+id = "a"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1114"
+phase_name = "Track A — RotlibSource trait + DunbrackSource refactor in convert_rotlib (#1114)"
+fixer_prompt = """
+BACKLOG DESCRIPTION:
+Define RotlibSource trait (residue_codes, bins, default_bin_index, data_license, attribution, source_tag) and RotamerEntry/BinData types in new crates/proxide-rotlib/src/rotlib_source/ module. Extract existing Dunbrack text parser into DunbrackSource implementing the trait. build_library() takes Box<dyn RotlibSource>. Add --rotlib-source dunbrack:<path> CLI flag. parse_master stays a separate binary (pre-baked coords, no trait needed). Enables future rotlib sources (Richardson, Dunbrack 2023) as new trait impls.
+
+[AUTO: no recon anchors — paste file:line references here, then write the full fixer prompt]"""
+reviewer_prompt = """
+BACKLOG DESCRIPTION:
+Define RotlibSource trait (residue_codes, bins, default_bin_index, data_license, attribution, source_tag) and RotamerEntry/BinData types in new crates/proxide-rotlib/src/rotlib_source/ module. Extract existing Dunbrack text parser into DunbrackSource implementing the trait. build_library() takes Box<dyn RotlibSource>. Add --rotlib-source dunbrack:<path> CLI flag. parse_master stays a separate binary (pre-baked coords, no trait needed). Enables future rotlib sources (Richardson, Dunbrack 2023) as new trait impls.
+
+[AUTO: paste reviewer prompt here — describe what correct looks like]"""
+return_key = "1114"
+
+[[tracks]]
+id = "b"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1115"
+phase_name = "Track B — parse_master --validate flag + user-facing docs (license guidance) (#1115)"
+fixer_prompt = """
+BACKLOG DESCRIPTION:
+Add --validate flag to parse_master binary: runs drift test inline on small.pdb (if ROTLIB_PATH set) and reports max|delta| confirming MASTER equivalence. Add user-facing documentation: when to use parse_master vs dunbrack+ccd, license note (CC-BY-NC-SA means personal use OK, distribution of output is not). Add to proxide CLI top-level help. parse_master is appropriate for users who have a Mosaist install.
+
+[AUTO: no recon anchors — paste file:line references here, then write the full fixer prompt]"""
+reviewer_prompt = """
+BACKLOG DESCRIPTION:
+Add --validate flag to parse_master binary: runs drift test inline on small.pdb (if ROTLIB_PATH set) and reports max|delta| confirming MASTER equivalence. Add user-facing documentation: when to use parse_master vs dunbrack+ccd, license note (CC-BY-NC-SA means personal use OK, distribution of output is not). Add to proxide CLI top-level help. parse_master is appropriate for users who have a Mosaist install.
+
+[AUTO: paste reviewer prompt here — describe what correct looks like]"""
+return_key = "1115"
+
+[[tracks]]
+id = "c"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "819"
+phase_name = "Track C — P6 Verify+docs: cross-check vs MASTER PRO (dev-only), attribution, INDEX/memory (#819)"
+fixer_prompt = """
+BACKLOG DESCRIPTION:
+Spec §10 P6. Cross-check rebuilt PRO coords vs MASTER rotlib.bin (dev-only, no redistribution) within tol. README ODC-BY notice + Shapovalov-Dunbrack 2011 citation. AC-4: cargo test -p proxide-rotlib + --all-targets clean, warning-free. AC-5: no CC BY-NC-SA artifact committed.
+
+[AUTO: no recon anchors — paste file:line references here, then write the full fixer prompt]"""
+reviewer_prompt = """
+BACKLOG DESCRIPTION:
+Spec §10 P6. Cross-check rebuilt PRO coords vs MASTER rotlib.bin (dev-only, no redistribution) within tol. README ODC-BY notice + Shapovalov-Dunbrack 2011 citation. AC-4: cargo test -p proxide-rotlib + --all-targets clean, warning-free. AC-5: no CC BY-NC-SA artifact committed.
+
+[AUTO: paste reviewer prompt here — describe what correct looks like]"""
+return_key = "819"
+
+[[tracks]]
+id = "d"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1306"
+phase_name = "Track D — Python bindings for proxide-confind, proxide-io, and proxide-master via PyO3 (#1306)"
+fixer_prompt = """
+BACKLOG DESCRIPTION:
+Expose the core proxide surfaces to Python via PyO3 now that the parallel stack is stable.
+
+Surfaces to wrap:
+- **proxide-confind** — ConFind contact-degree algorithm; the primary research-facing surface. Python callers need run_confind(structure, ...) -> DataFrame or dict of contact results.
+- **proxide-io** — PDB/FASTA/protobuf I/O; expose load_pdb(path) / load_pb(path) returning Python-friendly structure objects.
+- **proxide-master** — parallel search; expose search(query, db, n_threads=None) with optional thread-count forwarding to proxide-parallel-rt.
+
+Parallelism note: proxide-parallel-rt::set_num_threads() should be called from the Python side (or wired to a kwarg) so callers control thread count without touching global state.
+
+Suggested crate: proxide-py (pyo3 + maturin). Target: PyPI wheel + conda-forge.
+
+Blocked by: none. proxide-parallel-rt is stable; orx-parallel migration is merged.
+
+[AUTO: no recon anchors — paste file:line references here, then write the full fixer prompt]"""
+reviewer_prompt = """
+BACKLOG DESCRIPTION:
+Expose the core proxide surfaces to Python via PyO3 now that the parallel stack is stable.
+
+Surfaces to wrap:
+- **proxide-confind** — ConFind contact-degree algorithm; the primary research-facing surface. Python callers need run_confind(structure, ...) -> DataFrame or dict of contact results.
+- **proxide-io** — PDB/FASTA/protobuf I/O; expose load_pdb(path) / load_pb(path) returning Python-friendly structure objects.
+- **proxide-master** — parallel search; expose search(query, db, n_threads=None) with optional thread-count forwarding to proxide-parallel-rt.
+
+Parallelism note: proxide-parallel-rt::set_num_threads() should be called from the Python side (or wired to a kwarg) so callers control thread count without touching global state.
+
+Suggested crate: proxide-py (pyo3 + maturin). Target: PyPI wheel + conda-forge.
+
+Blocked by: none. proxide-parallel-rt is stable; orx-parallel migration is merged.
+
+[AUTO: paste reviewer prompt here — describe what correct looks like]"""
+return_key = "1306"
+
+[orchestration]
+sequential = []
+concurrent = []
