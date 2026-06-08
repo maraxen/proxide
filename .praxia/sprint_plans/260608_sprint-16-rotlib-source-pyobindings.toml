@@ -324,7 +324,7 @@ This crate ships pre-built rotamer libraries derived from:
 ```
 
 ## Change 3 — Confirm no CC-BY-NC-SA artifact
-Run: git ls-files | grep -E "(rotlib\.bin|\.master\.pb\.zst)"
+Run: git ls-files | grep -E "(rotlib\\.bin|\\.master\\.pb\\.zst)"
 Must return empty. If any appear, add them to .gitignore.
 Do NOT remove or modify any source files — only .gitignore if needed.
 
@@ -333,7 +333,7 @@ Do NOT remove or modify any source files — only .gitignore if needed.
 ## Acceptance criteria
 1. cargo test -p proxide-rotlib exits 0, including the new cpr_fallback test
 2. crates/proxide-rotlib/README.md contains "ODC-BY" and "Shapovalov"
-3. git ls-files | grep -E "(rotlib\.bin|\.master\.pb\.zst)" → empty
+3. git ls-files | grep -E "(rotlib\\.bin|\\.master\\.pb\\.zst)" → empty
 4. cargo test --workspace --all-targets exits 0 (no new warnings-as-errors)
 """
 reviewer_prompt = """
@@ -355,8 +355,8 @@ task_id: 260608_sprint-16-rotlib-source-pyobindings | track: C | backlog: #819
 - cat crates/proxide-rotlib/README.md | grep "CC0" → present (CCD citation)
 
 ### No CC artifacts
-- git ls-files | grep -E "(rotlib\.bin|\.master\.pb\.zst)" → empty
-- git ls-files | grep "\.master\." → empty
+- git ls-files | grep -E "(rotlib\\.bin|\\.master\\.pb\\.zst)" → empty
+- git ls-files | grep "\\.master\\." → empty
 
 ### Clean test suite
 - cargo test -p proxide-rotlib --all-targets exits 0
@@ -490,7 +490,7 @@ work for a future sprint.
 
 ## Acceptance criteria
 1. cargo build -p proxide-py exits 0
-2. grep "run_confind\|PyRotamerLibrary\|search_fragments" crates/proxide_py/src/lib.rs
+2. grep "run_confind\\|PyRotamerLibrary\\|search_fragments" crates/proxide_py/src/lib.rs
    → all three present in the module registration
 3. python3 -c "import proxide; print(dir(proxide))" shows run_confind, PyRotamerLibrary,
    search_fragments (if maturin develop has been run — fixer should note if skipped)
@@ -505,11 +505,11 @@ task_id: 260608_sprint-16-rotlib-source-pyobindings | track: D | backlog: #1306
 - ls crates/proxide_py/src/ | grep -E "py_confind|py_rotlib|py_frag" → all three present
 
 ### Module declarations in lib.rs
-- grep "mod py_confind\|mod py_rotlib\|mod py_frag" crates/proxide_py/src/lib.rs
+- grep "mod py_confind\\|mod py_rotlib\\|mod py_frag" crates/proxide_py/src/lib.rs
   → all three mod declarations present
 
 ### PyModule registrations in lib.rs
-- grep "run_confind\|PyRotamerLibrary\|search_fragments" crates/proxide_py/src/lib.rs
+- grep "run_confind\\|PyRotamerLibrary\\|search_fragments" crates/proxide_py/src/lib.rs
   → all three appear in the _proxider registration function (after line 72)
 
 ### Build
@@ -522,7 +522,7 @@ task_id: 260608_sprint-16-rotlib-source-pyobindings | track: D | backlog: #1306
 - PyRotamerLibrary::load_pb must return Ok(Self {}) not Err() for the stub
 
 ### Dependencies declared
-- grep "proxide-confind\|proxide-rotlib" crates/proxide_py/Cargo.toml
+- grep "proxide-confind\\|proxide-rotlib" crates/proxide_py/Cargo.toml
   → both present as path dependencies (even if not yet imported in the stub bodies)
 
 ### No regressions
