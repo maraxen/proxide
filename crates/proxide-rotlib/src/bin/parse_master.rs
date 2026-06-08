@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // License warning — to stderr before any processing
-    eprintln!("WARNING: output is CC-BY-NC-SA 4.0 (Mosaist/Grigoryan lab). Do NOT commit or redistribute.");
+    warn!("output is CC-BY-NC-SA 4.0 (Mosaist/Grigoryan lab). Do NOT commit or redistribute.");
 
     // Load the binary rotamer library
     info!("Loading MASTER library from {}", args.input.display());
@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // License warning — to stderr after processing
-    eprintln!("WARNING: output is CC-BY-NC-SA 4.0 (Mosaist/Grigoryan lab). Do NOT commit or redistribute.");
+    warn!("output is CC-BY-NC-SA 4.0 (Mosaist/Grigoryan lab). Do NOT commit or redistribute.");
 
     Ok(())
 }
