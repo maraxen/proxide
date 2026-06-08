@@ -111,7 +111,7 @@ impl RotlibSource for DunbrackSource {
     fn bins(&self, code: &str) -> Vec<BinData> {
         self.data
             .get(code)
-            .map(|bins| bins.clone())
+            .cloned()
             .unwrap_or_default()
     }
 
@@ -201,11 +201,143 @@ fn group_rotamers(rotamers: Vec<DunbrackRotamer>) -> GroupedRotamers {
 
         grouped
             .entry(rot.res_code.clone())
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .entry((phi_bin, psi_bin))
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(rot);
     }
 
     grouped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    /// Helper to create a minimal synthetic Dunbrack file for testing.
+    fn create_test_dunbrack_file() -> NamedTempFile {
+        let mut file = NamedTempFile::new().expect("Failed to create temp file");
+
+        // Write minimal Dunbrack format header and entries.
+        // Format: res_code phi psi count r1 r2 r3 r4 prob chi1 chi2 chi3 chi4 chi1_sig chi2_sig chi3_sig chi4_sig
+        let content = "# Test Dunbrack file\nALA -60.0 -40.0 100 1.0 1.0 1.0 1.0 0.5 -62.3 -41.0 0.0 0.0 20.0 25.0 0.0 0.0\n\
+                      ALA -60.0 -40.0 80 1.0 1.0 1.0 1.0 0.3 62.3 41.0 0.0 0.0 20.0 25.0 0.0 0.0\n\
+                      ALA -120.0 -120.0 50 1.0 1.0 1.0 1.0 0.2 -173.0 67.0 0.0 0.0 20.0 25.0 0.0 0.0\n\
+                      GLY 0.0 0.0 200 0.0 0.0 0.0 0.0 0.9 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n";
+
+        file.write_all(content.as_bytes()).expect("Failed to write to temp file");
+        file.flush().expect("Failed to flush temp file");
+        file
+    }
+
+    #[test]
+    fn test_dunbrack_source_from_file() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        let codes = source.residue_codes();
+        assert!(!codes.is_empty(), "Expected non-empty residue codes");
+        assert!(codes.contains(&"ALA".to_string()), "Expected ALA in residue codes");
+    }
+
+    #[test]
+    fn test_residue_codes_sorted() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        let codes = source.residue_codes();
+        // Verify sorted order
+        let mut sorted_codes = codes.clone();
+        sorted_codes.sort();
+        assert_eq!(codes, sorted_codes, "residue_codes() should return sorted codes");
+    }
+
+    #[test]
+    fn test_bins_for_known_residue() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        let ala_bins = source.bins("ALA");
+        assert!(!ala_bins.is_empty(), "Expected bins for ALA");
+
+        // ALA should have at least 2 distinct (phi, psi) bins based on our test data
+        assert!(ala_bins.len() >= 2, "Expected multiple bins for ALA");
+    }
+
+    #[test]
+    fn test_bins_for_unknown_residue() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        let unknown_bins = source.bins("UNKNOWN");
+        assert!(unknown_bins.is_empty(), "Expected empty vec for unknown residue");
+    }
+
+    #[test]
+    fn test_default_bin_index_valid() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        let idx = source.default_bin_index("ALA");
+        let ala_bins = source.bins("ALA");
+        assert!(idx < ala_bins.len(), "default_bin_index should return valid index");
+    }
+
+    #[test]
+    fn test_default_bin_index_unknown() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        let idx = source.default_bin_index("UNKNOWN");
+        assert_eq!(idx, 0, "Expected default index 0 for unknown residue");
+    }
+
+    #[test]
+    fn test_data_license() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        assert_eq!(source.data_license(), "ODC-BY-1.0");
+    }
+
+    #[test]
+    fn test_attribution_contains_required_text() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        let attr = source.attribution();
+        assert!(!attr.is_empty(), "attribution should not be empty");
+        assert!(attr.contains("Shapovalov"), "attribution should mention Shapovalov");
+        assert!(attr.contains("Dunbrack"), "attribution should mention Dunbrack");
+    }
+
+    #[test]
+    fn test_source_tag() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        assert_eq!(source.source_tag(), "dunbrack2010_simpleopt1");
+    }
+
+    #[test]
+    fn test_bin_data_structure() {
+        let file = create_test_dunbrack_file();
+        let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
+
+        let ala_bins = source.bins("ALA");
+        assert!(!ala_bins.is_empty());
+
+        let first_bin = &ala_bins[0];
+        assert!(first_bin.rotamers.len() > 0, "Expected rotamers in bin");
+
+        // Verify each rotamer has valid structure
+        for rot in &first_bin.rotamers {
+            assert!(!rot.chi_values.is_empty(), "Rotamer should have chi_values");
+            assert!(!rot.chi_sigmas.is_empty(), "Rotamer should have chi_sigmas");
+            assert!(rot.probability >= 0.0 && rot.probability <= 1.0, "Probability should be 0-1");
+            assert!(rot.count > 0, "Count should be positive");
+        }
+    }
 }
