@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use tracing::debug;
 
 /// Internal representation of a single rotamer entry during parsing.
 #[derive(Debug, Clone)]
@@ -73,7 +74,7 @@ impl DunbrackSource {
                 }
 
                 // Sort rotamers by probability (descending)
-                rotamers.sort_by(|a, b| b.probability.partial_cmp(&a.probability).unwrap());
+                rotamers.sort_by(|a, b| b.probability.total_cmp(&a.probability));
 
                 bin_data_vec.push(BinData {
                     phi: phi_bin as f64,
@@ -154,7 +155,7 @@ fn read_rotamer_library(path: &Path) -> Result<Vec<DunbrackRotamer>, Box<dyn std
         // Parse the line
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 17 {
-            eprintln!("Warning: Line {} has too few fields, skipping", line_num + 1);
+            debug!("Line {} has too few fields, skipping", line_num + 1);
             continue;
         }
 

@@ -8,6 +8,7 @@ use clap::Parser;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use tracing::{info, warn};
 use proxide_rotlib::pb::rotlib_v1;
 use proxide_rotlib::pb::proxide::rotlib::v1::ResidueGeometryTable;
 use proxide_rotlib::geometry::{
@@ -47,10 +48,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(s) if s.starts_with("dunbrack:") => {
             let path_str = &s["dunbrack:".len()..];
             let path = std::path::Path::new(path_str);
-            eprintln!("Loading Dunbrack rotamer source from {}...", path.display());
+            info!("Loading Dunbrack rotamer source from {}...", path.display());
             let source = DunbrackSource::from_file(path)
                 .map_err(|e| format!("Failed to load Dunbrack source: {}", e))?;
-            eprintln!(
+            info!(
                 "Loaded Dunbrack source: {} residues (license={})",
                 source.residue_codes().len(),
                 source.data_license()
@@ -68,11 +69,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => {
             // Backwards compatibility: default to --input if present
-            eprintln!("No --rotlib-source specified; defaulting to --input (backwards compat)");
-            eprintln!("DEPRECATED: please use --rotlib-source dunbrack:<path> in the future");
+            warn!("No --rotlib-source specified; defaulting to --input (backwards compat)");
+            warn!("DEPRECATED: please use --rotlib-source dunbrack:<path> in the future");
             let source = DunbrackSource::from_file(&args.input)
                 .map_err(|e| format!("Failed to load from --input: {}", e))?;
-            eprintln!(
+            info!(
                 "Loaded Dunbrack source: {} residues (license={})",
                 source.residue_codes().len(),
                 source.data_license()
@@ -85,10 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ic_table: Option<ResidueGeometryTable> = match &args.ic_source {
         Some(s) if s.starts_with("rtf:") => {
             let path = &s["rtf:".len()..];
-            eprintln!("Loading CHARMM36 RTF IC table from {}...", path);
+            info!("Loading CHARMM36 RTF IC table from {}...", path);
             let table = parse_rtf_ic_table(path)
                 .map_err(|e| format!("Failed to parse RTF IC table: {}", e))?;
-            eprintln!(
+            info!(
                 "Loaded RTF IC table: {} residues (source={}, license={})",
                 table.residues.len(),
                 table.source,
@@ -98,10 +99,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(s) if s.starts_with("ccd:") => {
             let dir = &s["ccd:".len()..];
-            eprintln!("Loading PDB CCD IC table from {}...", dir);
+            info!("Loading PDB CCD IC table from {}...", dir);
             let table = parse_ccd_ic_table(dir)
                 .map_err(|e| format!("Failed to parse CCD IC table: {}", e))?;
-            eprintln!(
+            info!(
                 "Loaded CCD IC table: {} residues (source={}, license={})",
                 table.residues.len(),
                 table.source,
@@ -119,24 +120,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         None => {
-            eprintln!("No --ic-source specified; using Engh-Huber template defaults.");
+            info!("No --ic-source specified; using Engh-Huber template defaults.");
             None
         }
     };
 
     // Build the protobuf
     let lib = build_library(rotlib_source.as_ref(), ic_table.as_ref())?;
-    eprintln!("Built library with {} residue types", lib.residues.len());
+    info!("Built library with {} residue types", lib.residues.len());
 
     // Serialize and compress
-    eprintln!("Serializing and compressing to {}...", args.output.display());
+    info!("Serializing and compressing to {}...", args.output.display());
     let encoded = prost::Message::encode_to_vec(&lib);
     let compressed = zstd::encode_all(&encoded[..], 19)?;
 
     // Write output
     let mut out_file = File::create(&args.output)?;
     out_file.write_all(&compressed)?;
-    eprintln!(
+    info!(
         "Success! Wrote {} bytes (compressed from {} bytes)",
         compressed.len(),
         encoded.len()
@@ -190,16 +191,16 @@ fn build_library(
         // Get bins for this residue from the source
         let bins = source.bins(res_code);
         if bins.is_empty() {
-            eprintln!("Warning: No bins for residue {}", res_code);
+            warn!("No bins for residue {}", res_code);
             continue;
         }
 
         // Build phi and psi centers (unique values in this residue)
         let mut phi_vals: Vec<f64> = bins.iter().map(|b| b.phi).collect();
         let mut psi_vals: Vec<f64> = bins.iter().map(|b| b.psi).collect();
-        phi_vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        phi_vals.sort_by(|a, b| a.total_cmp(b));
         phi_vals.dedup();
-        psi_vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        psi_vals.sort_by(|a, b| a.total_cmp(b));
         psi_vals.dedup();
 
         // Sidechain atom names (skip N, CA, C, O which are backbone)
@@ -271,7 +272,7 @@ fn build_library(
             }
 
             // Sort rotamers by probability (descending)
-            proto_rotamers.sort_by(|a, b| b.prob.partial_cmp(&a.prob).unwrap());
+            proto_rotamers.sort_by(|a, b| b.prob.total_cmp(&a.prob));
 
             proto_bins.push(rotlib_v1::Bin {
                 phi: bin_data.phi,
@@ -316,7 +317,7 @@ fn build_library(
     };
 
     // Print coverage summary
-    eprintln!(
+    info!(
         "IC geometry: {} residues processed, {} had IC table applied, {} proline skipped (ring closure retains geometry)",
         source.residue_codes().len(),
         ic_applied_count,
