@@ -14,7 +14,7 @@ pub struct ResidueCache {
     pub rotamer_grids: HashMap<String, Option<ProximityGrid<Arc<RotamerId>>>>,
     pub fraction_pruned: f64,
     pub n_library_rotamers: usize,
-    /// interference[resB_idx][`aa`] = accumulated aaP * rotP / 100
+    /// `interference[resB_idx][aa]` = accumulated aaP * rotP / 100
     pub interference: HashMap<ResidueIndex, HashMap<String, f64>>,
     /// Backbone atoms permanently clashed by any ALA rotamer of self.
     /// Stores raw backbone atom indices for constrained-contacts lookup.
