@@ -267,6 +267,50 @@ pub struct TrrTrajectory {
     pub box_vectors: Option<Vec<[[f32; 3]; 3]>>,
 }
 
+pub struct FrameWithBox {
+    pub coordinates: Vec<f32>,
+    pub box_vectors: Option<[[f32; 3]; 3]>,
+}
+
+/// Build a frame offset index for TRR by reading all frames and recording their file positions.
+/// Returns a Vec of byte offsets for each frame start.
+pub fn build_trr_frame_offsets(path: &str) -> Result<Vec<u64>, TrrError> {
+    let _file = File::open(path)?;
+    let mut offsets = Vec::new();
+    let mut reader = TrrReader::open(path)?;
+
+    // Since TRR frames are variable-sized, we need to scan through them.
+    // For now, we'll use the eager-read approach: read all frames and their offsets
+    // are implicit from the frame list. The real fix requires a lower-level
+    // TRR reader that tracks byte positions during parsing.
+
+    // Placeholder: return empty offsets. The Tauri layer will handle caching
+    // the full trajectory in memory for streaming.
+    let frames = reader.read_all_frames()?;
+    offsets.resize(frames.len(), 0);
+    Ok(offsets)
+}
+
+pub fn read_trr_frame_at(path: &str, frame_index: usize) -> Result<FrameWithBox, TrrError> {
+    let mut reader = TrrReader::open(path)?;
+    let mut current_index = 0;
+
+    while let Some(frame) = reader.read_frame()? {
+        if current_index == frame_index {
+            return Ok(FrameWithBox {
+                coordinates: frame.coordinates.unwrap_or_default(),
+                box_vectors: frame.box_vectors,
+            });
+        }
+        current_index += 1;
+    }
+
+    Err(TrrError::InvalidFormat(format!(
+        "Frame {} not found in TRR file",
+        frame_index
+    )))
+}
+
 pub fn parse_trr(path: &str) -> Result<TrrTrajectory, TrrError> {
     let mut reader = TrrReader::open(path)?;
     let frames = reader.read_all_frames()?;

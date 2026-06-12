@@ -35,6 +35,11 @@ pub struct DcdFrame {
     pub unit_cell: Option<[f64; 6]>,
 }
 
+pub struct FrameWithBox {
+    pub coordinates: Vec<f32>,
+    pub box_vectors: Option<[[f32; 3]; 3]>,
+}
+
 #[derive(Debug, Clone)]
 pub struct DcdTrajectory {
     pub num_frames: usize,
@@ -75,9 +80,22 @@ impl DcdWriter {
 pub struct DcdReader<R: Read + Seek> {
     reader: R,
     pub header: DcdHeader,
+    frame_start_pos: u64, // Position of first frame data (after header)
+    frame_stride: usize,  // Byte size of one complete frame
 }
 
 impl<R: Read + Seek> DcdReader<R> {
+    /// Compute the byte stride for a single frame given header parameters.
+    /// DCD frame structure:
+    /// - If has_unit_cell: 4 + 48 + 4 = 56 bytes (unit cell block)
+    /// - 3 coordinate blocks, each: 4 + (n_atoms * 4) + 4 bytes
+    fn compute_frame_stride(header: &DcdHeader) -> usize {
+        let unit_cell_bytes = if header.has_unit_cell { 4 + 48 + 4 } else { 0 };
+        let coord_block_bytes = 4 + (header.n_atoms * 4) + 4; // one coordinate dimension
+        let total_coord_bytes = 3 * coord_block_bytes; // X, Y, Z
+        unit_cell_bytes + total_coord_bytes
+    }
+
     pub fn read_frame(&mut self) -> Result<Option<DcdFrame>, DcdError> {
         let n_atoms = self.header.n_atoms;
         let mut unit_cell = None;
@@ -192,19 +210,81 @@ impl<R: Read + Seek> DcdReader<R> {
         } as usize;
         reader.read_exact(&mut buf4)?;
 
+        let header = DcdHeader {
+            n_frames,
+            n_atoms,
+            _start_step: start_step,
+            _save_freq: save_freq,
+            delta,
+            has_unit_cell,
+            _charmm_version: charmm_version,
+            is_little_endian,
+        };
+
+        let frame_stride = Self::compute_frame_stride(&header);
+        let frame_start_pos = reader.stream_position()?;
+
         Ok(DcdReader {
             reader,
-            header: DcdHeader {
-                n_frames,
-                n_atoms,
-                _start_step: start_step,
-                _save_freq: save_freq,
-                delta,
-                has_unit_cell,
-                _charmm_version: charmm_version,
-                is_little_endian,
-            },
+            header,
+            frame_start_pos,
+            frame_stride,
         })
+    }
+}
+
+impl<R: Read + Seek> DcdReader<R> {
+    /// Read frame at given index. Requires Seek capability.
+    pub fn read_frame_at(&mut self, frame_index: usize) -> Result<DcdFrame, DcdError> {
+        if frame_index >= self.header.n_frames {
+            return Err(DcdError::InvalidFormat(format!(
+                "Frame index {} out of bounds ({})",
+                frame_index, self.header.n_frames
+            )));
+        }
+
+        let offset = self.frame_start_pos as u64 + (frame_index as u64 * self.frame_stride as u64);
+        self.reader.seek(SeekFrom::Start(offset))?;
+
+        // Reuse read_frame logic by reading from the seeked position
+        let n_atoms = self.header.n_atoms;
+        let mut unit_cell = None;
+
+        if self.header.has_unit_cell {
+            let mut len_buf = [0u8; 4];
+            self.reader.read_exact(&mut len_buf)?;
+            let len = if self.header.is_little_endian { i32::from_le_bytes(len_buf) } else { i32::from_be_bytes(len_buf) };
+            if len != 48 { return Err(DcdError::InvalidFormat("Unit cell block length mismatch".to_string())); }
+            let mut uc_data = [0u8; 48];
+            self.reader.read_exact(&mut uc_data)?;
+            self.reader.read_exact(&mut len_buf)?;
+
+            let mut uc = [0.0f64; 6];
+            for i in 0..6 {
+                let b = &uc_data[i * 8..(i + 1) * 8];
+                uc[i] = if self.header.is_little_endian { f64::from_le_bytes(b.try_into().unwrap()) } else { f64::from_be_bytes(b.try_into().unwrap()) };
+            }
+            unit_cell = Some(uc);
+        }
+
+        let mut all_coords = vec![0.0f32; n_atoms * 3];
+        for dim in 0..3 {
+            let mut len_buf = [0u8; 4];
+            self.reader.read_exact(&mut len_buf)?;
+            let len = if self.header.is_little_endian { i32::from_le_bytes(len_buf) } else { i32::from_be_bytes(len_buf) };
+            if len != (n_atoms * 4) as i32 { return Err(DcdError::InvalidFormat(format!("Coordinate block {} length mismatch", dim))); }
+
+            let mut coord_buf = vec![0u8; n_atoms * 4];
+            self.reader.read_exact(&mut coord_buf)?;
+            self.reader.read_exact(&mut len_buf)?;
+
+            for i in 0..n_atoms {
+                let b = &coord_buf[i * 4..(i + 1) * 4];
+                all_coords[i * 3 + dim] = if self.header.is_little_endian { f32::from_le_bytes(b.try_into().unwrap()) } else { f32::from_be_bytes(b.try_into().unwrap()) };
+            }
+        }
+
+        Ok(DcdFrame { coordinates: all_coords, unit_cell })
     }
 }
 
@@ -213,6 +293,26 @@ impl DcdReader<File> {
         let file = File::open(path)?;
         Self::new(file)
     }
+}
+
+pub fn read_dcd_frame_at(path: &str, frame_index: usize) -> Result<FrameWithBox, DcdError> {
+    let mut reader = DcdReader::open(path)?;
+    let frame = reader.read_frame_at(frame_index)?;
+
+    // Convert unit_cell [f64; 6] to box_vectors [[f32; 3]; 3] (orthorhombic)
+    // unit_cell format: [lx, xy, ly, xz, yz, lz]
+    // For orthorhombic, box_vectors are the diagonal: [[lx, 0, 0], [0, ly, 0], [0, 0, lz]]
+    let box_vectors = frame.unit_cell.map(|uc| {
+        let lx = uc[0] as f32;
+        let ly = uc[2] as f32;
+        let lz = uc[5] as f32;
+        [[lx, 0.0, 0.0], [0.0, ly, 0.0], [0.0, 0.0, lz]]
+    });
+
+    Ok(FrameWithBox {
+        coordinates: frame.coordinates,
+        box_vectors,
+    })
 }
 
 pub fn parse_dcd(path: &str) -> Result<DcdTrajectory, DcdError> {

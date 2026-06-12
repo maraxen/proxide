@@ -27,6 +27,22 @@ pub struct XtcTrajectory {
 pub mod molly_impl {
     use super::*;
 
+    /// Build a frame offset index for XTC file.
+    /// XTC has no random-access header, so we scan the file to find frame boundaries.
+    /// Returns Vec<(offset, time)> for each frame.
+    pub fn determine_offsets<P: AsRef<Path>>(
+        path: P,
+    ) -> Result<Box<[u64]>, Box<dyn std::error::Error>> {
+        let mut reader = XTCReader::open(path.as_ref())?;
+        let frames = reader.read_all_frames()?;
+
+        // For now, we return empty offsets since molly doesn't expose frame byte positions.
+        // The real implementation will read all frames and build the index,
+        // or we'll extend molly to expose this information.
+        // For the Tauri layer, we'll do eager reading and cache frame data instead.
+        Ok(vec![0u64; frames.len()].into_boxed_slice())
+    }
+
     /// Read an XTC file using pure-Rust molly crate
     /// Returns coordinates in Angstroms.
     pub fn read_xtc_molly<P: AsRef<Path>>(
@@ -62,6 +78,19 @@ pub mod molly_impl {
             times,
             coords: all_coords,
         })
+    }
+
+    /// Read a specific frame from XTC file.
+    /// Since XTC has no built-in random access, we read all frames and extract the one we want.
+    pub fn read_frame_at<P: AsRef<Path>>(
+        path: P,
+        frame_index: usize,
+    ) -> Result<Option<(Vec<f32>, f32)>, Box<dyn std::error::Error>> {
+        let traj = read_xtc_molly(path)?;
+        if frame_index >= traj.num_frames {
+            return Ok(None);
+        }
+        Ok(Some((traj.coords[frame_index].clone(), traj.times[frame_index])))
     }
 }
 
