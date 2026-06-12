@@ -9,7 +9,7 @@
 use super::xdr::XdrReader;
 
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Read, Seek};
 use thiserror::Error;
 
 #[cfg(test)]
@@ -274,20 +274,111 @@ pub struct FrameWithBox {
 
 /// Build a frame offset index for TRR by reading all frames and recording their file positions.
 /// Returns a Vec of byte offsets for each frame start.
+///
+/// Strategy: Do one sequential forward scan, recording stream_position() before each frame's
+/// magic number read. Since TRR frames are variable-sized and may contain optional data,
+/// we must parse through each frame to determine its end. The offset vector enables
+/// future O(1) random seeks via read_trr_frame_at_offset (future enhancement).
 pub fn build_trr_frame_offsets(path: &str) -> Result<Vec<u64>, TrrError> {
-    let _file = File::open(path)?;
+    let file = File::open(path)?;
+    let mut buf_reader = BufReader::new(file);
     let mut offsets = Vec::new();
-    let mut reader = TrrReader::open(path)?;
 
-    // Since TRR frames are variable-sized, we need to scan through them.
-    // For now, we'll use the eager-read approach: read all frames and their offsets
-    // are implicit from the frame list. The real fix requires a lower-level
-    // TRR reader that tracks byte positions during parsing.
+    loop {
+        // Record offset before attempting to read magic
+        let offset_before_magic = buf_reader.stream_position()?;
 
-    // Placeholder: return empty offsets. The Tauri layer will handle caching
-    // the full trajectory in memory for streaming.
-    let frames = reader.read_all_frames()?;
-    offsets.resize(frames.len(), 0);
+        // Try to read magic to detect EOF
+        let mut magic_buf = [0u8; 4];
+        match buf_reader.read_exact(&mut magic_buf) {
+            Ok(()) => {
+                // Successfully read magic
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                // Normal EOF
+                break;
+            }
+            Err(e) => return Err(e.into()),
+        }
+
+        let magic = i32::from_be_bytes(magic_buf);
+        if magic != 1993 {
+            return Err(TrrError::InvalidFormat(format!(
+                "Invalid TRR magic at offset {}: expected 1993, got {}",
+                offset_before_magic, magic
+            )));
+        }
+
+        offsets.push(offset_before_magic);
+
+        // Create XdrReader to parse the rest of the header and skip frame data
+        let mut xdr = XdrReader::new(&mut buf_reader);
+
+        // Read header fields
+        let _version = xdr.read_string()?;
+        let _ir_size = xdr.read_i32()?;
+        let _e_size = xdr.read_i32()?;
+        let box_size = xdr.read_i32()?;
+        let vir_size = xdr.read_i32()?;
+        let pres_size = xdr.read_i32()?;
+        let top_size = xdr.read_i32()?;
+        let sym_size = xdr.read_i32()?;
+        let x_size = xdr.read_i32()?;
+        let v_size = xdr.read_i32()?;
+        let f_size = xdr.read_i32()?;
+        let natoms = xdr.read_i32()?;
+        let _step = xdr.read_i32()?;
+        let _nre = xdr.read_i32()?;
+
+        // Detect precision for time/lambda
+        let is_double = if natoms > 0 && x_size > 0 {
+            (x_size as usize / (natoms as usize * 3)) == 8
+        } else if box_size > 0 {
+            (box_size / 9) == 8
+        } else {
+            false
+        };
+
+        // Skip time and lambda
+        if is_double {
+            xdr.read_f64()?;
+            xdr.read_f64()?;
+        } else {
+            xdr.read_f32()?;
+            xdr.read_f32()?;
+        }
+
+        // Skip all data blocks in order: box, vir, pres, top, sym, x, v, f
+        if box_size > 0 {
+            xdr.skip(box_size as usize)?;
+        }
+        if vir_size > 0 {
+            xdr.skip(vir_size as usize)?;
+        }
+        if pres_size > 0 {
+            xdr.skip(pres_size as usize)?;
+        }
+        if top_size > 0 {
+            xdr.skip(top_size as usize)?;
+        }
+        if sym_size > 0 {
+            xdr.skip(sym_size as usize)?;
+        }
+        if x_size > 0 {
+            xdr.skip(x_size as usize)?;
+        }
+        if v_size > 0 {
+            xdr.skip(v_size as usize)?;
+        }
+        if f_size > 0 {
+            xdr.skip(f_size as usize)?;
+        }
+
+        // XdrReader is now positioned at the end of this frame.
+        // Reconstruct buf_reader by dropping the xdr reference so buf_reader is usable again.
+        drop(xdr);
+    }
+
     Ok(offsets)
 }
 
