@@ -1,0 +1,75 @@
+---
+workspace: proxide
+session_id: c78e2df4-sprint16-execute-audit
+status: complete
+immediately_relevant:
+- file: crates/proxide-rotlib/src/rotlib_source/mod.rs
+  lines:
+  - 1
+  - 40
+  reason: RotlibSource trait definition — 6 methods, RotamerEntry and BinData structs
+- file: crates/proxide-rotlib/src/rotlib_source/dunbrack.rs
+  lines:
+  - 1
+  - 50
+  reason: DunbrackSource impl — from_file(), all 6 trait methods, 11 unit tests
+- file: crates/proxide-rotlib/src/bin/parse_master.rs
+  lines:
+  - 40
+  - 100
+  reason: '#1115: --validate flag (line 46), validation logic stub (run_validation, line ~108), license warnings now use warn!'
+- file: crates/proxide_py/src/lib.rs
+  lines:
+  - 13
+  - 18
+  reason: '#1306: mod declarations for py_confind/py_rotlib/py_frag; registrations at lines 149-151'
+- file: crates/proxide-rotlib/src/geometry/ccd_parser.rs
+  lines:
+  - 99
+  - 125
+  reason: Pre-existing clippy violations (while_let_on_iterator:99, type_complexity:125) — deferred from sprint, need follow-up ticket
+active_dispatches: []
+task_id: 260608_sprint-16-rotlib-source-pyobindings
+phase: Sprint 16 — Complete
+goal_statement: 'Execute Sprint 16: RotlibSource trait (#1114), parse_master --validate (#1115), PRO P6 verify+docs (#819), Python bindings skeleton (#1306) — all shipped, audited, and closed.'
+context_refs:
+- phase: Sprint 16 — Planning
+  task_id: 260608_sprint-16-rotlib-source-pyobindings
+  summary: Oracle-approved sprint plan composed; workflow JS emitted to .praxia/dynamic_workflows/
+- phase: Sprint 15
+  task_id: 260605_browser_wasm_parallel
+  summary: orx-parallel migration + proxide-parallel-rt + init_parallel WASM export merged
+- phase: Sprint 14
+  task_id: 260604_rotlib_multi_source
+  summary: RTF/CCD IC importers merged; convert_rotlib --ic-source URI wired; confind migrated to load_pb()
+failed_attempts:
+- attempt_id: workflow-track-d-false-fail
+  description: 'Sprint workflow first run: Track D reviewer returned FAIL claiming files absent'
+  outcome: Workflow threw, killing in-flight A/B/C fixer
+  reason_failed: Reviewer ran in stale worktree context created before fixer committed; py_confind.rs etc. were already in main (f29b0f9) but reviewer saw pre-commit state
+  do_not_retry: true
+  evidence_ref: null
+- attempt_id: workflow-abc-landed-in-worktree
+  description: 'Sprint workflow resumed: A/B/C fixers committed to worktree-ancient-hopping-kazoo, not main'
+  outcome: Required second merge-specialist dispatch after workflow completion
+  reason_failed: Session CWD was the worktree; workflow agents inherited that context and committed there instead of main
+  do_not_retry: true
+  evidence_ref: null
+open_questions: []
+deferred:
+- description: '#977 EPIC META: Comprehensive system-prep audit'
+  rationale: Orphaned epic, no sub-items; needs decomposition into implementable tickets before any dispatch
+  recommended_phase: Post-Sprint-16 planning
+- description: 'parse_master --validate: wire real inline drift test (spec §8 Phase 3 step 1)'
+  rationale: Current implementation is a load-sanity stub only; full drift measurement deferred to keep sprint scope tight
+  recommended_phase: Sprint 17 or standalone ticket
+- description: 'ccd_parser.rs clippy violations: while_let_on_iterator (line 99), type_complexity (line 125)'
+  rationale: Pre-existing from feat/#987, not sprint regressions; low risk, separate ticket
+  recommended_phase: Next debt sweep
+lessons_refs:
+- .praxia/lessons.jsonl
+next_steps:
+- 'Decompose #977 EPIC (Comprehensive system-prep audit) — undecomposed, no sub-items; needs breakdown into implementable tickets before dispatch'
+- 'Open follow-up ticket: wire real inline drift test in parse_master --validate (spec §8 Phase 3 step 1 is currently a load-sanity stub)'
+- 'Open follow-up ticket: fix pre-existing clippy violations in crates/proxide-rotlib/src/geometry/ccd_parser.rs lines 99 (while_let_on_iterator) and 125 (type_complexity)'
+---
