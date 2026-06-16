@@ -134,6 +134,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc (required by proxide-rotlib prost-build)
+        run: sudo apt-get install -y protobuf-compiler
       - name: Copy README into each crate directory
         run: |
           for crate in proxide-units proxide-core proxide-parallel-rt proxide-geometry \
