@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 description = "Protein structure sanitization and repair for proxide"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["protein", "bioinformatics", "structure", "repair", "sanitization"]
+categories = ["science", "algorithms"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 proxide_rs = { workspace = true }

@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 description = "Foundational data structures for protein parsing"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["protein", "bioinformatics", "pdb", "molecular-dynamics", "structure"]
+categories = ["science", "data-structures"]
+
+[package.metadata.docs.rs]
+features = ["serde"]
 
 [lib]
 crate-type = ["rlib"]

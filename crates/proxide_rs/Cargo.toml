@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 description = "High-performance Rust parsing core for protein structures"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["protein", "pdb", "bioinformatics", "molecular-dynamics", "force-field"]
+categories = ["science", "parser-implementations"]
+
+[package.metadata.docs.rs]
+features = ["xtc", "parallel", "foldcomp"]
 
 [lib]
 crate-type = ["rlib"]
