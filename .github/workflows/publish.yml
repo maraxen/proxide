@@ -112,31 +112,18 @@ jobs:
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Validate crate metadata (description, license, repository)
-        # cargo metadata --no-deps resolves workspace inheritance locally without hitting
-        # crates.io, so this works pre-publish. It catches missing required fields before
-        # the irreversible cargo publish step.
+        # cargo metadata --no-deps resolves workspace inheritance locally; never hits crates.io.
+        # jq checks required fields on all publishable crates before the irreversible publish.
         run: |
           set -e
-          cargo metadata --no-deps --format-version 1 > /tmp/workspace-meta.json
-          python3 -c "
-import json, sys
-required = ['name', 'version', 'description', 'license', 'repository']
-excluded = {'proxide_py', 'proxide-wasm'}
-data = json.load(open('/tmp/workspace-meta.json'))
-errors = []
-for pkg in data['packages']:
-    name = pkg['name']
-    if name in excluded:
-        continue
-    for field in required:
-        val = pkg.get(field)
-        if not val:
-            errors.append(f'{name}: missing {field}')
-if errors:
-    [print('ERROR:', e) for e in errors]
-    sys.exit(1)
-print(f'OK: {len(data[\"packages\"]) - len(excluded)} publishable crates pass metadata check')
-"
+          bad=$(cargo metadata --no-deps --format-version 1 | jq -r '
+            .packages[] |
+            select(.name | IN("proxide_py", "proxide-wasm") | not) |
+            select(.description == null or .license == null or .repository == null) |
+            .name + ": missing description, license, or repository"
+          ')
+          if [ -n "$bad" ]; then echo "$bad" >&2; exit 1; fi
+          echo "OK: all publishable crates have required metadata"
 
   publish-crates:
     name: Publish to crates.io
