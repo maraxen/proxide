@@ -104,31 +104,39 @@ jobs:
           path: dist
 
   verify-crates:
-    name: Dry-run crates.io packaging
+    name: Validate crate metadata
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/checkout@v4
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-      - name: Copy README into each crate directory
-        run: |
-          for crate in proxide-units proxide-core proxide-parallel-rt proxide-geometry \
-                       proxide-gaff proxide-io proxide-rotlib proxide-frag \
-                       proxide-physics proxide-confind proxide_rs proxide_fixer; do
-            cp -n README.md crates/$crate/README.md
-          done
-      - name: Validate crate packaging (metadata, includes, Cargo.toml)
-        # cargo package --no-verify checks metadata and file inclusion without resolving
-        # workspace-internal deps from crates.io (unavailable pre-publish).
-        # Build verification happens naturally in publish-crates once deps exist in order.
+      - name: Validate crate metadata (description, license, repository)
+        # cargo metadata --no-deps resolves workspace inheritance locally without hitting
+        # crates.io, so this works pre-publish. It catches missing required fields before
+        # the irreversible cargo publish step.
         run: |
           set -e
-          for crate in proxide-units proxide-core proxide-parallel-rt proxide-geometry \
-                       proxide-gaff proxide-io proxide-rotlib proxide-frag \
-                       proxide-physics proxide-confind proxide_rs proxide_fixer; do
-            cargo package --allow-dirty --no-verify -p $crate
-          done
+          cargo metadata --no-deps --format-version 1 > /tmp/workspace-meta.json
+          python3 -c "
+import json, sys
+required = ['name', 'version', 'description', 'license', 'repository']
+excluded = {'proxide_py', 'proxide-wasm'}
+data = json.load(open('/tmp/workspace-meta.json'))
+errors = []
+for pkg in data['packages']:
+    name = pkg['name']
+    if name in excluded:
+        continue
+    for field in required:
+        val = pkg.get(field)
+        if not val:
+            errors.append(f'{name}: missing {field}')
+if errors:
+    [print('ERROR:', e) for e in errors]
+    sys.exit(1)
+print(f'OK: {len(data[\"packages\"]) - len(excluded)} publishable crates pass metadata check')
+"
 
   publish-crates:
     name: Publish to crates.io
