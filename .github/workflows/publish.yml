@@ -149,8 +149,8 @@ jobs:
         run: |
           set -e
           pub() {
-            local out rc
-            out=$(cargo publish --allow-dirty -p "$1" 2>&1); rc=$?
+            local out rc=0
+            out=$(cargo publish --allow-dirty -p "$1" 2>&1) || rc=$?
             if [ $rc -eq 0 ]; then
               echo "$out"
             elif echo "$out" | grep -q "already exists on crates.io"; then
