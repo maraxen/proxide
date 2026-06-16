@@ -190,6 +190,7 @@ impl PyOutputSpec {
         enable_caching = false,
         unit_system = PyUnitSystem::Amber
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         coord_format: PyCoordFormat,
         output_format_target: String,

@@ -1,0 +1,51 @@
+[package]
+name        = "proxide-confind"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "ConFind contact-degree algorithm — Rust/orx-parallel reimplementation of Mosaist mstcondeg"
+keywords    = ["protein", "contact", "rotamer", "structural-biology"]
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "confind"
+path = "src/bin/confind.rs"
+
+[[bench]]
+name = "bench_cache"
+harness = false
+
+[[bench]]
+name = "bench_contacts"
+harness = false
+
+[dependencies]
+proxide-core     = { path = "../proxide-core" }
+proxide-geometry = { path = "../proxide-geometry" }
+proxide-io       = { path = "../proxide-io" }
+proxide-rotlib   = { path = "../proxide-rotlib" }
+orx-parallel     = { workspace = true }
+dashmap          = "6"
+thiserror        = { workspace = true }
+log              = { workspace = true }
+
+[dependencies.serde]
+workspace = true
+optional  = true
+features  = ["derive"]
+
+[dev-dependencies]
+approx    = { workspace = true }
+tempfile  = "3"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+proxide-parallel-rt = { path = "../proxide-parallel-rt" }
+getrandom = { version = "0.2", features = ["js"] }
+
+[features]
+default = []
+serde   = ["dep:serde"]

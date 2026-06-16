@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 // Column indices for parameterizer output arrays
 const COL_BOND_LENGTH: usize = 0;
 const COL_BOND_K: usize = 1;
+#[allow(dead_code)]
 const COL_ANGLE_THETA: usize = 0;
 const COL_ANGLE_K: usize = 1;
 const COL_TORSION_K: usize = 2;

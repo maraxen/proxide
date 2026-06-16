@@ -1,95 +1,65 @@
-use crate::models::{Topology, Atom};
-use crate::templates::ResidueLibrary;
-use nalgebra::{Matrix3, Matrix3x1};
-use log::{warn, info};
+use crate::models::{Topology};
+use log::warn;
+use proxide_rs::structure::systems::AtomicSystem;
 
 pub struct Builder;
 
 impl Builder {
-    pub fn add_missing_atoms(topology: &mut Topology, library: &ResidueLibrary) {
-        for chain in &mut topology.chains {
-            for residue in &mut chain.residues {
-                if let Some(template) = library.get(&residue.name) {
-                    let existing_atom_names: std::collections::HashSet<String> = residue.atoms.iter().map(|a| a.name.clone()).collect();
-                    let missing_atoms: Vec<_> = template.atoms.iter()
-                        .filter(|ta| !existing_atom_names.contains(&ta.name))
-                        .collect();
-
-                    if missing_atoms.is_empty() {
-                        continue;
-                    }
-
-                    info!("Fixing residue {} (res_id={}): missing {} atoms", residue.name, residue.res_id, missing_atoms.len());
-
-                    // Find common atoms
-                    let common_atoms: Vec<_> = residue.atoms.iter()
-                        .filter(|a| template.atoms.iter().any(|ta| ta.name == a.name))
-                        .collect();
-
-                    if common_atoms.len() >= 3 {
-                        // Align using Kabsch
-                        let mut source_pts = Vec::new();
-                        let mut target_pts = Vec::new();
-                        
-                        for atom in &common_atoms {
-                            let t_atom = template.atoms.iter().find(|ta| ta.name == atom.name).unwrap();
-                            source_pts.push(Matrix3x1::new(atom.coords[0], atom.coords[1], atom.coords[2]));
-                            target_pts.push(Matrix3x1::new(t_atom.coords[0] as f32, t_atom.coords[1] as f32, t_atom.coords[2] as f32));
-                        }
-
-                        // Compute centroids
-                        let mut centroid_src = Matrix3x1::zeros();
-                        let mut centroid_tgt = Matrix3x1::zeros();
-                        for (s, t) in source_pts.iter().zip(target_pts.iter()) {
-                            centroid_src += s;
-                            centroid_tgt += t;
-                        }
-                        centroid_src /= source_pts.len() as f32;
-                        centroid_tgt /= target_pts.len() as f32;
-
-                        // Center pts
-                        let centered_src: Vec<_> = source_pts.iter().map(|p| p - centroid_src).collect();
-                        let centered_tgt: Vec<_> = target_pts.iter().map(|p| p - centroid_tgt).collect();
-
-                        // Compute H = S^T * T (sum of outer products)
-                        let mut h = Matrix3::zeros();
-                        for (s, t) in centered_src.iter().zip(centered_tgt.iter()) {
-                            h += s * t.transpose();
-                        }
-
-                        // Compute SVD
-                        let svd = h.svd(true, true);
-                        let u = svd.u.expect("SVD U failed");
-                        let v_t = svd.v_t.expect("SVD V failed");
-                        let mut rot: Matrix3<f32> = u * v_t;
-                        if rot.determinant() < 0.0 {
-                            let mut s = Matrix3::identity();
-                            s[(2, 2)] = -1.0;
-                            rot = u * s * v_t;
-                        }
-
-                        // Apply transformation
-                        for ta in missing_atoms {
-                            let pt = Matrix3x1::new(ta.coords[0] as f32, ta.coords[1] as f32, ta.coords[2] as f32);
-                            let centered_ta = pt - centroid_tgt;
-                            let rotated = rot * centered_ta;
-                            let final_pt = rotated + centroid_src;
-
-                            residue.atoms.push(Atom {
-                                name: ta.name.clone(),
-                                element: ta.element.clone(),
-                                coords: [final_pt.x, final_pt.y, final_pt.z],
-                                alt_loc: ' ',
-                                serial: 0, // Placeholder
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            });
-                        }
-                    } else {
-                        warn!("Not enough atoms to reconstruct for {} ({} found, need 3)", residue.name, common_atoms.len());
+    pub fn map_seqres(topology: &Topology, seqres: &std::collections::HashMap<String, Vec<(i32, String)>>) {
+        for chain in &topology.chains {
+            if let Some(expected_residues) = seqres.get(&chain.id) {
+                let existing_residues: std::collections::HashSet<(i32, String)> = chain.residues.iter()
+                    .filter(|r| !r.atoms.iter().any(|a| a.is_hetatm))
+                    .map(|r| (r.res_id, r.name.clone()))
+                    .collect();
+                
+                for (res_id, res_name) in expected_residues {
+                    if !existing_residues.contains(&(*res_id, res_name.clone())) {
+                        warn!("Residue {} (res_id={}) missing in chain {}", res_name, res_id, chain.id);
                     }
                 }
+            }
+        }
+    }
+
+    pub fn resolve_clashes(system: &mut AtomicSystem, radius: f32) {
+        let max_iter = 100;
+        let convergence_threshold = 0.01;
+
+        for _ in 0..max_iter {
+            let mut max_displacement: f32 = 0.0;
+            let coords = system.coordinates.clone();
+            let num_atoms = coords.len() / 3;
+
+            for i in 0..num_atoms {
+                for j in (i + 1)..num_atoms {
+                    let d2 = (coords[i * 3] - coords[j * 3]).powi(2) + 
+                             (coords[i * 3 + 1] - coords[j * 3 + 1]).powi(2) + 
+                             (coords[i * 3 + 2] - coords[j * 3 + 2]).powi(2);
+                    let d = d2.sqrt();
+                    let min_dist = radius * 2.0;
+
+                    if d < min_dist && d > 1e-6 {
+                        let shift = (min_dist - d) / 2.0;
+                        let direction = [
+                            (coords[i * 3] - coords[j * 3]) / d,
+                            (coords[i * 3 + 1] - coords[j * 3 + 1]) / d,
+                            (coords[i * 3 + 2] - coords[j * 3 + 2]) / d,
+                        ];
+
+                        system.coordinates[i * 3] += direction[0] * shift;
+                        system.coordinates[i * 3 + 1] += direction[1] * shift;
+                        system.coordinates[i * 3 + 2] += direction[2] * shift;
+                        system.coordinates[j * 3] -= direction[0] * shift;
+                        system.coordinates[j * 3 + 1] -= direction[1] * shift;
+                        system.coordinates[j * 3 + 2] -= direction[2] * shift;
+
+                        max_displacement = max_displacement.max(shift);
+                    }
+                }
+            }
+            if max_displacement < convergence_threshold {
+                break;
             }
         }
     }
@@ -99,51 +69,63 @@ impl Builder {
 mod tests {
     use super::*;
     use crate::models::{Topology, Residue, Atom, Chain};
-    use crate::templates::{ResidueLibrary, ResidueTemplate, TemplateAtom};
+    use std::collections::HashMap;
+    use proxide_rs::structure::systems::AtomicSystemArgs;
 
     #[test]
-    fn test_add_missing_atoms() {
-        let mut lib = ResidueLibrary::new();
-        // ALA template: N, CA, CB, C, O
-        lib.insert(ResidueTemplate {
-            name: "ALA".to_string(),
-            atoms: vec![
-                TemplateAtom { name: "N".to_string(), element: "N".to_string(), coords: [0.0, 0.0, 0.0] },
-                TemplateAtom { name: "CA".to_string(), element: "C".to_string(), coords: [1.0, 0.0, 0.0] },
-                TemplateAtom { name: "CB".to_string(), element: "C".to_string(), coords: [1.0, 1.0, 0.0] },
-                TemplateAtom { name: "C".to_string(), element: "C".to_string(), coords: [1.0, 1.0, 1.0] }, // Make them non-collinear
-                TemplateAtom { name: "O".to_string(), element: "O".to_string(), coords: [2.0, 0.0, 1.0] },
-            ],
-            bonds: vec![],
-        });
-
-        // Offset the input by [10, 10, 10]
-        let offset = [10.0, 10.0, 10.0];
-        let mut topology = Topology {
+    fn test_map_seqres() {
+        let topology = Topology {
             chains: vec![Chain {
                 id: "A".to_string(),
-                residues: vec![Residue {
-                    name: "ALA".to_string(),
-                    res_id: 1,
-                    insertion_code: ' ',
-                    atoms: vec![
-                        Atom { name: "N".to_string(), element: "N".to_string(), coords: [0.0 + offset[0], 0.0 + offset[1], 0.0 + offset[2]], alt_loc: ' ', serial: 1, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
-                        Atom { name: "CA".to_string(), element: "C".to_string(), coords: [1.0 + offset[0], 0.0 + offset[1], 0.0 + offset[2]], alt_loc: ' ', serial: 2, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
-                        Atom { name: "C".to_string(), element: "C".to_string(), coords: [1.0 + offset[0], 1.0 + offset[1], 1.0 + offset[2]], alt_loc: ' ', serial: 3, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
-                    ],
-                }],
+                residues: vec![
+                    Residue {
+                        name: "ALA".to_string(),
+                        res_id: 1,
+                        insertion_code: ' ',
+                        atoms: vec![Atom { name: "CA".to_string(), element: "C".to_string(), coords: [0.0, 0.0, 0.0], alt_loc: ' ', serial: 1, b_factor: 0.0, occupancy: 1.0, is_hetatm: false }],
+                    },
+                    Residue {
+                        name: "HOH".to_string(),
+                        res_id: 2,
+                        insertion_code: ' ',
+                        atoms: vec![Atom { name: "O".to_string(), element: "O".to_string(), coords: [1.0, 1.0, 1.0], alt_loc: ' ', serial: 2, b_factor: 0.0, occupancy: 1.0, is_hetatm: true }],
+                    }
+                ],
             }],
         };
 
-        Builder::add_missing_atoms(&mut topology, &lib);
+        let mut seqres = HashMap::new();
+        seqres.insert("A".to_string(), vec![
+            (1, "ALA".to_string()),
+            (2, "VAL".to_string()), // Missing
+        ]);
 
-        let res = &topology.chains[0].residues[0];
-        assert_eq!(res.atoms.len(), 5);
-        
-        // Verify CB position
-        let cb = res.atoms.iter().find(|a| a.name == "CB").unwrap();
-        assert!((cb.coords[0] - (1.0 + offset[0])).abs() < 1e-3, "CB x expected {}, got {}", 1.0 + offset[0], cb.coords[0]);
-        assert!((cb.coords[1] - (1.0 + offset[1])).abs() < 1e-3, "CB y expected {}, got {}", 1.0 + offset[1], cb.coords[1]);
-        assert!((cb.coords[2] - (0.0 + offset[2])).abs() < 1e-3, "CB z expected {}, got {}", 0.0 + offset[2], cb.coords[2]);
+        Builder::map_seqres(&topology, &seqres);
+    }
+
+    #[test]
+    fn test_clash_resolution() {
+        let mut system = AtomicSystem::new(AtomicSystemArgs {
+            coordinates: vec![0.0, 0.0, 0.0, 0.5, 0.0, 0.0],
+            atom_mask: vec![1.0, 1.0],
+            atom_names: None,
+            elements: None,
+            bonds: None,
+            charges: None,
+            sigmas: None,
+            epsilons: None,
+            radii: None,
+            residue_index: None,
+            chain_index: None,
+        });
+
+        // Radius of 1.0 Å, collision min_dist = 2.0 Å. Currently 0.5 Å.
+        Builder::resolve_clashes(&mut system, 1.0);
+
+        let d2 = (system.coordinates[0] - system.coordinates[3]).powi(2) + 
+                 (system.coordinates[1] - system.coordinates[4]).powi(2) + 
+                 (system.coordinates[2] - system.coordinates[5]).powi(2);
+        let d = d2.sqrt();
+        assert!(d >= 2.0, "Clash not resolved: distance is {}", d);
     }
 }

@@ -15,7 +15,7 @@ use proxide_core::forcefield::types::{
     ForceField, HarmonicAngleParam, HarmonicBondParam, ImproperTorsionParam, NonbondedParam,
     ProperTorsionParam, ResidueAtom, ResidueTemplate,
 };
-use proxide_core::forcefield::xml_parser::parse_forcefield_xml;
+use proxide_core::forcefield::xml_parser::{parse_forcefield_xml, parse_xml_reader};
 
 /// Supported GAFF force field versions
 pub const INSTALLED_FORCEFIELDS: &[&str] = &[
@@ -288,20 +288,20 @@ impl GaffAtomTyper {
             "H".to_string(),
             vec![
                 GaffTypeRule {
-                    atom_type: "ha".to_string(),
-                    num_neighbors: Some(1),
-                    is_aromatic: None,
-                    is_ring: None,
-                    neighbor_elements: None,
-                    description: "H on aromatic C".to_string(),
-                },
-                GaffTypeRule {
                     atom_type: "hc".to_string(),
                     num_neighbors: Some(1),
                     is_aromatic: None,
                     is_ring: None,
                     neighbor_elements: Some(vec!["C".to_string()]),
                     description: "H on aliphatic C without electron-withdrawing".to_string(),
+                },
+                GaffTypeRule {
+                    atom_type: "ha".to_string(),
+                    num_neighbors: Some(1),
+                    is_aromatic: Some(true),
+                    is_ring: None,
+                    neighbor_elements: Some(vec!["C".to_string()]),
+                    description: "H on aromatic C".to_string(),
                 },
                 GaffTypeRule {
                     atom_type: "h1".to_string(),
@@ -504,8 +504,9 @@ impl GaffAtomTyper {
     pub fn assign_types(&self, elements: &[String], topology: &Topology) -> Vec<String> {
         // Compute aromaticity
         let is_aromatic_map = topology.compute_aromaticity(elements);
-        // TODO: compute ring membership
-        let is_ring_map: Vec<bool> = vec![false; elements.len()]; // placeholder
+        let is_ring_map: Vec<bool> = (0..elements.len())
+            .map(|i| topology.is_in_ring(i, 8))
+            .collect();
 
         let mut types = Vec::with_capacity(elements.len());
 
@@ -653,7 +654,8 @@ impl GaffAtomTyper {
         let parent_elem = parent_element.map(|s| s.to_uppercase()).unwrap_or_default();
 
         match parent_type {
-            "ca" | "cc" | "cd" | "cp" | "cq" => Some("ha".to_string()),
+            "c1" | "c2" | "c3" | "cc" | "cx" | "cy" => Some("hc".to_string()),
+            "ca" | "cd" | "cp" | "cq" => Some("ha".to_string()),
             "n" | "na" | "nb" | "nc" | "nd" | "ne" | "nf" | "nh" | "no" | "n3" | "n4" => {
                 Some("hn".to_string())
             }
@@ -729,6 +731,29 @@ impl GaffTemplateGenerator {
             parse_forcefield_xml(&path)
                 .map_err(|e| GaffError::FileNotFound(format!("{}: {}", path, e)))?
         };
+
+        Ok(Self {
+            forcefield_version: forcefield.to_string(),
+            major_version: major,
+            minor_version: minor,
+            forcefield: ff,
+            typer: GaffAtomTyper::new(),
+            lj14scale: 0.5,
+            coulomb14scale: 0.8333333,
+        })
+    }
+
+    /// Create generator from XML content string (WASM-compatible — no filesystem access).
+    pub fn from_xml_content(forcefield: &str, xml_content: &str) -> Result<Self, GaffError> {
+        if !INSTALLED_FORCEFIELDS.contains(&forcefield) {
+            return Err(GaffError::InvalidForceField(format!(
+                "'{}' not in {:?}",
+                forcefield, INSTALLED_FORCEFIELDS
+            )));
+        }
+        let (major, minor) = Self::parse_version(forcefield)?;
+        let ff = parse_xml_reader(xml_content.as_bytes(), forcefield.to_string())
+            .map_err(|e| GaffError::ParseError(format!("{}", e)))?;
 
         Ok(Self {
             forcefield_version: forcefield.to_string(),
@@ -1167,23 +1192,27 @@ mod tests {
     #[test]
     fn test_hydrogen_refinement() {
         let typer = GaffAtomTyper::new();
-        
-        // C-H (aliphatic) -> None (defaults to hc in assign_single_type, refine doesn't change it if no special parent)
-        assert_eq!(typer.refine_hydrogen_type("c3", Some(&"C".to_string())), None);
-        
+
+        // C-H (aliphatic) -> hc (sp3 aliphatic carbon)
+        assert_eq!(typer.refine_hydrogen_type("c3", Some(&"C".to_string())), Some("hc".to_string()));
+
+        // C1/C2 (sp/sp2 aliphatic) -> hc
+        assert_eq!(typer.refine_hydrogen_type("c1", Some(&"C".to_string())), Some("hc".to_string()));
+        assert_eq!(typer.refine_hydrogen_type("c2", Some(&"C".to_string())), Some("hc".to_string()));
+
         // O-H (hydroxyl) -> ho
         assert_eq!(typer.refine_hydrogen_type("oh", Some(&"O".to_string())), Some("ho".to_string()));
-        
+
         // N-H (amine) -> hn
         assert_eq!(typer.refine_hydrogen_type("n3", Some(&"N".to_string())), Some("hn".to_string()));
-        
+
         // ca-H (aromatic) -> ha
         assert_eq!(typer.refine_hydrogen_type("ca", Some(&"C".to_string())), Some("ha".to_string()));
 
         // Extra branches
         assert_eq!(typer.refine_hydrogen_type("sh", Some(&"S".to_string())), Some("hs".to_string()));
         assert_eq!(typer.refine_hydrogen_type("p2", Some(&"P".to_string())), Some("hp".to_string()));
-        
+
         // Element-based fallbacks
         assert_eq!(typer.refine_hydrogen_type("unknown", Some(&"N".to_string())), Some("hn".to_string()));
         assert_eq!(typer.refine_hydrogen_type("unknown", Some(&"O".to_string())), Some("ho".to_string()));

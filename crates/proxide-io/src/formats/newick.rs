@@ -22,6 +22,7 @@ struct RawNode {
     name: String,
     parent: Option<usize>,
     children: Vec<usize>,
+    #[allow(dead_code)]
     is_leaf: bool,
 }
 
@@ -162,7 +163,7 @@ pub fn parse_newick<P: AsRef<Path>>(path: P) -> Result<TreeArrays, NewickError> 
 
     // Compute post-order
     let mut post_order = Vec::new();
-    let mut visited = vec![false; nodes.len()];
+    let _visited = vec![false; nodes.len()];
     let root_raw = nodes.iter().position(|r| r.parent.is_none()).unwrap_or(0);
 
     // Simple iterative post-order traversal

@@ -1,0 +1,44 @@
+---
+workspace: proxide
+session_id: b9a14c82-0f4e-4e1a-a93c-5d2e8f17c301
+status: complete
+immediately_relevant:
+- file: crates/proxide-rotlib/README.md
+  lines:
+  - 1
+  - 41
+  reason: 'P6 deliverable: ODC-BY notice + Shapovalov 2011 citation ''where the data ships'' (AC-5 L2/L4).'
+- file: crates/proxide-rotlib/src/lib.rs
+  lines:
+  - 3
+  - 37
+  reason: Module header now documents both loader paths + Licensing note + 2011 citation.
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 274
+  - 278
+  reason: Source of the attribution + data_license=ODC-BY-1.0 strings baked into every .pb.zst; README quotes attribution verbatim.
+- file: crates/proxide-rotlib/tests/test_geometry_ac_g.rs
+  lines:
+  - 1
+  - 1
+  reason: Existing rebuilt-PRO-vs-CCD-PRO.cif cross-check (the P6 verify half); green since P3/A3.
+active_dispatches: []
+task_id: 260602_proxcon_deferred4
+phase: null
+goal_statement: 'Sprint 12 P6 Verify+docs COMPLETE and landed to main (merge a129838, parents 57db03b+db7e3e9). Added crates/proxide-rotlib/README.md with the ODC-BY data notice, MIT-code/ODC-BY-data license split, the verbatim ODC Attribution string (byte-consistent with the converter-baked RotamerLibrary.attribution field), the ODC-BY-1.0 URI, the CC BY-NC-SA non-redistribution statement, and the required Shapovalov & Dunbrack 2011 Structure citation. Updated lib.rs module header to document both load()/load_pb() paths, a Licensing note, and the 2011 citation. AC-4 + AC-5 confirmed by independent A6 reviewer gate: PASS.'
+context_refs: []
+failed_attempts: []
+open_questions: []
+deferred:
+- description: Migrate confind.rs production call-site from load() (MSL binary) to load_pb() (protobuf).
+  rationale: Deliberately out of P5/P6 scope per spec line 252; swapping the call-site shifts confind parity expectations and belongs in its own item.
+  recommended_phase: post-P6
+- description: 'Open Q4: ship per-residue .pb.zst vs one combined library file. Interim CPR+PRO-only file in use.'
+  rationale: Lean toward one file once the geometry engine covers all 20 residues.
+  recommended_phase: roadmap
+- description: Full 20-residue regeneration to retire the CC BY-NC-SA rotlib.bin runtime dependency.
+  rationale: 'Separate roadmap item per spec decision #5; depends on the confind call-site migration.'
+  recommended_phase: roadmap
+lessons_refs: []
+---

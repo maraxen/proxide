@@ -1,0 +1,36 @@
+---
+workspace: proxide
+session_id: b9a14c82-0f4e-4e1a-a93c-5d2e8f17c301
+status: complete
+immediately_relevant:
+- file: crates/proxide-rotlib/src/rotlib.rs
+  lines:
+  - 191
+  - 368
+  reason: load_pb() (~191) + resolve_entry_bin() (~338) helper used by num_rotamers/place_rotamer/backbone_bin.
+- file: crates/proxide-rotlib/tests/test_ac_r_routing.rs
+  lines:
+  - 1
+  - 60
+  reason: 'AC-R(1)/(2) identity tests; AC-R(3) real-data test is #[ignore] artifact-gated.'
+- file: .praxia/docs/specs/260602_dunbrack-rotlib-protobuf-cis-pro.md
+  lines:
+  - 278
+  - 280
+  reason: 'P6 next phase: AC-4/AC-5 cross-check vs CCD PRO.cif, README ODC-BY notice, git ls-files no rotlib.bin.'
+active_dispatches: []
+task_id: 260602_proxcon_deferred4
+phase: null
+goal_statement: P5 Loader+routing COMPLETE and landed to main (merge 62747a0). load_pb() wires protobuf+zstd rotamer library into RotamerLibrary; resolve_entry_bin() shared helper routes (PRO,cis=true)->CPR for both entry and bin. A5 audit PASS.
+context_refs: []
+failed_attempts: []
+open_questions: []
+deferred:
+- description: 'P6 Verify+docs: cross-check rebuilt PRO vs CCD PRO.cif (NOT MASTER), README ODC-BY notice + citation, --all-targets clean, git ls-files confirms no rotlib.bin committed (AC-4/AC-5).'
+  rationale: Final verification + licensing phase; gated on P5/A5 PASS which is now done.
+  recommended_phase: Sprint 12 P6
+- description: Migrate confind.rs production call-site from load() (MSL binary) to load_pb() (protobuf).
+  rationale: Deliberately out of P5 scope per spec line 252; swapping the call-site shifts confind parity expectations and belongs in its own item.
+  recommended_phase: post-P6
+lessons_refs: []
+---

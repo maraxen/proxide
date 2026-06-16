@@ -1,0 +1,61 @@
+---
+workspace: proxide
+session_id: 52b25843-bg
+status: complete
+immediately_relevant:
+- file: scripts/analysis/measure_master_cb_improper.py
+  lines:
+  - 1
+  - 60
+  reason: Measures MASTER's canonical CB improper (C-N-CA-CB) = -120.64deg (NeRF), matches proxide -119.7 placeholder. CB-constancy guard + self-test. On main 18534f7.
+- file: scripts/analysis/audit_leu_ic_vs_master.py
+  lines:
+  - 218
+  - 248
+  reason: LEU all-atom IC audit vs MASTER. Bonds/angles/chi1/chi2/CD2-branch all faithful. NeRF=-IUPAC convention. CB angle is N-CA-CB (fixed in ecdb5f7, was C-CA-CB bug). On main fd88eb6/ecdb5f7.
+- file: .praxia/docs/research/260603_master-rotlib-cartesian-derivation.md
+  lines:
+  - 155
+  - 211
+  reason: 'Sec 5 (bonds/angles falsified) + new sec 7 (#884: CB improper falsified, LEU geometry/chi faithful, drift redirected). On main a796d5d.'
+- file: crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs
+  lines:
+  - 77
+  - 110
+  reason: 'Drift harness. PROXIDE_ROTLIB_PB env. small.pdb LEU5-LEU5 max drift 0.212. The gate #925 must clear (<5e-4).'
+- file: scripts/analysis/extract_rotlib_geometry.py
+  lines:
+  - 72
+  - 115
+  reason: 'parse_rotlib() reads MASTER rotlib.bin (dev-only /home/marielle/repos/mosaist/testfiles/rotlib.bin, sha256 edabc73f9a9e9536...). Reuse for #925 rotamer-set comparison; stores per-bin {prob, chi, coords}.'
+active_dispatches: []
+task_id: 260603_cb_improper_drift
+phase: '#884 CB improper and atom-order audit (820, 869)'
+goal_statement: '#884 RESOLVED. Larger goal #869 (reduce confind load_pb contact-degree drift vs MASTER rotlib.bin to <5e-4) is now pursued via #925: sidechain geometry & chi convention are proven faithful, so the drift must be rotamer-set composition or the load_pb contact algorithm.'
+context_refs:
+- phase: CHARMM IC sourcing (820, 869)
+  task_id: 260603_charmm_ic_sourcing
+  summary: 'Prior session: sourced CHARMM bonds+angles (merged c10b31b); falsified as drift driver (drift 0.223->0.212).'
+failed_attempts:
+- attempt_id: b1
+  description: Measure MASTER CB improper by reconstructing N/CA/C per phi/psi bin while CB is fixed in one canonical frame
+  outcome: 'Garbage: uniform std~104deg, identical across residues (frame-mixing artifact)'
+  reason_failed: MASTER CB is in ONE canonical frame, not per-phi/psi. Build canonical identity backbone N=[-1,0,0] CA=[0,0,0] C=[0,1,0]; verify with CB-constancy guard (std~0).
+  do_not_retry: true
+  evidence_ref: null
+- attempt_id: b2
+  description: Measure CB bond angle as C-CA-CB and compare to N-CA-CB template value (110.5)
+  outcome: Spurious 8.4deg mismatch (118.92 vs 110.5)
+  reason_failed: NeRF places CB via [C,N,CA] so angle is N-CA-CB (108.37deg, benign). Use each atom's actual template parent chain. Fixed in ecdb5f7.
+  do_not_retry: true
+  evidence_ref: null
+open_questions:
+- '#925 Q1: Does proxide enumerate the same rotamers per phi/psi bin as MASTER, in the same order, with the same per-rotamer probabilities? Compare per-bin counts/probabilities proxide-rebuilt vs MASTER rotlib.bin.'
+- '#925 Q2: Is the load_pb contact-degree algorithm (pair selection/weighting/normalization) faithful to MASTER confind? Trace on small.pdb LEU5.'
+deferred:
+- description: Proline CHARMM multi-angle ring closure
+  rationale: 'Proline absent from small.pdb; not on #869 critical path'
+  recommended_phase: later
+lessons_refs:
+- .praxia/lessons.jsonl
+---

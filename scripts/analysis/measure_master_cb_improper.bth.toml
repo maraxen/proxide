@@ -1,0 +1,38 @@
+schema = "bathos/0.3"
+
+[experiment]
+slug = "measure_master_cb_improper_884"
+hypothesis = "MASTER's canonical C-N-CA-CB improper dihedral differs materially (>5 deg) from proxide's -119.7 deg placeholder, making CB orientation a primary confind-drift driver."
+description = "Measure the baked CB improper dihedral across 19 residues from MASTER rotlib.bin and compare against proxide's fixed placeholder."
+
+[outcomes.fail]
+condition = "improper dihedral matches -119.7 deg within ±5 deg across all measured residues"
+reasoning = "CB orientation is already ~correct in MASTER; likely NOT the primary drift driver. Falsifies the hypothesis."
+is_residual = true
+
+[outcomes.marginal]
+condition = "improper dihedral differs by 5-10 deg or shows unexplained residue-to-residue variation"
+reasoning = "CB orientation differs somewhat from placeholder but magnitude is inconclusive. Suggests CB is a minor contributor to drift, warrants follow-up."
+is_residual = false
+
+[outcomes.pass]
+condition = "improper dihedral differs by >10 deg or shows sign flip relative to -119.7 deg"
+reasoning = "CB orientation is materially different; plausible primary driver of confind-drift. Supports hypothesis."
+is_residual = false
+
+[result_schema]
+measurements = "dict[str, dict]"
+measurements_fields = [
+  "cb_coord: [float, float, float] — stored CB coordinate in canonical frame",
+  "cb_std: [float, float, float] — per-axis population std dev (should be ~0)",
+  "cb_improper_deg: float — measured C-N-CA-CB dihedral (degrees)",
+  "delta_vs_placeholder: float — improper - (-119.7) (degrees)"
+]
+
+[result_schema.provenance]
+rotlib_sha256 = "sha256 hash of /home/marielle/repos/mosaist/testfiles/rotlib.bin used"
+python_version = "3.11+"
+numpy_version = "not required"
+script_commit_sha = "git rev-parse HEAD at time of measurement"
+canonical_frame_assumption = "C-N-CA-CB improper depends only on frame axes, not bond lengths. Identity-frame backbone (N=[-1,0,0], CA=[0,0,0], C=[0,1,0]) reproduces proxide's canonical frame."
+dihedral_convention = "IUPAC standard atan2-based (proxide angles.rs:dihedral_angle)"

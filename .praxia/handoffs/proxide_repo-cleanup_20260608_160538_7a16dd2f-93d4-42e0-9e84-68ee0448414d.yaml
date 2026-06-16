@@ -1,0 +1,55 @@
+---
+workspace: proxide
+session_id: 36a8811c-abc1-4527-9adb-d980c14352c2
+status: complete
+immediately_relevant:
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 30
+  - 78
+  reason: '#1114: ad-hoc ic_source string matching to replace with RotlibSource trait'
+- file: crates/proxide-rotlib/src/bin/parse_master.rs
+  lines:
+  - 23
+  - 31
+  reason: '#1115: only --input/--output args; --validate not yet added'
+- file: crates/proxide-confind/src/coords.rs
+  lines:
+  - 40
+  - 42
+  reason: '#819: omega + is_cis_peptide fields present; CPR test path not covered'
+- file: crates/proxide_py/src/lib.rs
+  lines:
+  - 72
+  - 146
+  reason: '#1306: IO/chemistry exposed; ConFind/RotLib/proxide-frag not yet bound'
+- file: .praxia/docs/specs/260604_rotlib-multi-source-arch.md
+  lines:
+  - 1
+  - 50
+  reason: 'RotlibSource trait design spec for #1114'
+active_dispatches: []
+task_id: 260608_repo-cleanup-status-audit
+phase: repo-cleanup
+goal_statement: Merge all live worktrees into main, prune stale branches, audit open backlog against recon findings, rename proxide-master to proxide-frag.
+context_refs:
+- phase: Sprint 14
+  task_id: 260604_rotlib_multi_source
+  summary: RTF/CCD IC importers + residue_geometry.proto merged; convert_rotlib --ic-source URI wired
+- phase: Sprint 15
+  task_id: 260605_browser_wasm_parallel
+  summary: orx-parallel migration + proxide-parallel-rt + init_parallel WASM export
+failed_attempts:
+- attempt_id: backlog-promote-then-complete
+  description: Used backlog(action='promote') before backlog(action='complete') to close already-done items
+  outcome: Created 9 unwanted worktrees at ~/worktrees/proxide/backlog-<slug>/ that had to be manually cleaned up
+  reason_failed: promote is for starting new work in isolation, not for retrospective closure
+  do_not_retry: true
+  evidence_ref: null
+open_questions: []
+deferred:
+- description: '#977 EPIC: Comprehensive system-prep audit'
+  rationale: Orphaned epic with no concrete sub-items; needs decomposition before dispatch
+  recommended_phase: next sprint planning
+lessons_refs: []
+---

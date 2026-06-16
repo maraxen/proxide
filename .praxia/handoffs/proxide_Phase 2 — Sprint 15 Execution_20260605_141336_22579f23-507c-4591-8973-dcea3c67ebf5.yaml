@@ -1,0 +1,55 @@
+---
+workspace: proxide
+session_id: c550d081-orx-wasm-260605b
+status: in_progress
+immediately_relevant:
+- file: .praxia/dynamic_workflows/260605_sprint-15-browser-wasm-parallel.js
+  lines:
+  - 1
+  - 50
+  reason: 'The emitted sprint runner — this is what to pass to Workflow(scriptPath: ...).'
+- file: .praxia/sprint_plans/260605_sprint-15-browser-wasm-parallel.toml
+  lines:
+  - 1
+  - 50
+  reason: Source TOML for the sprint; read to understand track structure and prerequisite ordering.
+- file: .praxia/docs/specs/260605_browser-wasm-parallel.md
+  lines:
+  - 1
+  - 50
+  reason: 'Revised spec: corrected mechanism (std::thread::scope + atomics), proxide-parallel-rt as AtomicUsize, 5 risks.'
+active_dispatches: []
+task_id: 260605_browser-wasm-parallel
+phase: Phase 2 — Sprint 15 Execution
+goal_statement: 'Run Sprint 15 (browser-wasm-parallel) workflow to implement real WASM parallelism: WASI gate narrowing, spike validation, proxide-parallel-rt crate, build config, dep wiring, call-site updates, and init_parallel JS exposure.'
+context_refs:
+- phase: Phase 1 — Spec + Oracle
+  task_id: 260605_browser-wasm-parallel
+  summary: Oracle critiqued spec; found orx-parallel has no with_pool() or rayon-core feature; librarian confirmed std::thread::scope+atomics is the correct mechanism; spec revised accordingly
+failed_attempts:
+- attempt_id: a1
+  description: proxide-parallel-rt as OnceLock<rayon::ThreadPool> bridged via wasm-bindgen-rayon
+  outcome: Architecture non-functional; orx-parallel does not route through rayon
+  reason_failed: orx-parallel 2.4.0 uses std::thread::scope directly; no rayon-core feature; no with_pool() method on ParIter. Oracle verified against registry source.
+  do_not_retry: true
+  evidence_ref: .praxia/docs/specs/260605_browser-wasm-parallel.md
+- attempt_id: a2
+  description: rayon-core-wasm as WASM-compatible rayon replacement
+  outcome: Dead end
+  reason_failed: Stale (Feb 2023), same links=rayon-core singleton, no threading capability
+  do_not_retry: true
+  evidence_ref: .praxia/docs/specs/260605_browser-wasm-parallel.md
+- attempt_id: a3
+  description: num_threads(1) as safe sequential wasm fallback
+  outcome: Buggy — still spawns 1 thread and panics on stock wasm32
+  reason_failed: 'FixedChunkRunner: do_spawn_new fires when num_spawned(0) < max(1), so one std::thread::scope spawn always occurs. Safe only with atomics-enabled std build.'
+  do_not_retry: true
+  evidence_ref: .praxia/docs/specs/260605_browser-wasm-parallel.md
+open_questions:
+- 'Track B (spike) is a hard gate — if compilation on nightly-2025-11-15 with build-std+atomics fails, what is the fallback plan? Options: (a) try a more recent nightly, (b) accept sequential wasm permanently, (c) fork orx-parallel to add a wasm thread spawner.'
+deferred:
+- description: Add parallelism to proxide-physics and proxide-geometry
+  rationale: Lower priority than completing the browser WASM path
+  recommended_phase: Phase 3
+lessons_refs: []
+---

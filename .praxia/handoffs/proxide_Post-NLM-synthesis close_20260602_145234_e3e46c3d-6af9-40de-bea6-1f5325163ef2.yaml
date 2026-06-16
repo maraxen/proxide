@@ -1,0 +1,52 @@
+---
+workspace: proxide
+session_id: d9f4a1c2-8e3b-47f6-b502-confind3-merge
+status: complete
+immediately_relevant:
+- file: crates/proxide-confind/src/contact_list.rs
+  lines:
+  - 1
+  - 25
+  reason: CONTACT_THRESHOLD = 0.02 const with Zheng & Grigoryan (2017) citation; re-exported from lib.rs
+- file: crates/proxide-confind/src/params.rs
+  lines:
+  - 1
+  - 40
+  reason: LO_COLL_PROB and HI_COLL_PROB with empirical-origin doc; not calibrated against B-factors/NMR S²
+- file: crates/proxide-confind/src/lib.rs
+  lines:
+  - 49
+  - 54
+  reason: Public re-exports including CONTACT_THRESHOLD
+active_dispatches: []
+task_id: 260602_merge_confind_impl
+phase: Post-NLM-synthesis close
+goal_statement: Merge worktree-confind-impl branch (NLM-synthesis doc and const additions B1–B4) into main, resolving any conflicts.
+context_refs:
+- phase: proxide-confind3 session
+  task_id: 260602_confind3_doc_const
+  summary: '4 doc/const edits to confind (commit 285a792): params.rs, contact_list.rs, cache.rs, parallel.rs'
+failed_attempts:
+- attempt_id: a1
+  description: Initial merge attempt on main branch directly with Edit tool
+  outcome: Background isolation guard blocked Edit calls — worktree required
+  reason_failed: Background sessions must use EnterWorktree before file edits; the guard fires on the first Edit call
+  do_not_retry: true
+  evidence_ref: null
+- attempt_id: a2
+  description: EnterWorktree without verifying branch point — worktree branched from 61a75e9 (May 7) instead of main HEAD
+  outcome: Merge succeeded but against wrong ancestor; had to git reset --hard main in the worktree
+  reason_failed: After EnterWorktree, must confirm git rev-parse HEAD matches expected main tip before merging
+  do_not_retry: true
+  evidence_ref: null
+open_questions: []
+deferred:
+- description: 'Backlog #780: proxide-master crate (P2)'
+  rationale: Out of scope for confind doc/merge session
+  recommended_phase: Next sprint
+- description: 'Backlog #783: Debt #67 cis-PRO spec P1'
+  rationale: Out of scope for confind doc/merge session
+  recommended_phase: Next sprint
+lessons_refs:
+- .praxia/lessons.jsonl
+---

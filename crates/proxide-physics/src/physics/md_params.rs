@@ -749,6 +749,16 @@ struct ImproperLookupParams<'a> {
     t4: &'a str,
 }
 
+// TODO(parity): Proxide places the improper center atom at position j (index 1) in the
+// quad (i, j=center, k, l), following the topology.rs `new_improper` convention. OpenMM's
+// PeriodicTorsionForce places the center at position k (index 2): (other_a, other_b, CENTER,
+// other_c). This axis mismatch means ~25 of the impropers we generate are not recognized by
+// OpenMM's atom-ordered lookup, and ~9 additional quads OpenMM registers are not generated
+// at all by `generate_improper_dihedrals`. Combined, ~34 OpenMM torsion terms are absent
+// from prolix. For nearly-planar sp2 centers (carbonyl, amide) the energy contribution is
+// ~0.003 kcal/mol total (angles near the minimum), so this has negligible numerical impact,
+// but the topology is architecturally wrong. Fix: change `new_improper` to put center at
+// index 2, then update `ImproperLookupParams` ordering to match.
 fn lookup_improper<'a>(
     params: ImproperLookupParams<'a>,
     ff: &'a ForceField,
@@ -756,13 +766,13 @@ fn lookup_improper<'a>(
     let mut best_match: Option<&'a ImproperTorsionParam> = None;
 
     for t in &ff.improper_torsions {
-        // 1. Central atom must match t.class3
-        if !matches(&t.class3, params.c_center, params.t_center) {
+        // 1. Central atom must match t.class1 (AMBER ff.xml convention: center is class1)
+        if !matches(&t.class1, params.c_center, params.t_center) {
             continue;
         }
 
-        // 2. The other 3 atoms (c1, c3, c4) must match t.class1, t.class2, t.class4 in ANY order.
-        let def_others = [&t.class1, &t.class2, &t.class4];
+        // 2. The other 3 atoms (c1, c3, c4) must match t.class2, t.class3, t.class4 in ANY order.
+        let def_others = [&t.class2, &t.class3, &t.class4];
         let target_others = vec![
             (params.c1, params.t1),
             (params.c3, params.t3),
@@ -803,6 +813,7 @@ fn lookup_improper<'a>(
     best_match
 }
 
+#[allow(clippy::too_many_arguments)]
 fn resolve_14_params(
     pairs_14: &[[usize; 2]],
     charges: &[f32],

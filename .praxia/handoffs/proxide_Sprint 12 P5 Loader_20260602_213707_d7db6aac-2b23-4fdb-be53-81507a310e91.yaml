@@ -1,0 +1,70 @@
+---
+workspace: proxide
+session_id: b9a14c82-0f4e-4e1a-a93c-5d2e8f17c301
+status: in_progress
+immediately_relevant:
+- file: crates/proxide-rotlib/src/rotlib.rs
+  lines:
+  - 1
+  - 45
+  reason: 'AaEntry + RotamerLibrary structs. P5 adds load_pb() alongside load(). AaEntry: atom_names, bin_phi_centers, bin_psi_centers, default_bin, rotamers (BinData with probs + coords[rot][atom]).'
+- file: crates/proxide-rotlib/src/pb.rs
+  lines:
+  - 1
+  - 15
+  reason: re-exports rotlib_v1::* from prost-generated code. load_pb() decodes rotlib_v1::RotamerLibrary.
+- file: crates/proxide-rotlib/proto/rotlib.proto
+  lines:
+  - 1
+  - 51
+  reason: 'Proto schema: ResidueEntry(code, atom_names, num_chi, phi_centers, psi_centers, default_bin, bins), Bin(phi, psi, freq, rotamers), Rotamer(prob, chi, coords), GeometryMode PRECOMPUTED=1.'
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 1
+  - 60
+  reason: 'Converter binary. Run to regenerate .pb.zst from ALL.bbdep.rotamers.lib (gitignored). Default output: data/rotlibs/proxide-rotlib-bbdep2010.pb.zst.'
+- file: .praxia/docs/specs/260602_dunbrack-rotlib-protobuf-cis-pro.md
+  lines:
+  - 244
+  - 280
+  reason: 'P5 spec + AC-R criteria at lines 274-277. PRECOMPUTED: coords stored directly, NO rebuild on read path.'
+active_dispatches: []
+task_id: 260602_proxcon_deferred4
+phase: Sprint 12 P5 Loader
+goal_statement: Land the full proxide rotamer library by converting Dunbrack BBDEP2010 (ODC-BY) to proxide protobuf+zstd format for ALL 22 residues. P2 schema and P4 converter are done; P5 wires load_pb into RotamerLibrary replacing the MASTER binary path.
+context_refs:
+- phase: Sprint 12 P3 A3
+  task_id: 260602_proxcon_deferred4
+  summary: Proline ring geometry via angle-relaxation closure; A3 gate passed (51a72a4). 87/87 tests.
+- phase: Sprint 12 P2
+  task_id: 260602_proxcon_deferred4
+  summary: rotlib.proto + prost + zstd + AC-2 round-trip test (669ae67); merged this session.
+failed_attempts:
+- attempt_id: geometry-a1
+  description: build_standard_sidechain used parent_idx-1/-2 for grandparent lookup
+  outcome: VAL CG2 and other branch atoms grabbed O/C as reference atoms instead of CA/N; placed at wrong positions
+  reason_failed: 'parent_idx-1 gives the preceding atom in the flat list, not the connectivity grandparent. Fix: traverse template.bonds parent chain explicitly in resolve_parent_chain().'
+  do_not_retry: true
+  evidence_ref: null
+- attempt_id: geometry-a2
+  description: Branch atoms stored fixed absolute torsion_deg (e.g. 120.0 for VAL CG2)
+  outcome: Branch position only correct when chi1 happened to be 0; wrong for all other chi values
+  reason_failed: 'Branch torsion must be chi_values[i] + offset. Fixed via BondDef.relative_chi: Option<usize>.'
+  do_not_retry: true
+  evidence_ref: null
+open_questions:
+- 'TPR routing in P5: does TPR (trans-proline Dunbrack code) map to PRO key in RotamerLibrary, or get its own ''TPR'' entry? Existing backbone_bin() uses PRO for trans; the pb library has both PRO and TPR entries from the file.'
+- 'P5 architecture: load_pb() is the new production path; load() stays dev-only via ROTLIB_PATH. Confirm before dispatch.'
+deferred:
+- description: 'P6 Verify+docs: cross-check rebuilt PRO vs CCD PRO.cif, README ODC-BY notice, --all-targets clean'
+  rationale: Gated on A5 PASS
+  recommended_phase: Sprint 12 post-A5
+- description: 'Full-library regeneration with CHARMM params to retire CC BY-NC-SA rotlib.bin (backlog #820)'
+  rationale: Engh-Huber placeholder acceptable for this sprint
+  recommended_phase: roadmap
+- description: 'AC-G(e) round-trip identity test (currently #[ignore] in test_geometry_ac_g.rs)'
+  rationale: Requires place_rotamer integration from P5
+  recommended_phase: P5
+lessons_refs:
+- .praxia/lessons.jsonl
+---

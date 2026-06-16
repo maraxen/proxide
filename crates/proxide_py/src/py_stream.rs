@@ -1,3 +1,4 @@
+#![allow(clippy::useless_conversion)]
 use std::fs::File;
 use crate::formats;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray2};

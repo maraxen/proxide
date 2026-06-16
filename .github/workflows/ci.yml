@@ -92,6 +92,8 @@ jobs:
         run: cargo test --workspace
       - name: Run Serial Fallback Tests
         run: cargo test --workspace --no-default-features
+      - name: Verify Benchmarks Compile
+        run: cargo bench --workspace --no-run
 
   # Espaloma JAX charges ([espaloma] extra uses expaloma from PyPI).
   test-espaloma:

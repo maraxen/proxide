@@ -1,0 +1,71 @@
+---
+workspace: proxide
+session_id: b9e4f2a1-7c83-4d51-a9e0-3f62d8c510de
+status: in_progress
+immediately_relevant:
+- file: crates/proxide-rotlib/src/geometry/template.rs
+  lines:
+  - 457
+  - 515
+  reason: methionine_template() — hardcoded IC values that need replacing with CHARMM RTF IC table values; all other AA templates have same issue
+- file: crates/proxide-rotlib/src/bin/convert_rotlib.rs
+  lines:
+  - 200
+  - 310
+  reason: sidechain coordinate building loop — where parsed IC values will be wired in to replace template.rs defaults
+- file: crates/proxide-core/src/forcefield/xml_parser.rs
+  lines:
+  - 1
+  - 80
+  reason: existing XML parser — new RTF IC table parser should live alongside this in the same crate/module structure
+- file: crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs
+  lines:
+  - 77
+  - 130
+  reason: drift gate test — must set PROXIDE_ROTLIB_PB to absolute path of freshly regenerated pb.zst or test silently skips
+- file: scripts/analysis/audit_met_ic_vs_master.py
+  lines:
+  - 1
+  - 50
+  reason: MET IC audit script — reference for measured MASTER IC values; use to verify fix after regenerating pb
+active_dispatches: []
+task_id: 260604_charmm_ic_820
+phase: Phase D
+goal_statement: 'Close remaining 0.043 max|Δ| ConFind contact-degree drift between proxide load_pb() and MASTER rotlib.bin (gate = 5e-4; 30/54 pairs over threshold). Root cause now identified: cumulative sidechain IC error reaching 0.235 Å at MET CE. Fix requires CHARMM36 RTF IC table values to replace template.rs hardcoded geometry.'
+context_refs:
+- phase: Phase C
+  task_id: 260603_loadpb_rotamerset_audit
+  summary: CA-origin frame fix + ARG NH2 fix + default_bin argmax; max|Δ| 0.457→0.043; CHARMM harmonic ICs falsified (113.5° ≠ MASTER 108.37°); residual attributed to IC table gap
+failed_attempts:
+- attempt_id: a1
+  description: Changed N-CA-CB angle 110.5°→108.34° in template.rs for all 18 CB bonds
+  outcome: Drift worsened 0.043→0.063 on A1→A4 ARG-GLN pair
+  reason_failed: CB displacement ~0.1–0.2 Å does not cross the 3.0 Å CONT_DIST threshold; contact-degree is insensitive to this single-atom perturbation
+  do_not_retry: true
+  evidence_ref: 'lesson #112; commit 8aea196 (reverted at 94220be)'
+- attempt_id: a2
+  description: Applied CHARMM harmonic IC θ₀=113.5° (NH1-CT1-CT2A) via charmm_ic.rs
+  outcome: Drift worsened further; 113.5° is further from MASTER geometry than 110.5°
+  reason_failed: HarmonicAngleForce theta_0 ≠ CHARMM IC table equilibrium value; these are distinct concepts in the CHARMM parameter system
+  do_not_retry: true
+  evidence_ref: .praxia/docs/research/260603_master-rotlib-cartesian-derivation.md §5a
+- attempt_id: a3
+  description: Hypothesised LEU geometry as interior drift source; audited LEU ICs
+  outcome: LEU geometry mismatches real (CB −2.13°, CD1 0.138 Å) but same pattern as falsified CB angle attempt; probabilities identical
+  reason_failed: Geometry differences too small at individual-atom level; cumulative effect is the mechanism, not any single angle
+  do_not_retry: false
+  evidence_ref: scripts/analysis/audit_leu_ic_vs_master.py; /tmp/drift_report.txt (terminal stratification)
+open_questions:
+- Which permissively-licensed CHARMM36 RTF source to bundle — MacKerell group's charmm36.rtf (free for academic use, license unclear for redistribution) vs OpenMM's CHARMM36 port (MIT) vs CHARMM-GUI exports?
+- Does the RTF IC table section contain all needed sidechain bond lengths and angles for all 20 AA types, or are some inherited from parent residue types via MASS/RESI records?
+- After applying correct IC values for all residue types, will the 0.043 drift close fully to <5e-4, or will the default_bin/terminal issue (13 pairs) still hold out?
+deferred:
+- description: 'ARG default_bin comparison: verify proxide pb ARG rotamer p-values at default_bin match MASTER for the terminal-residue pairs (13/30 drifting pairs)'
+  rationale: Interior drift (17 pairs, larger Δ) is the bigger fix; terminal pairs may resolve automatically once IC geometry is corrected and CE/CD positions shift
+  recommended_phase: Phase E — verify after RTF IC fix, then address if still drifting
+- description: 'Comprehensive system-prep epic scope (backlog #977): NotebookLM research into CHARMM IC tables, missing system-prep components vs Modeller/AMBER/OpenMM'
+  rationale: 'Separate epic; #977 is the meta/scoping item — start after #976 RTF bundling is resolved'
+  recommended_phase: 'Parallel track once #976 is unblocked'
+lessons_refs:
+- .praxia/lessons.jsonl
+---

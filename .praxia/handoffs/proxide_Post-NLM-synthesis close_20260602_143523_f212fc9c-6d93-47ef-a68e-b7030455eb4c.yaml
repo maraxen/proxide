@@ -1,0 +1,50 @@
+---
+workspace: proxide
+session_id: d5b0c3a2-snazzy-percolating-teapot-20260602
+status: in_progress
+immediately_relevant:
+- file: crates/proxide-confind/src/contact_list.rs
+  lines:
+  - 1
+  - 25
+  reason: CONTACT_THRESHOLD = 0.02 added here (285a792); re-exported from lib.rs
+- file: crates/proxide-confind/src/params.rs
+  lines:
+  - 1
+  - 18
+  reason: LO_COLL_PROB / HI_COLL_PROB got empirical-origin doc comments (285a792)
+- file: crates/proxide-rotlib/src/rotlib.rs
+  lines:
+  - 260
+  - 290
+  reason: sparse-region Warning doc + sentinel comment from aff023d — potential conflict surface on confind-impl merge
+- file: .praxia/docs/plans/260602_rotlib-confind-actions.md
+  lines:
+  - 1
+  - 30
+  reason: 'Full A1-B6 action plan; A2/A4/A6/B6 still unimplemented (backlog #783 covers A2+B6)'
+active_dispatches: []
+task_id: 260602_rotlib-confind-actions
+phase: Post-NLM-synthesis close
+goal_statement: Land all NLM-synthesis doc/const actions for proxide-rotlib and proxide-confind onto main; register derived backlog items.
+context_refs:
+- phase: Post-NLM-synthesis close (previous session)
+  task_id: 260602_rotlib-confind-actions
+  summary: Handoff at .praxia/handoffs/proxide_Post-NLM-synthesis close_20260602_...yaml — NLM synthesis done, rotlib docs done, confind edits + backlog + merge pending
+failed_attempts: []
+open_questions: []
+deferred:
+- description: A1 sparse-region warning integration test (backbone_bin LEU at phi=20 asserts Ok)
+  rationale: Requires fixture wiring (A6); not yet set up
+  recommended_phase: After A6
+- description: 'B1 ContactList::filter(threshold: f64) method'
+  rationale: Full B1 spec includes filter method; only const was in-scope inline edit
+  recommended_phase: Phase after confind-impl merge
+- description: A6 fixture expansion (2ZTA, 1DC7, 1VII)
+  rationale: fetch_pdb.py and ROTLIB_FIXTURE_DIR wiring not yet done
+  recommended_phase: Separate sprint
+- description: A5 PlacedRotamer chi-angle doc (when chi_angles field is added)
+  rationale: Field does not exist yet
+  recommended_phase: v2 PlacedRotamer extension sprint
+lessons_refs: []
+---

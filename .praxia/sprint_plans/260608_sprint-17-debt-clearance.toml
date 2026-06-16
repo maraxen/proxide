@@ -1,0 +1,330 @@
+[sprint]
+sprint_id = "260608_sprint-17-debt-clearance"
+sprint_num = 17
+name = "Sprint 17 — Debt Clearance"
+description = "Clear workspace clippy failures, ccd_parser lint, parse_master drift test stub, confind rustdoc, and confind algorithm citations."
+context = '''
+Codebase: proxide (Rust workspace). Sprint 16 closed clean at 13ec61a.
+Active failures: `cargo clippy --workspace -- -D warnings` exits 101 due to two lint groups:
+  1. crates/proxide-rotlib/src/geometry/ccd_parser.rs — while_let_on_iterator (line 99) + type_complexity (line 125)
+  2. crates/proxide-frag/src/fragment.rs — needless_range_loop (lines 90–91)
+Previously documented proxide-io/proxide-physics violations are already suppressed with #[allow] attributes.
+Stack: cargo / tracing / rustfmt. Diagnostics via tracing::warn!/info!, never eprintln!.
+'''
+max_fix_retries = 1
+
+[[tracks]]
+id = "a"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1370"
+phase_name = "Track A — workspace clippy: proxide-frag needless_range_loop (#1370)"
+fixer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Fix the two remaining `cargo clippy --workspace -- -D warnings` failures in proxide-frag.
+Edit only — no Write on existing files.
+
+## Confirmed violations
+
+File: crates/proxide-frag/src/fragment.rs, lines 90–91
+  lint: clippy::needless_range_loop
+  90: for r in 0..N {
+  91:     for at in 0..4 {
+  92:         centered_coords[r][at][0] -= centroid[0];
+  ...
+  }
+Both loop variables are used only as index expressions into `centered_coords`.
+
+## Fix strategy
+These loops operate on a generic const-parameter array Fragment<N> using [N][[4][3]] coords.
+Because N is a const generic, iter_mut() over a const-generic array is not ergonomic.
+The idiomatic fix is a targeted allow at the loop site:
+  #[allow(clippy::needless_range_loop)]
+  for r in 0..N { ... }
+Add a brief inline comment explaining the const-generic constraint so future reviewers understand why this is deliberate.
+
+## Success criteria
+`cargo clippy -p proxide-frag -- -D warnings` exits 0.
+crates/proxide-rotlib and crates/proxide-io/proxide-physics are unaffected (already clean).
+'''
+reviewer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Verify that proxide-frag clippy violations are resolved without breaking anything else.
+
+## Checks
+1. Run: `cargo clippy -p proxide-frag -- -D warnings` — must exit 0.
+2. Run: `cargo clippy --workspace -- -D warnings 2>&1 | grep "proxide-frag"` — no proxide-frag errors.
+3. Run: `cargo test -p proxide-frag` — all tests pass.
+4. Verify no #[allow] was placed higher than the loop site (not on fn or struct).
+
+## Pass criterion
+proxide-frag is clippy-clean; crates outside proxide-frag are unmodified.
+'''
+return_key = "1370"
+
+[[tracks]]
+id = "b"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1368"
+phase_name = "Track B — ccd_parser.rs clippy: while_let_on_iterator + type_complexity (#1368)"
+fixer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Fix two clippy violations in ccd_parser.rs. Edit only — no Write on existing files.
+
+## Confirmed violations
+
+### Violation 1 — while_let_on_iterator
+File: crates/proxide-rotlib/src/geometry/ccd_parser.rs, line 99
+The tokenize() method has:
+  while let Some(c) = chars.next() { match c { ... } }
+where `chars` is a Peekable<Chars> from `line.chars().peekable()`.
+Fix: convert to `for c in chars.by_ref() { match c { ... } }`.
+The loop body (match arms for quote toggling, whitespace splitting, and char accumulation) is unchanged.
+
+### Violation 2 — type_complexity
+File: crates/proxide-rotlib/src/geometry/ccd_parser.rs, line 125
+The parse_cif_file() function return type is:
+  Result<(HashMap<(String, String), f32>, HashMap<(String, String, String), f32>), RotlibError>
+Fix: introduce two file-private type aliases immediately above parse_cif_file:
+  type BondMap = HashMap<(String, String), f32>;
+  type AngleMap = HashMap<(String, String, String), f32>;
+Then rewrite the signature as:
+  fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError>
+The aliases must NOT be pub.
+
+## Success criteria
+`cargo clippy -p proxide-rotlib -- -D warnings` exits 0.
+The tokenize() and parse_cif_file() functions behave identically (no logic change).
+'''
+reviewer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Verify ccd_parser.rs lint violations are resolved and logic is preserved.
+
+## Checks
+1. Run: `cargo clippy -p proxide-rotlib -- -D warnings` — must exit 0.
+2. Run: `cargo test -p proxide-rotlib` — all tests pass.
+3. Inspect the for-loop fix: confirm loop body is identical to the original (no logic change).
+4. Inspect type aliases: confirm BondMap/AngleMap are file-private (no pub), function compiles.
+
+## Pass criterion
+proxide-rotlib is clippy-clean; tokenize() and parse_cif_file() behaviour unchanged.
+'''
+return_key = "1368"
+
+[[tracks]]
+id = "c"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1369"
+phase_name = "Track C — parse_master --validate: wire real inline drift test (#1369)"
+fixer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Replace the load-sanity stub in run_validation() with a real inline drift measurement.
+Edit only — no Write on existing files.
+
+## Current stub location
+File: crates/proxide-rotlib/src/bin/parse_master.rs, lines 99–137
+  fn run_validation(pb_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>>
+Current behaviour: loads .pb.zst, checks for ALA, prints "VALIDATE max|delta|: N/A PASS (stub)".
+
+## Required behaviour (spec §8 Phase 3 step 1)
+
+1. Read ROTLIB_PATH env var. If unset, warn and return Ok(()) — same as current.
+
+2. Locate small.pdb. It lives at:
+     crates/proxide-confind/tests/common/small.pdb
+   Resolve relative to CARGO_MANIFEST_DIR at compile time using:
+     const SMALL_PDB: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../proxide-confind/tests/common/small.pdb");
+   If the file does not exist at runtime, warn and return Ok(()) — do not hard-error.
+
+3. Construct a ConFind instance with the freshly written .pb.zst:
+     use proxide_confind::{ConFind, load_pdb_f64};
+     let rotlib = Arc::new(RotamerLibrary::load_pb(pb_path)?);
+     let backbone = Arc::new(load_pdb_f64(Path::new(SMALL_PDB))?);
+     let cf = ConFind::new(Arc::clone(&rotlib), Arc::clone(&backbone), false);
+   Check proxide-rotlib/Cargo.toml for proxide-confind dependency before adding it.
+
+4. Run cf.cache_all()? then call cf.contacts() for all residue pairs.
+
+5. Inline a reference subset (first 8–10 pairs) as a const array in run_validation, taken directly
+   from crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs (REF_CONTACTS).
+   Do NOT import the test module — copy the values.
+
+6. Compute max|delta| over matched pairs of |computed - reference|.
+
+7. Print:
+     VALIDATE max|delta|: {:.6}  PASS     (if max|delta| <= 1e-4)
+     VALIDATE max|delta|: {:.6}  FAIL     (if max|delta| > 1e-4, also print the worst pair)
+
+## Success criteria
+Binary compiles: `cargo build --bin parse_master` exits 0.
+With ROTLIB_PATH set and small.pdb reachable, prints real numeric max|delta| and PASS/FAIL.
+Without ROTLIB_PATH or with small.pdb absent, warns and exits 0.
+No "stub" or "N/A" in the output path.
+'''
+reviewer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Verify the drift test is real (not a stub) and produces meaningful output.
+
+## Checks
+1. Read run_validation() and confirm:
+   a. The string "N/A" and "stub" do NOT appear in the printed output.
+   b. max|delta| is computed from actual ConFind outputs vs. inlined reference values.
+   c. PASS threshold is <= 1e-4.
+2. Run: `cargo build --bin parse_master` — must exit 0.
+3. Run: `cargo clippy -p proxide-rotlib -- -D warnings` — still exits 0.
+4. Verify the inlined reference const has at least 5 pairs matching REF_CONTACTS in test_drift_loadpb_small_pdb.rs.
+5. Verify graceful skip (warn + return Ok(())) when ROTLIB_PATH is unset or small.pdb is absent.
+
+## Pass criterion
+run_validation() performs a real drift measurement; binary compiles; no new clippy errors.
+'''
+return_key = "1369"
+
+[[tracks]]
+id = "d"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1371"
+phase_name = "Track D — proxide-confind: rustdoc for all public API items (#1371)"
+fixer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Add /// rustdoc to every pub fn, pub struct, and pub const in proxide-confind.
+Edit only — no Write on existing files. One file per Edit call.
+
+## Context
+crates/proxide-confind/src/lib.rs already has a crate-level //! doc block (lines 1–37) — leave it unchanged.
+
+## Files and targets
+
+### crates/proxide-confind/src/confind.rs
+- ConFind struct (line 19): one-line summary
+- ConFind::new (line 39): describe rotlib, backbone, and `parallel` flag
+- ConFind::n_residues (line 78)
+- ConFind::cache_all (line 99)
+- ConFind::contact_degree_with_clashes (line 125)
+- ConFind::contacts (line 141)
+- ConFind::interference (line 172)
+- ConFind::bb_interaction (line 205)
+
+### crates/proxide-confind/src/coords.rs
+- ResidueIndex: newtype index into ProteinBackbone residue list
+- ProteinBackbone: per-residue 3D backbone coordinate store
+- ResidueBackbone: backbone atom positions for one residue
+- extract_f64_backbone: describe input and return
+- load_pdb_f64: describe path parameter and return type
+
+### crates/proxide-confind/src/cache.rs
+- ResidueCache (line 10)
+- weight_of_available_rotamers (line 25)
+- cache_residue_impl (line 95)
+
+### crates/proxide-confind/src/freedom.rs
+- compute_freedom: describe what "freedom" means in the contact-degree context
+
+### crates/proxide-confind/src/params.rs
+- aa_propensity
+- AA_NAMES, CLASH_DIST, CONT_DIST, DCUT, HI_COLL_PROB_CUT, LO_COLL_PROB_CUT: one line each, including units
+
+## Standard
+One-line /// summary per item. For non-obvious parameters add a brief description.
+Do NOT add comments explaining what trivial code does.
+Do NOT modify any logic, #[allow], #[derive], or other attributes.
+'''
+reviewer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Verify all pub items have rustdoc and docs are accurate.
+
+## Checks
+1. Run: `cargo doc -p proxide-confind --no-deps 2>&1 | grep "missing documentation"` — zero hits.
+2. Spot-check: ConFind::contacts, compute_freedom, aa_propensity each have at least a one-line /// doc.
+3. Verify lib.rs crate-level //! block is unchanged.
+4. Run: `cargo test -p proxide-confind` — all tests pass.
+
+## Pass criterion
+cargo doc produces no missing-doc warnings; all tests pass.
+'''
+return_key = "1371"
+
+[[tracks]]
+id = "e"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1372"
+phase_name = "Track E — proxide-confind: fix algorithm citation (Grigoryan/DeGrado 2011) (#1372)"
+fixer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Fix the incorrect algorithm citation in proxide-confind/src/lib.rs.
+Edit only — no Write on existing files.
+
+## Current state (lib.rs lines 33–37)
+  //! # References
+  //!
+  //! - Mosaist protein design suite: <https://grigoryanlab.org/mosaist/>
+  //! - Grigoryan G, Keating AE. "Structural specificity in coiled-coil
+  //!   interactions." Curr Opin Struct Biol. 2008;18(4):477-483.
+
+## Required change
+The Grigoryan/Keating 2008 paper describes coiled-coil specificity — not the ConFind algorithm.
+Replace with the correct citation for the contact-degree/designability metric:
+
+  //! # References
+  //!
+  //! - Mosaist protein design suite: <https://grigoryanlab.org/mosaist/>
+  //! - Grigoryan G, DeGrado WF. "Probing designability via a generalized model of helical bundle
+  //!   geometry." J Mol Biol. 2011;405(4):1079-1100.
+
+Optionally: if Track D (rustdoc) has already added a /// doc to ConFind struct in confind.rs,
+add a brief citation reference there too:
+  /// Implements the contact-degree algorithm from Grigoryan & DeGrado (2011).
+Check confind.rs before editing — do not duplicate if Track D already added it.
+
+## Scope
+Primary edit: crates/proxide-confind/src/lib.rs (References block only).
+Optional edit: crates/proxide-confind/src/confind.rs (ConFind struct doc) if not already done.
+No other files.
+'''
+reviewer_prompt = '''
+task_id: 260608_sprint-17-debt-clearance
+
+## Objective
+Verify the citation fix is accurate and complete.
+
+## Checks
+1. Read crates/proxide-confind/src/lib.rs lines 33–40: must reference "Grigoryan G, DeGrado WF" and "J Mol Biol. 2011" — NOT Keating 2008.
+2. Run: `cargo doc -p proxide-confind --no-deps` — zero errors.
+3. Confirm Mosaist URL is still present in the References block.
+4. Run: `git diff --name-only HEAD` — should show only lib.rs and optionally confind.rs.
+
+## Pass criterion
+Correct citation in place; doc build passes; no unintended edits.
+'''
+return_key = "1372"
+
+[orchestration]
+sequential = []
+concurrent = []

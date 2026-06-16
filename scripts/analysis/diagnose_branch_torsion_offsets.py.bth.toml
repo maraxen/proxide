@@ -1,0 +1,76 @@
+schema = "bathos/0.3"
+
+[experiment]
+slug = "branch_torsion_offset_diagnostic_869"
+title = "Measure branch atom torsion offsets in MASTER rotlib.bin vs template constants"
+hypothesis = """
+The 2-5° per-residue Kabsch rotations observed in GLU, PHE, ASP, LEU, VAL, MET
+(vs passing residues ILE, THR, ASN, SER, CYS) are caused by mismatch between
+the fixed torsion_deg constants used in template.rs (e.g., chi1 + 120° for VAL CG2)
+and the actual measured branch atom dihedrals in MASTER's rotlib.bin.
+
+If true: failing residues will show measured_offset != template_torsion_deg, while
+passing residues show measured_offset ≈ template_torsion_deg (small delta).
+If false: all offsets match template values, implying the error source is elsewhere
+(bond angles, CB placement, or rotomer-set semantics).
+"""
+task_id = "260603_loadpb_frame_fix"
+backlog = "#869"
+
+[outcomes.pass]
+condition = """
+Failing residues (GLU, PHE, ASP, LEU, VAL, MET) show |delta| = |measured_offset - template_torsion_deg| > 2°.
+Passing residues (ILE, THR, ASN, SER, CYS) show |delta| < 2° (measured_offset matches template).
+Mean chi errors across all rotamers are ~0° (chi angles computed from MASTER coords match stored chi).
+"""
+reasoning = """
+Confirms branch torsion offset as root cause: failing residues have offset errors that,
+when combined with rotamer-set rotation, produce the observed 2-5° per-residue Kabsch error.
+Template.rs needs to compute offsets from MASTER geometry (or its source geometry spec)
+rather than using hardcoded constants.
+"""
+
+[outcomes.marginal]
+condition = """
+Some failing residues show |delta| in range 1-2° (marginal offset mismatch).
+Measured offsets deviate from template values but by less than the observed rotation error.
+Chi errors > 0.5° indicate MASTER coords inconsistency or chi atom name mismatch.
+"""
+reasoning = """
+Offset exists but is smaller than the full rotation error, suggesting multiple
+contributing factors (offset + bond angle + CB placement). Measurement may have
+minor errors (chi atom definitions or coordinate geometry). Needs follow-up validation
+against actual MASTER source or alternative geometry measurements.
+"""
+is_residual = true
+
+[outcomes.fail]
+condition = """
+Failing residues (GLU, PHE, ASP, LEU, VAL, MET) show |delta| < 2° (measured_offset matches template).
+Passing residues also show similar |delta| distributions.
+No systematic difference between failing and passing residue offset patterns.
+"""
+reasoning = """
+Branch torsion offset is NOT the root cause. Error must originate elsewhere:
+bond angle defaults (CB-relative-to-backbone), CB placement error, rotamer-set
+rotation misalignment, or atom-order ambiguity. Next diagnostic should measure
+bond angles and CB distance from expected canonical position.
+"""
+
+[result_schema]
+"measurements.<AA>.n_rotamers" = "int — number of rotamers measured across all bins"
+"measurements.<AA>.mean_chi_errs_deg" = "list[float] — mean chi error per chi index (measured - stored), should be ~0 if chi are consistent"
+"measurements.<AA>.branch_atom" = "str or null — name of branch atom (CG2, OD2, etc.) or null if no branch"
+"measurements.<AA>.expected_offset_deg" = "float or null — template.rs constant for this branch atom (e.g., 120 for CG2, 180 for OD2)"
+"measurements.<AA>.measured_offset_deg" = "float or null — actual branch dihedral - chi[idx], mean over all rotamers"
+"measurements.<AA>.delta_deg" = "float or null — measured_offset - expected_offset (should be ~0 if template is correct)"
+"measurements.<AA>.status" = "str — PASS (|delta| < 2), MARGINAL (2-5), FAIL (>5), NO_BRANCH (no branch atom), NO_BRANCH_DATA (branch undefined in rotlib.bin)"
+
+[result_schema.provenance]
+script_commit = "will be recorded at runtime"
+python_version = "3.12+ (stdlib only: struct, math, json, argparse, logging)"
+input_rotlib_bin = "/home/marielle/repos/mosaist/testfiles/rotlib.bin (MASTER/MSL, binary format)"
+dihedral_formula = "cross-product method: atan2(dot(cross(n1,n2), b2_unit), dot(n1,n2)) where n1=cross(b1,b2), n2=cross(b2,b3), b_i are bond vectors"
+backbone_atoms = "hardcoded canonical: N=[-1.458,0,0], CA=[0,0,0], C=[0.551,1.420,0]"
+branch_specs_source = "crates/proxide-rotlib/src/geometry/template.rs (VAL/ILE CG2, LEU CD2, ASP OD2, etc. with relative_chi_idx and torsion_deg constant)"
+chi_atom_defs = "hardcoded per residue matching rotlib.bin rotamer structure (e.g., VAL chi1=[N,CA,CB,CG1])"

@@ -1,0 +1,246 @@
+[sprint]
+sprint_id = "260604_sprint-14-rotlib-ccd-migration"
+sprint_num = 14
+name = "sprint-14-rotlib-ccd-migration"
+description = "Phase 1 rotlib migration — vendor PDB CCD geometry files, regenerate Dunbrack+CCD pb.zst, calibrate on 1DC7, migrate confind to load_pb()"
+context = "[MANUAL: paste recon findings here before running emit-sprint]"
+max_fix_retries = 1
+
+[[tracks]]
+id = "a"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1112"
+phase_name = "Track A — Vendor 20-AA CCD .cif files + set CCD as default IC source in convert_rotlib (#1112)"
+fixer_prompt = """
+task_id: 260604_sprint-14-rotlib-ccd-migration | track: A | backlog: #1112
+
+## Goal
+Download all 19 missing standard-amino-acid CCD .cif files and commit them under
+crates/proxide-rotlib/data/ccd/, then make --ic-source default to "ccd" in convert_rotlib.
+
+## Key files
+- crates/proxide-rotlib/data/ccd/          — target directory (PRO.cif already present)
+- crates/proxide-rotlib/src/bin/convert_rotlib.rs — CLI entry point; find the --ic-source clap arg
+- crates/proxide-rotlib/src/geometry/ccd_parser.rs — parser exists, no changes needed
+
+## Missing .cif files (19)
+ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE SER THR TRP TYR VAL
+
+## Download step
+Fetch each file from:
+  https://files.rcsb.org/ligands/download/{THREE_LETTER_CODE}.cif
+License: CC0 — safe to commit verbatim.
+Use curl or wget in a shell loop; commit all 19 files in a single atomic commit.
+Do NOT download PRO.cif (already present).
+
+## Code change — convert_rotlib.rs
+Find the clap argument definition for --ic-source (look for a string like "ic-source" or "ic_source").
+Change its default_value (or add one) so that omitting --ic-source on the CLI selects "ccd".
+If the arg is currently required (no default), add .default_value("ccd") to the clap builder chain.
+Do not touch any other flags or logic.
+
+## Acceptance criteria
+1. ls crates/proxide-rotlib/data/ccd/*.cif | wc -l  ->  20
+2. cargo build --workspace  exits 0
+3. cargo run -p proxide-rotlib --bin convert_rotlib -- --help | grep -A1 'ic-source'
+   shows "ccd" as the default value
+4. No new test failures (cargo test --workspace)
+"""
+reviewer_prompt = """
+task_id: 260604_sprint-14-rotlib-ccd-migration | track: A | backlog: #1112
+
+## What correct looks like
+
+### File presence
+- Run: ls crates/proxide-rotlib/data/ccd/*.cif | wc -l
+- Expected: 20 (PRO + 19 new)
+- Spot-check three: GLY.cif, TRP.cif, LYS.cif — each should be >1 KB and contain "_chem_comp.id"
+
+### Build
+- cargo build --workspace must exit 0 with no new warnings escalated to errors
+
+### CLI default
+- cargo run -p proxide-rotlib --bin convert_rotlib -- --help
+  Output must show --ic-source defaulting to "ccd", not requiring an explicit flag
+
+### No parser regressions
+- cargo test -p proxide-rotlib exits 0
+- If a test uses --ic-source "dunbrack" explicitly, it must still pass (the default change
+  must not break callers that pass the flag explicitly)
+
+### License
+- git log --oneline -1 for the .cif commit message should reference CC0 or RCSB CCD
+- No .cif file may contain a non-CC0 license header — scan with:
+  grep -l "BY-NC" crates/proxide-rotlib/data/ccd/*.cif  ->  must be empty
+"""
+return_key = "1112"
+
+[[tracks]]
+id = "b"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "1113"
+phase_name = "Track B — 1DC7 full-protein calibration: contact precision/recall Dunbrack+CCD vs MASTER (#1113)"
+fixer_prompt = """
+task_id: 260604_sprint-14-rotlib-ccd-migration | track: B | backlog: #1113
+
+## Goal
+Run ConFind on 1DC7 and measure contact precision/recall vs MASTER reference at multiple CD thresholds.
+Gate: precision >= 0.90 AND recall >= 0.90 at CD > 0.01.
+Output: .praxia/docs/research/260604_1dc7-calibration.md with a precision/recall table.
+
+## Prerequisites (must be done before this track runs)
+- Track A (#1112) must be complete: all 20 .cif files present, --ic-source defaults to "ccd"
+- convert_rotlib must have been run to regenerate pb.zst with the CCD-default IC source
+
+## Steps
+
+### 1. Fetch 1DC7
+  curl -o /tmp/1DC7.pdb "https://files.rcsb.org/download/1DC7.pdb"
+
+### 2. Regenerate pb.zst (CCD default)
+  cargo run -p proxide-rotlib --bin convert_rotlib -- \
+    --output /tmp/proxide_ccd.pb.zst
+  (omit --ic-source; it now defaults to "ccd")
+
+### 3. Run confind on 1DC7
+Run the confind binary (or test harness) against 1DC7.pdb using the regenerated pb.zst.
+Capture the full contact list (residue pair, CD value) to a temp file.
+
+### 4. Compare against MASTER reference
+The MASTER reference contact list for 1DC7 should be in:
+  tests/data/1dc7_master_contacts.tsv  (or equivalent; locate with: find . -name "*1dc7*" -o -name "*master*contacts*")
+If the reference file does not exist, note this as a blocker and stop.
+
+### 5. Compute precision/recall at thresholds
+For CD thresholds: 0.001, 0.005, 0.01, 0.05
+  precision = |confind_contacts(cd>t) ∩ master_contacts| / |confind_contacts(cd>t)|
+  recall    = |confind_contacts(cd>t) ∩ master_contacts| / |master_contacts|
+
+### 6. Write output doc
+Write results to .praxia/docs/research/260604_1dc7-calibration.md.
+Include: threshold table, pass/fail for gate (CD > 0.01), any anomalies.
+
+## Acceptance criteria
+1. .praxia/docs/research/260604_1dc7-calibration.md exists and contains the threshold table
+2. At CD > 0.01: precision >= 0.90 AND recall >= 0.90
+3. pb.zst was generated with CCD as IC source (verify via convert_rotlib --help output captured in doc)
+"""
+reviewer_prompt = """
+task_id: 260604_sprint-14-rotlib-ccd-migration | track: B | backlog: #1113
+
+## What correct looks like
+
+### Output document
+- .praxia/docs/research/260604_1dc7-calibration.md must exist
+- Must contain a Markdown table with columns: threshold, precision, recall, pass/fail
+- All four thresholds (0.001, 0.005, 0.01, 0.05) must appear
+
+### Gate
+- At CD > 0.01: precision >= 0.90 AND recall >= 0.90 — explicitly marked as PASS in the table
+- If gate fails, the doc must record the actual values and flag as FAIL (not silently omit)
+
+### pb.zst provenance
+- The doc must state that pb.zst was regenerated with CCD as IC source
+- Ideally includes the exact convert_rotlib invocation used (for reproducibility)
+
+### Methodology
+- Precision and recall definitions must match the formulas above (intersection over confind set / master set)
+- Spot-check one threshold row manually: pick CD > 0.005, verify the counts add up
+
+### No hardcoded results
+- The numbers must come from actually running confind on 1DC7, not from a prior run
+- Check that the timestamp or run invocation in the doc post-dates Track A completion
+"""
+return_key = "1113"
+
+[[tracks]]
+id = "c"
+is_research = false
+
+[[tracks.items]]
+backlog_id = "869"
+phase_name = "Track C — Migrate confind to load_pb() (retire CC BY-NC-SA rotlib.bin runtime dep) (#869)"
+fixer_prompt = """
+task_id: 260604_sprint-14-rotlib-ccd-migration | track: C | backlog: #869
+
+## Goal
+Switch confind's production load path from load() (CC-BY-NC-SA rotlib.bin) to load_pb()
+(Dunbrack+CCD pb.zst, ODC-BY+CC0). After this change, no CC-BY-NC-SA artifact may be
+referenced or loaded at runtime.
+
+## Key file
+- crates/proxide-confind/src/confind.rs
+  Find the call to load() (rotlib loader). Replace it with load_pb().
+  The load_pb() signature and its required env var (PROXIDE_ROTLIB_PB) are documented in
+  crates/proxide-rotlib/src/lib.rs — read that first.
+
+## Code change
+1. In confind.rs, locate the load() call (likely near struct initialization or a "build_context" fn).
+2. Replace load() with load_pb(). Pass the pb.zst path from the PROXIDE_ROTLIB_PB env var,
+   or from a CLI flag if one exists — match the existing pattern used in tests.
+3. Remove any now-dead import or use statement for the old load() path.
+4. Do not change the public API of confind (function signatures, struct fields) — only the
+   internal loader call.
+
+## Test setup
+In tests (test_drift_loadpb_small_pdb.rs or equivalent), set:
+  std::env::set_var("PROXIDE_ROTLIB_PB", "<absolute_path_to_freshly_generated_pb.zst>")
+Use the pb.zst generated in Track A/B, or the existing test fixture if one exists at:
+  tests/data/*.pb.zst  (locate with: find . -name "*.pb.zst")
+
+## Drift gate
+The existing drift test (test_drift_loadpb_small_pdb.rs) must pass with max|Delta| < 5e-4.
+Do not relax the tolerance. If it fails, investigate the load path — do not widen the gate.
+
+## License gate
+After the change, run:
+  git ls-files | grep -E "(rotlib\.bin|\.master\.pb\.zst)"
+This must return empty (no CC-BY-NC-SA artifacts tracked in git).
+If any appear, remove them and amend the commit.
+
+## Acceptance criteria
+1. cargo test --workspace exits 0
+2. test_drift_loadpb_small_pdb passes with max|Delta| < 5e-4
+3. git ls-files | grep -E "(rotlib\.bin|\.master\.pb\.zst)"  ->  empty
+4. No load() call remains in confind.rs for the production path (grep to verify)
+"""
+reviewer_prompt = """
+task_id: 260604_sprint-14-rotlib-ccd-migration | track: C | backlog: #869
+
+## What correct looks like
+
+### Load path change
+- grep -n "load(" crates/proxide-confind/src/confind.rs
+  Must show NO bare load() call on the production code path
+  (test helpers or doc comments referencing it by name are acceptable)
+- grep -n "load_pb(" crates/proxide-confind/src/confind.rs
+  Must show the replacement call present
+
+### Test suite
+- cargo test --workspace exits 0
+- test_drift_loadpb_small_pdb must be present in the output as "ok"
+- Scan the test output for "FAILED" — none allowed
+
+### Drift gate
+- The drift test must report max|Delta| < 5e-4
+- If the test prints the actual max delta, record it in the review notes
+- Do NOT accept a passing test that relaxed the tolerance constant — check the source
+
+### License gate
+- git ls-files | grep -E "(rotlib\.bin|\.master\.pb\.zst)"  ->  must be empty
+- git log --oneline -5 — no commit should re-add rotlib.bin or .master.pb.zst
+- Check .gitignore: rotlib.bin should be ignored going forward to prevent accidental re-add
+
+### No API breakage
+- The public interface of confind (CLI flags, library API) must be unchanged
+- Run a quick smoke: cargo run -p proxide-confind -- --help  must still show the same flags
+"""
+return_key = "869"
+
+[orchestration]
+sequential = []
+concurrent = []

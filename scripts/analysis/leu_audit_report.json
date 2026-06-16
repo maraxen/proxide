@@ -1,0 +1,273 @@
+{
+  "rotlib": "/home/marielle/repos/mosaist/testfiles/rotlib.bin",
+  "residue": "LEU",
+  "phi_deg": -60.0,
+  "psi_deg": -40.0,
+  "bin_frequency": 9580.0,
+  "measurements": [
+    {
+      "rotamer_idx": 0,
+      "prob": 0.639851987361908,
+      "chi_deg": [
+        -69.19999694824219,
+        172.6999969482422
+      ],
+      "CB": {
+        "bond_len_A": 1.5198,
+        "bond_delta_A": -0.0202,
+        "angle_deg": 118.92,
+        "angle_delta_deg": 8.42,
+        "improper_nerf_deg": -120.64,
+        "improper_delta_deg": -0.94
+      },
+      "CG": {
+        "bond_len_A": 1.5205,
+        "bond_delta_A": -0.0095,
+        "angle_deg": 116.99,
+        "angle_delta_deg": 0.69,
+        "torsion_nerf_deg": -69.25,
+        "torsion_vs_chi1_deg": -0.05
+      },
+      "CD1": {
+        "bond_len_A": 1.5194,
+        "bond_delta_A": -0.0046,
+        "angle_deg": 111.5,
+        "angle_delta_deg": 0.4,
+        "torsion_nerf_deg": 172.69,
+        "torsion_vs_chi2_deg": -0.01
+      },
+      "CD2": {
+        "bond_len_A": 1.52,
+        "bond_delta_A": -0.004,
+        "angle_deg": 111.51,
+        "angle_delta_deg": 0.41,
+        "torsion_nerf_deg": -67.24,
+        "torsion_vs_chi2_plus_120_deg": -359.94
+      }
+    },
+    {
+      "rotamer_idx": 1,
+      "prob": 0.32962000370025635,
+      "chi_deg": [
+        -178.60000610351562,
+        60.20000076293945
+      ],
+      "CB": {
+        "bond_len_A": 1.5198,
+        "bond_delta_A": -0.0202,
+        "angle_deg": 118.92,
+        "angle_delta_deg": 8.42,
+        "improper_nerf_deg": -120.64,
+        "improper_delta_deg": -0.94
+      },
+      "CG": {
+        "bond_len_A": 1.5206,
+        "bond_delta_A": -0.0094,
+        "angle_deg": 116.99,
+        "angle_delta_deg": 0.69,
+        "torsion_nerf_deg": -178.58,
+        "torsion_vs_chi1_deg": 0.02
+      },
+      "CD1": {
+        "bond_len_A": 1.5196,
+        "bond_delta_A": -0.0044,
+        "angle_deg": 111.51,
+        "angle_delta_deg": 0.41,
+        "torsion_nerf_deg": 60.2,
+        "torsion_vs_chi2_deg": -0.0
+      },
+      "CD2": {
+        "bond_len_A": 1.52,
+        "bond_delta_A": -0.004,
+        "angle_deg": 111.5,
+        "angle_delta_deg": 0.4,
+        "torsion_nerf_deg": -179.81,
+        "torsion_vs_chi2_plus_120_deg": -360.01
+      }
+    },
+    {
+      "rotamer_idx": 2,
+      "prob": 0.01360199972987175,
+      "chi_deg": [
+        -176.10000610351562,
+        153.60000610351562
+      ],
+      "CB": {
+        "bond_len_A": 1.5198,
+        "bond_delta_A": -0.0202,
+        "angle_deg": 118.92,
+        "angle_delta_deg": 8.42,
+        "improper_nerf_deg": -120.64,
+        "improper_delta_deg": -0.94
+      },
+      "CG": {
+        "bond_len_A": 1.5202,
+        "bond_delta_A": -0.0098,
+        "angle_deg": 117.0,
+        "angle_delta_deg": 0.7,
+        "torsion_nerf_deg": -176.1,
+        "torsion_vs_chi1_deg": 0.0
+      },
+      "CD1": {
+        "bond_len_A": 1.5197,
+        "bond_delta_A": -0.0043,
+        "angle_deg": 111.53,
+        "angle_delta_deg": 0.43,
+        "torsion_nerf_deg": 153.56,
+        "torsion_vs_chi2_deg": -0.04
+      },
+      "CD2": {
+        "bond_len_A": 1.5197,
+        "bond_delta_A": -0.0043,
+        "angle_deg": 111.51,
+        "angle_delta_deg": 0.41,
+        "torsion_nerf_deg": -86.43,
+        "torsion_vs_chi2_plus_120_deg": -360.03
+      }
+    },
+    {
+      "rotamer_idx": 3,
+      "prob": 0.010906999930739403,
+      "chi_deg": [
+        -89.19999694824219,
+        57.29999923706055
+      ],
+      "CB": {
+        "bond_len_A": 1.5198,
+        "bond_delta_A": -0.0202,
+        "angle_deg": 118.92,
+        "angle_delta_deg": 8.42,
+        "improper_nerf_deg": -120.64,
+        "improper_delta_deg": -0.94
+      },
+      "CG": {
+        "bond_len_A": 1.5202,
+        "bond_delta_A": -0.0098,
+        "angle_deg": 116.99,
+        "angle_delta_deg": 0.69,
+        "torsion_nerf_deg": -89.22,
+        "torsion_vs_chi1_deg": -0.02
+      },
+      "CD1": {
+        "bond_len_A": 1.5201,
+        "bond_delta_A": -0.0039,
+        "angle_deg": 111.52,
+        "angle_delta_deg": 0.42,
+        "torsion_nerf_deg": 57.31,
+        "torsion_vs_chi2_deg": 0.01
+      },
+      "CD2": {
+        "bond_len_A": 1.5203,
+        "bond_delta_A": -0.0037,
+        "angle_deg": 111.53,
+        "angle_delta_deg": 0.43,
+        "torsion_nerf_deg": 177.29,
+        "torsion_vs_chi2_plus_120_deg": -0.01
+      }
+    },
+    {
+      "rotamer_idx": 4,
+      "prob": 0.00368899991735816,
+      "chi_deg": [
+        -89.19999694824219,
+        -60.599998474121094
+      ],
+      "CB": {
+        "bond_len_A": 1.5198,
+        "bond_delta_A": -0.0202,
+        "angle_deg": 118.92,
+        "angle_delta_deg": 8.42,
+        "improper_nerf_deg": -120.64,
+        "improper_delta_deg": -0.94
+      },
+      "CG": {
+        "bond_len_A": 1.5202,
+        "bond_delta_A": -0.0098,
+        "angle_deg": 116.99,
+        "angle_delta_deg": 0.69,
+        "torsion_nerf_deg": -89.22,
+        "torsion_vs_chi1_deg": -0.02
+      },
+      "CD1": {
+        "bond_len_A": 1.5199,
+        "bond_delta_A": -0.0041,
+        "angle_deg": 111.52,
+        "angle_delta_deg": 0.42,
+        "torsion_nerf_deg": -60.58,
+        "torsion_vs_chi2_deg": 0.02
+      },
+      "CD2": {
+        "bond_len_A": 1.5204,
+        "bond_delta_A": -0.0036,
+        "angle_deg": 111.48,
+        "angle_delta_deg": 0.38,
+        "torsion_nerf_deg": 59.42,
+        "torsion_vs_chi2_plus_120_deg": 0.02
+      }
+    }
+  ],
+  "summary": {
+    "n_rotamers_audited": 5,
+    "max_abs_delta": {
+      "bonds_A": {
+        "CB": 0.0202,
+        "CG": 0.0098,
+        "CD1": 0.0046,
+        "CD2": 0.0043
+      },
+      "angles_deg": {
+        "CB": 8.42,
+        "CG": 0.7,
+        "CD1": 0.43,
+        "CD2": 0.43
+      },
+      "torsions_deg": {
+        "CB_improper": 0.94,
+        "CG_vs_chi1": 0.05,
+        "CD1_vs_chi2": 0.04,
+        "CD2_vs_chi2_plus_120": 360.03
+      }
+    }
+  },
+  "canonical_backbone": {
+    "N": [
+      -1.0,
+      0.0,
+      0.0
+    ],
+    "CA": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "C": [
+      0.0,
+      1.0,
+      0.0
+    ]
+  },
+  "template_geometry": {
+    "CB": {
+      "parent": "CA",
+      "bond_len_A": 1.54,
+      "angle_deg": 110.5,
+      "improper_nerf_deg": -119.7
+    },
+    "CG": {
+      "parent": "CB",
+      "bond_len_A": 1.53,
+      "angle_deg": 116.3
+    },
+    "CD1": {
+      "parent": "CG",
+      "bond_len_A": 1.524,
+      "angle_deg": 111.1
+    },
+    "CD2": {
+      "parent": "CG",
+      "bond_len_A": 1.524,
+      "angle_deg": 111.1
+    }
+  },
+  "rotlib_sha256": "edabc73f9a9e9536fa0665fcf3820dbf22b05e646271e7c0a70b3d68b7f3a0da"
+}

@@ -1,0 +1,44 @@
+[experiment]
+hypothesis = "The Dunbrack 2010 BBDEP text library can be parsed to extract CPR, PRO, and TPR rotamers with correct probability distributions and grid structure."
+goal = "Parse ALL.bbdep.rotamers.lib and emit structured JSON with AC-1 validation."
+reference_data = "data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib (SimpleOpt1-5 5% stepdown, ODC-BY licensed)"
+
+[outcomes.pass]
+condition = "AC-1 validation PASSES: (1) CPR/PRO/TPR all present, (2) CPR 2 rotamers/bin, (3) each bin Sum(prob)=1.0±1e-3, (4) rectangular grid, (5) PRO & CPR bin counts recorded and verified."
+is_residual = true
+reasoning = "Successful parse and validation. Measured AC-1 checks: CPR 2 rotamers/bin confirmed, probability sums within tolerance, grid rectangular, PRO and CPR bin counts match file."
+
+[outcomes.marginal]
+condition = "Script runs and emits JSON, but one or more AC-1 checks fail (e.g., probability sums out of tolerance, missing residue type, non-rectangular grid)."
+is_residual = false
+reasoning = "Output produced but does not meet specification. Identifies which AC-1 criteria failed; allows root-cause debugging."
+
+[outcomes.fail]
+condition = "Script crashes, input file not found, or JSON output not written."
+is_residual = false
+reasoning = "Fatal error. No output produced. Indicates missing input data, syntax errors, or environment issues."
+
+[result_schema]
+output_json = "JSON file with keys: metadata (input_file, input_sha256, residue_types, ac1_checks), residues (CPR/PRO/TPR entries with phi_centers, psi_centers, default_bin, bins[phi, psi, rotamers[prob, chi, r1..r4]])"
+ac1_checks = "Dict with boolean fields: cpw_all_present, cpr_rotamers_per_bin_ok, grid_rectangular, prob_sums_valid, ac1_pass"
+console_output = "Human-readable summary: AC-1 pass/fail, CPR rotamers/bin count, PRO/CPR bin counts, probability sum validation status"
+
+[result_schema.provenance]
+input_file_path = "data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib"
+input_file_sha256 = "[computed at runtime, pinned in output]"
+script_commit = "[commit SHA of extract_dunbrack_rotamers.py]"
+script_version = "1.0 (AC-1 validation, CPR/PRO/TPR parsing, 5% stepdown input)"
+
+[result_schema.numeric_ac1]
+cpr_rotamers_per_bin = "Expected: 2 (ring puckers)"
+pro_bin_count = "Expected: 133 (10deg x 10deg grid + marginal, verified from data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib)"
+cpr_bin_count = "Expected: 133 (same grid)"
+prob_sum_tolerance = "1.0 ± 1e-3 (0.997 - 1.003)"
+grid_rectangular = "true (all phi*psi cells populated)"
+
+[command_line]
+usage = "uv run python scripts/data/extract_dunbrack_rotamers.py --input <path> --output <path> [--dry-run] [--log-level {DEBUG,INFO,WARNING,ERROR}]"
+default_input = "data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib"
+default_output = "data/rotlibs/SimpleOpt1-5/rotamers-cpr-pro-tpr.json"
+required_flags = ""
+optional_flags = "--dry-run (parse first 1000 lines only), --log-level (default INFO)"

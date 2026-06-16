@@ -1,0 +1,35 @@
+[package]
+name = "proxide-wasm"
+version.workspace = true
+edition.workspace = true
+description = "WASM-compilable SMILES + GAFF2 bonded-parameter resolver"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+nom.workspace = true
+purr = "0.9"
+getrandom = { version = "0.2", features = ["js"] }
+once_cell.workspace = true
+
+# Proxide crates for WASM API
+proxide-core = { path = "../proxide-core", default-features = false }
+proxide-gaff = { path = "../proxide-gaff" }
+proxide-io = { path = "../proxide-io", default-features = false, features = ["pdb"] }
+proxide-parallel-rt = { path = "../proxide-parallel-rt" }
+serde-wasm-bindgen = "0.6"
+
+[[bin]]
+name = "param_cli"
+path = "src/bin/param_cli.rs"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

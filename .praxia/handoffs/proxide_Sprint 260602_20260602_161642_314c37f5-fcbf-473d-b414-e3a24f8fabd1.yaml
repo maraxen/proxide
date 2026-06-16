@@ -1,0 +1,78 @@
+---
+workspace: proxide
+session_id: d7cc91c8-d2f8-4ebe-83c5-ca2851b1b072
+status: complete
+immediately_relevant:
+- file: crates/proxide-master/src/fragment.rs
+  lines:
+  - 1
+  - 144
+  reason: Fragment<N,State> type-state with Raw/Centered phantom markers; Fragment::center() double-centering guard
+- file: crates/proxide-master/src/kabsch.rs
+  lines:
+  - 1
+  - 106
+  reason: Kabsch RMSD inner-product form using nalgebra SVD with reflection guard
+- file: crates/proxide-master/src/db.rs
+  lines:
+  - 1
+  - 149
+  reason: FragmentDbBuilder/FragmentDb — stores centered coords + centroid + precomputed ||X||^2 norm
+- file: crates/proxide-master/src/search.rs
+  lines:
+  - 1
+  - 112
+  reason: search() rayon par_iter path and search_serial() — returns Vec<SearchResult>
+- file: crates/proxide-confind/src/coords.rs
+  lines:
+  - 17
+  - 50
+  reason: 'ResidueBackbone now has omega: Option<f64> and is_cis_peptide: bool; fill_dihedrals wires omega from compute_backbone_dihedrals_f64'
+- file: crates/proxide-rotlib/src/rotlib.rs
+  lines:
+  - 272
+  - 295
+  reason: 'backbone_bin/num_rotamers/place_rotamer now take cis_proline: bool; fallback to standard PRO with tracing::warn! when cis-PRO data absent'
+- file: .praxia/docs/specs/260602_proxide-master-spec.md
+  lines:
+  - 1
+  - 50
+  reason: 'Full implementable spec: module layout, type signatures, acceptance criteria, golden-value test fixture notes'
+active_dispatches: []
+task_id: 260602_master-rmsd-search
+phase: Sprint 260602
+goal_statement: 'Complete #783 (Debt #67: cis-proline param + omega extraction) and #780 (proxide-master: backbone RMSD substructure search crate skeleton) — both from spec through implementation to auditor PASS and merge.'
+context_refs:
+- phase: confind-impl merge
+  task_id: 260601_confind-parity-merge
+  summary: Merged worktree-confind-impl to main; parity tests passing for proxide-confind; phi/psi sign bug fixed
+failed_attempts:
+- attempt_id: a1
+  description: A2 spec assumed rotlib.bin contains a distinct cis-PRO key (likely 'CPRO')
+  outcome: Binary inspection via strings -n 3 shows only standard PRO — no cis-PRO entry exists
+  reason_failed: The MSL BBdep binary fixture was generated without cis-PRO rotamer data; A2's assumption was speculative
+  do_not_retry: true
+  evidence_ref: 260602_cis-proline-spec recon log (r2 in .praxia/recon.jsonl)
+- attempt_id: a2
+  description: 'First fixer pass for #783 used log::warn! instead of tracing::warn! and did not thread is_cis_peptide through cache.rs call path'
+  outcome: 'Auditor NEEDS_WORK — log vs tracing convention violation; structural gap: is_cis_peptide stored but never forwarded to rotlib'
+  reason_failed: Fixer missed that confind calls num_rotamers/place_rotamer (not backbone_bin directly); both needed cis_proline param added
+  do_not_retry: true
+  evidence_ref: workflow audit result for task_783 in wf_fcfa6f79-179 transcript
+open_questions: []
+deferred:
+- description: 'proxide-master disk persistence: mmap''d binary or bincode serialization for FragmentDb'
+  rationale: Explicitly deferred by design — implement in-memory first, validate search correctness, then add persistence
+  recommended_phase: Phase 2 (after real-database validation)
+- description: 'proxide-master pre-filter: distance-geometry lower-bound elimination before Kabsch'
+  rationale: Optimization only — brute-force Kabsch is correct; pre-filter only worth adding after profiling at target database sizes
+  recommended_phase: Phase 3 (after Phase 2 persistence + real-DB benchmarks)
+- description: 'cis-PRO rotamer data: backbone_bin cis-PRO branch is wired but falls back to standard PRO; needs a rotlib binary with actual Dunbrack cis-PRO data'
+  rationale: No such binary is available in the current fixture; correctness requires upstream data sourcing
+  recommended_phase: New backlog item when Dunbrack cis-PRO binary is available
+- description: Gram matrix invariant approach for RMSD (runner-up to phantom-type design)
+  rationale: Revisit if Fragment<N,Centered> phantom type ergonomics cause downstream API friction — simpler for pure search with no geometry reconstruction needed
+  recommended_phase: Revisit if API ergonomics pain emerges
+lessons_refs:
+- .praxia/lessons.jsonl
+---
