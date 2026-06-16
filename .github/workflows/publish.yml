@@ -118,27 +118,17 @@ jobs:
                        proxide-physics proxide-confind proxide_rs proxide_fixer; do
             cp -n README.md crates/$crate/README.md
           done
-      - name: Dry-run packaging (catches metadata errors before irreversible publish)
+      - name: Validate crate packaging (metadata, includes, Cargo.toml)
+        # cargo package --no-verify checks metadata and file inclusion without resolving
+        # workspace-internal deps from crates.io (unavailable pre-publish).
+        # Build verification happens naturally in publish-crates once deps exist in order.
         run: |
           set -e
-          # Tier 1 — no internal deps
-          cargo publish --dry-run --allow-dirty -p proxide-units
-          cargo publish --dry-run --allow-dirty -p proxide-core
-          cargo publish --dry-run --allow-dirty -p proxide-parallel-rt
-          # Tier 2
-          cargo publish --dry-run --allow-dirty -p proxide-geometry
-          # Tier 3
-          cargo publish --dry-run --allow-dirty -p proxide-gaff
-          cargo publish --dry-run --allow-dirty -p proxide-io
-          cargo publish --dry-run --allow-dirty -p proxide-rotlib
-          cargo publish --dry-run --allow-dirty -p proxide-frag
-          # Tier 4
-          cargo publish --dry-run --allow-dirty -p proxide-physics
-          cargo publish --dry-run --allow-dirty -p proxide-confind
-          # Tier 5
-          cargo publish --dry-run --allow-dirty -p proxide_rs
-          # Tier 6
-          cargo publish --dry-run --allow-dirty -p proxide_fixer
+          for crate in proxide-units proxide-core proxide-parallel-rt proxide-geometry \
+                       proxide-gaff proxide-io proxide-rotlib proxide-frag \
+                       proxide-physics proxide-confind proxide_rs proxide_fixer; do
+            cargo package --allow-dirty --no-verify -p $crate
+          done
 
   publish-crates:
     name: Publish to crates.io
