@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 description = "Physics and forcefield modules for protein structures"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["protein", "force-field", "physics", "molecular-dynamics", "bioinformatics"]
+categories = ["science", "algorithms"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 crate-type = ["rlib"]

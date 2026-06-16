@@ -17,17 +17,20 @@ version = "0.1.0-alpha.7"
 edition = "2021"
 authors = ["Proxide Contributors"]
 license = "MIT"
+repository = "https://github.com/maraxen/proxide"
+homepage = "https://github.com/maraxen/proxide"
+readme = "README.md"
 
 [workspace.dependencies]
 approx = "0.5"
 insta = { version = "1.39", features = ["glob"] }
-proxide-core = { path = "crates/proxide-core" }
-proxide-geometry = { path = "crates/proxide-geometry" }
-proxide-physics = { path = "crates/proxide-physics" }
-proxide-io = { path = "crates/proxide-io" }
-proxide-gaff = { path = "crates/proxide-gaff" }
-proxide-units = { path = "crates/proxide-units" }
-proxide_rs = { path = "crates/proxide_rs" }
+proxide-core = { path = "crates/proxide-core", version = "0.1.0-alpha.7" }
+proxide-geometry = { path = "crates/proxide-geometry", version = "0.1.0-alpha.7" }
+proxide-physics = { path = "crates/proxide-physics", version = "0.1.0-alpha.7" }
+proxide-io = { path = "crates/proxide-io", version = "0.1.0-alpha.7" }
+proxide-gaff = { path = "crates/proxide-gaff", version = "0.1.0-alpha.7" }
+proxide-units = { path = "crates/proxide-units", version = "0.1.0-alpha.7" }
+proxide_rs = { path = "crates/proxide_rs", version = "0.1.0-alpha.7" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"
 nom = "7.1"

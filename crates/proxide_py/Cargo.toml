@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 description = "Python bindings for proxide_rs"
 license.workspace = true
+publish = false
 
 [lib]
 name = "_proxider"

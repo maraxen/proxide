@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 description = "Geometric algorithms for protein structures"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["protein", "bioinformatics", "geometry", "molecular-dynamics", "structure"]
+categories = ["science", "algorithms"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 crate-type = ["rlib"]

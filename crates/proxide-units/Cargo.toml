@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 description = "Unit conversion constants and specifications for proxide parameterizer output"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["protein", "bioinformatics", "units", "force-field", "molecular-dynamics"]
+categories = ["science", "data-structures"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 crate-type = ["rlib"]

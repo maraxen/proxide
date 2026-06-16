@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 description = "General Amber Force Field (GAFF) implementation for protein structures"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["protein", "force-field", "amber", "molecular-dynamics", "gaff"]
+categories = ["science", "algorithms"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 crate-type = ["rlib"]

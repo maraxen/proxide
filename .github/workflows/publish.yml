@@ -103,6 +103,73 @@ jobs:
           name: wheels-sdist
           path: dist
 
+  verify-crates:
+    name: Dry-run crates.io packaging
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Copy README into each crate directory
+        run: |
+          for crate in proxide-units proxide-core proxide-geometry proxide-gaff proxide-io proxide-physics proxide_rs proxide_fixer; do
+            cp README.md crates/$crate/README.md
+          done
+      - name: Dry-run packaging (catches metadata errors before irreversible publish)
+        run: |
+          set -e
+          cargo publish --dry-run -p proxide-units
+          cargo publish --dry-run -p proxide-core
+          cargo publish --dry-run -p proxide-geometry
+          cargo publish --dry-run -p proxide-gaff
+          cargo publish --dry-run -p proxide-io
+          cargo publish --dry-run -p proxide-physics
+          cargo publish --dry-run -p proxide_rs
+          cargo publish --dry-run -p proxide_fixer
+
+  publish-crates:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [verify-crates]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Copy README into each crate directory
+        run: |
+          for crate in proxide-units proxide-core proxide-geometry proxide-gaff proxide-io proxide-physics proxide_rs proxide_fixer; do
+            cp README.md crates/$crate/README.md
+          done
+      - name: Publish crates in topological order
+        # proxide_py is intentionally absent: it has publish = false and is distributed via PyPI wheels above
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -e
+          # Tier 1 — no internal deps; sleep between so proxide-units is indexed before proxide-core resolves it
+          cargo publish -p proxide-units
+          sleep 30
+          cargo publish -p proxide-core
+          sleep 30
+          # Tier 2
+          cargo publish -p proxide-geometry
+          sleep 30
+          # Tier 3 — gaff and io both depend only on core + geometry; sleep between so gaff is indexed before physics resolves it
+          cargo publish -p proxide-gaff
+          sleep 30
+          cargo publish -p proxide-io
+          sleep 30
+          # Tier 4
+          cargo publish -p proxide-physics
+          sleep 30
+          # Tier 5
+          cargo publish -p proxide_rs
+          sleep 30
+          # Tier 6
+          cargo publish -p proxide_fixer
+
   release:
     name: Release
     runs-on: ubuntu-latest

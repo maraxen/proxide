@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 description = "IO and parsing modules for protein structures"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["protein", "pdb", "parser", "bioinformatics", "molecular-dynamics"]
+categories = ["science", "parser-implementations"]
+
+[package.metadata.docs.rs]
+features = ["pdb", "cif", "xtc", "parallel", "foldcomp", "mmap"]
 
 [lib]
 crate-type = ["rlib"]
