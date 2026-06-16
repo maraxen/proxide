@@ -19,9 +19,9 @@ getrandom = { version = "0.2", features = ["js"] }
 once_cell.workspace = true
 
 # Proxide crates for WASM API
-proxide-core = { workspace = true, default-features = false }
+proxide-core.workspace = true
 proxide-gaff.workspace = true
-proxide-io = { workspace = true, default-features = false, features = ["pdb"] }
+proxide-io = { path = "../proxide-io", version = "0.1.0-alpha.7", default-features = false, features = ["pdb"] }
 proxide-parallel-rt.workspace = true
 serde-wasm-bindgen = "0.6"
 
