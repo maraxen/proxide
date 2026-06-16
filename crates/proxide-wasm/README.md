@@ -1,5 +1,7 @@
 # proxide-wasm
 
+> **Alpha — experimental, no API stability guarantees.** This crate is part of an active research project; APIs may change without notice between versions. Not recommended for production use.
+
 WASM-compilable GAFF2 bonded-parameter resolver for use in browser-based molecular dynamics demos.
 
 ## Quick Start (Browser)

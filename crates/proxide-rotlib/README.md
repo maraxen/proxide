@@ -1,5 +1,7 @@
 # proxide-rotlib
 
+> **Alpha — experimental, no API stability guarantees.** This crate is part of an active research project; APIs may change without notice between versions. Not recommended for production use.
+
 Backbone-dependent rotamer library for protein sidechain placement.
 
 ## Data Provenance & Licensing

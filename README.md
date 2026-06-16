@@ -1,5 +1,7 @@
 # Proxide
 
+> **Alpha — experimental, no API stability guarantees.** This crate is part of an active research project; APIs may change without notice between versions. Not recommended for production use.
+
 **Proxide** is a high-performance library for Protein I/O and Physics bridging in JAX. It combines a flexible Python/JAX frontend with a highly optimized Rust backend (`_proxider`) to provide fast structure parsing, force field parameterization, and seamless integration with JAX MD.
 
 **NOTE**: This is a research library in active development.
