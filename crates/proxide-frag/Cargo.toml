@@ -1,11 +1,15 @@
 [package]
 name = "proxide-frag"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+homepage.workspace   = true
+readme.workspace     = true
 description = "Backbone fragment search — Kabsch RMSD over fixed-length fragment databases (MASTER-style)"
-keywords = ["protein", "rmsd", "structure", "search", "kabsch"]
+keywords    = ["protein", "rmsd", "structure", "search", "kabsch"]
+categories  = ["science", "algorithms"]
 
 [lib]
 crate-type = ["rlib"]
@@ -23,9 +27,12 @@ rand = { workspace = true }
 criterion = { workspace = true }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
-proxide-parallel-rt = { path = "../proxide-parallel-rt" }
+proxide-parallel-rt.workspace = true
 getrandom = { version = "0.2", features = ["js"] }
 
 [[bench]]
 name = "search_bench"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true

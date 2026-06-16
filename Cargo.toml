@@ -36,6 +36,7 @@ proxide-io = { path = "crates/proxide-io", version = "0.1.0-alpha.7" }
 proxide-gaff = { path = "crates/proxide-gaff", version = "0.1.0-alpha.7" }
 proxide-units = { path = "crates/proxide-units", version = "0.1.0-alpha.7" }
 proxide-rotlib = { path = "crates/proxide-rotlib", version = "0.1.0-alpha.7" }
+proxide-parallel-rt = { path = "crates/proxide-parallel-rt", version = "0.1.0-alpha.7" }
 proxide_rs = { path = "crates/proxide_rs", version = "0.1.0-alpha.7" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"

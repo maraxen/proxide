@@ -4,8 +4,12 @@ version.workspace   = true
 edition.workspace   = true
 authors.workspace   = true
 license.workspace   = true
+repository.workspace = true
+homepage.workspace  = true
+readme      = "README.md"
 description = "Backbone-dependent rotamer library for protein sidechain placement"
 keywords    = ["rotamer", "sidechain", "backbone", "structural-biology"]
+categories  = ["science", "algorithms"]
 
 [lib]
 crate-type = ["rlib"]
@@ -22,8 +26,8 @@ path = "src/bin/parse_master.rs"
 thiserror = { workspace = true }
 tracing   = "0.1"
 tracing-subscriber = "0.3"
-proxide-geometry = { path = "../proxide-geometry" }
-proxide-core = { path = "../proxide-core" }
+proxide-geometry.workspace = true
+proxide-core.workspace     = true
 prost    = "0.13"
 zstd     = "0.13"
 clap = { version = "4.4", features = ["derive"] }
@@ -42,3 +46,6 @@ tempfile = "3"
 [features]
 default = []
 serde   = ["dep:serde"]
+
+[package.metadata.docs.rs]
+features = ["serde"]
