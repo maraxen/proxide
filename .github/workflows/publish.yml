@@ -143,35 +143,47 @@ jobs:
           done
       - name: Publish crates in topological order
         # proxide_py and proxide-wasm are intentionally absent: publish = false
+        # pub() is idempotent: skips crates already on crates.io so reruns are safe.
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -e
+          pub() {
+            local out rc
+            out=$(cargo publish --allow-dirty -p "$1" 2>&1); rc=$?
+            if [ $rc -eq 0 ]; then
+              echo "$out"
+            elif echo "$out" | grep -q "already exists on crates.io"; then
+              echo "SKIP: $1 already published"
+            else
+              echo "$out" >&2; exit $rc
+            fi
+          }
           # Tier 1 — no internal deps
-          cargo publish --allow-dirty -p proxide-units
+          pub proxide-units
           sleep 30
-          cargo publish --allow-dirty -p proxide-core
-          cargo publish --allow-dirty -p proxide-parallel-rt
+          pub proxide-core
+          pub proxide-parallel-rt
           sleep 30
           # Tier 2
-          cargo publish --allow-dirty -p proxide-geometry
+          pub proxide-geometry
           sleep 30
           # Tier 3 — gaff/io/rotlib/frag all depend on core + geometry
-          cargo publish --allow-dirty -p proxide-gaff
+          pub proxide-gaff
           sleep 30
-          cargo publish --allow-dirty -p proxide-io
-          cargo publish --allow-dirty -p proxide-rotlib
-          cargo publish --allow-dirty -p proxide-frag
+          pub proxide-io
+          pub proxide-rotlib
+          pub proxide-frag
           sleep 30
           # Tier 4
-          cargo publish --allow-dirty -p proxide-physics
-          cargo publish --allow-dirty -p proxide-confind
+          pub proxide-physics
+          pub proxide-confind
           sleep 30
           # Tier 5
-          cargo publish --allow-dirty -p proxide_rs
+          pub proxide_rs
           sleep 30
           # Tier 6
-          cargo publish --allow-dirty -p proxide_fixer
+          pub proxide_fixer
 
   release:
     name: Release
