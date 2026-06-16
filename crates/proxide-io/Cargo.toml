@@ -31,7 +31,7 @@ lazy_static = { workspace = true }
 molly = { workspace = true, optional = true }
 hdf5 = { workspace = true, optional = true }
 orx-parallel = { workspace = true, optional = true }
-proxide-parallel-rt = { path = "../proxide-parallel-rt", optional = true }
+proxide-parallel-rt = { workspace = true, optional = true }
 
 [features]
 default = ["pdb", "cif", "xtc", "parallel"]
