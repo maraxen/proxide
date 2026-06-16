@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 description = "WASM-compilable SMILES + GAFF2 bonded-parameter resolver"
 license = "MIT"
+publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -18,10 +19,10 @@ getrandom = { version = "0.2", features = ["js"] }
 once_cell.workspace = true
 
 # Proxide crates for WASM API
-proxide-core = { path = "../proxide-core", default-features = false }
-proxide-gaff = { path = "../proxide-gaff" }
-proxide-io = { path = "../proxide-io", default-features = false, features = ["pdb"] }
-proxide-parallel-rt = { path = "../proxide-parallel-rt" }
+proxide-core = { workspace = true, default-features = false }
+proxide-gaff.workspace = true
+proxide-io = { workspace = true, default-features = false, features = ["pdb"] }
+proxide-parallel-rt.workspace = true
 serde-wasm-bindgen = "0.6"
 
 [[bin]]

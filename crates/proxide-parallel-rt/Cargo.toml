@@ -2,4 +2,13 @@
 name = "proxide-parallel-rt"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 description = "Minimal parallel runtime: thread-count registry for wasm32 builds"
+categories = ["concurrency"]
+
+[package.metadata.docs.rs]
+all-features = true

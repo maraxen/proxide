@@ -113,19 +113,31 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Copy README into each crate directory
         run: |
-          for crate in proxide-units proxide-core proxide-geometry proxide-gaff proxide-io proxide-physics proxide_rs proxide_fixer; do
-            cp README.md crates/$crate/README.md
+          for crate in proxide-units proxide-core proxide-parallel-rt proxide-geometry \
+                       proxide-gaff proxide-io proxide-rotlib proxide-frag \
+                       proxide-physics proxide-confind proxide_rs proxide_fixer; do
+            cp -n README.md crates/$crate/README.md
           done
       - name: Dry-run packaging (catches metadata errors before irreversible publish)
         run: |
           set -e
+          # Tier 1 — no internal deps
           cargo publish --dry-run -p proxide-units
           cargo publish --dry-run -p proxide-core
+          cargo publish --dry-run -p proxide-parallel-rt
+          # Tier 2
           cargo publish --dry-run -p proxide-geometry
+          # Tier 3
           cargo publish --dry-run -p proxide-gaff
           cargo publish --dry-run -p proxide-io
+          cargo publish --dry-run -p proxide-rotlib
+          cargo publish --dry-run -p proxide-frag
+          # Tier 4
           cargo publish --dry-run -p proxide-physics
+          cargo publish --dry-run -p proxide-confind
+          # Tier 5
           cargo publish --dry-run -p proxide_rs
+          # Tier 6
           cargo publish --dry-run -p proxide_fixer
 
   publish-crates:
@@ -139,30 +151,36 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Copy README into each crate directory
         run: |
-          for crate in proxide-units proxide-core proxide-geometry proxide-gaff proxide-io proxide-physics proxide_rs proxide_fixer; do
-            cp README.md crates/$crate/README.md
+          for crate in proxide-units proxide-core proxide-parallel-rt proxide-geometry \
+                       proxide-gaff proxide-io proxide-rotlib proxide-frag \
+                       proxide-physics proxide-confind proxide_rs proxide_fixer; do
+            cp -n README.md crates/$crate/README.md
           done
       - name: Publish crates in topological order
-        # proxide_py is intentionally absent: it has publish = false and is distributed via PyPI wheels above
+        # proxide_py and proxide-wasm are intentionally absent: publish = false
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -e
-          # Tier 1 — no internal deps; sleep between so proxide-units is indexed before proxide-core resolves it
+          # Tier 1 — no internal deps
           cargo publish -p proxide-units
           sleep 30
           cargo publish -p proxide-core
+          cargo publish -p proxide-parallel-rt
           sleep 30
           # Tier 2
           cargo publish -p proxide-geometry
           sleep 30
-          # Tier 3 — gaff and io both depend only on core + geometry; sleep between so gaff is indexed before physics resolves it
+          # Tier 3 — gaff/io/rotlib/frag all depend on core + geometry
           cargo publish -p proxide-gaff
           sleep 30
           cargo publish -p proxide-io
+          cargo publish -p proxide-rotlib
+          cargo publish -p proxide-frag
           sleep 30
           # Tier 4
           cargo publish -p proxide-physics
+          cargo publish -p proxide-confind
           sleep 30
           # Tier 5
           cargo publish -p proxide_rs
