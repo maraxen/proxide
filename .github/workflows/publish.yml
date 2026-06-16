@@ -122,23 +122,23 @@ jobs:
         run: |
           set -e
           # Tier 1 — no internal deps
-          cargo publish --dry-run -p proxide-units
-          cargo publish --dry-run -p proxide-core
-          cargo publish --dry-run -p proxide-parallel-rt
+          cargo publish --dry-run --allow-dirty -p proxide-units
+          cargo publish --dry-run --allow-dirty -p proxide-core
+          cargo publish --dry-run --allow-dirty -p proxide-parallel-rt
           # Tier 2
-          cargo publish --dry-run -p proxide-geometry
+          cargo publish --dry-run --allow-dirty -p proxide-geometry
           # Tier 3
-          cargo publish --dry-run -p proxide-gaff
-          cargo publish --dry-run -p proxide-io
-          cargo publish --dry-run -p proxide-rotlib
-          cargo publish --dry-run -p proxide-frag
+          cargo publish --dry-run --allow-dirty -p proxide-gaff
+          cargo publish --dry-run --allow-dirty -p proxide-io
+          cargo publish --dry-run --allow-dirty -p proxide-rotlib
+          cargo publish --dry-run --allow-dirty -p proxide-frag
           # Tier 4
-          cargo publish --dry-run -p proxide-physics
-          cargo publish --dry-run -p proxide-confind
+          cargo publish --dry-run --allow-dirty -p proxide-physics
+          cargo publish --dry-run --allow-dirty -p proxide-confind
           # Tier 5
-          cargo publish --dry-run -p proxide_rs
+          cargo publish --dry-run --allow-dirty -p proxide_rs
           # Tier 6
-          cargo publish --dry-run -p proxide_fixer
+          cargo publish --dry-run --allow-dirty -p proxide_fixer
 
   publish-crates:
     name: Publish to crates.io
@@ -163,30 +163,30 @@ jobs:
         run: |
           set -e
           # Tier 1 — no internal deps
-          cargo publish -p proxide-units
+          cargo publish --allow-dirty -p proxide-units
           sleep 30
-          cargo publish -p proxide-core
-          cargo publish -p proxide-parallel-rt
+          cargo publish --allow-dirty -p proxide-core
+          cargo publish --allow-dirty -p proxide-parallel-rt
           sleep 30
           # Tier 2
-          cargo publish -p proxide-geometry
+          cargo publish --allow-dirty -p proxide-geometry
           sleep 30
           # Tier 3 — gaff/io/rotlib/frag all depend on core + geometry
-          cargo publish -p proxide-gaff
+          cargo publish --allow-dirty -p proxide-gaff
           sleep 30
-          cargo publish -p proxide-io
-          cargo publish -p proxide-rotlib
-          cargo publish -p proxide-frag
+          cargo publish --allow-dirty -p proxide-io
+          cargo publish --allow-dirty -p proxide-rotlib
+          cargo publish --allow-dirty -p proxide-frag
           sleep 30
           # Tier 4
-          cargo publish -p proxide-physics
-          cargo publish -p proxide-confind
+          cargo publish --allow-dirty -p proxide-physics
+          cargo publish --allow-dirty -p proxide-confind
           sleep 30
           # Tier 5
-          cargo publish -p proxide_rs
+          cargo publish --allow-dirty -p proxide_rs
           sleep 30
           # Tier 6
-          cargo publish -p proxide_fixer
+          cargo publish --allow-dirty -p proxide_fixer
 
   release:
     name: Release
