@@ -3,6 +3,7 @@ pub mod templates;
 pub mod finder;
 pub mod builder;
 pub mod protonate;
+pub mod repack;
 
 #[cfg(any(feature = "protonation", feature = "capping", feature = "stereo", feature = "disulfide"))]
 pub mod sanitizers;
