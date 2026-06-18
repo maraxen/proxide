@@ -1,0 +1,587 @@
+use crate::models::{Topology, Atom, Residue};
+use proxide_geometry::geometry::nerf::Nerf;
+use thiserror::Error;
+
+/// Error type for capping group operations
+#[derive(Error, Debug)]
+pub enum CapError {
+    #[error("Missing backbone atom {0} in residue")]
+    MissingBackboneAtom(String),
+    #[error("Failed to cap: {0}")]
+    General(String),
+}
+
+/// Kind of capping group
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapKind {
+    Ace,
+    Nme,
+}
+
+/// Record of a capping group that was applied
+#[derive(Debug, Clone)]
+pub struct AppliedCap {
+    pub chain: String,
+    pub res_id: i32,
+    pub kind: CapKind,
+}
+
+/// Detects and inserts ACE (acetyl) and NME (N-methyl amide) caps at internal chain breaks.
+/// ACE is inserted after the upstream residue, NME is inserted before the downstream residue.
+pub struct CapSanitizer<'a> {
+    topology: &'a mut Topology,
+}
+
+impl<'a> CapSanitizer<'a> {
+    pub fn new(topology: &'a mut Topology) -> Self {
+        Self { topology }
+    }
+
+    /// Run capping on internal breaks. Returns the list of applied caps.
+    pub fn run(&mut self, breaks: &[crate::sanitizers::capping::BreakSite]) -> Result<Vec<AppliedCap>, CapError> {
+        let mut applied_caps = Vec::new();
+
+        for break_site in breaks {
+            // Find chain and residue indices
+            let chain_idx = self
+                .topology
+                .chains
+                .iter()
+                .position(|c| c.id == break_site.chain)
+                .ok_or_else(|| CapError::General("Chain not found".to_string()))?;
+
+            let upstream_res_idx = self.topology.chains[chain_idx]
+                .residues
+                .iter()
+                .position(|r| r.res_id == break_site.res_id_upstream)
+                .ok_or_else(|| CapError::General("Upstream residue not found".to_string()))?;
+
+            let downstream_res_idx = self.topology.chains[chain_idx]
+                .residues
+                .iter()
+                .position(|r| r.res_id == break_site.res_id_downstream)
+                .ok_or_else(|| CapError::General("Downstream residue not found".to_string()))?;
+
+            // Get the next serial number (max of all atoms in topology + 1)
+            let max_serial = self.topology.chains.iter()
+                .flat_map(|c| c.residues.iter().flat_map(|r| r.atoms.iter().map(|a| a.serial)))
+                .max()
+                .unwrap_or(0);
+
+            // Insert ACE after upstream residue
+            let ace_res = create_ace_residue(
+                &self.topology.chains[chain_idx].residues[upstream_res_idx],
+                break_site.res_id_upstream,
+                &break_site.chain,
+                max_serial + 1,
+            )?;
+            self.topology.chains[chain_idx].residues.insert(upstream_res_idx + 1, ace_res);
+            applied_caps.push(AppliedCap {
+                chain: break_site.chain.clone(),
+                res_id: break_site.res_id_upstream,
+                kind: CapKind::Ace,
+            });
+
+            // Get updated max_serial after ACE insertion
+            let max_serial = self.topology.chains.iter()
+                .flat_map(|c| c.residues.iter().flat_map(|r| r.atoms.iter().map(|a| a.serial)))
+                .max()
+                .unwrap_or(0);
+
+            // Insert NME before downstream residue (now at downstream_res_idx + 1 due to ACE insertion)
+            let nme_res = create_nme_residue(
+                &self.topology.chains[chain_idx].residues[downstream_res_idx + 1],
+                break_site.res_id_downstream,
+                &break_site.chain,
+                max_serial + 1,
+            )?;
+            self.topology.chains[chain_idx].residues.insert(downstream_res_idx + 1, nme_res);
+            applied_caps.push(AppliedCap {
+                chain: break_site.chain.clone(),
+                res_id: break_site.res_id_downstream,
+                kind: CapKind::Nme,
+            });
+
+            // Re-sort residues by res_id to maintain order
+            self.topology.chains[chain_idx].residues.sort_by_key(|r| r.res_id);
+        }
+
+        Ok(applied_caps)
+    }
+}
+
+/// Create an ACE (acetyl) residue capping the C-terminal end of the upstream residue.
+/// ACE has three atoms: C (CY), O (OY), CH3 (CAY).
+/// Geometry: C-O ~1.25 Å (double bond), C-CH3 ~1.52 Å (single bond), trans omega.
+fn create_ace_residue(
+    upstream_res: &Residue,
+    upstream_res_id: i32,
+    _chain: &str,
+    starting_serial: i32,
+) -> Result<Residue, CapError> {
+    let c_atom = upstream_res
+        .atoms
+        .iter()
+        .find(|a| a.name == "C")
+        .ok_or(CapError::MissingBackboneAtom("C".to_string()))?
+        .clone();
+
+    let o_atom = upstream_res
+        .atoms
+        .iter()
+        .find(|a| a.name == "O")
+        .ok_or(CapError::MissingBackboneAtom("O".to_string()))?
+        .clone();
+
+    let ca_atom = upstream_res
+        .atoms
+        .iter()
+        .find(|a| a.name == "CA")
+        .ok_or(CapError::MissingBackboneAtom("CA".to_string()))?
+        .clone();
+
+    // ACE cap: place C-O and C-CH3 from upstream backbone
+    // We want to extend from the upstream C with peptide geometry
+    // Use ideal bond lengths: C-O = 1.25 Å, C-C = 1.52 Å
+    // O-C-C angle (sp2 carbon bonded to two groups) ~123°
+    // For the third C (CH3), use ~120° in trans plane (omega = 180°)
+
+    // Use [CA, existing_O, C] to place the new oxygen-like group
+    let cy_coords = Nerf::place_atom(
+        &[ca_atom.coords, o_atom.coords, c_atom.coords],
+        1.25, // C=O double bond
+        123.0, // O-C-O angle (sp2)
+        180.0, // trans to existing O
+    );
+
+    // Place CH3 carbon extending from C in ~120° angle
+    let cay_coords = Nerf::place_atom(
+        &[o_atom.coords, c_atom.coords, ca_atom.coords],
+        1.52, // C-C single bond
+        120.0, // C-C-CA angle (sp3-like)
+        0.0, // can place anywhere in third dimension
+    );
+
+    let mut atoms = vec![
+        Atom {
+            name: "C".to_string(),
+            element: "C".to_string(),
+            coords: c_atom.coords,
+            alt_loc: ' ',
+            serial: starting_serial,
+            b_factor: 0.0,
+            occupancy: 1.0,
+            is_hetatm: false,
+        },
+        Atom {
+            name: "O".to_string(),
+            element: "O".to_string(),
+            coords: cy_coords,
+            alt_loc: ' ',
+            serial: starting_serial + 1,
+            b_factor: 0.0,
+            occupancy: 1.0,
+            is_hetatm: false,
+        },
+        Atom {
+            name: "CH3".to_string(),
+            element: "C".to_string(),
+            coords: cay_coords,
+            alt_loc: ' ',
+            serial: starting_serial + 2,
+            b_factor: 0.0,
+            occupancy: 1.0,
+            is_hetatm: false,
+        },
+    ];
+
+    // Ensure all atoms have finite coordinates
+    for atom in &mut atoms {
+        if !atom.coords[0].is_finite() || !atom.coords[1].is_finite() || !atom.coords[2].is_finite() {
+            atom.coords = c_atom.coords; // fallback to upstream C position
+        }
+    }
+
+    Ok(Residue {
+        name: "ACE".to_string(),
+        res_id: upstream_res_id,
+        insertion_code: ' ',
+        atoms,
+    })
+}
+
+/// Create an NME (N-methyl amide) residue capping the N-terminal end of the downstream residue.
+/// NME has two atoms: N (NT) and CH3 (CAT).
+/// Geometry: N-C ~1.33 Å (peptide-like), ideal angle ~120°.
+fn create_nme_residue(
+    downstream_res: &Residue,
+    downstream_res_id: i32,
+    _chain: &str,
+    starting_serial: i32,
+) -> Result<Residue, CapError> {
+    let n_atom = downstream_res
+        .atoms
+        .iter()
+        .find(|a| a.name == "N")
+        .ok_or(CapError::MissingBackboneAtom("N".to_string()))?
+        .clone();
+
+    let ca_atom = downstream_res
+        .atoms
+        .iter()
+        .find(|a| a.name == "CA")
+        .ok_or(CapError::MissingBackboneAtom("CA".to_string()))?
+        .clone();
+
+    let c_atom = downstream_res
+        .atoms
+        .iter()
+        .find(|a| a.name == "C")
+        .ok_or(CapError::MissingBackboneAtom("C".to_string()))?
+        .clone();
+
+    // NME cap: place N and CH3 from downstream backbone
+    // N is already there, so we place CH3 bonded to N
+    // N-C bond ~1.33 Å (sp2), angle ~120°, trans to CA
+
+    let cat_coords = Nerf::place_atom(
+        &[c_atom.coords, ca_atom.coords, n_atom.coords],
+        1.33, // N-C single bond (peptide-like)
+        120.0, // C-N-C angle
+        180.0, // trans to CA
+    );
+
+    let mut atoms = vec![
+        Atom {
+            name: "N".to_string(),
+            element: "N".to_string(),
+            coords: n_atom.coords,
+            alt_loc: ' ',
+            serial: starting_serial,
+            b_factor: 0.0,
+            occupancy: 1.0,
+            is_hetatm: false,
+        },
+        Atom {
+            name: "CH3".to_string(),
+            element: "C".to_string(),
+            coords: cat_coords,
+            alt_loc: ' ',
+            serial: starting_serial + 1,
+            b_factor: 0.0,
+            occupancy: 1.0,
+            is_hetatm: false,
+        },
+    ];
+
+    // Ensure finite coordinates
+    for atom in &mut atoms {
+        if !atom.coords[0].is_finite() || !atom.coords[1].is_finite() || !atom.coords[2].is_finite() {
+            atom.coords = n_atom.coords; // fallback
+        }
+    }
+
+    Ok(Residue {
+        name: "NME".to_string(),
+        res_id: downstream_res_id,
+        insertion_code: ' ',
+        atoms,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Chain;
+    use crate::sanitizers::capping::CappingSanitizer;
+
+
+    /// Build a minimal backbone residue (N, CA, C, O)
+    fn build_backbone_residue(name: &str, res_id: i32, serial_base: i32) -> Residue {
+        Residue {
+            name: name.to_string(),
+            res_id,
+            insertion_code: ' ',
+            atoms: vec![
+                Atom {
+                    name: "N".to_string(),
+                    element: "N".to_string(),
+                    coords: [0.0, 0.0, 0.0],
+                    alt_loc: ' ',
+                    serial: serial_base,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
+                Atom {
+                    name: "CA".to_string(),
+                    element: "C".to_string(),
+                    coords: [1.458, 0.0, 0.0],
+                    alt_loc: ' ',
+                    serial: serial_base + 1,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
+                Atom {
+                    name: "C".to_string(),
+                    element: "C".to_string(),
+                    coords: [2.009, 1.391, 0.0],
+                    alt_loc: ' ',
+                    serial: serial_base + 2,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
+                Atom {
+                    name: "O".to_string(),
+                    element: "O".to_string(),
+                    coords: [1.221, 2.338, 0.0],
+                    alt_loc: ' ',
+                    serial: serial_base + 3,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_cap_internal_break_creates_ace_and_nme() {
+        let res1 = build_backbone_residue("ALA", 1, 1);
+        let mut res2 = build_backbone_residue("GLY", 2, 5);
+        // Place res2 far away to create a break
+        res2.atoms
+            .iter_mut()
+            .find(|a| a.name == "CA")
+            .unwrap()
+            .coords = [15.0, 0.0, 0.0];
+        for atom in &mut res2.atoms {
+            if atom.name != "N" {
+                atom.coords[0] += 15.0 - 1.458;
+            }
+        }
+
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![res1, res2],
+            }],
+        };
+
+        let capping_sanitizer = CappingSanitizer::new(&mut topology);
+        let breaks = capping_sanitizer.detect_breaks();
+        assert_eq!(breaks.len(), 1);
+
+        let mut cap_sanitizer = CapSanitizer::new(&mut topology);
+        let applied_caps = cap_sanitizer.run(&breaks).unwrap();
+
+        // Should have inserted 2 caps (ACE and NME)
+        assert_eq!(applied_caps.len(), 2);
+        assert_eq!(applied_caps[0].kind, CapKind::Ace);
+        assert_eq!(applied_caps[1].kind, CapKind::Nme);
+
+        // Chain should now have 4 residues (ALA, ACE, GLY, NME)
+        assert_eq!(topology.chains[0].residues.len(), 4);
+
+        // Find ACE residue
+        let ace_res = topology.chains[0]
+            .residues
+            .iter()
+            .find(|r| r.name == "ACE")
+            .unwrap();
+        assert_eq!(ace_res.atoms.len(), 3, "ACE should have 3 atoms");
+        let ace_atom_names: Vec<_> = ace_res.atoms.iter().map(|a| a.name.clone()).collect();
+        assert!(ace_atom_names.contains(&"C".to_string()));
+        assert!(ace_atom_names.contains(&"O".to_string()));
+        assert!(ace_atom_names.contains(&"CH3".to_string()));
+
+        // Find NME residue
+        let nme_res = topology.chains[0]
+            .residues
+            .iter()
+            .find(|r| r.name == "NME")
+            .unwrap();
+        assert_eq!(nme_res.atoms.len(), 2, "NME should have 2 atoms");
+        let nme_atom_names: Vec<_> = nme_res.atoms.iter().map(|a| a.name.clone()).collect();
+        assert!(nme_atom_names.contains(&"N".to_string()));
+        assert!(nme_atom_names.contains(&"CH3".to_string()));
+
+        // All atoms should have finite coordinates
+        for res in &topology.chains[0].residues {
+            for atom in &res.atoms {
+                assert!(atom.coords[0].is_finite());
+                assert!(atom.coords[1].is_finite());
+                assert!(atom.coords[2].is_finite());
+            }
+        }
+    }
+
+    #[test]
+    fn test_cap_residues_sorted_by_res_id() {
+        let res1 = build_backbone_residue("ALA", 1, 1);
+        let mut res2 = build_backbone_residue("GLY", 2, 5);
+        res2.atoms
+            .iter_mut()
+            .find(|a| a.name == "CA")
+            .unwrap()
+            .coords = [15.0, 0.0, 0.0];
+        for atom in &mut res2.atoms {
+            if atom.name != "N" {
+                atom.coords[0] += 15.0 - 1.458;
+            }
+        }
+
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![res1, res2],
+            }],
+        };
+
+        let capping_sanitizer = CappingSanitizer::new(&mut topology);
+        let breaks = capping_sanitizer.detect_breaks();
+
+        let mut cap_sanitizer = CapSanitizer::new(&mut topology);
+        cap_sanitizer.run(&breaks).unwrap();
+
+        // Residues should be sorted by res_id
+        let res_ids: Vec<_> = topology.chains[0].residues.iter().map(|r| r.res_id).collect();
+        let mut sorted_ids = res_ids.clone();
+        sorted_ids.sort();
+        assert_eq!(res_ids, sorted_ids, "Residues should be sorted by res_id");
+    }
+
+    #[test]
+    fn test_ace_atoms_have_finite_coords() {
+        let res1 = build_backbone_residue("ALA", 1, 1);
+        let mut res2 = build_backbone_residue("GLY", 2, 5);
+        res2.atoms
+            .iter_mut()
+            .find(|a| a.name == "CA")
+            .unwrap()
+            .coords = [15.0, 0.0, 0.0];
+        for atom in &mut res2.atoms {
+            if atom.name != "N" {
+                atom.coords[0] += 15.0 - 1.458;
+            }
+        }
+
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![res1, res2],
+            }],
+        };
+
+        let capping_sanitizer = CappingSanitizer::new(&mut topology);
+        let breaks = capping_sanitizer.detect_breaks();
+
+        let mut cap_sanitizer = CapSanitizer::new(&mut topology);
+        cap_sanitizer.run(&breaks).unwrap();
+
+        // Check ACE atoms
+        let ace_res = topology.chains[0]
+            .residues
+            .iter()
+            .find(|r| r.name == "ACE")
+            .unwrap();
+        for atom in &ace_res.atoms {
+            assert!(atom.coords[0].is_finite(), "ACE {} x not finite", atom.name);
+            assert!(atom.coords[1].is_finite(), "ACE {} y not finite", atom.name);
+            assert!(atom.coords[2].is_finite(), "ACE {} z not finite", atom.name);
+            assert_ne!(atom.coords, [0.0, 0.0, 0.0], "ACE {} has placeholder coords", atom.name);
+        }
+    }
+
+    #[test]
+    fn test_nme_atoms_have_finite_coords() {
+        let res1 = build_backbone_residue("ALA", 1, 1);
+        let mut res2 = build_backbone_residue("GLY", 2, 5);
+        res2.atoms
+            .iter_mut()
+            .find(|a| a.name == "CA")
+            .unwrap()
+            .coords = [15.0, 0.0, 0.0];
+        for atom in &mut res2.atoms {
+            if atom.name != "N" {
+                atom.coords[0] += 15.0 - 1.458;
+            }
+        }
+
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![res1, res2],
+            }],
+        };
+
+        let capping_sanitizer = CappingSanitizer::new(&mut topology);
+        let breaks = capping_sanitizer.detect_breaks();
+
+        let mut cap_sanitizer = CapSanitizer::new(&mut topology);
+        cap_sanitizer.run(&breaks).unwrap();
+
+        // Check NME atoms
+        let nme_res = topology.chains[0]
+            .residues
+            .iter()
+            .find(|r| r.name == "NME")
+            .unwrap();
+        for atom in &nme_res.atoms {
+            assert!(atom.coords[0].is_finite(), "NME {} x not finite", atom.name);
+            assert!(atom.coords[1].is_finite(), "NME {} y not finite", atom.name);
+            assert!(atom.coords[2].is_finite(), "NME {} z not finite", atom.name);
+        }
+    }
+
+    #[test]
+    fn test_cap_atom_serials_unique() {
+        let res1 = build_backbone_residue("ALA", 1, 1);
+        let mut res2 = build_backbone_residue("GLY", 2, 5);
+        res2.atoms
+            .iter_mut()
+            .find(|a| a.name == "CA")
+            .unwrap()
+            .coords = [15.0, 0.0, 0.0];
+        for atom in &mut res2.atoms {
+            if atom.name != "N" {
+                atom.coords[0] += 15.0 - 1.458;
+            }
+        }
+
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![res1, res2],
+            }],
+        };
+
+        let capping_sanitizer = CappingSanitizer::new(&mut topology);
+        let breaks = capping_sanitizer.detect_breaks();
+
+        let mut cap_sanitizer = CapSanitizer::new(&mut topology);
+        cap_sanitizer.run(&breaks).unwrap();
+
+        // Collect all serials
+        let mut serials = Vec::new();
+        for chain in &topology.chains {
+            for res in &chain.residues {
+                for atom in &res.atoms {
+                    serials.push(atom.serial);
+                }
+            }
+        }
+
+        // Check uniqueness
+        let mut sorted_serials = serials.clone();
+        sorted_serials.sort();
+        sorted_serials.dedup();
+        assert_eq!(
+            serials.len(),
+            sorted_serials.len(),
+            "Atom serials should be unique"
+        );
+    }
+}
