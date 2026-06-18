@@ -82,14 +82,14 @@ fn measure_loadpb_drift_vs_master() {
 
     let pb_path_obj = std::path::Path::new(&pb_path);
     if !pb_path_obj.exists() {
-        eprintln!("SKIP: protobuf library not found at {}", pb_path);
+        log::warn!("SKIP: protobuf library not found at {}", pb_path);
         return;
     }
 
     let bb = match load_real_backbone() {
         Some(v) => v,
         None => {
-            eprintln!("SKIP: small.pdb backbone not found");
+            log::warn!("SKIP: small.pdb backbone not found");
             return;
         }
     };
