@@ -30,7 +30,7 @@ pub struct CharmmIdeals {
 
 impl CharmmIdeals {
     /// Bond length (Å) for the unordered class pair, if defined.
-    fn bond_length(&self, class_a: &str, class_b: &str) -> Option<f32> {
+    pub(crate) fn bond_length(&self, class_a: &str, class_b: &str) -> Option<f32> {
         let key = if class_a <= class_b {
             (class_a.to_string(), class_b.to_string())
         } else {
@@ -40,7 +40,7 @@ impl CharmmIdeals {
     }
 
     /// Bond angle (degrees) for (terminal, center, terminal); tries both terminal orders.
-    fn bond_angle(&self, class_a: &str, center: &str, class_c: &str) -> Option<f32> {
+    pub(crate) fn bond_angle(&self, class_a: &str, center: &str, class_c: &str) -> Option<f32> {
         self.bond_angles
             .get(&(class_a.to_string(), center.to_string(), class_c.to_string()))
             .or_else(|| {
@@ -51,7 +51,7 @@ impl CharmmIdeals {
     }
 
     /// Resolve a residue atom name to its CHARMM atom class via the cached force field.
-    fn class_of(&self, charmm_resname: &str, atom_name: &str) -> Option<String> {
+    pub(crate) fn class_of(&self, charmm_resname: &str, atom_name: &str) -> Option<String> {
         let res = self.ff.get_residue(charmm_resname)?;
         let atom = res.atoms.iter().find(|a| a.name == atom_name)?;
         self.ff
@@ -104,7 +104,7 @@ pub fn load_charmm_ideals(ffxml_path: &str) -> Result<CharmmIdeals, RotlibError>
 /// lengths/angles match the other tautomers for IC purposes).
 pub fn map_template_to_charmm_name(template_code: &str) -> &'static str {
     match template_code {
-        "CYS" | "CYH" | "CYD" => "CYS",
+        "CYS" | "CYH" | "CYD" | "CYX" => "CYS",
         "HIS" => "HSD",
         "ALA" => "ALA",
         "ARG" => "ARG",

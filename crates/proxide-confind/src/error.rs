@@ -9,6 +9,8 @@ pub enum ConFindError {
     MissingBackbone(ResidueIndex, &'static str),
     #[error("freedom not computed for {0:?} — must be in contacts() query set")]
     FreedomNotComputed(ResidueIndex),
+    #[error("structure failed {0} precondition check(s); see log for per-residue diagnostics")]
+    PreconditionsFailed(usize),
     #[error("rotamer library error: {0}")]
     RotlibError(#[from] proxide_rotlib::RotlibError),
     #[error("IO error: {0}")]
