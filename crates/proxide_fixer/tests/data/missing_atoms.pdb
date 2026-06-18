@@ -1,0 +1,17 @@
+HEADER    TEST FIXTURE                            01-JAN-25   MISS
+TITLE     MISSING ATOMS
+REMARK    Three-residue peptide; second residue missing C and O
+ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N
+ATOM      2  CA  ALA A   1       1.458   0.000   0.000  1.00  0.00           C
+ATOM      3  C   ALA A   1       2.009   1.391   0.000  1.00  0.00           C
+ATOM      4  O   ALA A   1       1.221   2.338   0.000  1.00  0.00           O
+ATOM      5  CB  ALA A   1       1.984  -0.760  -1.207  1.00  0.00           C
+ATOM      6  N   GLY A   2       3.339   1.566   0.000  1.00  0.00           N
+ATOM      7  CA  GLY A   2       3.946   2.880   0.000  1.00  0.00           C
+ATOM      8  N   SER A   3       6.101   3.953   0.000  1.00  0.00           N
+ATOM      9  CA  SER A   3       7.565   3.964   0.000  1.00  0.00           C
+ATOM     10  C   SER A   3       8.128   5.368   0.000  1.00  0.00           C
+ATOM     11  O   SER A   3       7.398   6.376   0.000  1.00  0.00           O
+ATOM     12  CB  SER A   3       8.093   3.084   1.121  1.00  0.00           C
+ATOM     13  OG  SER A   3       7.623   1.740   1.069  1.00  0.00           O
+END

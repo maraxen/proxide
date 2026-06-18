@@ -1,0 +1,27 @@
+HEADER    TEST FIXTURE                            01-JAN-25   BRKA
+TITLE     CHAIN BREAK
+REMARK    Two segments with artificial >8 Angstrom CA gap
+REMARK    First segment: residues 1-2, CA at x=0,1.458
+REMARK    Gap: 10 Angstroms (CA should be 3.8 Angstroms apart)
+REMARK    Second segment: residues 3-4, CA at x=11.458,12.916
+ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N
+ATOM      2  CA  ALA A   1       1.458   0.000   0.000  1.00  0.00           C
+ATOM      3  C   ALA A   1       2.009   1.391   0.000  1.00  0.00           C
+ATOM      4  O   ALA A   1       1.221   2.338   0.000  1.00  0.00           O
+ATOM      5  CB  ALA A   1       1.984  -0.760  -1.207  1.00  0.00           C
+ATOM      6  N   GLY A   2       3.339   1.566   0.000  1.00  0.00           N
+ATOM      7  CA  GLY A   2       4.797   1.566   0.000  1.00  0.00           C
+ATOM      8  C   GLY A   2       5.348   2.957   0.000  1.00  0.00           C
+ATOM      9  O   GLY A   2       4.560   3.904   0.000  1.00  0.00           O
+ATOM     10  N   SER A   3      11.458   3.953   0.000  1.00  0.00           N
+ATOM     11  CA  SER A   3      12.916   3.964   0.000  1.00  0.00           C
+ATOM     12  C   SER A   3      13.467   5.355   0.000  1.00  0.00           C
+ATOM     13  O   SER A   3      12.737   6.363   0.000  1.00  0.00           O
+ATOM     14  CB  SER A   3      13.432   3.084   1.121  1.00  0.00           C
+ATOM     15  OG  SER A   3      12.962   1.740   1.069  1.00  0.00           O
+ATOM     16  N   ALA A   4      14.797   5.530   0.000  1.00  0.00           N
+ATOM     17  CA  ALA A   4      15.404   6.844   0.000  1.00  0.00           C
+ATOM     18  C   ALA A   4      15.955   7.749   0.000  1.00  0.00           C
+ATOM     19  O   ALA A   4      15.167   8.695   0.000  1.00  0.00           O
+ATOM     20  CB  ALA A   4      15.930   7.604  -1.207  1.00  0.00           C
+END
