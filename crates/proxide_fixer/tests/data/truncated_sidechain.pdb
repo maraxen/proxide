@@ -1,0 +1,9 @@
+HEADER    TEST FIXTURE                            01-JAN-25   TRUN
+TITLE     TRUNCATED SIDECHAIN - LYS with only N/CA/C/O/CB
+REMARK    Single LYS residue with backbone and CB, missing CG/CD/CE/NZ
+ATOM      1  N   LYS A   1      -8.901   4.127  -0.555  1.00  0.00           N
+ATOM      2  CA  LYS A   1      -8.608   3.135  -1.618  1.00  0.00           C
+ATOM      3  C   LYS A   1      -7.117   2.923  -1.897  1.00  0.00           C
+ATOM      4  O   LYS A   1      -6.634   1.849  -1.758  1.00  0.00           O
+ATOM      5  CB  LYS A   1      -9.437   3.396  -2.889  1.00  0.00           C
+END
