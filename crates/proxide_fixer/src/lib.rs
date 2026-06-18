@@ -5,6 +5,12 @@ pub mod builder;
 pub mod protonate;
 pub mod repack;
 
+#[cfg(feature = "protonation")]
+pub mod propka_wrap;
+
+#[cfg(feature = "protonation")]
+pub mod protonation_state;
+
 #[cfg(any(feature = "protonation", feature = "capping", feature = "stereo", feature = "disulfide"))]
 pub mod sanitizers;
 
