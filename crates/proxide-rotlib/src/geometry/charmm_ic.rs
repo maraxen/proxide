@@ -51,7 +51,7 @@ impl CharmmIdeals {
     }
 
     /// Resolve a residue atom name to its CHARMM atom class via the cached force field.
-    fn class_of(&self, charmm_resname: &str, atom_name: &str) -> Option<String> {
+    pub(crate) fn class_of(&self, charmm_resname: &str, atom_name: &str) -> Option<String> {
         let res = self.ff.get_residue(charmm_resname)?;
         let atom = res.atoms.iter().find(|a| a.name == atom_name)?;
         self.ff

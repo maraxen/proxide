@@ -129,11 +129,11 @@ pub fn validate_and_fill_ic(
                         None => {
                             // CHARMM miss: check if Engh-Huber placeholder is finite.
                             if engh_huber_length.is_finite() && engh_huber_length > 0.0 {
-                                log::warn!(
-                                    "CHARMM IC miss {res} {atom} bond_length; using Engh-Huber {val} Å",
-                                    res = template.code,
-                                    atom = atom_name,
-                                    val = engh_huber_length
+                                tracing::warn!(
+                                    "CHARMM IC miss {} {} bond_length; using Engh-Huber {} Å",
+                                    template.code,
+                                    atom_name,
+                                    engh_huber_length
                                 );
                                 (ICSource::EnghHuberFallback, None)
                             } else {
@@ -160,11 +160,11 @@ pub fn validate_and_fill_ic(
                     None => {
                         // CHARMM miss: check Engh-Huber placeholder.
                         if engh_huber_angle.is_finite() && engh_huber_angle > 0.0 {
-                            log::warn!(
-                                "CHARMM IC miss {res} {atom} bond_angle; using Engh-Huber {val}°",
-                                res = template.code,
-                                atom = atom_name,
-                                val = engh_huber_angle
+                            tracing::warn!(
+                                "CHARMM IC miss {} {} bond_angle; using Engh-Huber {}°",
+                                template.code,
+                                atom_name,
+                                engh_huber_angle
                             );
                             (ICSource::EnghHuberFallback, None)
                         } else {
@@ -214,7 +214,7 @@ pub fn validate_and_fill_ic(
             .map(|c| format!("{} {}", c.residue, c.atom))
             .collect::<Vec<_>>()
             .join(", ");
-        log::error!("Missing CHARMM IC for: {}", missing_str);
+        tracing::error!("Missing CHARMM IC for: {}", missing_str);
         return Err(RotlibError::InvalidFormat(format!(
             "Missing CHARMM IC for: {}",
             missing_str
