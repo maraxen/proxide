@@ -18,8 +18,8 @@ pub enum SystemPrepError {
     CapGroupsError(#[from] crate::sanitizers::capping_groups::CapError),
 
     #[cfg(feature = "protonation")]
-    #[error("protonation sanitizer failed: {0}")]
-    ProtonationError(#[from] crate::sanitizers::protonation::ProtonationError),
+    #[error("protonation-state sanitizer failed: {0}")]
+    ProtonationStateError(#[from] crate::protonation_state::ProtonationStateError),
 
     #[cfg(any(feature = "protonation", feature = "capping", feature = "stereo", feature = "disulfide"))]
     #[error("hydrogen sanitizer failed: {0}")]
@@ -133,17 +133,16 @@ impl<'a> SystemPrep<'a> {
             }
         }
 
-        // Step 4: Protonation state (C7) — must run before hydrogens
+        // Step 4: Protonation state (C7) — assign HID/HIE/HIP/ASH/... NAMES only
+        // (PROPKA wrap + pH-7.4 fallback). Runs BEFORE hydrogens so C6 places the
+        // H matching the chosen state; the legacy sanitizers::protonation path
+        // (which adds H itself) is intentionally NOT used here to avoid double H.
         #[cfg(feature = "protonation")]
         {
             if self.config.assign_protonation {
-                let library = crate::templates::ResidueLibrary::new();
-                let mut sanitizer = crate::sanitizers::protonation::ProtonationSanitizer::new(
+                let mut sanitizer = crate::protonation_state::ProtonationStateSanitizer::new(
                     self.topology,
-                    crate::sanitizers::protonation::ProtonationStrategy::ConstantPH(
-                        self.config.ph,
-                    ),
-                    &library,
+                    self.config.ph,
                 );
                 sanitizer.run()?;
             }
