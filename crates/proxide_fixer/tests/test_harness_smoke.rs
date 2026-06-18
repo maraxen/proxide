@@ -124,7 +124,7 @@ fn test_load_topology_disulfide_pair() {
     let distance = (dx * dx + dy * dy + dz * dz).sqrt();
 
     assert!(
-        distance < 3.0,
+        distance < 2.5,
         "SG atoms should be close for disulfide bond; distance={:.2} Angstroms",
         distance
     );

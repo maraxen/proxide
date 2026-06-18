@@ -17,6 +17,10 @@ pub trait Sanitizer {
     #[cfg(feature = "stereo")]
     fn fix_stereo(&mut self) -> Result<(), String>;
 
+    // TODO(#977 C2): this returns () like the other sanitizer methods, so the
+    // detected CYS-CYS pairs are not surfaced through the trait. Concrete impls
+    // (use DisulfideSanitizer::run directly) get Vec<Disulfide>; add a trait-level
+    // accessor for the pairs when a real Sanitizer implementor is built.
     #[cfg(feature = "disulfide")]
     fn detect_disulfides(&mut self) -> Result<(), String>;
 }
