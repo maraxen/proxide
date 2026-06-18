@@ -4,7 +4,7 @@ pub mod finder;
 pub mod builder;
 pub mod protonate;
 
-#[cfg(any(feature = "protonation", feature = "capping", feature = "stereo"))]
+#[cfg(any(feature = "protonation", feature = "capping", feature = "stereo", feature = "disulfide"))]
 pub mod sanitizers;
 
 pub trait Sanitizer {
@@ -16,4 +16,7 @@ pub trait Sanitizer {
 
     #[cfg(feature = "stereo")]
     fn fix_stereo(&mut self) -> Result<(), String>;
+
+    #[cfg(feature = "disulfide")]
+    fn detect_disulfides(&mut self) -> Result<(), String>;
 }

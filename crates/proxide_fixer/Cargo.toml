@@ -27,6 +27,7 @@ log.workspace = true
 protonation = []
 capping = []
 stereo = []
+disulfide = []
 
 [lib]
 crate-type = ["rlib"]
