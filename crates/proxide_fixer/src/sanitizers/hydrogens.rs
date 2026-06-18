@@ -85,9 +85,9 @@ impl<'a> HydrogenSanitizer<'a> {
                             // Place each missing hydrogen
                             for h_name in missing_h_names {
                                 // Find the parent atom of this hydrogen in the template
-                                if let Some(parent_name) = self.find_parent_atom(&h_name, template) {
+                                if let Some(parent_name) = Self::find_parent_atom(&h_name, template) {
                                     // Place the hydrogen (non-fatal if placement fails)
-                                    let _ = self.place_hydrogen_atom(residue, &h_name, &parent_name);
+                                    let _ = Self::place_hydrogen_atom(residue, &h_name, &parent_name);
                                 }
                             }
 
@@ -110,7 +110,7 @@ impl<'a> HydrogenSanitizer<'a> {
 
     /// Find the parent atom of a hydrogen in the residue template.
     /// Looks for bonds in the template to identify the heavy atom that this H is bonded to.
-    fn find_parent_atom(&self, h_name: &str, template: &proxide_core::forcefield::types::ResidueTemplate) -> Option<String> {
+    fn find_parent_atom(h_name: &str, template: &proxide_core::forcefield::types::ResidueTemplate) -> Option<String> {
         // Search template bonds for one involving this hydrogen
         for (atom1, atom2) in &template.bonds {
             if atom1 == h_name {
@@ -126,7 +126,7 @@ impl<'a> HydrogenSanitizer<'a> {
     /// Place a single hydrogen atom using Nerf geometry.
     /// Uses standard bond lengths: N-H ~1.01 Å, C-H ~1.09 Å
     /// Uses standard bond angles: ~109.5° for sp3, ~120° for sp2
-    fn place_hydrogen_atom(&self, residue: &mut Residue, h_name: &str, parent_name: &str) -> Result<(), HydrogenError> {
+    fn place_hydrogen_atom(residue: &mut Residue, h_name: &str, parent_name: &str) -> Result<(), HydrogenError> {
         // Find the parent heavy atom
         let parent_atom = residue
             .atoms
