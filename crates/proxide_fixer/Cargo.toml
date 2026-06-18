@@ -18,6 +18,7 @@ all-features = true
 proxide_rs = { workspace = true }
 proxide-geometry = { workspace = true }
 proxide-rotlib = { workspace = true }
+proxide-core = { workspace = true }
 nalgebra.workspace = true
 thiserror.workspace = true
 serde = { version = "1.0", features = ["derive"] }
@@ -26,9 +27,7 @@ log.workspace = true
 
 [dev-dependencies]
 proxide-io = { workspace = true }
-proxide-core = { workspace = true }
 proxide-confind = { workspace = true }
-proxide-rotlib = { workspace = true }
 
 [features]
 protonation = []
