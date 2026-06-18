@@ -91,19 +91,19 @@ impl<'a> CapSanitizer<'a> {
             // Insert NME before downstream residue (now at downstream_res_idx + 1 due to ACE insertion)
             let nme_res = create_nme_residue(
                 &self.topology.chains[chain_idx].residues[downstream_res_idx + 1],
-                break_site.res_id_downstream,
+                break_site.res_id_upstream,
                 &break_site.chain,
                 max_serial + 1,
             )?;
             self.topology.chains[chain_idx].residues.insert(downstream_res_idx + 1, nme_res);
             applied_caps.push(AppliedCap {
                 chain: break_site.chain.clone(),
-                res_id: break_site.res_id_downstream,
+                res_id: break_site.res_id_upstream,
                 kind: CapKind::Nme,
             });
 
             // Re-sort residues by res_id to maintain order
-            self.topology.chains[chain_idx].residues.sort_by_key(|r| r.res_id);
+            self.topology.chains[chain_idx].residues.sort_by_key(|r| (r.res_id, r.insertion_code));
         }
 
         Ok(applied_caps)
@@ -164,7 +164,7 @@ fn create_ace_residue(
 
     let mut atoms = vec![
         Atom {
-            name: "C".to_string(),
+            name: "CY".to_string(),
             element: "C".to_string(),
             coords: c_atom.coords,
             alt_loc: ' ',
@@ -174,7 +174,7 @@ fn create_ace_residue(
             is_hetatm: false,
         },
         Atom {
-            name: "O".to_string(),
+            name: "OY".to_string(),
             element: "O".to_string(),
             coords: cy_coords,
             alt_loc: ' ',
@@ -184,7 +184,7 @@ fn create_ace_residue(
             is_hetatm: false,
         },
         Atom {
-            name: "CH3".to_string(),
+            name: "CAY".to_string(),
             element: "C".to_string(),
             coords: cay_coords,
             alt_loc: ' ',
@@ -205,7 +205,7 @@ fn create_ace_residue(
     Ok(Residue {
         name: "ACE".to_string(),
         res_id: upstream_res_id,
-        insertion_code: ' ',
+        insertion_code: 'A',
         atoms,
     })
 }
@@ -253,7 +253,7 @@ fn create_nme_residue(
 
     let mut atoms = vec![
         Atom {
-            name: "N".to_string(),
+            name: "NT".to_string(),
             element: "N".to_string(),
             coords: n_atom.coords,
             alt_loc: ' ',
@@ -263,7 +263,7 @@ fn create_nme_residue(
             is_hetatm: false,
         },
         Atom {
-            name: "CH3".to_string(),
+            name: "CAT".to_string(),
             element: "C".to_string(),
             coords: cat_coords,
             alt_loc: ' ',
@@ -284,7 +284,7 @@ fn create_nme_residue(
     Ok(Residue {
         name: "NME".to_string(),
         res_id: downstream_res_id,
-        insertion_code: ' ',
+        insertion_code: 'B',
         atoms,
     })
 }
@@ -393,9 +393,9 @@ mod tests {
             .unwrap();
         assert_eq!(ace_res.atoms.len(), 3, "ACE should have 3 atoms");
         let ace_atom_names: Vec<_> = ace_res.atoms.iter().map(|a| a.name.clone()).collect();
-        assert!(ace_atom_names.contains(&"C".to_string()));
-        assert!(ace_atom_names.contains(&"O".to_string()));
-        assert!(ace_atom_names.contains(&"CH3".to_string()));
+        assert!(ace_atom_names.contains(&"CY".to_string()));
+        assert!(ace_atom_names.contains(&"OY".to_string()));
+        assert!(ace_atom_names.contains(&"CAY".to_string()));
 
         // Find NME residue
         let nme_res = topology.chains[0]
@@ -405,8 +405,8 @@ mod tests {
             .unwrap();
         assert_eq!(nme_res.atoms.len(), 2, "NME should have 2 atoms");
         let nme_atom_names: Vec<_> = nme_res.atoms.iter().map(|a| a.name.clone()).collect();
-        assert!(nme_atom_names.contains(&"N".to_string()));
-        assert!(nme_atom_names.contains(&"CH3".to_string()));
+        assert!(nme_atom_names.contains(&"NT".to_string()));
+        assert!(nme_atom_names.contains(&"CAT".to_string()));
 
         // All atoms should have finite coordinates
         for res in &topology.chains[0].residues {
@@ -446,11 +446,13 @@ mod tests {
         let mut cap_sanitizer = CapSanitizer::new(&mut topology);
         cap_sanitizer.run(&breaks).unwrap();
 
-        // Residues should be sorted by res_id
-        let res_ids: Vec<_> = topology.chains[0].residues.iter().map(|r| r.res_id).collect();
-        let mut sorted_ids = res_ids.clone();
-        sorted_ids.sort();
-        assert_eq!(res_ids, sorted_ids, "Residues should be sorted by res_id");
+        // Caps must sit between the flanking residues, in order
+        let names: Vec<_> = topology.chains[0].residues.iter().map(|r| r.name.clone()).collect();
+        assert_eq!(names, vec!["ALA", "ACE", "NME", "GLY"], "caps must be ordered between flanking residues");
+        let keys: Vec<_> = topology.chains[0].residues.iter().map(|r| (r.res_id, r.insertion_code)).collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys, sorted, "residues sorted by (res_id, insertion_code)");
     }
 
     #[test]

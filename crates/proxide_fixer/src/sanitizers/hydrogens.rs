@@ -78,20 +78,34 @@ impl<'a> HydrogenSanitizer<'a> {
                             .cloned()
                             .collect();
 
-                        let num_placed = missing_h_names.len();
-                        placed_total += num_placed;
-
-                        if num_placed > 0 {
-                            // Place each missing hydrogen
-                            for h_name in missing_h_names {
-                                // Find the parent atom of this hydrogen in the template
-                                if let Some(parent_name) = Self::find_parent_atom(&h_name, template) {
-                                    // Place the hydrogen (non-fatal if placement fails)
-                                    let _ = Self::place_hydrogen_atom(residue, &h_name, &parent_name);
+                        if !missing_h_names.is_empty() {
+                            // Group missing H by parent so multiple H on one parent
+                            // (e.g. methyl CB) get distinct torsions and do not collapse.
+                            let mut groups: std::collections::BTreeMap<String, Vec<String>> =
+                                std::collections::BTreeMap::new();
+                            for h_name in &missing_h_names {
+                                if let Some(parent_name) = Self::find_parent_atom(h_name, template) {
+                                    groups.entry(parent_name).or_default().push(h_name.clone());
                                 }
                             }
-
-                            per_residue.push((residue.name.clone(), residue.res_id, num_placed));
+                            let mut residue_placed = 0usize;
+                            for (parent_name, h_list) in groups {
+                                let n = h_list.len();
+                                for (idx, h_name) in h_list.iter().enumerate() {
+                                    let torsion = if n > 1 {
+                                        (idx as f32) * (360.0 / n as f32)
+                                    } else {
+                                        0.0f32
+                                    };
+                                    if Self::place_hydrogen_atom(residue, h_name, &parent_name, torsion).is_ok() {
+                                        residue_placed += 1;
+                                    }
+                                }
+                            }
+                            if residue_placed > 0 {
+                                placed_total += residue_placed;
+                                per_residue.push((residue.name.clone(), residue.res_id, residue_placed));
+                            }
                         }
                     }
                     None => {
@@ -126,7 +140,7 @@ impl<'a> HydrogenSanitizer<'a> {
     /// Place a single hydrogen atom using Nerf geometry.
     /// Uses standard bond lengths: N-H ~1.01 Å, C-H ~1.09 Å
     /// Uses standard bond angles: ~109.5° for sp3, ~120° for sp2
-    fn place_hydrogen_atom(residue: &mut Residue, h_name: &str, parent_name: &str) -> Result<(), HydrogenError> {
+    fn place_hydrogen_atom(residue: &mut Residue, h_name: &str, parent_name: &str, torsion: f32) -> Result<(), HydrogenError> {
         // Find the parent heavy atom
         let parent_atom = residue
             .atoms
@@ -171,7 +185,7 @@ impl<'a> HydrogenSanitizer<'a> {
             parent_atom.coords,
         ];
 
-        let h_coords = Nerf::place_atom(&prev_atoms, bond_length, bond_angle, 0.0);
+        let h_coords = Nerf::place_atom(&prev_atoms, bond_length, bond_angle, torsion);
 
         // Create new hydrogen atom
         let serial = residue
@@ -351,6 +365,20 @@ mod tests {
         serials.sort();
         for i in 1..serials.len() {
             assert_ne!(serials[i-1], serials[i], "Serials should be unique");
+        }
+
+        // Coordinates must be distinct (catches multi-H collapse on a shared parent)
+        for i in 0..h_atoms.len() {
+            for j in (i + 1)..h_atoms.len() {
+                let a = h_atoms[i].coords;
+                let b = h_atoms[j].coords;
+                let d2 = (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2);
+                assert!(
+                    d2 > 1e-6,
+                    "H atoms {} and {} collapsed to identical coordinates",
+                    h_atoms[i].name, h_atoms[j].name
+                );
+            }
         }
     }
 }
