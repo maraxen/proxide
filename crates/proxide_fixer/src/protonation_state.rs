@@ -86,10 +86,13 @@ impl<'a> ProtonationStateSanitizer<'a> {
     fn write_temp_pdb(&self) -> Result<String, std::io::Error> {
         use std::io::Write;
 
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
         let temp_dir = std::env::temp_dir();
         let temp_file = temp_dir.join(format!(
-            "proxide_temp_{}.pdb",
-            std::process::id()
+            "proxide_temp_{}_{}.pdb",
+            std::process::id(),
+            TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
 
         let mut file = std::fs::File::create(&temp_file)?;
@@ -158,12 +161,14 @@ impl<'a> ProtonationStateSanitizer<'a> {
                     let protonated = self.ph < pka;
                     let new_name = match residue.name.as_str() {
                         "HIS" => {
-                            // HIS tautomers: HID (protonated ND1), HIE (protonated NE2), HIP (both)
-                            // For now, default to HIE (protonated NE2) if protonated, else neutral
+                            // pH < pKa => doubly-protonated HIP (+1). Neutral HIS defaults
+                            // to HIE (Nepsilon2-H, the more common neutral tautomer).
+                            // HID-vs-HIE selection needs PROPKA H-bond determinant analysis
+                            // (tracked as a follow-up).
                             if protonated {
-                                "HIE".to_string() // Simplified: assume NE2 is protonated
+                                "HIP".to_string()
                             } else {
-                                "HIS".to_string()
+                                "HIE".to_string()
                             }
                         }
                         "ASP" => {
@@ -385,5 +390,25 @@ mod tests {
             renamed.iter().any(|r| r.0 == "X" && r.1 == 42 && r.2 == "HIE"),
             "HIS should be canonicalized to HIE"
         );
+    }
+
+    #[test]
+    fn test_assign_by_pka_his_tautomers() {
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![
+                    Residue { name: "HIS".to_string(), res_id: 1, insertion_code: ' ', atoms: vec![] },
+                    Residue { name: "HIS".to_string(), res_id: 2, insertion_code: ' ', atoms: vec![] },
+                ],
+            }],
+        };
+        let mut table: crate::propka_wrap::PkaTable = std::collections::HashMap::new();
+        table.insert(("A".to_string(), 1), 8.0); // pKa 8.0 > pH 7.4 => protonated => HIP
+        table.insert(("A".to_string(), 2), 5.0); // pKa 5.0 < pH 7.4 => neutral  => HIE
+        let mut sanitizer = ProtonationStateSanitizer::new(&mut topology, 7.4);
+        let renamed = sanitizer.assign_by_pka(&table).expect("assign_by_pka failed");
+        assert!(renamed.iter().any(|r| r.1 == 1 && r.2 == "HIP"), "pH<pKa HIS -> HIP");
+        assert!(renamed.iter().any(|r| r.1 == 2 && r.2 == "HIE"), "pH>pKa HIS -> HIE");
     }
 }

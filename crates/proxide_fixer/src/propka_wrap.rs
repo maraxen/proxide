@@ -32,6 +32,8 @@ pub type PkaTable = HashMap<(String, i32), f32>;
 /// and returns a table of pKa values indexed by (chain, res_id).
 ///
 /// Does NOT mutate any topology. Returns Err on any failure (spawn, non-zero exit, parse).
+/// Note: `ph` is not forwarded to propka3 (propka emits pKa independent of target pH);
+/// the caller thresholds pKa against pH in assign_by_pka.
 /// Only returns Ok(PkaTable) if propka3 succeeds and output is parseable.
 pub fn run_propka(pdb_path: &Path, _ph: f32) -> Result<PkaTable, PropkaError> {
     // Try to spawn propka3
@@ -179,12 +181,10 @@ Prediction done.
         // If propka3 is not on PATH, this should return NotInstalled
         // (test may be skipped in CI if propka3 is installed)
         let result = run_propka(Path::new("/nonexistent/file.pdb"), 7.4);
-        match result {
-            Err(PropkaError::NotInstalled) | Err(PropkaError::Io(_)) => {
-                // Either error is acceptable; NotInstalled is preferred
-            }
-            Err(e) => panic!("Unexpected error: {:?}", e),
-            Ok(_) => panic!("Should not succeed with nonexistent file"),
-        }
+        assert!(
+            matches!(result, Err(PropkaError::NotInstalled)),
+            "ENOENT must map to NotInstalled (propka3 absent in CI), got {:?}",
+            result
+        );
     }
 }
