@@ -28,6 +28,7 @@
 - [260604_rotlib-ic-geometry-schema](specs/260604_rotlib-ic-geometry-schema.md) — Unified residue_geometry.proto (IcRecord build-tree schema, multi-source) + CHARMM36 RTF/CCD importers + parse_master dev tool (#987, #988); supersedes #976
 - [260605_browser-wasm-parallel](specs/260605_browser-wasm-parallel.md) — Browser WASM parallelism: orx-parallel + wasm-bindgen-rayon + proxide-parallel-rt; 6 open risks; awaiting oracle critique
 
+- [260618_system-prep-scope](specs/260618_system-prep-scope.md) — #977 EPIC RESEARCH: full system-prep audit — 12-component inventory (present/partial/missing), reference-tool matrix, MIT licensing survey, prioritized child DAG (C1–C13)
 ## Dynamic Workflows
 > Executable Claude Code Workflow scripts (`Workflow({ scriptPath: ... })`). See [dynamic_workflows/INDEX.md](dynamic_workflows/INDEX.md).
 - [260602_dunbrack-rotlib-sprint.js](dynamic_workflows/260602_dunbrack-rotlib-sprint.js) — Sprint #12 executor: Dunbrack→protobuf rotlib + cis-PRO (Research ∥ P1→P6). Backlog #814–#820.

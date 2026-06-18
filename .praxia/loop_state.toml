@@ -1,0 +1,10 @@
+[run]
+    mode = "hitl_semi_autonomous"     # human-in-the-loop, semi-autonomous
+    human_available = true            # PI is around for decision points this run
+
+[model_routing]
+    # HARD RULE — effort-tier → Claude model (HITL run directive, 2026-06-18).
+    # Set opts.model explicitly on every dispatch; do NOT default to Opus.
+    haiku  = "claude-haiku-4-5-20251001"   # recon + implementation (fixer/codemod) + general churn (formatters, mechanical edits)
+    sonnet = "claude-sonnet-4-6"           # in-sprint review + audit (reviewer, auditor, security-auditor, plan-auditor)
+    opus   = "claude-opus-4-8"             # major audit gates (/epic-audit) + synthesis (audit-synthesis, oracle, staff, spec/architecture, adversarial spec review, contemplex synthesizer)
