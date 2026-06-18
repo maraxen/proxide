@@ -197,7 +197,7 @@ fn dihedral_angle(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> f64
         return 9999.0;
     }
 
-    let cos_angle = (dot / (len_n1 * len_n2)).max(-1.0).min(1.0);
+    let cos_angle = (dot / (len_n1 * len_n2)).clamp(-1.0, 1.0);
     let angle_rad = (cos_angle as f64).acos();
     let pi = std::f32::consts::PI as f64;
     let mut angle_deg = angle_rad * 180.0 / pi;
@@ -324,14 +324,6 @@ impl<'a> SidechainRepacker<'a> {
             angles_map.insert((*chain_idx, *res_idx), angles);
         }
 
-        // Pre-collect all atom positions to avoid borrowing issues
-        let mut all_atoms_map: HashMap<(usize, usize), Vec<Atom>> = HashMap::new();
-        for (chain_idx, chain) in self.topology.chains.iter().enumerate() {
-            for (res_idx, residue) in chain.residues.iter().enumerate() {
-                all_atoms_map.insert((chain_idx, res_idx), residue.atoms.clone());
-            }
-        }
-
         // Process residues in burial order
         for (chain_idx, res_idx, _) in burial_order {
             // Get residue info without mutable borrow first
@@ -419,7 +411,7 @@ impl<'a> SidechainRepacker<'a> {
                 }
             }
 
-            // Try rotamers in descending probability order
+            // Score all rotamers; pick argmax(prob - lambda*clash)
             let mut best_rot = 0;
             let mut best_score = f64::NEG_INFINITY;
 
@@ -503,7 +495,7 @@ impl<'a> SidechainRepacker<'a> {
                             placed_atom.xyz[2] as f32,
                         ],
                         alt_loc: ' ',
-                        serial: residue.atoms.len() as i32,
+                        serial: residue.atoms.iter().map(|a| a.serial).max().unwrap_or(0) + 1,
                         b_factor: 0.0,
                         occupancy: 1.0,
                         is_hetatm: false,
