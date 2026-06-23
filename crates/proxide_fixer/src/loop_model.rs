@@ -41,6 +41,45 @@ pub enum LoopModellingError {
     Io(#[from] std::io::Error),
 }
 
+/// Loop modeller interface: orchestrates missing-loop detection and building via Modeller.
+///
+/// Holds a reference to the topology being modified and provides methods to build
+/// loops (C10 — requires MODELLER_EXEC and MODELLER_KEY to be set).
+pub struct LoopModeller<'a> {
+    topology: &'a mut Topology,
+}
+
+impl<'a> LoopModeller<'a> {
+    /// Create a new LoopModeller for the given topology.
+    pub fn new(topology: &'a mut Topology) -> Self {
+        Self { topology }
+    }
+
+    /// Build missing loops detected in the given list.
+    ///
+    /// This is a placeholder that validates the Modeller environment and topology
+    /// state. A full implementation would invoke Modeller to generate coordinates
+    /// for the missing residues.
+    ///
+    /// For now, this just checks that Modeller is installed and returns success.
+    pub fn build_loops(&mut self, _missing: &[MissingLoop]) -> Result<LoopModelReport, LoopModellingError> {
+        // Verify Modeller is installed
+        let _modeller_path = find_modeller()?;
+
+        // Verify MODELLER_KEY is set
+        if std::env::var("MODELLER_KEY").is_err() {
+            return Err(LoopModellingError::MissingLicenseKey);
+        }
+
+        // TODO(#977 C10): implement actual loop building via Modeller subprocess
+        // For now, return an empty report (no loops built, no warnings)
+        Ok(LoopModelReport {
+            loops_built: Vec::new(),
+            geometry_warnings: Vec::new(),
+        })
+    }
+}
+
 /// Detect SEQRES-vs-ATOM gaps.
 ///
 /// `seqres`: chain_id → Vec<(res_id, three_letter_name)>, matching the

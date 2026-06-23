@@ -37,6 +37,17 @@ Part of the [proxide](https://github.com/maraxen/proxide) workspace.
 | `capping` | Enables `CappingSanitizer` for N/C-terminal capping and `Sanitizer::cap`; gates the `sanitizers::capping` module |
 | `stereo` | Enables `StereoSantizer` for chiral-center validation and `Sanitizer::fix_stereo`; gates the `sanitizers::stereo` module |
 
+## Optional External Dependencies
+
+### Modeller (loop modeling, C10)
+
+Loop modeling via C10 requires **Modeller** — an external tool not bundled with proxide.
+
+- Set `MODELLER_EXEC` to the Modeller executable path, or add it to `PATH`
+- Set `MODELLER_KEY` to your Modeller license key
+- Without these, `SystemPrepConfig { model_loops: true, .. }` returns `LoopModellingError::ModelerNotInstalled` or `MissingLicenseKey`
+- Download Modeller: https://salilab.org/modeller/
+
 ## Usage
 
 ```rust

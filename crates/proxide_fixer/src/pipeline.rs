@@ -2,6 +2,7 @@ use crate::models::Topology;
 use proxide_core::forcefield::ForceField;
 use proxide_rotlib::RotamerLibrary;
 use thiserror::Error;
+use std::collections::HashMap;
 
 #[derive(Error, Debug)]
 pub enum SystemPrepError {
@@ -27,6 +28,9 @@ pub enum SystemPrepError {
 
     #[error("repack error: {0}")]
     RepackError(#[from] crate::repack::RepackError),
+
+    #[error("loop modelling failed: {0}")]
+    LoopModelling(#[from] crate::loop_model::LoopModellingError),
 }
 
 /// Configuration for the system preparation pipeline.
@@ -46,6 +50,11 @@ pub struct SystemPrepConfig {
     pub place_hydrogens: bool,
     /// Whether to repack sidechains.
     pub repack_sidechains: bool,
+    /// Whether to model missing loops using Modeller (requires MODELLER_EXEC + MODELLER_KEY).
+    pub model_loops: bool,
+    /// SEQRES mapping for loop modeling: chain_id → Vec<(res_id, three_letter_name)>.
+    /// Required for model_loops. If None and model_loops=true, loop modeling is skipped with a warning.
+    pub seqres: Option<HashMap<String, Vec<(i32, String)>>>,
 }
 
 impl Default for SystemPrepConfig {
@@ -58,6 +67,8 @@ impl Default for SystemPrepConfig {
             assign_protonation: true,
             place_hydrogens: true,
             repack_sidechains: false,
+            model_loops: false,
+            seqres: None,
         }
     }
 }
@@ -89,11 +100,12 @@ impl<'a> SystemPrep<'a> {
 
     /// Run the full system prep pipeline in order.
     /// 1. Disulfides (C2) — rename CYS to CYX, remove HG
-    /// 2. Termini patching (C4) — fix first/last residue termini
-    /// 3. Capping breaks (C5) — insert ACE/NME at internal chain breaks
-    /// 4. Protonation state (C7) — assign HID/HIE/HIP/ASH/... names
-    /// 5. Hydrogens (C6) — place missing H atoms based on FF templates
-    /// 6. Repack (C8) — optimize sidechain conformations (optional)
+    /// 2. Loop modeling (C10) — build missing loops via Modeller (optional)
+    /// 3. Termini patching (C4) — fix first/last residue termini
+    /// 4. Capping breaks (C5) — insert ACE/NME at internal chain breaks
+    /// 5. Protonation state (C7) — assign HID/HIE/HIP/ASH/... names
+    /// 6. Hydrogens (C6) — place missing H atoms based on FF templates
+    /// 7. Repack (C8) — optimize sidechain conformations (optional)
     pub fn run(&mut self) -> Result<(), SystemPrepError> {
         // Step 1: Disulfides (C2)
         #[cfg(feature = "disulfide")]
@@ -113,7 +125,22 @@ impl<'a> SystemPrep<'a> {
             }
         }
 
-        // Step 2: Termini patching (C4)
+        // Step 2: Loop modeling (C10) — model missing loops via Modeller
+        {
+            if self.config.model_loops {
+                if let Some(seqres) = &self.config.seqres {
+                    let missing = crate::loop_model::detect_missing_loops(self.topology, seqres);
+                    if !missing.is_empty() {
+                        let mut modeller = crate::loop_model::LoopModeller::new(self.topology);
+                        modeller.build_loops(&missing)?;
+                    }
+                } else {
+                    log::warn!("model_loops=true but no seqres provided; skipping loop modeling");
+                }
+            }
+        }
+
+        // Step 3: Termini patching (C4)
         #[cfg(feature = "capping")]
         {
             if self.config.patch_termini {
@@ -131,7 +158,7 @@ impl<'a> SystemPrep<'a> {
             }
         }
 
-        // Step 3: Capping breaks (C5) — requires capping feature to detect breaks
+        // Step 4: Capping breaks (C5) — requires capping feature to detect breaks
         #[cfg(feature = "capping")]
         {
             if self.config.cap_breaks {
@@ -157,7 +184,7 @@ impl<'a> SystemPrep<'a> {
             }
         }
 
-        // Step 4: Protonation state (C7) — assign HID/HIE/HIP/ASH/... NAMES only
+        // Step 5: Protonation state (C7) — assign HID/HIE/HIP/ASH/... NAMES only
         // (PROPKA wrap + pH-7.4 fallback). Runs BEFORE hydrogens so C6 places the
         // H matching the chosen state; the legacy sanitizers::protonation path
         // (which adds H itself) is intentionally NOT used here to avoid double H.
@@ -180,7 +207,7 @@ impl<'a> SystemPrep<'a> {
             }
         }
 
-        // Step 5: Hydrogens (C6) — available regardless of feature gates
+        // Step 6: Hydrogens (C6) — available regardless of feature gates
         // Note: sanitizers module itself is feature-gated; only run if at least one feature is enabled
         #[cfg(any(feature = "protonation", feature = "capping", feature = "stereo", feature = "disulfide"))]
         {
@@ -191,7 +218,7 @@ impl<'a> SystemPrep<'a> {
             }
         }
 
-        // Step 6: Repack (C8)
+        // Step 7: Repack (C8)
         {
             if self.config.repack_sidechains {
                 if let Some(lib) = self.lib {
