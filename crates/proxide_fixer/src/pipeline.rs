@@ -169,7 +169,7 @@ impl<'a> SystemPrep<'a> {
         {
             if self.config.model_loops {
                 if let Some(seqres) = &self.config.seqres {
-                    let missing = crate::loop_model::detect_missing_loops(self.topology, seqres);
+                    let missing = crate::loop_model::detect_missing_loops(self.topology);
                     if !missing.is_empty() {
                         let mut modeller = crate::loop_model::LoopModeller::new(self.topology);
                         modeller.build_loops(&missing)?;
