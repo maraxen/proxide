@@ -18,9 +18,16 @@ pub struct AtomicSystem {
     pub proper_dihedrals: Option<Vec<[usize; 4]>>,
     pub impropers: Option<Vec<[usize; 4]>>,
 
+    /// Partial charges in elementary charge **e**.
     pub charges: Option<Vec<f32>>,
+
+    /// Lennard-Jones σ in **Å**, σ-form (`U = 4ε[(σ/r)¹²−(σ/r)⁶]`).
+    /// Converted from Amber's stored Rmin/2 at parse time: `σ = (Rmin/2) × 2^(5/6)`.
     pub sigmas: Option<Vec<f32>>,
+
+    /// Lennard-Jones ε in **kcal/mol** (matches `DEFAULT_EPSILON` in `constants.rs`).
     pub epsilons: Option<Vec<f32>>,
+
     pub radii: Option<Vec<f32>>,
 
     pub residue_index: Option<Vec<i32>>,

@@ -8,6 +8,9 @@ pub mod solvate;
 pub mod loop_model;
 pub mod mutate;
 
+#[cfg(feature = "amber_ff")]
+pub mod amber_ff;
+
 #[cfg(feature = "protonation")]
 pub mod propka_wrap;
 
