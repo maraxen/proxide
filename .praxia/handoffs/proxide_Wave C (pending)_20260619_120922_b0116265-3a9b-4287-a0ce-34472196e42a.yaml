@@ -1,0 +1,66 @@
+---
+workspace: proxide
+session_id: adf64f45-5ef2-4f89-9941-27e98e3e2b89
+status: approved
+immediately_relevant:
+- file: .praxia/docs/specs/260618_system-prep-scope.md
+  lines:
+  - 1
+  - 228
+  reason: 'Full epic scope: 12-component inventory, tool matrix, MIT licensing, C1-C13 DAG + PI decisions (CYX/OpenMM, wrap-then-native+parity, per-asset FF licensing)'
+- file: .praxia/loop_state.toml
+  lines:
+  - 1
+  - 40
+  reason: '[run] HITL mode, [model_routing] haiku=impl/sonnet=review/opus=design+gates, [wave_b] auto-merge cadence, [progress] pause marker + Wave C pending + followups'
+- file: crates/proxide_fixer/src/pipeline.rs
+  lines:
+  - 1
+  - 180
+  reason: SystemPrep driver — ordered sanitizer threading; Wave C mutation/loop/water-ion steps would extend this
+- file: crates/proxide_fixer/src/repack.rs
+  lines:
+  - 1
+  - 60
+  reason: C8 SidechainRepacker — C9 mutations (#2235) and C10 loops (#2242) depend on it
+- file: crates/proxide-confind/src/precondition.rs
+  lines:
+  - 1
+  - 90
+  reason: C1 canonical AA name set (incl HID/HIE/HIP/CYX) that protonation/mutation must stay consistent with
+active_dispatches: []
+task_id: 260618_sysprep-audit
+phase: Wave C (pending)
+goal_statement: 'Epic #977: comprehensive system-prep layer for proxide. Waves A+B (the core sanitizer pipeline) are merged to main; remaining is Wave C (mutations, loop modeling, water/ion, Amber FF) then /epic-audit close.'
+context_refs:
+- phase: Wave A
+  task_id: 260618_sysprep-audit
+  summary: C1 gate + C2 disulfide + C3 IC validation + C13 harness; merged 4a15f4e
+- phase: Wave B
+  task_id: 260618_sysprep-audit
+  summary: C4/C5/C6/C7/C8 sanitizers + SystemPrep pipeline; merged through c13c421
+failed_attempts: []
+open_questions:
+- 'C12 Amber-FF: confirmed per-asset GPL bundle is acceptable (PI decision recorded) but actual ff14SB/ff19SB asset acquisition path (vendor vs runtime-fetch) still to be settled at design time'
+- 'C10 loop modeling ambition: implement short-loop building vs detect+delegate long loops (PI to weigh in at Wave C design)'
+deferred:
+- description: 'Wave C: C9 point-mutations (#2235), C10 loop-modeling (#2242), C11 water/ion (#2237), C12 Amber-FF (#2238)'
+  rationale: PI paused at Wave A+B milestone; Wave C is a new phase awaiting go-ahead. C10 loop modeling is genuinely hard.
+  recommended_phase: Wave C
+- description: e2e system-prep chaining test (T7) + load_backbone/load_processed harness helpers (#2250)
+  rationale: Deferred during Wave A; needs harness extension
+  recommended_phase: Wave C or follow-up
+- description: HIS HID-vs-HIE tautomer selection via PROPKA determinants (#2298)
+  rationale: C7 ships HIP+HIE; HID needs H-bond environment analysis
+  recommended_phase: follow-up
+- description: Reconcile/remove legacy sanitizers/protonation.rs vs C6/C7 (#2305)
+  rationale: Pipeline uses C7+C6; legacy ProtonationSanitizer + Topology::add_hydrogens superseded
+  recommended_phase: follow-up
+lessons_refs:
+- .praxia/lessons.jsonl
+next_steps:
+- 'On PI go-ahead: run /epic-audit (opus) over the merged Wave A+B foundation before Wave C'
+- 'Dispatch staff (opus) to design Wave C: C9 #2235 point-mutations, C10 #2242 loop-modeling, C11 #2237 water/ion, C12 #2238 Amber-FF (per-asset GPL bundle)'
+- 'Implement Wave C per sub-wave: haiku fixers (isolation:worktree) -> integrate -> sonnet review -> auto-merge (cadence in loop_state [wave_b]); merge-to-main waived for this epic by PI'
+- 'Address follow-ups #2250 (e2e T7 + load_backbone harness helper), #2298 (HIS HID determinant), #2305 (reconcile legacy ProtonationSanitizer vs C6/C7), #2244 (tracing->log in charmm_ic.rs)'
+---
