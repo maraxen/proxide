@@ -31,6 +31,9 @@ pub enum SystemPrepError {
 
     #[error("loop modelling failed: {0}")]
     LoopModelling(#[from] crate::loop_model::LoopModellingError),
+
+    #[error("solvation failed: {0}")]
+    Solvation(#[from] crate::solvate::SolvationError),
 }
 
 /// Configuration for the system preparation pipeline.
@@ -55,6 +58,8 @@ pub struct SystemPrepConfig {
     /// SEQRES mapping for loop modeling: chain_id → Vec<(res_id, three_letter_name)>.
     /// Required for model_loops. If None and model_loops=true, loop modeling is skipped with a warning.
     pub seqres: Option<HashMap<String, Vec<(i32, String)>>>,
+    /// Solvation configuration (optional). None = skip solvation; Some(...) = run Solvator.
+    pub solvate: Option<crate::solvate::SolvationConfig>,
 }
 
 impl Default for SystemPrepConfig {
@@ -69,8 +74,16 @@ impl Default for SystemPrepConfig {
             repack_sidechains: false,
             model_loops: false,
             seqres: None,
+            solvate: None,
         }
     }
+}
+
+/// Report from the system preparation pipeline.
+#[derive(Debug, Clone, Default)]
+pub struct SystemPrepReport {
+    /// Solvation report (None if solvation was skipped).
+    pub solvation: Option<crate::solvate::SolvationReport>,
 }
 
 /// System preparation pipeline: threads sanitizers in dependency order.
@@ -106,7 +119,9 @@ impl<'a> SystemPrep<'a> {
     /// 5. Protonation state (C7) — assign HID/HIE/HIP/ASH/... names
     /// 6. Hydrogens (C6) — place missing H atoms based on FF templates
     /// 7. Repack (C8) — optimize sidechain conformations (optional)
-    pub fn run(&mut self) -> Result<(), SystemPrepError> {
+    /// 8. Solvation (C11) — add solvent and counterions (optional)
+    pub fn run(&mut self) -> Result<SystemPrepReport, SystemPrepError> {
+        let mut report = SystemPrepReport::default();
         // Step 1: Disulfides (C2)
         #[cfg(feature = "disulfide")]
         {
@@ -229,7 +244,17 @@ impl<'a> SystemPrep<'a> {
             }
         }
 
-        Ok(())
+        // Step 8: Solvation (C11) — add solvent and counterions (optional)
+        {
+            if let Some(ref sol_config) = self.config.solvate {
+                use crate::solvate::Solvator;
+                let mut solvator = Solvator::new(self.topology, sol_config.clone());
+                let solvation_report = solvator.run().map_err(SystemPrepError::Solvation)?;
+                report.solvation = Some(solvation_report);
+            }
+        }
+
+        Ok(report)
     }
 }
 
@@ -374,5 +399,27 @@ mod tests {
         let mut sysprep = SystemPrep::new(&mut topology, &ff, None, config);
         let result = sysprep.run();
         assert!(result.is_ok(), "SystemPrep should not error even with disabled feature");
+    }
+
+    #[test]
+    fn test_solvation_skipped_when_config_none() {
+        // When solvate is None in config, solvation should be skipped
+        // and report.solvation should be None.
+        let mut topology = build_test_topology();
+        let ff = ForceField::new("test".to_string());
+        let config = SystemPrepConfig {
+            solvate: None,
+            ..Default::default()
+        };
+
+        let mut sysprep = SystemPrep::new(&mut topology, &ff, None, config);
+        let result = sysprep.run();
+
+        assert!(result.is_ok(), "SystemPrep should succeed when solvation is None");
+        let report = result.unwrap();
+        assert!(
+            report.solvation.is_none(),
+            "Solvation report should be None when solvate config is None"
+        );
     }
 }
