@@ -75,7 +75,7 @@ impl PreconditionReport {
 }
 
 /// Canonical amino acids (20 standard + common variants).
-const CANONICAL_AA_NAMES: &[&str] = &[
+pub const CANONICAL_AA_NAMES: &[&str] = &[
     "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "HID", "HIE", "HIP", "ILE",
     "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL", "CYX",
 ];
