@@ -24,6 +24,8 @@ pub enum RepackMode {
     CompleteMissingOnly,
     /// Repack all non-GLY/ALA residues.
     RepackAll,
+    /// Strip sidechain (keeping only backbone + CB for non-GLY) and rebuild from rotamer library.
+    ForceRebuild,
 }
 
 /// Report of sidechain repacking results.
@@ -295,6 +297,88 @@ impl<'a> SidechainRepacker<'a> {
         Self { topology, lib }
     }
 
+    /// Strip a residue's sidechain, retaining only backbone atoms and CB (unless GLY).
+    /// For non-GLY targets: keeps N, CA, C, O, CB, and H if present.
+    /// For GLY targets: keeps only N, CA, C, O, and H if present.
+    fn strip_sidechain(&mut self, chain_idx: usize, res_idx: usize, target_aa: &str) {
+        let keep_cb = target_aa != "GLY";
+        let mut keep_names = vec!["N", "CA", "C", "O"];
+        if keep_cb {
+            keep_names.push("CB");
+        }
+        // Always keep backbone H if present
+        keep_names.push("H");
+        keep_names.push("HN");
+
+        let chain = &mut self.topology.chains[chain_idx];
+        let residue = &mut chain.residues[res_idx];
+
+        // Retain only atoms whose names are in keep_names
+        residue.atoms.retain(|atom| keep_names.contains(&atom.name.as_str()));
+    }
+
+    /// Rebuild sidechain from rotamer library at the residue's phi/psi.
+    /// Assumes backbone atoms (N/CA/C) are present.
+    /// Returns the placed rotamer atoms if successful, or None if rotamer placement failed.
+    fn rebuild_from_rotlib(
+        &self,
+        chain_idx: usize,
+        res_idx: usize,
+        target_aa: &str,
+        phi: f64,
+        psi: f64,
+    ) -> Option<Vec<Atom>> {
+        let chain = &self.topology.chains[chain_idx];
+        let residue = &chain.residues[res_idx];
+
+        // Get backbone atom coordinates
+        let n = find_atom(residue, "N")?;
+        let ca = find_atom(residue, "CA")?;
+        let c = find_atom(residue, "C")?;
+
+        // Place rotamer from library using first rotamer (greedy; can improve later)
+        let nr = self.lib.num_rotamers(target_aa, phi, psi, false).ok()?;
+        if nr == 0 {
+            return None;
+        }
+
+        // Use rotamer 0 as default (can be improved with clash calculation)
+        let placed_rot = self
+            .lib
+            .place_rotamer(
+                target_aa,
+                phi,
+                psi,
+                0,
+                false,
+                [n[0] as f64, n[1] as f64, n[2] as f64],
+                [ca[0] as f64, ca[1] as f64, ca[2] as f64],
+                [c[0] as f64, c[1] as f64, c[2] as f64],
+            )
+            .ok()?;
+
+        // Convert placed atoms to our Atom type
+        let atoms = placed_rot
+            .atoms
+            .iter()
+            .map(|a| {
+                let element = extract_element(&a.name);
+                Atom {
+                    name: a.name.clone(),
+                    element,
+                    coords: [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32],
+                    alt_loc: ' ',
+                    serial: 0, // Will be fixed up later
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                }
+            })
+            .collect();
+
+        Some(atoms)
+    }
+
     /// Run the repacking algorithm.
     pub fn complete_and_repack(&mut self, mode: RepackMode) -> Result<RepackReport, RepackError> {
         let mut report = RepackReport {
@@ -337,8 +421,8 @@ impl<'a> SidechainRepacker<'a> {
                 )
             };
 
-            // Skip GLY and ALA unless in RepackAll mode
-            if (aa == "GLY" || aa == "ALA") && !matches!(mode, RepackMode::RepackAll) {
+            // Skip GLY and ALA for CompleteMissingOnly and RepackAll modes
+            if (aa == "GLY" || aa == "ALA") && !matches!(mode, RepackMode::ForceRebuild) {
                 continue;
             }
 
@@ -349,6 +433,10 @@ impl<'a> SidechainRepacker<'a> {
                 match mode {
                     RepackMode::CompleteMissingOnly => is_incomplete(residue, self.lib),
                     RepackMode::RepackAll => aa != "GLY" && aa != "ALA",
+                    RepackMode::ForceRebuild => {
+                        // ForceRebuild processes all residues except GLY (GLY has no sidechain to rebuild)
+                        aa != "GLY"
+                    }
                 }
             };
 
@@ -385,7 +473,53 @@ impl<'a> SidechainRepacker<'a> {
                 .copied()
                 .unwrap_or((9999.0, 9999.0));
 
-            // Get number of rotamers in this bin
+            // Handle ForceRebuild mode: strip sidechain and rebuild from rotlib
+            if matches!(mode, RepackMode::ForceRebuild) {
+                // Strip sidechain first
+                self.strip_sidechain(chain_idx, res_idx, &aa);
+
+                // Rebuild from rotamer library
+                if let Some(placed_atoms) = self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)
+                {
+                    // Update serial numbers and place atoms
+                    let chain = &mut self.topology.chains[chain_idx];
+                    let residue = &mut chain.residues[res_idx];
+                    let max_serial = residue
+                        .atoms
+                        .iter()
+                        .map(|a| a.serial)
+                        .max()
+                        .unwrap_or(0);
+
+                    for (i, placed_atom) in placed_atoms.iter().enumerate() {
+                        // Check if this atom already exists (e.g., backbone atoms)
+                        if let Some(pos) = residue.atoms.iter().position(|a| a.name == placed_atom.name) {
+                            // Update coordinates only
+                            residue.atoms[pos].coords = placed_atom.coords;
+                        } else {
+                            // Add new atom with updated serial
+                            let mut atom = placed_atom.clone();
+                            atom.serial = max_serial + i as i32 + 1;
+                            residue.atoms.push(atom);
+                        }
+                    }
+
+                    report.residues_completed += 1;
+                    report.residue_details.push((chain_id, res_id, aa, 0, 0.0));
+                } else {
+                    warn!(
+                        "Failed to rebuild sidechain for {chain_id}:{res_id} {aa} at ({phi:.1}, {psi:.1})",
+                        chain_id = chain_id,
+                        res_id = res_id,
+                        aa = aa,
+                        phi = phi,
+                        psi = psi
+                    );
+                }
+                continue;
+            }
+
+            // Get number of rotamers in this bin for CompleteMissingOnly/RepackAll
             let nr = self.lib.num_rotamers(&aa, phi, psi, false)?;
             if nr == 0 {
                 warn!(
@@ -724,6 +858,210 @@ mod tests {
         assert!(
             !is_incomplete(&residue_gly, &lib),
             "GLY should never be incomplete"
+        );
+    }
+
+    #[test]
+    fn force_rebuild_strips_sidechain_and_rebuilds() {
+        let lib = match load_rotlib() {
+            Some(l) => l,
+            None => {
+                eprintln!("Skipping test: rotamer library not found");
+                return;
+            }
+        };
+
+        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
+            Some(t) => t,
+            None => {
+                eprintln!("Skipping test: truncated_sidechain.pdb not found");
+                return;
+            }
+        };
+
+        // Verify starting state: LYS with N/CA/C/O/CB
+        assert_eq!(topology.chains.len(), 1);
+        let residue_before = &topology.chains[0].residues[0];
+        assert_eq!(residue_before.name, "LYS");
+        let atom_names_before: Vec<_> = residue_before.atoms.iter().map(|a| a.name.as_str()).collect();
+
+        // Should have backbone + CB initially
+        assert!(atom_names_before.contains(&"N"));
+        assert!(atom_names_before.contains(&"CA"));
+        assert!(atom_names_before.contains(&"C"));
+        assert!(atom_names_before.contains(&"CB"));
+
+        // Run repacker with ForceRebuild mode
+        let mut repacker = SidechainRepacker::new(&mut topology, &lib);
+        let report = repacker
+            .complete_and_repack(RepackMode::ForceRebuild)
+            .expect("force rebuild should succeed");
+
+        // Verify at least one residue was processed
+        assert!(
+            report.residues_completed > 0,
+            "At least one residue should be processed in ForceRebuild mode"
+        );
+
+        // Verify sidechain was rebuilt with expected atoms
+        let residue_after = &topology.chains[0].residues[0];
+        let atom_names_after: Vec<_> = residue_after.atoms.iter().map(|a| a.name.as_str()).collect();
+
+        // Should have backbone atoms
+        assert!(atom_names_after.contains(&"N"));
+        assert!(atom_names_after.contains(&"CA"));
+        assert!(atom_names_after.contains(&"C"));
+        assert!(atom_names_after.contains(&"CB"));
+
+        // Should have at least CG (first sidechain atom after CB for LYS)
+        assert!(
+            atom_names_after.contains(&"CG"),
+            "LYS should have CG after ForceRebuild"
+        );
+    }
+
+    #[test]
+    fn force_rebuild_maintains_backbone_bond_lengths() {
+        let lib = match load_rotlib() {
+            Some(l) => l,
+            None => {
+                eprintln!("Skipping test: rotamer library not found");
+                return;
+            }
+        };
+
+        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
+            Some(t) => t,
+            None => {
+                eprintln!("Skipping test: truncated_sidechain.pdb not found");
+                return;
+            }
+        };
+
+        // Record backbone coordinates before
+        let residue_before = &topology.chains[0].residues[0];
+        let ca_before = residue_before
+            .atoms
+            .iter()
+            .find(|a| a.name == "CA")
+            .unwrap()
+            .coords;
+        let cb_before = residue_before
+            .atoms
+            .iter()
+            .find(|a| a.name == "CB")
+            .unwrap()
+            .coords;
+
+        // Run ForceRebuild
+        let mut repacker = SidechainRepacker::new(&mut topology, &lib);
+        let _report = repacker
+            .complete_and_repack(RepackMode::ForceRebuild)
+            .expect("force rebuild should succeed");
+
+        // Verify CA and CB didn't move (they should be kept by strip_sidechain)
+        let residue_after = &topology.chains[0].residues[0];
+        let ca_after = residue_after
+            .atoms
+            .iter()
+            .find(|a| a.name == "CA")
+            .unwrap()
+            .coords;
+        let cb_after = residue_after
+            .atoms
+            .iter()
+            .find(|a| a.name == "CB")
+            .unwrap()
+            .coords;
+
+        // CA should not move
+        let ca_dist = ((ca_before[0] - ca_after[0]).powi(2)
+            + (ca_before[1] - ca_after[1]).powi(2)
+            + (ca_before[2] - ca_after[2]).powi(2))
+            .sqrt();
+        assert!(ca_dist < 0.01, "CA should not move during ForceRebuild");
+
+        // CB should not move (it's in the keep list)
+        let cb_dist = ((cb_before[0] - cb_after[0]).powi(2)
+            + (cb_before[1] - cb_after[1]).powi(2)
+            + (cb_before[2] - cb_after[2]).powi(2))
+            .sqrt();
+        assert!(cb_dist < 0.01, "CB should not move during ForceRebuild");
+    }
+
+    #[test]
+    fn force_rebuild_does_not_process_gly() {
+        let lib = match load_rotlib() {
+            Some(l) => l,
+            None => {
+                eprintln!("Skipping test: rotamer library not found");
+                return;
+            }
+        };
+
+        // Create a minimal GLY residue
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![Residue {
+                    name: "GLY".to_string(),
+                    res_id: 1,
+                    insertion_code: ' ',
+                    atoms: vec![
+                        Atom {
+                            name: "N".to_string(),
+                            element: "N".to_string(),
+                            coords: [0.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 1,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [1.5, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 2,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "C".to_string(),
+                            element: "C".to_string(),
+                            coords: [2.0, 1.5, 0.0],
+                            alt_loc: ' ',
+                            serial: 3,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                    ],
+                }],
+            }],
+        };
+
+        let atom_count_before = topology.chains[0].residues[0].atoms.len();
+
+        // Run ForceRebuild
+        let mut repacker = SidechainRepacker::new(&mut topology, &lib);
+        let report = repacker
+            .complete_and_repack(RepackMode::ForceRebuild)
+            .expect("force rebuild should succeed");
+
+        // GLY should not be processed
+        assert_eq!(
+            report.residues_completed, 0,
+            "GLY should not be processed in ForceRebuild mode"
+        );
+
+        // Atom count should remain the same
+        let atom_count_after = topology.chains[0].residues[0].atoms.len();
+        assert_eq!(
+            atom_count_before, atom_count_after,
+            "GLY atoms should not change"
         );
     }
 }
