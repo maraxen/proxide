@@ -34,6 +34,9 @@ pub enum SystemPrepError {
 
     #[error("solvation failed: {0}")]
     Solvation(#[from] crate::solvate::SolvationError),
+
+    #[error("mutation failed: {0:?}")]
+    Mutation(crate::mutate::MutationError),
 }
 
 /// Configuration for the system preparation pipeline.
@@ -60,6 +63,8 @@ pub struct SystemPrepConfig {
     pub seqres: Option<HashMap<String, Vec<(i32, String)>>>,
     /// Solvation configuration (optional). None = skip solvation; Some(...) = run Solvator.
     pub solvate: Option<crate::solvate::SolvationConfig>,
+    /// Mutations to apply (default: empty). Mutations run as Step 0, before all other sanitization steps.
+    pub mutations: Vec<crate::mutate::MutationRequest>,
 }
 
 impl Default for SystemPrepConfig {
@@ -75,6 +80,7 @@ impl Default for SystemPrepConfig {
             model_loops: false,
             seqres: None,
             solvate: None,
+            mutations: vec![],
         }
     }
 }
@@ -82,6 +88,8 @@ impl Default for SystemPrepConfig {
 /// Report from the system preparation pipeline.
 #[derive(Debug, Clone, Default)]
 pub struct SystemPrepReport {
+    /// Mutation report (None if no mutations were requested).
+    pub mutation: Option<crate::mutate::MutationReport>,
     /// Solvation report (None if solvation was skipped).
     pub solvation: Option<crate::solvate::SolvationReport>,
 }
@@ -112,6 +120,7 @@ impl<'a> SystemPrep<'a> {
     }
 
     /// Run the full system prep pipeline in order.
+    /// 0. Mutations (C9) — apply requested point mutations, repack neighbourhood, re-evaluate disulfides
     /// 1. Disulfides (C2) — rename CYS to CYX, remove HG
     /// 2. Loop modeling (C10) — build missing loops via Modeller (optional)
     /// 3. Termini patching (C4) — fix first/last residue termini
@@ -122,6 +131,22 @@ impl<'a> SystemPrep<'a> {
     /// 8. Solvation (C11) — add solvent and counterions (optional)
     pub fn run(&mut self) -> Result<SystemPrepReport, SystemPrepError> {
         let mut report = SystemPrepReport::default();
+
+        // Step 0: Mutations (C9) — must precede protonation, disulfide, capping
+        {
+            if !self.config.mutations.is_empty() {
+                if let Some(lib) = self.lib {
+                    use crate::mutate::Mutator;
+                    let mut mutator = Mutator::new(self.topology, lib);
+                    let mutation_report = mutator.apply(&self.config.mutations)
+                        .map_err(SystemPrepError::Mutation)?;
+                    report.mutation = Some(mutation_report);
+                } else {
+                    log::warn!("mutations requested but no rotamer library provided; skipping mutations");
+                }
+            }
+        }
+
         // Step 1: Disulfides (C2)
         #[cfg(feature = "disulfide")]
         {
@@ -420,6 +445,28 @@ mod tests {
         assert!(
             report.solvation.is_none(),
             "Solvation report should be None when solvate config is None"
+        );
+    }
+
+    #[test]
+    fn mutations_skipped_when_empty() {
+        // When mutations vec is empty in config, mutations should be skipped
+        // and report.mutation should be None.
+        let mut topology = build_test_topology();
+        let ff = ForceField::new("test".to_string());
+        let config = SystemPrepConfig {
+            mutations: vec![],
+            ..Default::default()
+        };
+
+        let mut sysprep = SystemPrep::new(&mut topology, &ff, None, config);
+        let result = sysprep.run();
+
+        assert!(result.is_ok(), "SystemPrep should succeed when mutations is empty");
+        let report = result.unwrap();
+        assert!(
+            report.mutation.is_none(),
+            "Mutation report should be None when mutations config is empty"
         );
     }
 }
