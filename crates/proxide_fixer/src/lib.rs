@@ -4,6 +4,8 @@ pub mod finder;
 pub mod builder;
 pub mod repack;
 pub mod pipeline;
+pub mod solvate;
+pub mod loop_model;
 
 #[cfg(feature = "protonation")]
 pub mod propka_wrap;
