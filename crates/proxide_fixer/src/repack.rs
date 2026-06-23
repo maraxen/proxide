@@ -15,6 +15,9 @@ pub enum RepackError {
 
     #[error("missing sidechain atoms for {aa} at {chain}:{res_id}")]
     MissingSidechain { chain: String, res_id: i32, aa: String },
+
+    #[error("residue not found: {chain}:{res_id}{insertion_code}")]
+    ResidueNotFound { chain: String, res_id: i32, insertion_code: char },
 }
 
 /// Enum for selecting which residues to repack.
@@ -377,6 +380,390 @@ impl<'a> SidechainRepacker<'a> {
             .collect();
 
         Some(atoms)
+    }
+
+    /// Rebuild a single residue sidechain from rotlib with ForceRebuild mode.
+    pub fn rebuild_residue(
+        &mut self,
+        chain_id: &str,
+        res_id: i32,
+        insertion_code: char,
+    ) -> Result<(), RepackError> {
+        // Find the residue
+        let (chain_idx, res_idx) = self
+            .topology
+            .chains
+            .iter()
+            .enumerate()
+            .find_map(|(c_idx, chain)| {
+                if chain.id == chain_id {
+                    chain
+                        .residues
+                        .iter()
+                        .enumerate()
+                        .find_map(|(r_idx, residue)| {
+                            if residue.res_id == res_id && residue.insertion_code == insertion_code {
+                                Some((c_idx, r_idx))
+                            } else {
+                                None
+                            }
+                        })
+                } else {
+                    None
+                }
+            })
+            .ok_or(RepackError::ResidueNotFound {
+                chain: chain_id.to_string(),
+                res_id,
+                insertion_code,
+            })?;
+
+        // Get residue info
+        let aa = self.topology.chains[chain_idx].residues[res_idx].name.clone();
+
+        // Collect all already-placed atoms
+        let mut placed_atoms = Vec::new();
+        for (other_chain_idx, chain) in self.topology.chains.iter().enumerate() {
+            for (other_res_idx, residue) in chain.residues.iter().enumerate() {
+                if (other_chain_idx, other_res_idx) != (chain_idx, res_idx) {
+                    for atom in &residue.atoms {
+                        placed_atoms.push(atom.clone());
+                    }
+                }
+            }
+        }
+
+        // Get prev/next residues for backbone angle calculation
+        let prev_res = if res_idx > 0 {
+            Some(&self.topology.chains[chain_idx].residues[res_idx - 1])
+        } else {
+            None
+        };
+        let next_res = if res_idx + 1 < self.topology.chains[chain_idx].residues.len() {
+            Some(&self.topology.chains[chain_idx].residues[res_idx + 1])
+        } else {
+            None
+        };
+        let current_res = &self.topology.chains[chain_idx].residues[res_idx];
+        let (phi, psi) = derive_backbone_angles(prev_res, current_res, next_res);
+
+        // Strip sidechain first
+        self.strip_sidechain(chain_idx, res_idx, &aa);
+
+        // Rebuild from rotamer library
+        if let Some(placed_atoms_new) = self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi) {
+            // Update serial numbers and place atoms
+            let chain = &mut self.topology.chains[chain_idx];
+            let residue = &mut chain.residues[res_idx];
+            let max_serial = residue
+                .atoms
+                .iter()
+                .map(|a| a.serial)
+                .max()
+                .unwrap_or(0);
+
+            for (i, placed_atom) in placed_atoms_new.iter().enumerate() {
+                // Check if this atom already exists (e.g., backbone atoms)
+                if let Some(pos) = residue.atoms.iter().position(|a| a.name == placed_atom.name) {
+                    // Update coordinates only
+                    residue.atoms[pos].coords = placed_atom.coords;
+                } else {
+                    // Add new atom with updated serial
+                    let mut atom = placed_atom.clone();
+                    atom.serial = max_serial + i as i32 + 1;
+                    residue.atoms.push(atom);
+                }
+            }
+
+            Ok(())
+        } else {
+            warn!(
+                "Failed to rebuild sidechain for {chain_id}:{res_id} {aa} at ({phi:.1}, {psi:.1})",
+                chain_id = chain_id,
+                res_id = res_id,
+                aa = aa,
+                phi = phi,
+                psi = psi
+            );
+            Ok(())
+        }
+    }
+
+    /// For each target in `targets`, collect all residues within `radius` Å
+    /// (union of shells). Sort the union by intra-shell local burial order
+    /// (neighbour count among shell members only — NOT global burial).
+    /// Repack each shell residue with BestRotamer.
+    pub fn repack_neighbourhood(
+        &mut self,
+        targets: &[(String, i32, char)],
+        radius: f32,
+    ) -> Result<(), RepackError> {
+        if targets.is_empty() {
+            return Ok(());
+        }
+
+        // Collect all residues within radius of any target
+        let mut shell_set = std::collections::HashSet::new();
+        let radius_sq = radius * radius;
+
+        for (target_chain_id, target_res_id, target_insertion_code) in targets {
+            // Find the target residue
+            let target_ca = self
+                .topology
+                .chains
+                .iter()
+                .find_map(|chain| {
+                    if chain.id == *target_chain_id {
+                        chain.residues.iter().find_map(|res| {
+                            if res.res_id == *target_res_id
+                                && res.insertion_code == *target_insertion_code
+                            {
+                                find_atom(res, "CA")
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
+
+            if let Some(target_ca_coords) = target_ca {
+                // Collect all residues within radius
+                for (chain_idx, chain) in self.topology.chains.iter().enumerate() {
+                    for (res_idx, residue) in chain.residues.iter().enumerate() {
+                        if let Some(ca_coords) = find_atom(residue, "CA") {
+                            let dx = ca_coords[0] - target_ca_coords[0];
+                            let dy = ca_coords[1] - target_ca_coords[1];
+                            let dz = ca_coords[2] - target_ca_coords[2];
+                            let dist_sq = dx * dx + dy * dy + dz * dz;
+
+                            if dist_sq <= radius_sq {
+                                shell_set.insert((chain_idx, res_idx));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if shell_set.is_empty() {
+            return Ok(());
+        }
+
+        // Convert shell to vec for distance calculations
+        let shell_vec: Vec<(usize, usize)> = shell_set.into_iter().collect();
+
+        // Calculate local burial order: for each shell member, count how many other shell members are within radius
+        let mut burial_counts: Vec<((usize, usize), usize)> = shell_vec
+            .iter()
+            .map(|&(chain_idx, res_idx)| {
+                let mut count = 0;
+                if let Some(ca_coords) = find_atom(&self.topology.chains[chain_idx].residues[res_idx], "CA") {
+                    for &(other_chain_idx, other_res_idx) in &shell_vec {
+                        if (chain_idx, res_idx) == (other_chain_idx, other_res_idx) {
+                            continue;
+                        }
+                        if let Some(other_ca) =
+                            find_atom(&self.topology.chains[other_chain_idx].residues[other_res_idx], "CA")
+                        {
+                            let dx = ca_coords[0] - other_ca[0];
+                            let dy = ca_coords[1] - other_ca[1];
+                            let dz = ca_coords[2] - other_ca[2];
+                            let dist_sq = dx * dx + dy * dy + dz * dz;
+                            if dist_sq <= radius_sq {
+                                count += 1;
+                            }
+                        }
+                    }
+                }
+                ((chain_idx, res_idx), count)
+            })
+            .collect();
+
+        // Sort by descending burial count (most buried first)
+        burial_counts.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Repack each shell residue with BestRotamer mode
+        for ((chain_idx, res_idx), _) in burial_counts {
+            // Get residue info
+            let (aa, res_id, chain_id) = {
+                let chain = &self.topology.chains[chain_idx];
+                let residue = &chain.residues[res_idx];
+                (
+                    residue.name.clone(),
+                    residue.res_id,
+                    chain.id.clone(),
+                )
+            };
+
+            // Skip GLY and ALA
+            if aa == "GLY" || aa == "ALA" {
+                continue;
+            }
+
+            // Get prev/next residues for backbone angle calculation
+            let prev_res = if res_idx > 0 {
+                Some(&self.topology.chains[chain_idx].residues[res_idx - 1])
+            } else {
+                None
+            };
+            let next_res = if res_idx + 1 < self.topology.chains[chain_idx].residues.len() {
+                Some(&self.topology.chains[chain_idx].residues[res_idx + 1])
+            } else {
+                None
+            };
+            let current_res = &self.topology.chains[chain_idx].residues[res_idx];
+            let (phi, psi) = derive_backbone_angles(prev_res, current_res, next_res);
+
+            // Get backbone atoms
+            let (n_atom, ca_atom, c_atom) = {
+                let chain = &self.topology.chains[chain_idx];
+                let residue = &chain.residues[res_idx];
+                (
+                    find_atom(residue, "N"),
+                    find_atom(residue, "CA"),
+                    find_atom(residue, "C"),
+                )
+            };
+
+            if n_atom.is_none() || ca_atom.is_none() || c_atom.is_none() {
+                warn!(
+                    "Skipping {chain_id}:{res_id} {aa}: missing backbone atoms",
+                    chain_id = chain_id,
+                    res_id = res_id,
+                    aa = aa
+                );
+                continue;
+            }
+
+            let n = n_atom.unwrap();
+            let ca = ca_atom.unwrap();
+            let c = c_atom.unwrap();
+
+            // Get number of rotamers
+            let nr = match self.lib.num_rotamers(&aa, phi, psi, false) {
+                Ok(n) => n,
+                Err(_) => {
+                    warn!(
+                        "No rotamers available for {chain_id}:{res_id} {aa} at ({phi:.1}, {psi:.1})",
+                        chain_id = chain_id,
+                        res_id = res_id,
+                        aa = aa,
+                        phi = phi,
+                        psi = psi
+                    );
+                    continue;
+                }
+            };
+
+            if nr == 0 {
+                continue;
+            }
+
+            // Collect all already-placed atoms
+            let mut placed_atoms = Vec::new();
+            for (other_chain_idx, chain) in self.topology.chains.iter().enumerate() {
+                for (other_res_idx, residue) in chain.residues.iter().enumerate() {
+                    if (other_chain_idx, other_res_idx) != (chain_idx, res_idx) {
+                        for atom in &residue.atoms {
+                            placed_atoms.push(atom.clone());
+                        }
+                    }
+                }
+            }
+
+            // Score all rotamers; pick argmax(prob - lambda*clash)
+            let mut best_rot = 0;
+            let mut best_score = f64::NEG_INFINITY;
+
+            for rot_idx in 0..nr {
+                // Get rotamer probability
+                if let Ok(prob) = self.lib.rotamer_probability(&aa, rot_idx, phi, psi) {
+                    // Place the rotamer
+                    if let Ok(placed_rot) = self.lib.place_rotamer(
+                        &aa,
+                        phi,
+                        psi,
+                        rot_idx,
+                        false,
+                        [n[0] as f64, n[1] as f64, n[2] as f64],
+                        [ca[0] as f64, ca[1] as f64, ca[2] as f64],
+                        [c[0] as f64, c[1] as f64, c[2] as f64],
+                    ) {
+                        // Convert placed atoms to (name, coords) pairs
+                        let candidate_atoms: Vec<(String, [f32; 3])> = placed_rot
+                            .atoms
+                            .iter()
+                            .map(|a| {
+                                (
+                                    a.name.clone(),
+                                    [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32],
+                                )
+                            })
+                            .collect();
+
+                        // Calculate clash penalty
+                        let clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms);
+
+                        // Score = probability - lambda * clash
+                        let lambda = 1.0; // Weight of clash penalty
+                        let score = prob - lambda * clash;
+
+                        if score > best_score {
+                            best_score = score;
+                            best_rot = rot_idx;
+                        }
+                    }
+                }
+            }
+
+            // Place the best rotamer
+            if let Ok(best_placed) = self.lib.place_rotamer(
+                &aa,
+                phi,
+                psi,
+                best_rot,
+                false,
+                [n[0] as f64, n[1] as f64, n[2] as f64],
+                [ca[0] as f64, ca[1] as f64, ca[2] as f64],
+                [c[0] as f64, c[1] as f64, c[2] as f64],
+            ) {
+                // Now get mutable residue and update atoms with the placed sidechain
+                let chain = &mut self.topology.chains[chain_idx];
+                let residue = &mut chain.residues[res_idx];
+                for placed_atom in &best_placed.atoms {
+                    // Check if this atom already exists in the residue
+                    if let Some(pos) = residue.atoms.iter().position(|a| a.name == placed_atom.name) {
+                        // Update coordinates
+                        residue.atoms[pos].coords = [
+                            placed_atom.xyz[0] as f32,
+                            placed_atom.xyz[1] as f32,
+                            placed_atom.xyz[2] as f32,
+                        ];
+                    } else {
+                        // Add new atom
+                        let element = extract_element(&placed_atom.name);
+                        residue.atoms.push(Atom {
+                            name: placed_atom.name.clone(),
+                            element,
+                            coords: [
+                                placed_atom.xyz[0] as f32,
+                                placed_atom.xyz[1] as f32,
+                                placed_atom.xyz[2] as f32,
+                            ],
+                            alt_loc: ' ',
+                            serial: residue.atoms.iter().map(|a| a.serial).max().unwrap_or(0) + 1,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Run the repacking algorithm.
@@ -1062,6 +1449,302 @@ mod tests {
         assert_eq!(
             atom_count_before, atom_count_after,
             "GLY atoms should not change"
+        );
+    }
+
+    #[test]
+    fn rebuild_residue_calls_force_rebuild() {
+        let lib = match load_rotlib() {
+            Some(l) => l,
+            None => {
+                eprintln!("Skipping test: rotamer library not found");
+                return;
+            }
+        };
+
+        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
+            Some(t) => t,
+            None => {
+                eprintln!("Skipping test: truncated_sidechain.pdb not found");
+                return;
+            }
+        };
+
+        // Verify starting state
+        assert_eq!(topology.chains.len(), 1);
+        let residue_res_id = topology.chains[0].residues[0].res_id;
+        assert_eq!(topology.chains[0].residues[0].name, "LYS");
+        let atom_names_before: Vec<_> = topology.chains[0].residues[0]
+            .atoms
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect();
+
+        // Should have backbone + CB initially
+        assert!(atom_names_before.contains(&"N"));
+        assert!(atom_names_before.contains(&"CA"));
+        assert!(atom_names_before.contains(&"C"));
+        assert!(atom_names_before.contains(&"CB"));
+
+        // Call rebuild_residue
+        let mut repacker = SidechainRepacker::new(&mut topology, &lib);
+        let result = repacker.rebuild_residue("A", residue_res_id, ' ');
+        assert!(result.is_ok(), "rebuild_residue should succeed");
+
+        // Verify sidechain was rebuilt
+        let residue_after = &topology.chains[0].residues[0];
+        let atom_names_after: Vec<_> = residue_after
+            .atoms
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect();
+
+        // Should have backbone atoms
+        assert!(atom_names_after.contains(&"N"));
+        assert!(atom_names_after.contains(&"CA"));
+        assert!(atom_names_after.contains(&"C"));
+        assert!(atom_names_after.contains(&"CB"));
+
+        // Should have at least CG (first sidechain atom after CB for LYS)
+        assert!(
+            atom_names_after.contains(&"CG"),
+            "LYS should have CG after rebuild_residue"
+        );
+    }
+
+    #[test]
+    fn rebuild_residue_returns_error_for_missing_residue() {
+        let lib = match load_rotlib() {
+            Some(l) => l,
+            None => {
+                eprintln!("Skipping test: rotamer library not found");
+                return;
+            }
+        };
+
+        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
+            Some(t) => t,
+            None => {
+                eprintln!("Skipping test: truncated_sidechain.pdb not found");
+                return;
+            }
+        };
+
+        // Try to rebuild a non-existent residue
+        let mut repacker = SidechainRepacker::new(&mut topology, &lib);
+        let result = repacker.rebuild_residue("B", 999, ' ');
+
+        assert!(result.is_err(), "rebuild_residue should error for missing residue");
+        match result {
+            Err(RepackError::ResidueNotFound {
+                chain,
+                res_id,
+                insertion_code,
+            }) => {
+                assert_eq!(chain, "B");
+                assert_eq!(res_id, 999);
+                assert_eq!(insertion_code, ' ');
+            }
+            _ => panic!("Expected ResidueNotFound error"),
+        }
+    }
+
+    #[test]
+    fn repack_neighbourhood_empty_targets() {
+        let lib = match load_rotlib() {
+            Some(l) => l,
+            None => {
+                eprintln!("Skipping test: rotamer library not found");
+                return;
+            }
+        };
+
+        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
+            Some(t) => t,
+            None => {
+                eprintln!("Skipping test: truncated_sidechain.pdb not found");
+                return;
+            }
+        };
+
+        // Call with empty targets
+        let mut repacker = SidechainRepacker::new(&mut topology, &lib);
+        let result = repacker.repack_neighbourhood(&[], 8.0);
+
+        assert!(result.is_ok(), "repack_neighbourhood should return Ok for empty targets");
+    }
+
+    #[test]
+    #[ignore] // Requires real rotlib and appropriate topology for local burial test
+    fn repack_neighbourhood_local_burial_order() {
+        let lib = match load_rotlib() {
+            Some(l) => l,
+            None => {
+                eprintln!("Skipping test: rotamer library not found");
+                return;
+            }
+        };
+
+        // Create a minimal 3-residue topology with specific CA distances
+        // Residue 0 (A:1) - target
+        // Residue 1 (A:2) - closer to 0 and 2
+        // Residue 2 (A:3) - farther from 0 but close to 1
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![
+                    Residue {
+                        name: "ALA".to_string(),
+                        res_id: 1,
+                        insertion_code: ' ',
+                        atoms: vec![
+                            Atom {
+                                name: "N".to_string(),
+                                element: "N".to_string(),
+                                coords: [0.0, 0.0, 0.0],
+                                alt_loc: ' ',
+                                serial: 1,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                            Atom {
+                                name: "CA".to_string(),
+                                element: "C".to_string(),
+                                coords: [0.0, 0.0, 0.0], // Target CA at origin
+                                alt_loc: ' ',
+                                serial: 2,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                            Atom {
+                                name: "C".to_string(),
+                                element: "C".to_string(),
+                                coords: [1.0, 0.0, 0.0],
+                                alt_loc: ' ',
+                                serial: 3,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                            Atom {
+                                name: "CB".to_string(),
+                                element: "C".to_string(),
+                                coords: [0.0, 1.0, 0.0],
+                                alt_loc: ' ',
+                                serial: 4,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                        ],
+                    },
+                    Residue {
+                        name: "VAL".to_string(),
+                        res_id: 2,
+                        insertion_code: ' ',
+                        atoms: vec![
+                            Atom {
+                                name: "N".to_string(),
+                                element: "N".to_string(),
+                                coords: [1.0, 0.0, 0.0],
+                                alt_loc: ' ',
+                                serial: 5,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                            Atom {
+                                name: "CA".to_string(),
+                                element: "C".to_string(),
+                                coords: [3.0, 0.0, 0.0], // 3 Å from res 1 CA (should be in shell)
+                                alt_loc: ' ',
+                                serial: 6,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                            Atom {
+                                name: "C".to_string(),
+                                element: "C".to_string(),
+                                coords: [4.0, 0.0, 0.0],
+                                alt_loc: ' ',
+                                serial: 7,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                            Atom {
+                                name: "CB".to_string(),
+                                element: "C".to_string(),
+                                coords: [3.0, 1.0, 0.0],
+                                alt_loc: ' ',
+                                serial: 8,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                        ],
+                    },
+                    Residue {
+                        name: "LEU".to_string(),
+                        res_id: 3,
+                        insertion_code: ' ',
+                        atoms: vec![
+                            Atom {
+                                name: "N".to_string(),
+                                element: "N".to_string(),
+                                coords: [4.0, 0.0, 0.0],
+                                alt_loc: ' ',
+                                serial: 9,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                            Atom {
+                                name: "CA".to_string(),
+                                element: "C".to_string(),
+                                coords: [6.0, 0.0, 0.0], // 6 Å from res 1 CA (outside default 8 Å shell)
+                                alt_loc: ' ',
+                                serial: 10,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                            Atom {
+                                name: "C".to_string(),
+                                element: "C".to_string(),
+                                coords: [7.0, 0.0, 0.0],
+                                alt_loc: ' ',
+                                serial: 11,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                            Atom {
+                                name: "CB".to_string(),
+                                element: "C".to_string(),
+                                coords: [6.0, 1.0, 0.0],
+                                alt_loc: ' ',
+                                serial: 12,
+                                b_factor: 0.0,
+                                occupancy: 1.0,
+                                is_hetatm: false,
+                            },
+                        ],
+                    },
+                ],
+            }],
+        };
+
+        // Repack neighbourhood with 4 Å radius (only res 2 is within range)
+        let mut repacker = SidechainRepacker::new(&mut topology, &lib);
+        let result = repacker.repack_neighbourhood(&[("A".to_string(), 1, ' ')], 4.0);
+
+        assert!(
+            result.is_ok(),
+            "repack_neighbourhood should succeed for valid input"
         );
     }
 }
