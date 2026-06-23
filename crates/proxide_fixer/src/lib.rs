@@ -6,6 +6,7 @@ pub mod repack;
 pub mod pipeline;
 pub mod solvate;
 pub mod loop_model;
+pub mod mutate;
 
 #[cfg(feature = "protonation")]
 pub mod propka_wrap;
