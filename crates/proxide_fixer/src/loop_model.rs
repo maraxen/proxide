@@ -1,5 +1,7 @@
 use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
+use crate::models::Topology;
 
 #[derive(Debug, Clone)]
 pub struct MissingLoop {
@@ -39,6 +41,83 @@ pub enum LoopModellingError {
     Io(#[from] std::io::Error),
 }
 
+/// Detect SEQRES-vs-ATOM gaps.
+///
+/// `seqres`: chain_id → Vec<(res_id, three_letter_name)>, matching the
+/// `builder.rs` `map_seqres` convention.
+///
+/// Returns one `MissingLoop` per contiguous run of SEQRES res_ids absent
+/// from the topology's ATOM records.
+pub fn detect_missing_loops(
+    topology: &Topology,
+    seqres: &HashMap<String, Vec<(i32, String)>>,
+) -> Vec<MissingLoop> {
+    let mut result = Vec::new();
+
+    // Build a set of present (chain_id, res_id) pairs from ATOM records.
+    let mut present: HashSet<(String, i32)> = HashSet::new();
+    for chain in &topology.chains {
+        for residue in &chain.residues {
+            present.insert((chain.id.clone(), residue.res_id));
+        }
+    }
+
+    for (chain_id, seqres_residues) in seqres {
+        // Walk SEQRES in order; collect contiguous absent runs.
+        let mut gap_start: Option<i32> = None;
+        let mut gap_seq = String::new();
+        let mut prev_res_id: Option<i32> = None;
+
+        for (res_id, three_letter) in seqres_residues {
+            if present.contains(&(chain_id.clone(), *res_id)) {
+                // Present — close any open gap.
+                if let Some(start) = gap_start.take() {
+                    let end = prev_res_id.unwrap();
+                    result.push(MissingLoop {
+                        chain_id: chain_id.clone(),
+                        start_res: start,
+                        end_res: end,
+                        sequence: std::mem::take(&mut gap_seq),
+                    });
+                }
+            } else {
+                // Absent — extend or start a gap.
+                if gap_start.is_none() {
+                    gap_start = Some(*res_id);
+                }
+                // Convert three-letter to one-letter (best-effort; unknown → X)
+                gap_seq.push(three_to_one(three_letter));
+            }
+            prev_res_id = Some(*res_id);
+        }
+
+        // Close trailing gap.
+        if let Some(start) = gap_start {
+            let end = prev_res_id.unwrap();
+            result.push(MissingLoop {
+                chain_id: chain_id.clone(),
+                start_res: start,
+                end_res: end,
+                sequence: gap_seq,
+            });
+        }
+    }
+
+    result
+}
+
+fn three_to_one(name: &str) -> char {
+    match name {
+        "ALA" => 'A', "ARG" => 'R', "ASN" => 'N', "ASP" => 'D',
+        "CYS" => 'C', "GLN" => 'Q', "GLU" => 'E', "GLY" => 'G',
+        "HIS" | "HID" | "HIE" | "HIP" => 'H',
+        "ILE" => 'I', "LEU" => 'L', "LYS" => 'K', "MET" => 'M',
+        "PHE" => 'F', "PRO" => 'P', "SER" => 'S', "THR" => 'T',
+        "TRP" => 'W', "TYR" => 'Y', "VAL" => 'V',
+        _ => 'X',
+    }
+}
+
 /// Locate the Modeller executable.
 /// Checks `MODELLER_EXEC` env var first, then PATH.
 pub fn find_modeller() -> Result<PathBuf, LoopModellingError> {
@@ -71,6 +150,257 @@ fn which_in_path(name: &str) -> Result<PathBuf, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{Topology, Chain, Residue, Atom};
+
+    #[test]
+    fn three_to_one_standard_residues() {
+        assert_eq!(three_to_one("ALA"), 'A');
+        assert_eq!(three_to_one("TYR"), 'Y');
+        assert_eq!(three_to_one("GLY"), 'G');
+        assert_eq!(three_to_one("PRO"), 'P');
+    }
+
+    #[test]
+    fn three_to_one_his_variants() {
+        assert_eq!(three_to_one("HIS"), 'H');
+        assert_eq!(three_to_one("HID"), 'H');
+        assert_eq!(three_to_one("HIE"), 'H');
+        assert_eq!(three_to_one("HIP"), 'H');
+    }
+
+    #[test]
+    fn three_to_one_unknown() {
+        assert_eq!(three_to_one("XYZ"), 'X');
+        assert_eq!(three_to_one("FOO"), 'X');
+    }
+
+    #[test]
+    fn detect_missing_loops_gap_in_middle() {
+        // Topology with residues 1, 2, 5, 6 (gap at 3, 4)
+        let topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![
+                    Residue {
+                        name: "ALA".to_string(),
+                        res_id: 1,
+                        insertion_code: ' ',
+                        atoms: vec![Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [0.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 1,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        }],
+                    },
+                    Residue {
+                        name: "ALA".to_string(),
+                        res_id: 2,
+                        insertion_code: ' ',
+                        atoms: vec![Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [1.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 2,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        }],
+                    },
+                    Residue {
+                        name: "GLY".to_string(),
+                        res_id: 5,
+                        insertion_code: ' ',
+                        atoms: vec![Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [4.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 5,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        }],
+                    },
+                    Residue {
+                        name: "ALA".to_string(),
+                        res_id: 6,
+                        insertion_code: ' ',
+                        atoms: vec![Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [5.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 6,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        }],
+                    },
+                ],
+            }],
+        };
+
+        let mut seqres = HashMap::new();
+        seqres.insert(
+            "A".to_string(),
+            vec![
+                (1, "ALA".to_string()),
+                (2, "ALA".to_string()),
+                (3, "VAL".to_string()),
+                (4, "LEU".to_string()),
+                (5, "GLY".to_string()),
+                (6, "ALA".to_string()),
+            ],
+        );
+
+        let gaps = detect_missing_loops(&topology, &seqres);
+        assert_eq!(gaps.len(), 1);
+        assert_eq!(gaps[0].chain_id, "A");
+        assert_eq!(gaps[0].start_res, 3);
+        assert_eq!(gaps[0].end_res, 4);
+        assert_eq!(gaps[0].sequence, "VL");
+    }
+
+    #[test]
+    fn detect_missing_loops_multiple_gaps() {
+        // Topology with residues 1, 4, 7 (gaps at 2-3 and 5-6)
+        let topology = Topology {
+            chains: vec![Chain {
+                id: "B".to_string(),
+                residues: vec![
+                    Residue {
+                        name: "ALA".to_string(),
+                        res_id: 1,
+                        insertion_code: ' ',
+                        atoms: vec![Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [0.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 1,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        }],
+                    },
+                    Residue {
+                        name: "GLY".to_string(),
+                        res_id: 4,
+                        insertion_code: ' ',
+                        atoms: vec![Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [3.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 4,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        }],
+                    },
+                    Residue {
+                        name: "ALA".to_string(),
+                        res_id: 7,
+                        insertion_code: ' ',
+                        atoms: vec![Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [6.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 7,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        }],
+                    },
+                ],
+            }],
+        };
+
+        let mut seqres = HashMap::new();
+        seqres.insert(
+            "B".to_string(),
+            vec![
+                (1, "ALA".to_string()),
+                (2, "ARG".to_string()),
+                (3, "ASN".to_string()),
+                (4, "GLY".to_string()),
+                (5, "SER".to_string()),
+                (6, "THR".to_string()),
+                (7, "ALA".to_string()),
+            ],
+        );
+
+        let gaps = detect_missing_loops(&topology, &seqres);
+        assert_eq!(gaps.len(), 2);
+
+        // First gap: 2-3 (RN)
+        assert_eq!(gaps[0].chain_id, "B");
+        assert_eq!(gaps[0].start_res, 2);
+        assert_eq!(gaps[0].end_res, 3);
+        assert_eq!(gaps[0].sequence, "RN");
+
+        // Second gap: 5-6 (ST)
+        assert_eq!(gaps[1].chain_id, "B");
+        assert_eq!(gaps[1].start_res, 5);
+        assert_eq!(gaps[1].end_res, 6);
+        assert_eq!(gaps[1].sequence, "ST");
+    }
+
+    #[test]
+    fn detect_missing_loops_no_gaps() {
+        let topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![
+                    Residue {
+                        name: "ALA".to_string(),
+                        res_id: 1,
+                        insertion_code: ' ',
+                        atoms: vec![Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [0.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 1,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        }],
+                    },
+                    Residue {
+                        name: "ALA".to_string(),
+                        res_id: 2,
+                        insertion_code: ' ',
+                        atoms: vec![Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [1.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 2,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        }],
+                    },
+                ],
+            }],
+        };
+
+        let mut seqres = HashMap::new();
+        seqres.insert(
+            "A".to_string(),
+            vec![(1, "ALA".to_string()), (2, "ALA".to_string())],
+        );
+
+        let gaps = detect_missing_loops(&topology, &seqres);
+        assert_eq!(gaps.len(), 0);
+    }
 
     #[test]
     fn not_installed_when_absent() {
