@@ -30,7 +30,7 @@ proxide-io = { workspace = true }
 proxide-confind = { workspace = true }
 
 [features]
-default = ["protonation", "disulfide"]
+default = ["disulfide", "protonation", "capping", "stereo"]
 protonation = []
 capping = []
 stereo = []
