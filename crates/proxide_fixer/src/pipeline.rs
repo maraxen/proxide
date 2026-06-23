@@ -107,7 +107,7 @@ impl<'a> SystemPrep<'a> {
         #[cfg(not(feature = "disulfide"))]
         {
             if self.config.detect_disulfides {
-                tracing::warn!(
+                log::warn!(
                     "detect_disulfides=true requested but 'disulfide' feature not compiled in — step skipped"
                 );
             }
@@ -125,7 +125,7 @@ impl<'a> SystemPrep<'a> {
         #[cfg(not(feature = "capping"))]
         {
             if self.config.patch_termini {
-                tracing::warn!(
+                log::warn!(
                     "patch_termini=true requested but 'capping' feature not compiled in — step skipped"
                 );
             }
@@ -151,7 +151,7 @@ impl<'a> SystemPrep<'a> {
         #[cfg(not(feature = "capping"))]
         {
             if self.config.cap_breaks {
-                tracing::warn!(
+                log::warn!(
                     "cap_breaks=true requested but 'capping' feature not compiled in — step skipped"
                 );
             }
@@ -174,7 +174,7 @@ impl<'a> SystemPrep<'a> {
         #[cfg(not(feature = "protonation"))]
         {
             if self.config.assign_protonation {
-                tracing::warn!(
+                log::warn!(
                     "assign_protonation=true requested but 'protonation' feature not compiled in — step skipped"
                 );
             }

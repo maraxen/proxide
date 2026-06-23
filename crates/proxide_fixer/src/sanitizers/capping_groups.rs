@@ -91,19 +91,20 @@ impl<'a> CapSanitizer<'a> {
             // Insert NME before downstream residue (now at downstream_res_idx + 1 due to ACE insertion)
             let nme_res = create_nme_residue(
                 &self.topology.chains[chain_idx].residues[downstream_res_idx + 1],
-                break_site.res_id_upstream,
+                break_site.res_id_downstream,
                 &break_site.chain,
                 max_serial + 1,
             )?;
             self.topology.chains[chain_idx].residues.insert(downstream_res_idx + 1, nme_res);
             applied_caps.push(AppliedCap {
                 chain: break_site.chain.clone(),
-                res_id: break_site.res_id_upstream,
+                res_id: break_site.res_id_downstream,
                 kind: CapKind::Nme,
             });
-
-            // Re-sort residues by res_id to maintain order
-            self.topology.chains[chain_idx].residues.sort_by_key(|r| (r.res_id, r.insertion_code));
+            // Insertions already place ACE and NME in the correct positions
+            // (ACE after upstream, NME before downstream). No re-sort needed;
+            // sorting by (res_id, insertion_code) would misplace NME because
+            // NME's insertion_code 'B' > downstream residue's ' '.
         }
 
         Ok(applied_caps)
@@ -140,33 +141,41 @@ fn create_ace_residue(
         .ok_or(CapError::MissingBackboneAtom("CA".to_string()))?
         .clone();
 
-    // ACE cap: place C-O and C-CH3 from upstream backbone
-    // We want to extend from the upstream C with peptide geometry
-    // Use ideal bond lengths: C-O = 1.25 Å, C-C = 1.52 Å
-    // O-C-C angle (sp2 carbon bonded to two groups) ~123°
-    // For the third C (CH3), use ~120° in trans plane (omega = 180°)
+    // ACE cap: place CY (carbonyl C), OY (oxygen), and CAY (methyl) from upstream backbone.
+    // CY bonds to the upstream backbone C at ~1.52 Å (C-C single bond).
+    // Nerf::place_atom bonds the new atom to triplet[2] (last element).
+    // Triplet [O, CA, C] means CY is bonded to C — correct at 1.52 Å.
+    // OY is then doubly bonded to CY (1.25 Å sp2).
+    // CAY is the methyl carbon bonded to CY (1.52 Å).
 
-    // Use [CA, existing_O, C] to place the new oxygen-like group
     let cy_coords = Nerf::place_atom(
-        &[ca_atom.coords, o_atom.coords, c_atom.coords],
-        1.25, // C=O double bond
-        123.0, // O-C-O angle (sp2)
+        &[o_atom.coords, ca_atom.coords, c_atom.coords],
+        1.52, // C-C single bond from upstream C to ACE carbonyl C
+        120.0, // sp2-like angle
         180.0, // trans to existing O
     );
 
-    // Place CH3 carbon extending from C in ~120° angle
+    // OY: doubly bonded to CY, bonded to CY (triplet[2])
+    let oy_coords = Nerf::place_atom(
+        &[ca_atom.coords, c_atom.coords, cy_coords],
+        1.25, // C=O double bond
+        123.0, // sp2 angle
+        180.0, // trans to CA
+    );
+
+    // CAY: methyl carbon bonded to CY (triplet[2])
     let cay_coords = Nerf::place_atom(
-        &[o_atom.coords, c_atom.coords, ca_atom.coords],
+        &[oy_coords, cy_coords, c_atom.coords],
         1.52, // C-C single bond
-        120.0, // C-C-CA angle (sp3-like)
-        0.0, // can place anywhere in third dimension
+        120.0, // sp3-like angle
+        0.0, // positioned in remaining space
     );
 
     let mut atoms = vec![
         Atom {
             name: "CY".to_string(),
             element: "C".to_string(),
-            coords: c_atom.coords,
+            coords: cy_coords,
             alt_loc: ' ',
             serial: starting_serial,
             b_factor: 0.0,
@@ -176,7 +185,7 @@ fn create_ace_residue(
         Atom {
             name: "OY".to_string(),
             element: "O".to_string(),
-            coords: cy_coords,
+            coords: oy_coords,
             alt_loc: ' ',
             serial: starting_serial + 1,
             b_factor: 0.0,
@@ -446,13 +455,13 @@ mod tests {
         let mut cap_sanitizer = CapSanitizer::new(&mut topology);
         cap_sanitizer.run(&breaks).unwrap();
 
-        // Caps must sit between the flanking residues, in order
+        // Caps must sit between the flanking residues, in order.
+        // Note: NME carries insertion_code 'B' and res_id of the downstream residue,
+        // so the sequence is ALA(1,' '), ACE(1,'A'), NME(2,'B'), GLY(2,' ').
+        // This is NOT sorted by (res_id, insertion_code) — GLY's ' ' < NME's 'B'
+        // — but the insertion-point logic guarantees correct positional ordering.
         let names: Vec<_> = topology.chains[0].residues.iter().map(|r| r.name.clone()).collect();
         assert_eq!(names, vec!["ALA", "ACE", "NME", "GLY"], "caps must be ordered between flanking residues");
-        let keys: Vec<_> = topology.chains[0].residues.iter().map(|r| (r.res_id, r.insertion_code)).collect();
-        let mut sorted = keys.clone();
-        sorted.sort();
-        assert_eq!(keys, sorted, "residues sorted by (res_id, insertion_code)");
     }
 
     #[test]
@@ -586,4 +595,118 @@ mod tests {
             "Atom serials should be unique"
         );
     }
+
+    #[test]
+    fn test_nme_residue_id_non_consecutive_break() {
+        // Regression test: NME should have res_id of downstream residue, not upstream
+        // when break_site has non-consecutive res_ids (e.g. upstream=5, downstream=10)
+        let res1 = build_backbone_residue("ALA", 5, 1);
+        let mut res2 = build_backbone_residue("GLY", 10, 5);
+        res2.atoms
+            .iter_mut()
+            .find(|a| a.name == "CA")
+            .unwrap()
+            .coords = [15.0, 0.0, 0.0];
+        for atom in &mut res2.atoms {
+            if atom.name != "N" {
+                atom.coords[0] += 15.0 - 1.458;
+            }
+        }
+
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![res1, res2],
+            }],
+        };
+
+        let capping_sanitizer = CappingSanitizer::new(&mut topology);
+        let breaks = capping_sanitizer.detect_breaks();
+        assert_eq!(breaks.len(), 1);
+
+        let mut cap_sanitizer = CapSanitizer::new(&mut topology);
+        let applied_caps = cap_sanitizer.run(&breaks).unwrap();
+
+        // ACE should have res_id 5 (upstream)
+        let ace_cap = applied_caps.iter().find(|c| c.kind == CapKind::Ace).unwrap();
+        assert_eq!(ace_cap.res_id, 5, "ACE should have upstream res_id");
+
+        // NME should have res_id 10 (downstream), not 5
+        let nme_cap = applied_caps.iter().find(|c| c.kind == CapKind::Nme).unwrap();
+        assert_eq!(nme_cap.res_id, 10, "NME should have downstream res_id");
+
+        // Residue ordering: ALA(5), ACE(5,'A'), NME(10,'B'), GLY(10)
+        let ace_res = topology.chains[0]
+            .residues
+            .iter()
+            .find(|r| r.name == "ACE")
+            .unwrap();
+        assert_eq!(ace_res.res_id, 5, "ACE residue should have res_id 5");
+
+        let nme_res = topology.chains[0]
+            .residues
+            .iter()
+            .find(|r| r.name == "NME")
+            .unwrap();
+        assert_eq!(nme_res.res_id, 10, "NME residue should have res_id 10");
+    }
+
+    #[test]
+    fn test_ace_cy_atom_not_at_backbone_c() {
+        // Regression test: ACE's CY atom should NOT be co-located with upstream backbone C.
+        // CY should be placed using NeRF to extend the chain geometry properly.
+        let res1 = build_backbone_residue("ALA", 1, 1);
+        let mut res2 = build_backbone_residue("GLY", 2, 5);
+        res2.atoms
+            .iter_mut()
+            .find(|a| a.name == "CA")
+            .unwrap()
+            .coords = [15.0, 0.0, 0.0];
+        for atom in &mut res2.atoms {
+            if atom.name != "N" {
+                atom.coords[0] += 15.0 - 1.458;
+            }
+        }
+
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: vec![res1, res2],
+            }],
+        };
+
+        let capping_sanitizer = CappingSanitizer::new(&mut topology);
+        let breaks = capping_sanitizer.detect_breaks();
+
+        let mut cap_sanitizer = CapSanitizer::new(&mut topology);
+        cap_sanitizer.run(&breaks).unwrap();
+
+        // Find ACE and check CY position
+        let ace_res = topology.chains[0]
+            .residues
+            .iter()
+            .find(|r| r.name == "ACE")
+            .unwrap();
+
+        let cy_atom = ace_res.atoms.iter().find(|a| a.name == "CY").unwrap();
+        let upstream_c_coords = [2.009, 1.391, 0.0]; // From build_backbone_residue
+
+        // CY should NOT be at the same position as upstream C
+        assert_ne!(cy_atom.coords, upstream_c_coords, "CY should not be co-located with upstream backbone C");
+
+        // CY should have finite coordinates (not NaN/Inf)
+        assert!(cy_atom.coords[0].is_finite(), "CY x coordinate should be finite");
+        assert!(cy_atom.coords[1].is_finite(), "CY y coordinate should be finite");
+        assert!(cy_atom.coords[2].is_finite(), "CY z coordinate should be finite");
+
+        // CY should be at a reasonable C-C bond distance from the upstream C (~1.52 Å)
+        let dx = cy_atom.coords[0] - upstream_c_coords[0];
+        let dy = cy_atom.coords[1] - upstream_c_coords[1];
+        let dz = cy_atom.coords[2] - upstream_c_coords[2];
+        let distance = (dx * dx + dy * dy + dz * dz).sqrt();
+
+        // Bond distance should be between 1 Å and 2 Å (reasonable for C-C)
+        assert!(distance > 1.0 && distance < 2.0, "CY should be at C-C bond distance from upstream C, got {:.3} Å", distance);
+    }
 }
+

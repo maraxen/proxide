@@ -2,6 +2,23 @@ use proxide_rs::structure::RawAtomData;
 use proxide_rs::structure::systems::{AtomicSystem, AtomicSystemArgs};
 use std::collections::HashMap;
 
+/// Atom index + selection info for altloc filtering
+#[derive(Clone, Copy)]
+struct AtomIndexWithOccupancy {
+    index: usize,
+    occupancy: f32,
+    alt_loc: char,
+}
+
+/// Group key for atom deduplication by position
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct AtomPositionKey {
+    chain_id: String,
+    res_id: i32,
+    insertion_code: char,
+    atom_name: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Atom {
     pub name: String,
@@ -33,15 +50,83 @@ pub struct Topology {
     pub chains: Vec<Chain>,
 }
 
+/// Filter atoms to keep only one altloc per atom position.
+/// For each unique (chain_id, res_id, insertion_code, atom_name), keeps:
+/// - The atom with alt_loc == ' ' (blank) unconditionally
+/// - Otherwise, the one with highest occupancy (ties broken by alphabetical alt_loc)
+fn filter_altlocs(data: &RawAtomData) -> Vec<usize> {
+    if data.num_atoms == 0 {
+        return Vec::new();
+    }
+
+    let mut groups: HashMap<AtomPositionKey, Vec<AtomIndexWithOccupancy>> = HashMap::new();
+
+    // Group atoms by position
+    for i in 0..data.num_atoms {
+        let key = AtomPositionKey {
+            chain_id: data.chain_ids[i].clone(),
+            res_id: data.res_ids[i],
+            insertion_code: data.insertion_codes[i],
+            atom_name: data.atom_names[i].clone(),
+        };
+
+        groups
+            .entry(key)
+            .or_default()
+            .push(AtomIndexWithOccupancy {
+                index: i,
+                occupancy: data.occupancy[i],
+                alt_loc: data.alt_locs[i],
+            });
+    }
+
+    let mut selected_indices = Vec::new();
+
+    // For each group, select the best atom
+    for mut atoms in groups.into_values() {
+        // If any atom has blank alt_loc, keep all blank-altloc atoms
+        let has_blank = atoms.iter().any(|a| a.alt_loc == ' ');
+        if has_blank {
+            for atom in atoms {
+                if atom.alt_loc == ' ' {
+                    selected_indices.push(atom.index);
+                }
+            }
+        } else {
+            // No blank altloc: sort by occupancy (descending), then by alt_loc (ascending)
+            atoms.sort_by(|a, b| {
+                b.occupancy
+                    .partial_cmp(&a.occupancy)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.alt_loc.cmp(&b.alt_loc))
+            });
+            // Keep the first (highest occupancy, alphabetically first on tie)
+            selected_indices.push(atoms[0].index);
+        }
+    }
+
+    // Sort indices to preserve order from original data
+    selected_indices.sort_unstable();
+    selected_indices
+}
+
 impl Topology {
     pub fn from_raw_atom_data(data: &RawAtomData) -> Self {
         let mut chains = Vec::new();
-        
+
         if data.num_atoms == 0 {
             return Topology { chains };
         }
 
+        // Filter atoms to keep only highest-occupancy altloc per position
+        let selected_indices = filter_altlocs(data);
+        let selected_set: std::collections::HashSet<usize> = selected_indices.into_iter().collect();
+
         for i in 0..data.num_atoms {
+            // Skip atoms that didn't survive altloc filtering
+            if !selected_set.contains(&i) {
+                continue;
+            }
             let atom = Atom {
                 name: data.atom_names[i].clone(),
                 element: data.elements[i].clone(),
@@ -232,5 +317,112 @@ mod tests {
         assert_eq!(topology.chains[1].id, "B");
         assert_eq!(topology.chains[0].residues[0].name, "ALA");
         assert_eq!(topology.chains[1].residues[0].name, "GLY");
+    }
+
+    #[test]
+    fn test_altloc_selection_keeps_highest_occupancy() {
+        // Two SG atoms in the same CYS residue: alt_loc A (occupancy 0.6) and B (occupancy 0.4)
+        // Only the A copy (highest occupancy) should be kept
+        let data = RawAtomData {
+            coords: vec![1.0, 2.0, 3.0, 1.1, 2.1, 3.1],
+            atom_names: vec!["SG".to_string(), "SG".to_string()],
+            elements: vec!["S".to_string(), "S".to_string()],
+            serial_numbers: vec![1, 2],
+            alt_locs: vec!['A', 'B'],
+            res_names: vec!["CYS".to_string(), "CYS".to_string()],
+            res_ids: vec![10, 10],
+            insertion_codes: vec![' ', ' '],
+            chain_ids: vec!["A".to_string(), "A".to_string()],
+            b_factors: vec![20.0, 20.0],
+            occupancy: vec![0.6, 0.4],
+            charges: None,
+            radii: None,
+            sigmas: None,
+            epsilons: None,
+            num_atoms: 2,
+            is_hetatm: vec![false, false],
+        };
+
+        let topology = Topology::from_raw_atom_data(&data);
+
+        // Should have exactly one chain, one residue
+        assert_eq!(topology.chains.len(), 1);
+        assert_eq!(topology.chains[0].residues.len(), 1);
+
+        // Should have exactly one SG atom
+        assert_eq!(topology.chains[0].residues[0].atoms.len(), 1);
+
+        // The remaining atom should be the A copy (higher occupancy)
+        let sg_atom = &topology.chains[0].residues[0].atoms[0];
+        assert_eq!(sg_atom.name, "SG");
+        assert_eq!(sg_atom.alt_loc, 'A');
+        assert_eq!(sg_atom.occupancy, 0.6);
+    }
+
+    #[test]
+    fn test_altloc_selection_ties_broken_alphabetically() {
+        // Two SG atoms with same occupancy: A and B should keep A (alphabetical)
+        let data = RawAtomData {
+            coords: vec![1.0, 2.0, 3.0, 1.1, 2.1, 3.1],
+            atom_names: vec!["SG".to_string(), "SG".to_string()],
+            elements: vec!["S".to_string(), "S".to_string()],
+            serial_numbers: vec![1, 2],
+            alt_locs: vec!['B', 'A'],
+            res_names: vec!["CYS".to_string(), "CYS".to_string()],
+            res_ids: vec![10, 10],
+            insertion_codes: vec![' ', ' '],
+            chain_ids: vec!["A".to_string(), "A".to_string()],
+            b_factors: vec![20.0, 20.0],
+            occupancy: vec![0.5, 0.5],
+            charges: None,
+            radii: None,
+            sigmas: None,
+            epsilons: None,
+            num_atoms: 2,
+            is_hetatm: vec![false, false],
+        };
+
+        let topology = Topology::from_raw_atom_data(&data);
+
+        // Should have exactly one SG atom
+        assert_eq!(topology.chains[0].residues[0].atoms.len(), 1);
+
+        // The remaining atom should be the A copy (alphabetically first)
+        let sg_atom = &topology.chains[0].residues[0].atoms[0];
+        assert_eq!(sg_atom.alt_loc, 'A');
+    }
+
+    #[test]
+    fn test_altloc_selection_keeps_blank_altloc_unconditionally() {
+        // Atom with blank alt_loc (no alternate) should be kept even if other altlocs exist
+        let data = RawAtomData {
+            coords: vec![1.0, 2.0, 3.0, 1.1, 2.1, 3.1],
+            atom_names: vec!["SG".to_string(), "SG".to_string()],
+            elements: vec!["S".to_string(), "S".to_string()],
+            serial_numbers: vec![1, 2],
+            alt_locs: vec![' ', 'A'],
+            res_names: vec!["CYS".to_string(), "CYS".to_string()],
+            res_ids: vec![10, 10],
+            insertion_codes: vec![' ', ' '],
+            chain_ids: vec!["A".to_string(), "A".to_string()],
+            b_factors: vec![20.0, 20.0],
+            occupancy: vec![0.5, 0.8],
+            charges: None,
+            radii: None,
+            sigmas: None,
+            epsilons: None,
+            num_atoms: 2,
+            is_hetatm: vec![false, false],
+        };
+
+        let topology = Topology::from_raw_atom_data(&data);
+
+        // Should have exactly one SG atom
+        assert_eq!(topology.chains[0].residues[0].atoms.len(), 1);
+
+        // The remaining atom should be the blank alt_loc copy
+        let sg_atom = &topology.chains[0].residues[0].atoms[0];
+        assert_eq!(sg_atom.alt_loc, ' ');
+        assert_eq!(sg_atom.occupancy, 0.5);
     }
 }
