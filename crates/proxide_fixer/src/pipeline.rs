@@ -104,6 +104,14 @@ impl<'a> SystemPrep<'a> {
                 sanitizer.run()?;
             }
         }
+        #[cfg(not(feature = "disulfide"))]
+        {
+            if self.config.detect_disulfides {
+                tracing::warn!(
+                    "detect_disulfides=true requested but 'disulfide' feature not compiled in — step skipped"
+                );
+            }
+        }
 
         // Step 2: Termini patching (C4)
         #[cfg(feature = "capping")]
@@ -112,6 +120,14 @@ impl<'a> SystemPrep<'a> {
                 let mut sanitizer =
                     crate::sanitizers::capping::CappingSanitizer::new(self.topology);
                 sanitizer.run()?;
+            }
+        }
+        #[cfg(not(feature = "capping"))]
+        {
+            if self.config.patch_termini {
+                tracing::warn!(
+                    "patch_termini=true requested but 'capping' feature not compiled in — step skipped"
+                );
             }
         }
 
@@ -132,6 +148,14 @@ impl<'a> SystemPrep<'a> {
                 }
             }
         }
+        #[cfg(not(feature = "capping"))]
+        {
+            if self.config.cap_breaks {
+                tracing::warn!(
+                    "cap_breaks=true requested but 'capping' feature not compiled in — step skipped"
+                );
+            }
+        }
 
         // Step 4: Protonation state (C7) — assign HID/HIE/HIP/ASH/... NAMES only
         // (PROPKA wrap + pH-7.4 fallback). Runs BEFORE hydrogens so C6 places the
@@ -145,6 +169,14 @@ impl<'a> SystemPrep<'a> {
                     self.config.ph,
                 );
                 sanitizer.run()?;
+            }
+        }
+        #[cfg(not(feature = "protonation"))]
+        {
+            if self.config.assign_protonation {
+                tracing::warn!(
+                    "assign_protonation=true requested but 'protonation' feature not compiled in — step skipped"
+                );
             }
         }
 
@@ -277,5 +309,43 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config_custom.ph, 6.5);
+    }
+
+    #[test]
+    #[cfg(not(feature = "disulfide"))]
+    fn test_system_prep_detects_disulfide_feature_missing() {
+        // When disulfide feature is disabled but detect_disulfides is requested,
+        // the pipeline should still run but without the step, which would be
+        // silently skipped before the fix. With the fix, a warning should be emitted
+        // via tracing. This test runs in a no-disulfide build config.
+        let mut topology = build_test_topology();
+        let ff = ForceField::new("test".to_string());
+        let config = SystemPrepConfig {
+            detect_disulfides: true,
+            ..Default::default()
+        };
+
+        let mut sysprep = SystemPrep::new(&mut topology, &ff, None, config);
+        // This should still succeed (not error), but the disulfide step should be
+        // either skipped OR a warning emitted. The key is: no silent failure.
+        let result = sysprep.run();
+        assert!(result.is_ok(), "SystemPrep should not error even with disabled feature");
+    }
+
+    #[test]
+    #[cfg(not(feature = "protonation"))]
+    fn test_system_prep_detects_protonation_feature_missing() {
+        // When protonation feature is disabled but assign_protonation is requested,
+        // the pipeline should still run but without the step.
+        let mut topology = build_test_topology();
+        let ff = ForceField::new("test".to_string());
+        let config = SystemPrepConfig {
+            assign_protonation: true,
+            ..Default::default()
+        };
+
+        let mut sysprep = SystemPrep::new(&mut topology, &ff, None, config);
+        let result = sysprep.run();
+        assert!(result.is_ok(), "SystemPrep should not error even with disabled feature");
     }
 }

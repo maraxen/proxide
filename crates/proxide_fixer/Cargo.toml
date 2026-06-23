@@ -24,12 +24,14 @@ thiserror.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log.workspace = true
+tracing = "0.1"
 
 [dev-dependencies]
 proxide-io = { workspace = true }
 proxide-confind = { workspace = true }
 
 [features]
+default = ["protonation", "disulfide"]
 protonation = []
 capping = []
 stereo = []
