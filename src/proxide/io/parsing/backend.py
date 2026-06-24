@@ -273,6 +273,129 @@ class RawAtomData:
   b_factors: np.ndarray
 
 
+def _resolve_altlocs(raw: "RawAtomData", mode: str = "occupancy") -> "RawAtomData":
+  """Resolve alternate-location (altloc) atoms in raw atom data.
+
+  Atoms in PDB/mmCIF files may appear multiple times with different coordinates
+  when they have alternate conformations (altlocs). This function deduplicates
+  them deterministically.
+
+  The key is (chain_id, res_id, atom_name). Insertion codes are not tracked in
+  RawAtomData, so atoms are assumed to differ only in occupancy/B-factor within
+  the same (chain, res_id, atom_name) tuple. This is correct for standard PDB
+  altloc usage; structures with both altlocs AND insertion codes on the same
+  residue are assumed-away (rare, and the Rust atom37 assembly handles those).
+
+  Args:
+      raw: Input RawAtomData (possibly containing altloc duplicates).
+      mode: Deduplication strategy.
+          - ``"occupancy"`` (default): Keep the atom with the highest occupancy.
+            Tiebreak: lower B-factor wins; further tiebreak: lower index wins.
+          - ``"all"``: Return ``raw`` unchanged (back-compat; preserves duplicates).
+
+  Returns:
+      A new RawAtomData with duplicate (chain_id, res_id, atom_name) rows
+      removed according to ``mode``.  When ``mode="all"`` the same object is
+      returned.
+
+  """
+  if mode == "all":
+    return raw
+
+  from collections import defaultdict
+
+  keys = list(zip(raw.chain_ids, raw.res_ids, raw.atom_names))
+  key_to_indices: dict = defaultdict(list)
+  for i, k in enumerate(keys):
+    key_to_indices[k].append(i)
+
+  keep: list[int] = []
+  for k in keys:
+    # Only add the representative for this key once (use a sentinel)
+    pass
+  # Build ordered list of kept indices (preserve original order of first winner)
+  seen: set = set()
+  keep = []
+  for i, k in enumerate(keys):
+    if k not in seen:
+      idxs = key_to_indices[k]
+      if len(idxs) == 1:
+        best = idxs[0]
+      else:
+        # max occupancy, tiebreak lower b_factor, then lower index (stable)
+        best = max(
+          idxs,
+          key=lambda j: (raw.occupancies[j], -raw.b_factors[j], -j),
+        )
+      keep.append(best)
+      seen.add(k)
+
+  if len(keep) == raw.num_atoms:
+    # Nothing to deduplicate
+    return raw
+
+  coords_arr = np.asarray(raw.coords)
+  occ_arr = np.asarray(raw.occupancies)
+  bfac_arr = np.asarray(raw.b_factors)
+  res_ids_arr = np.asarray(raw.res_ids)
+
+  return RawAtomData(
+    num_atoms=len(keep),
+    atom_names=[raw.atom_names[i] for i in keep],
+    res_names=[raw.res_names[i] for i in keep],
+    res_ids=[raw.res_ids[i] for i in keep],  # type: ignore[arg-type]
+    chain_ids=[raw.chain_ids[i] for i in keep],
+    coords=coords_arr[keep],
+    elements=[raw.elements[i] for i in keep],
+    occupancies=occ_arr[keep],
+    b_factors=bfac_arr[keep],
+  )
+
+
+def _raw_atom_data_to_pdb(raw: "RawAtomData") -> str:
+  """Write a RawAtomData as minimal PDB ATOM/HETATM records.
+
+  Used internally to produce a deduplicated PDB for re-parsing by the Rust
+  ``parse_structure`` backend after altloc resolution.
+
+  All atoms are written as ``ATOM`` records (HETATM info is not carried in
+  RawAtomData).  Occupancy and B-factor are preserved.  No TER/END records
+  are written beyond a trailing ``END``.
+
+  Args:
+      raw: Atom data to serialise.
+
+  Returns:
+      Multi-line string in PDB ATOM record format.
+
+  """
+  lines: list[str] = []
+  coords_arr = np.asarray(raw.coords)
+  for i in range(raw.num_atoms):
+    aname = raw.atom_names[i]
+    resname = raw.res_names[i]
+    chain = raw.chain_ids[i]
+    resseq = int(raw.res_ids[i])
+    x, y, z = float(coords_arr[i, 0]), float(coords_arr[i, 1]), float(coords_arr[i, 2])
+    occ = float(raw.occupancies[i])
+    bfac = float(raw.b_factors[i])
+    elem = raw.elements[i] if raw.elements[i] else " "
+
+    # PDB fixed-width: columns 13-16 = atom name (left-pad 1-char names starting at col 14)
+    if len(aname) < 4:
+      atom_field = f" {aname:<3s}"
+    else:
+      atom_field = f"{aname:<4s}"
+
+    line = (
+      f"ATOM  {i + 1:5d} {atom_field} {resname:<3s} {chain}{resseq:4d}    "
+      f"{x:8.3f}{y:8.3f}{z:8.3f}{occ:6.2f}{bfac:6.2f}          {elem:>2s}  "
+    )
+    lines.append(line)
+  lines.append("END")
+  return "\n".join(lines)
+
+
 @dataclass
 class ForceFieldData:
   """Force field data loaded from OpenMM-style XML files.
@@ -353,7 +476,11 @@ class MdcathData:
 
 
 def parse_pdb_to_protein(
-  file_path: str | Path, spec=None, use_jax: bool = True, output_format_target: str | None = None
+  file_path: str | Path,
+  spec=None,
+  use_jax: bool = True,
+  output_format_target: str | None = None,
+  altloc: str = "occupancy",
 ) -> Protein:
   """Parse a PDB file and return a Protein directly.
 
@@ -365,6 +492,10 @@ def parse_pdb_to_protein(
       spec: Optional `OutputSpec` configuration.
       use_jax: If True, return JAX arrays.
       output_format_target: "mpnn" or "general".
+      altloc: Alternate-location resolution mode. ``"occupancy"`` (default) keeps
+          the highest-occupancy conformer for every duplicate (chain, res_id,
+          atom_name) key. ``"all"`` preserves all altloc atoms (legacy behaviour,
+          may produce duplicate keys).
 
   Returns:
       A `Protein` dataclass containing the parsed structure.
@@ -373,12 +504,51 @@ def parse_pdb_to_protein(
   if spec is None:
     spec = OutputSpec()
 
-  result = _proxider.parse_structure(str(file_path), spec)
-  return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
+  if altloc == "all":
+    result = _proxider.parse_structure(str(file_path), spec)
+    return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
+
+  # Resolve altlocs at the Python level before handing off to Rust atom37 assembly.
+  # Strategy: parse raw atoms (flat list), deduplicate via _resolve_altlocs, write
+  # a temp PDB, and re-parse with the Rust backend.
+  raw_dict = _proxider.parse_pdb(str(file_path))
+  raw = RawAtomData(
+    num_atoms=raw_dict["num_atoms"],
+    atom_names=raw_dict["atom_names"],
+    res_names=raw_dict["res_names"],
+    res_ids=raw_dict["res_ids"],
+    chain_ids=raw_dict["chain_ids"],
+    coords=np.asarray(raw_dict["coords"]).reshape(-1, 3),
+    elements=raw_dict["elements"],
+    occupancies=raw_dict["occupancy"],
+    b_factors=raw_dict["b_factors"],
+  )
+  resolved = _resolve_altlocs(raw, altloc)
+
+  if resolved is raw:
+    # No duplicates found; skip the temp-file round-trip
+    result = _proxider.parse_structure(str(file_path), spec)
+    return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
+
+  pdb_text = _raw_atom_data_to_pdb(resolved)
+  tmp_path: str | None = None
+  try:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".pdb", delete=False) as tmp:
+      tmp.write(pdb_text)
+      tmp_path = tmp.name
+    result = _proxider.parse_structure(tmp_path, spec)
+    return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
+  finally:
+    if tmp_path and os.path.exists(tmp_path):
+      os.unlink(tmp_path)
 
 
 def parse_structure(
-  file_path: str | Path, spec=None, use_jax: bool = True, output_format_target: str | None = None
+  file_path: str | Path,
+  spec=None,
+  use_jax: bool = True,
+  output_format_target: str | None = None,
+  altloc: str = "occupancy",
 ) -> Protein:
   """Parse a protein structure using the Rust extension.
 
@@ -387,18 +557,24 @@ def parse_structure(
 
   Process:
       1.  **Format Detection**: Rust parser detects PDB/mmCIF/PQR/binary magic bytes.
-      2.  **Parsing**: Reads structure into Rust logic representation.
-      3.  **Correction**: Adds hydrogens, infers bonds, or parameterizes MD if requested in `spec`.
-      4.  **Conversion**: Returns a Python `Protein` object with JAX arrays.
+      2.  **Altloc Resolution**: Duplicate (chain, res_id, atom_name) rows are resolved
+          by highest occupancy before Rust atom37 assembly (unless ``altloc="all"``).
+      3.  **Parsing**: Reads structure into Rust logic representation.
+      4.  **Correction**: Adds hydrogens, infers bonds, or parameterizes MD if requested in ``spec``.
+      5.  **Conversion**: Returns a Python ``Protein`` object with JAX arrays.
 
   Args:
       file_path: Path to the structure file.
-      spec: Optional `OutputSpec` configuration. Controls force fields, hydrogen addition, etc.
-      use_jax: If True, return arrays as `jax.numpy.Array`. If False, use `numpy.ndarray`.
+      spec: Optional ``OutputSpec`` configuration. Controls force fields, hydrogen addition, etc.
+      use_jax: If True, return arrays as ``jax.numpy.Array``. If False, use ``numpy.ndarray``.
       output_format_target: Formatting hint ("mpnn", "general").
+      altloc: Alternate-location resolution mode. ``"occupancy"`` (default) keeps
+          the highest-occupancy conformer for every duplicate (chain, res_id,
+          atom_name) key before Rust atom37 assembly. ``"all"`` preserves all
+          altloc atoms (legacy behaviour, may mix conformers in χ-angle computation).
 
   Returns:
-      A `Protein` dataclass.
+      A ``Protein`` dataclass.
 
   Examples:
       **Basic Loading:**
@@ -411,8 +587,11 @@ def parse_structure(
       >>> protein.charges.shape
       (327,)
 
+      **Keep all altloc conformers (legacy):**
+      >>> protein = parse_structure("1ejg.pdb", altloc="all")
+
   """
-  return parse_pdb_to_protein(file_path, spec, use_jax, output_format_target)
+  return parse_pdb_to_protein(file_path, spec, use_jax, output_format_target, altloc=altloc)
 
 
 parse_xtc = getattr(_proxider, "parse_xtc", None)
@@ -478,7 +657,7 @@ def write_dcd(file_path: str | Path, n_atoms: int, delta: float = 1.0, has_unit_
   return PyDcdWriter(str(file_path), n_atoms, delta, has_unit_cell)
 
 
-def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
+def parse_pdb_raw_rust(file_path: str | Path, altloc: str = "occupancy") -> RawAtomData:
   """Parse a PDB file and return raw atom data (low-level).
 
   This is useful for custom processing pipelines that need access
@@ -486,6 +665,9 @@ def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
 
   Args:
       file_path: Path to PDB file
+      altloc: Alternate-location resolution mode. ``"occupancy"`` (default) keeps
+          the highest-occupancy conformer for each (chain, res_id, atom_name).
+          ``"all"`` preserves all atoms including altloc duplicates.
 
   Returns:
       RawAtomData with parsed atom information
@@ -496,7 +678,7 @@ def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
   """
   result = _proxider.parse_pdb(str(file_path))
 
-  return RawAtomData(
+  raw = RawAtomData(
     num_atoms=result["num_atoms"],
     atom_names=result["atom_names"],
     res_names=result["res_names"],
@@ -507,13 +689,17 @@ def parse_pdb_raw_rust(file_path: str | Path) -> RawAtomData:
     occupancies=result["occupancy"],
     b_factors=result["b_factors"],
   )
+  return _resolve_altlocs(raw, altloc)
 
 
-def parse_mmcif_rust(file_path: str | Path) -> RawAtomData:
+def parse_mmcif_rust(file_path: str | Path, altloc: str = "occupancy") -> RawAtomData:
   """Parse an mmCIF file and return raw atom data.
 
   Args:
       file_path: Path to mmCIF (.cif) file
+      altloc: Alternate-location resolution mode. ``"occupancy"`` (default) keeps
+          the highest-occupancy conformer for each (chain, res_id, atom_name).
+          ``"all"`` preserves all atoms including altloc duplicates.
 
   Returns:
       RawAtomData with parsed atom information
@@ -524,7 +710,7 @@ def parse_mmcif_rust(file_path: str | Path) -> RawAtomData:
   """
   result = _proxider.parse_mmcif(str(file_path))
 
-  return RawAtomData(
+  raw = RawAtomData(
     num_atoms=result["num_atoms"],
     atom_names=result["atom_names"],
     res_names=result["res_names"],
@@ -535,6 +721,7 @@ def parse_mmcif_rust(file_path: str | Path) -> RawAtomData:
     occupancies=result["occupancy"],
     b_factors=result["b_factors"],
   )
+  return _resolve_altlocs(raw, altloc)
 
 
 def load_forcefield_rust(file_path: str | Path) -> ForceFieldData:
