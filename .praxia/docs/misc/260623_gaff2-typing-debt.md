@@ -53,9 +53,13 @@ This should be a `pytest` fixture with stored ground-truth JSON — not a live a
 
 ### 4. Integration: wire proxide GAFF2 into naurmalade holo pipeline
 
-See biosensors project. Currently naurmalade uses SMIRNOFFTemplateGenerator (Bug 13 fix). Proxide GAFF2 integration requires:
-- Building an OpenMM FFXML from proxide output (bonds, angles, torsions, charges)
-- Or using GAFFTemplateGenerator with proxide-typed SYBYL mol2 output
-- Then validating against SMIRNOFF smoke runs for energy/force parity
+**Status: DONE (2026-06-23)**
 
-Status: deferred pending parity CI (item 3 above).
+Implemented in `naurmalade/src/naurmalade/ligand/parameterize.py`:
+- `build_gaff2_ffxml()` generates complete OpenMM FFXML (bonds, angles, torsions, charges, VdW)
+- `parameterize_ligand_from_pdb()` dispatches on `ligand.hybrid_mode == "gaff2_espaloma"`
+- FFXML stored in sidecar (`*.ligand_metadata.json`) under `"gaff2_ffxml"` key
+- `maybe_register_ligand_template()` routes on `bonded_source` (`"gaff*"` → GAFF2 loader, else SMIRNOFF)
+- Validated on 17-OHP: charge sum = 0.0000 e, 24 heavy atoms typed, 0 zero-k bonds
+
+Energy/force parity vs SMIRNOFF pending (requires openff-toolkit in naurmalade env — see item 3).
