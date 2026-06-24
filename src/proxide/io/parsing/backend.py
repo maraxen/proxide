@@ -475,6 +475,40 @@ class MdcathData:
 # =============================================================================
 
 
+def _detect_mmcif(file_path: str | Path) -> bool:
+  """Return True if *file_path* should be read as mmCIF rather than PDB.
+
+  Detection order:
+  1. Extension: ``.cif`` / ``.mmcif`` → True; ``.pdb`` / ``.ent`` → False.
+  2. Content sniff (first 4 KB): presence of ``data_`` or ``_atom_site.``
+     anywhere in the header → True.  This handles extension-less paths and
+     files with unconventional suffixes.
+
+  Args:
+      file_path: Path to the structure file.
+
+  Returns:
+      True if the file should be parsed with ``_proxider.parse_mmcif``.
+
+  """
+  path = Path(file_path)
+  ext = path.suffix.lower()
+  if ext in {".cif", ".mmcif"}:
+    return True
+  if ext in {".pdb", ".ent", ".brk"}:
+    return False
+
+  # Extension ambiguous — sniff content
+  try:
+    with open(path, encoding="utf-8", errors="replace") as fh:
+      header = fh.read(4096)
+    if "data_" in header or "_atom_site." in header:
+      return True
+  except OSError:
+    pass
+  return False
+
+
 def parse_pdb_to_protein(
   file_path: str | Path,
   spec=None,
@@ -482,36 +516,56 @@ def parse_pdb_to_protein(
   output_format_target: str | None = None,
   altloc: str = "occupancy",
 ) -> Protein:
-  """Parse a PDB file and return a Protein directly.
+  """Parse a PDB or mmCIF file and return a Protein directly.
 
-  This is a direct wrapper around `parse_structure` for PDB files, ensuring
-  the return type is a `Protein` dataclass.
+  Supports both PDB and mmCIF formats.  The format is detected automatically
+  from the file extension (``.cif``/``.mmcif`` → mmCIF; ``.pdb``/``.ent`` → PDB)
+  with a content-sniff fallback for extension-less or unconventional paths.
 
   Args:
-      file_path: Path to PDB file.
+      file_path: Path to PDB or mmCIF file.
       spec: Optional `OutputSpec` configuration.
       use_jax: If True, return JAX arrays.
       output_format_target: "mpnn" or "general".
-      altloc: Alternate-location resolution mode. ``"occupancy"`` (default) keeps
-          the highest-occupancy conformer for every duplicate (chain, res_id,
-          atom_name) key. ``"all"`` preserves all altloc atoms (legacy behaviour,
-          may produce duplicate keys).
+      altloc: Alternate-location resolution mode.
+
+          - ``"occupancy"`` (default): keep the highest-occupancy conformer for
+            every duplicate (chain, res_id, atom_name) key before Rust atom37
+            assembly.
+          - ``"all"``: call ``_proxider.parse_structure`` directly — byte-identical
+            to pre-altloc-commit behaviour; preserves all altloc atoms.
 
   Returns:
       A `Protein` dataclass containing the parsed structure.
+
+  Note:
+      When altloc duplicates are present, a temporary PDB file is written after
+      deduplication and then re-parsed by the Rust ``parse_structure`` backend.
+      This round-trip is lossy for structures with more than 99 999 atoms or
+      multi-character chain IDs, because the PDB format cannot represent them.
+      For typical protein crystal structures these limits are never hit.  A future
+      improvement could write the temporary file in mmCIF format to avoid this
+      limitation.
 
   """
   if spec is None:
     spec = OutputSpec()
 
   if altloc == "all":
+    # Back-compat: delegate entirely to the Rust format-auto-detecting backend.
+    # This path is byte-identical to the pre-altloc-commit behaviour.
     result = _proxider.parse_structure(str(file_path), spec)
     return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
 
-  # Resolve altlocs at the Python level before handing off to Rust atom37 assembly.
-  # Strategy: parse raw atoms (flat list), deduplicate via _resolve_altlocs, write
-  # a temp PDB, and re-parse with the Rust backend.
-  raw_dict = _proxider.parse_pdb(str(file_path))
+  # --- Format-aware raw read ---
+  # Use the correct low-level parser so that mmCIF files are not misrouted to
+  # _proxider.parse_pdb (PDB-only), which raised "No atoms found in PDB file".
+  is_mmcif = _detect_mmcif(file_path)
+  if is_mmcif:
+    raw_dict = _proxider.parse_mmcif(str(file_path))
+  else:
+    raw_dict = _proxider.parse_pdb(str(file_path))
+
   raw = RawAtomData(
     num_atoms=raw_dict["num_atoms"],
     atom_names=raw_dict["atom_names"],
@@ -526,10 +580,13 @@ def parse_pdb_to_protein(
   resolved = _resolve_altlocs(raw, altloc)
 
   if resolved is raw:
-    # No duplicates found; skip the temp-file round-trip
+    # No duplicates found; skip the temp-file round-trip.
     result = _proxider.parse_structure(str(file_path), spec)
     return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
 
+  # Duplicates found: write a deduplicated temp PDB and re-parse.
+  # NOTE: temp-PDB write is lossy for >99 999 atoms or multi-char chain IDs
+  # (PDB format constraint).  See docstring for details.
   pdb_text = _raw_atom_data_to_pdb(resolved)
   tmp_path: str | None = None
   try:

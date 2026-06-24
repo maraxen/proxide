@@ -3,15 +3,17 @@
 Covers:
 - _resolve_altlocs deduplication logic (unit tests)
 - parse_pdb_raw_rust: zero dup keys by default, max-occ selection, back-compat
+- parse_mmcif_rust: zero dup keys by default, max-occ selection, back-compat
 - parse_structure: zero dup keys by default, max-occ selection, back-compat
+  ** including mmCIF input (regression guard for #2648) **
 
-Fixture: altloc_two_conf.pdb (committed under tests/io/parsing/)
-  - ALA residue 1 chain A
-  - CB has two altloc conformers: A occ=0.70 (coord [1,1,0]), B occ=0.30 (coord [1,2,0])
-  - Backbone atoms N/CA/C/O have occupancy 1.00 (no altloc)
-  - Expected winner: conformer A (max occupancy)
+Fixtures (committed under tests/io/parsing/):
+  altloc_two_conf.pdb — ALA residue 1 chain A (PDB format)
+  altloc_two_conf.cif — same residue in mmCIF format (mirrors the PDB fixture)
+  Both: backbone atoms N/CA/C/O occ=1.00; CB has altloc A (occ 0.70, [1,1,0])
+  and altloc B (occ 0.30, [1,2,0]).  Max-occ winner is conformer A.
 
-Network-free: all tests use the committed fixture.
+Network-free: all tests use the committed fixtures.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ import pytest
 
 FIXTURE_DIR = Path(__file__).parent
 ALTLOC_PDB = FIXTURE_DIR / "altloc_two_conf.pdb"
+ALTLOC_CIF = FIXTURE_DIR / "altloc_two_conf.cif"
 
 
 # ---------------------------------------------------------------------------
@@ -229,3 +232,110 @@ class TestParseStructureAltloc:
 
         prot = parse_structure(ALTLOC_PDB, altloc="all")
         assert prot.coordinates.shape[0] >= 1
+
+
+# ---------------------------------------------------------------------------
+# parse_mmcif_rust tests  (mirrors TestParsePdbRawRust)
+# ---------------------------------------------------------------------------
+
+
+class TestParseMmcifRust:
+    """Tests for altloc resolution in parse_mmcif_rust (mmCIF format)."""
+
+    def test_default_mode_zero_dup_keys(self):
+        """Default altloc='occupancy' produces no duplicate (chain,res_id,atom_name) keys."""
+        from proxide.io.parsing.backend import parse_mmcif_rust
+
+        raw = parse_mmcif_rust(ALTLOC_CIF)
+        assert _dup_key_count(raw) == 0, "Expected 0 duplicate keys after altloc resolution"
+
+    def test_default_mode_max_occ_selected(self):
+        """CB atom kept is the one with higher occupancy (0.70, coord [1,1,0])."""
+        from proxide.io.parsing.backend import parse_mmcif_rust
+
+        raw = parse_mmcif_rust(ALTLOC_CIF)
+        cb_indices = [i for i, a in enumerate(raw.atom_names) if a == "CB"]
+        assert len(cb_indices) == 1, "Exactly one CB atom expected after dedup"
+        i = cb_indices[0]
+        assert abs(raw.occupancies[i] - 0.70) < 1e-5, (
+            f"Expected occupancy 0.70, got {raw.occupancies[i]}"
+        )
+        np.testing.assert_allclose(
+            np.asarray(raw.coords)[i],
+            [1.0, 1.0, 0.0],
+            atol=1e-3,
+            err_msg="CB coord should match the max-occ conformer A",
+        )
+
+    def test_all_mode_preserves_duplicates(self):
+        """altloc='all' preserves both CB altloc conformers (back-compat)."""
+        from proxide.io.parsing.backend import parse_mmcif_rust
+
+        raw_all = parse_mmcif_rust(ALTLOC_CIF, altloc="all")
+        cb_count = raw_all.atom_names.count("CB")
+        assert cb_count == 2, f"Expected 2 CB atoms with altloc='all', got {cb_count}"
+
+    def test_backbone_atoms_all_present(self):
+        """Backbone atoms (N, CA, C, O) with occ=1.0 are never dropped."""
+        from proxide.io.parsing.backend import parse_mmcif_rust
+
+        raw = parse_mmcif_rust(ALTLOC_CIF)
+        for backbone in ("N", "CA", "C", "O"):
+            assert backbone in raw.atom_names, f"Backbone atom {backbone} missing after dedup"
+
+    def test_total_atom_count_after_dedup(self):
+        """After dedup: 4 backbone + 1 CB = 5 atoms total."""
+        from proxide.io.parsing.backend import parse_mmcif_rust
+
+        raw = parse_mmcif_rust(ALTLOC_CIF)
+        assert raw.num_atoms == 5, f"Expected 5 atoms, got {raw.num_atoms}"
+
+
+# ---------------------------------------------------------------------------
+# parse_structure on mmCIF  (#2648 regression guard)
+# ---------------------------------------------------------------------------
+
+
+class TestParseStructureMmcif:
+    """Regression tests: parse_structure must work on mmCIF input.
+
+    Bug #2648: commit 79e2c7a replaced _proxider.parse_structure with
+    _proxider.parse_pdb (PDB-only), causing parse_structure('.cif') to fail
+    with "No atoms found in PDB file".  These tests guard against that
+    regression.
+    """
+
+    def test_parse_structure_cif_succeeds(self):
+        """parse_structure on a .cif file returns a valid Protein (regression guard)."""
+        from proxide.io.parsing.backend import parse_structure
+
+        prot = parse_structure(ALTLOC_CIF)
+        assert prot is not None
+        assert prot.coordinates.shape[0] == 1, "Expected 1 ALA residue from the mmCIF fixture"
+
+    def test_parse_structure_cif_altloc_resolved(self):
+        """parse_structure on .cif keeps the max-occupancy CB conformer (no duplicates)."""
+        from proxide.io.parsing.backend import parse_mmcif_rust, parse_structure
+
+        prot = parse_structure(ALTLOC_CIF)
+        assert prot.coordinates.shape[0] == 1
+
+        # Cross-check via the raw layer: no duplicate keys
+        raw = parse_mmcif_rust(ALTLOC_CIF)
+        assert _dup_key_count(raw) == 0, "Raw mmCIF should have 0 dup keys after dedup"
+
+    def test_parse_structure_cif_altloc_all(self):
+        """altloc='all' on a .cif file still returns a valid Protein (back-compat)."""
+        from proxide.io.parsing.backend import parse_structure
+
+        prot = parse_structure(ALTLOC_CIF, altloc="all")
+        assert prot is not None
+        assert prot.coordinates.shape[0] >= 1
+
+    def test_parse_structure_pdb_still_works(self):
+        """parse_structure on a .pdb file is unaffected by the mmCIF fix."""
+        from proxide.io.parsing.backend import parse_structure
+
+        prot = parse_structure(ALTLOC_PDB)
+        assert prot is not None
+        assert prot.coordinates.shape[0] == 1, "Expected 1 ALA residue from the PDB fixture"
