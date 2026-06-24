@@ -594,30 +594,55 @@ def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
                   If None, uses default bundled.
 
     Returns:
-        Dict with 'masses', 'bonds', 'angles', 'torsions', 'impropers'.
+        Dict with 'masses', 'bonds', 'angles', 'torsions', 'impropers', 'vdw'.
+        'vdw' maps atom_type -> (rmin_half_angstrom, epsilon_kcal_mol).
     """
     if dat_path is None:
         dat_path = Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "gaff-2.2.20.dat"
 
-    params = {
+    params: dict = {
         'masses': {},
         'bonds': {},
         'angles': {},
         'torsions': {},
         'impropers': {},
+        'vdw': {},
     }
 
     content = Path(dat_path).read_text()
     lines = content.split('\n')
 
+    in_vdw = False
     for line in lines:
         line_stripped = line.strip()
+
+        # Detect VdW section (MOD4 RE header)
+        if line_stripped.startswith('MOD4'):
+            in_vdw = True
+            continue
+
+        if in_vdw:
+            if not line_stripped:
+                continue
+            parts = line_stripped.split()
+            if len(parts) >= 3:
+                try:
+                    params['vdw'][parts[0]] = (float(parts[1]), float(parts[2]))
+                except ValueError:
+                    pass
+            continue
+
         if not line_stripped:
             continue
 
         parts = line_stripped.split()
         if len(parts) < 2:
             continue
+
+        # Handle AMBER .dat quirk: single-char types are padded, so "c -o kb r0"
+        # splits as ["c", "-o", "kb", "r0"]. Reconstruct the dash-joined key.
+        if '-' not in parts[0] and len(parts) >= 2 and parts[1].startswith('-'):
+            parts = [parts[0] + parts[1]] + list(parts[2:])
 
         first = parts[0]
 
@@ -686,6 +711,323 @@ def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
                 pass
 
     return params
+
+
+# ---------------------------------------------------------------------------
+# H-type assignment and OpenMM FFXML builder
+# ---------------------------------------------------------------------------
+
+import math as _math
+
+_KCAL_TO_KJ = 4.184
+_BOND_K_CONV = 2.0 * _KCAL_TO_KJ / (0.1 ** 2)   # kcal/mol/Å² → kJ/mol/nm²
+_BOND_R_CONV = 0.1                                  # Å → nm
+_ANGLE_K_CONV = 2.0 * _KCAL_TO_KJ                  # kcal/mol/rad² → kJ/mol/rad²
+_ANGLE_T_CONV = _math.pi / 180.0                    # deg → rad
+_TORSION_K_CONV = _KCAL_TO_KJ                       # kcal/mol → kJ/mol
+_TORSION_P_CONV = _math.pi / 180.0                  # deg → rad
+_LJ_SIGMA_CONV = 2.0 * (2.0 ** (-1.0 / 6.0)) * 0.1  # Rmin/2 (Å) → σ (nm)
+_LJ_EPS_CONV = _KCAL_TO_KJ                          # kcal/mol → kJ/mol
+
+_ELEM_MASS_DEFAULT = {
+    "C": 12.011, "O": 15.999, "H": 1.008, "N": 14.007,
+    "S": 32.06, "P": 30.974, "F": 18.998, "Cl": 35.453,
+    "Br": 79.904, "I": 126.904,
+}
+
+_VDW_ELEM_DEFAULT = {
+    "C": (1.9080, 0.0860), "O": (1.6612, 0.2100),
+    "H": (1.4593, 0.0208), "N": (1.8240, 0.1700),
+    "S": (2.0000, 0.2500), "P": (2.1000, 0.2000),
+}
+
+_H_TYPE_BY_HEAVY: dict[str, str] = {
+    "c3": "hc", "cx": "hc", "cy": "hc", "c5": "hc", "c6": "hc",
+    "c":  "ha", "c2": "ha", "cs": "ha", "ca": "ha", "cc": "ha",
+    "cd": "ha", "ce": "ha", "cf": "ha", "cp": "ha", "cq": "ha",
+    "cz": "ha", "c1": "ha",
+    "oh": "ho", "op": "ho", "os": "ho", "oq": "ho",
+    "n":  "hn", "n2": "hn", "n3": "hn", "na": "hn", "nh": "hn",
+    "nb": "hn", "nc": "hn", "nd": "hn", "n+": "hn",
+    "sh": "hs", "ss": "hs",
+    "p3": "hp", "p5": "hp",
+}
+
+_BOND_TYPE_SUB = {
+    "cx": "c3", "cy": "c3", "c5": "c3", "c6": "c3",
+    "cs": "c2", "cz": "c2", "ca": "c2", "cc": "c2", "cd": "c2",
+    "ce": "c2", "cf": "c2", "cp": "c2", "cq": "c2",
+    "cg": "c1", "ch": "c1",
+}
+
+
+def assign_pdb_atom_names(rdmol: "Chem.Mol") -> list[str]:
+    """Assign unique PDB atom names to rdmol in-place and return them.
+
+    If an atom already has a non-empty MonomerInfo name it is kept as-is.
+    New names are element+counter (e.g. C1, C2, O1, H1 …).
+    """
+    from rdkit.Chem import AtomPDBResidueInfo
+
+    counts: dict[str, int] = {}
+    names: list[str] = []
+    for atom in rdmol.GetAtoms():
+        mi = atom.GetMonomerInfo()
+        existing = mi.GetName().strip() if mi else ""
+        if existing:
+            names.append(existing)
+        else:
+            elem = atom.GetSymbol()
+            counts[elem] = counts.get(elem, 0) + 1
+            name = f"{elem}{counts[elem]}"
+            if mi is None:
+                mi = AtomPDBResidueInfo()
+            mi.SetName(f"{name:<4s}")
+            atom.SetMonomerInfo(mi)
+            names.append(name)
+    return names
+
+
+def _lookup_bond_params(
+    ti: str, tj: str, params: dict
+) -> tuple[float, float]:
+    """Return (kb, r0) for a bond, trying substitutions on miss."""
+    for a, b in [(ti, tj), (tj, ti)]:
+        if (a, b) in params['bonds']:
+            return params['bonds'][(a, b)]
+    # substitution fallback
+    ti_s = _BOND_TYPE_SUB.get(ti, ti)
+    tj_s = _BOND_TYPE_SUB.get(tj, tj)
+    for a, b in [(ti_s, tj_s), (tj_s, ti_s)]:
+        if (a, b) in params['bonds']:
+            return params['bonds'][(a, b)]
+    return (0.0, 1.50)
+
+
+def _lookup_angle_params(
+    ti: str, tj: str, tk: str, params: dict
+) -> tuple[float, float]:
+    """Return (kt, t0) for an angle, trying substitutions on miss."""
+    for a, b, c in [(ti, tj, tk), (tk, tj, ti)]:
+        if (a, b, c) in params['angles']:
+            return params['angles'][(a, b, c)]
+    ti_s = _BOND_TYPE_SUB.get(ti, ti)
+    tj_s = _BOND_TYPE_SUB.get(tj, tj)
+    tk_s = _BOND_TYPE_SUB.get(tk, tk)
+    for a, b, c in [(ti_s, tj_s, tk_s), (tk_s, tj_s, ti_s)]:
+        if (a, b, c) in params['angles']:
+            return params['angles'][(a, b, c)]
+    return (0.0, 120.0)
+
+
+def build_gaff2_ffxml(
+    rdmol: "Chem.Mol",
+    resname: str,
+    charges: list[float],
+    *,
+    gaff_version: str = "gaff-2.2.20",
+) -> str:
+    """Build a complete OpenMM FFXML string for a single small-molecule residue.
+
+    Args:
+        rdmol: RDKit Mol with explicit H atoms.
+        resname: PDB residue name (e.g. "OHP").
+        charges: Partial charges, one per atom in mol atom-index order (including H).
+        gaff_version: GAFF version string used to select the .dat file.
+
+    Returns:
+        FFXML string suitable for openmm.app.ForceField.loadFile(StringIO(xml)).
+    """
+    if Chem is None:
+        raise ImportError("RDKit is required.")
+
+    atom_names = assign_pdb_atom_names(rdmol)
+    n_atoms = rdmol.GetNumAtoms()
+
+    if len(charges) != n_atoms:
+        raise ValueError(
+            f"charges length {len(charges)} != mol atom count {n_atoms}"
+        )
+
+    # --- GAFF2 type assignment ---
+    mol_no_h = Chem.RemoveHs(rdmol)
+    heavy_types = assign_gaff2_atom_types(mol_no_h)
+    idx_to_type: dict[int, str] = {}
+    heavy_counter = 0
+    for atom in rdmol.GetAtoms():
+        if atom.GetAtomicNum() != 1:
+            idx_to_type[atom.GetIdx()] = heavy_types[heavy_counter]
+            heavy_counter += 1
+
+    for atom in rdmol.GetAtoms():
+        if atom.GetAtomicNum() == 1:
+            h_type = "hc"
+            for bond in atom.GetBonds():
+                nb = rdmol.GetAtomWithIdx(bond.GetOtherAtomIdx(atom.GetIdx()))
+                if nb.GetAtomicNum() != 1:
+                    heavy_t = idx_to_type.get(nb.GetIdx(), "c3")
+                    h_type = _H_TYPE_BY_HEAVY.get(heavy_t, "hc")
+                    break
+            idx_to_type[atom.GetIdx()] = h_type
+
+    params = load_gaff2_parameters(
+        Path(__file__).parent.parent / "assets" / "gaff" / "dat" / f"{gaff_version}.dat"
+    )
+
+    lines: list[str] = ['<?xml version="1.0" encoding="utf-8"?>', "<ForceField>"]
+
+    # --- AtomTypes ---
+    lines.append("  <AtomTypes>")
+    for atom in rdmol.GetAtoms():
+        idx = atom.GetIdx()
+        gaff_type = idx_to_type[idx]
+        elem = atom.GetSymbol()
+        mass = params['masses'].get(gaff_type, _ELEM_MASS_DEFAULT.get(elem, 12.011))
+        lines.append(
+            f'    <Type name="{resname}_{idx}" class="{gaff_type}"'
+            f' element="{elem}" mass="{mass:.4f}"/>'
+        )
+    lines.append("  </AtomTypes>")
+
+    # --- Residues ---
+    lines.append("  <Residues>")
+    lines.append(f'    <Residue name="{resname}">')
+    for atom in rdmol.GetAtoms():
+        idx = atom.GetIdx()
+        name = atom_names[idx]
+        q = charges[idx]
+        lines.append(
+            f'      <Atom name="{name}" type="{resname}_{idx}" charge="{q:.6f}"/>'
+        )
+    for bond in rdmol.GetBonds():
+        i = bond.GetBeginAtomIdx()
+        j = bond.GetEndAtomIdx()
+        lines.append(
+            f'      <Bond atomName1="{atom_names[i]}" atomName2="{atom_names[j]}"/>'
+        )
+    lines.append("    </Residue>")
+    lines.append("  </Residues>")
+
+    # --- HarmonicBondForce ---
+    lines.append("  <HarmonicBondForce>")
+    missing_bonds = 0
+    for bond in rdmol.GetBonds():
+        i = bond.GetBeginAtomIdx()
+        j = bond.GetEndAtomIdx()
+        ti = idx_to_type[i]
+        tj = idx_to_type[j]
+        kb, r0 = _lookup_bond_params(ti, tj, params)
+        if kb == 0.0:
+            missing_bonds += 1
+        r0_nm = r0 * _BOND_R_CONV
+        k_kj = kb * _BOND_K_CONV
+        lines.append(
+            f'    <Bond type1="{resname}_{i}" type2="{resname}_{j}"'
+            f' length="{r0_nm:.6f}" k="{k_kj:.2f}"/>'
+        )
+    if missing_bonds:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "build_gaff2_ffxml: %d bonds missing GAFF2 parameters (kb=0)", missing_bonds
+        )
+    lines.append("  </HarmonicBondForce>")
+
+    # --- HarmonicAngleForce ---
+    lines.append("  <HarmonicAngleForce>")
+    for atom in rdmol.GetAtoms():
+        j = atom.GetIdx()
+        bonds_j = list(atom.GetBonds())
+        for b1_idx in range(len(bonds_j)):
+            i = bonds_j[b1_idx].GetOtherAtomIdx(j)
+            for b2_idx in range(b1_idx + 1, len(bonds_j)):
+                k = bonds_j[b2_idx].GetOtherAtomIdx(j)
+                ti = idx_to_type[i]
+                tj = idx_to_type[j]
+                tk = idx_to_type[k]
+                kt, t0 = _lookup_angle_params(ti, tj, tk, params)
+                t0_rad = t0 * _ANGLE_T_CONV
+                k_kj = kt * _ANGLE_K_CONV
+                lines.append(
+                    f'    <Angle type1="{resname}_{i}" type2="{resname}_{j}"'
+                    f' type3="{resname}_{k}" angle="{t0_rad:.6f}" k="{k_kj:.2f}"/>'
+                )
+    lines.append("  </HarmonicAngleForce>")
+
+    # --- PeriodicTorsionForce ---
+    lines.append("  <PeriodicTorsionForce>")
+    seen_torsions: set[tuple] = set()
+    for bond in rdmol.GetBonds():
+        j = bond.GetBeginAtomIdx()
+        k = bond.GetEndAtomIdx()
+        atom_j = rdmol.GetAtomWithIdx(j)
+        atom_k = rdmol.GetAtomWithIdx(k)
+        for bond_i in atom_j.GetBonds():
+            i = bond_i.GetOtherAtomIdx(j)
+            if i == k:
+                continue
+            for bond_l in atom_k.GetBonds():
+                ll = bond_l.GetOtherAtomIdx(k)
+                if ll == j or ll == i:
+                    continue
+                key = tuple(sorted([(i, j, k, ll), (ll, k, j, i)])[0])
+                if key in seen_torsions:
+                    continue
+                seen_torsions.add(key)
+                ti = idx_to_type[i]
+                tj = idx_to_type[j]
+                tk_ = idx_to_type[k]
+                tl = idx_to_type[ll]
+                torsion_key = (ti, tj, tk_, tl)
+                torsion_params = params['torsions'].get(torsion_key, [])
+                if not torsion_params:
+                    rev_key = (tl, tk_, tj, ti)
+                    torsion_params = params['torsions'].get(rev_key, [])
+                if not torsion_params:
+                    ti_s = _BOND_TYPE_SUB.get(ti, ti)
+                    tj_s = _BOND_TYPE_SUB.get(tj, tj)
+                    tk_s = _BOND_TYPE_SUB.get(tk_, tk_)
+                    tl_s = _BOND_TYPE_SUB.get(tl, tl)
+                    for sub_key in [(ti_s, tj_s, tk_s, tl_s), (tl_s, tk_s, tj_s, ti_s)]:
+                        torsion_params = params['torsions'].get(sub_key, [])
+                        if torsion_params:
+                            break
+                if not torsion_params:
+                    continue
+                attrs = (
+                    f'type1="{resname}_{i}" type2="{resname}_{j}"'
+                    f' type3="{resname}_{k}" type4="{resname}_{ll}"'
+                )
+                for term_idx, (n, kt, phase) in enumerate(torsion_params, 1):
+                    phase_rad = phase * _TORSION_P_CONV
+                    k_kj = kt * _TORSION_K_CONV
+                    attrs += (
+                        f' periodicity{term_idx}="{n}"'
+                        f' phase{term_idx}="{phase_rad:.6f}"'
+                        f' k{term_idx}="{k_kj:.4f}"'
+                    )
+                lines.append(f"    <Proper {attrs}/>")
+    lines.append("  </PeriodicTorsionForce>")
+
+    # --- NonbondedForce ---
+    lines.append('  <NonbondedForce coulomb14scale="0.8333333333" lj14scale="0.5">')
+    for atom in rdmol.GetAtoms():
+        idx = atom.GetIdx()
+        gaff_type = idx_to_type[idx]
+        elem = atom.GetSymbol()
+        q = charges[idx]
+        if gaff_type in params['vdw']:
+            rmin_half, epsilon = params['vdw'][gaff_type]
+        else:
+            rmin_half, epsilon = _VDW_ELEM_DEFAULT.get(elem, (1.9080, 0.0860))
+        sigma_nm = rmin_half * _LJ_SIGMA_CONV
+        eps_kj = epsilon * _LJ_EPS_CONV
+        lines.append(
+            f'    <Atom type="{resname}_{idx}" charge="{q:.6f}"'
+            f' sigma="{sigma_nm:.8f}" epsilon="{eps_kj:.6f}"/>'
+        )
+    lines.append("  </NonbondedForce>")
+    lines.append("</ForceField>")
+    return "\n".join(lines)
 
 
 def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:
