@@ -92,6 +92,13 @@ class Gaff2Rule:
             if not has_ar_marker:
                 return False
 
+        # h_ew may carry ring-size constraints (RGn) when the parser consumed a
+        # wildcard field that should have been chem_env (e.g. the op rule: "* * [RG3]")
+        if self.h_ew and "RG" in self.h_ew:
+            rg_m = re.search(r'RG(\d+)', self.h_ew)
+            if rg_m and ring_size != int(rg_m.group(1)):
+                return False
+
         # Check chemical environment
         if self.chem_env:
             if not self._check_chem_env(
@@ -185,48 +192,41 @@ class Gaff2Rule:
         wildatom_map: dict[str, list[str]],
     ) -> bool:
         """Check atomic property (neighbor atom type) conditions.
-        
-        Parses patterns like:
-        - (C3(C3)): two C3 neighbors
-        - (C2[SB']): one C2 neighbor with single bond
-        - (XX[AR1]): any XX neighbor with aromatic bond
-        - (N3,N3,N3): three N3 neighbors
+
+        The parser strips outer parens before storing atomic_prop, so stored
+        values are like "XA1", "S1", "C3" (not "(XA1)", "(S1)", etc.).
+        Format: TYPE_OR_WILDATOM + COUNT, meaning ≥COUNT neighbors of that type.
         """
         atomic_prop = self.atomic_prop
         if not atomic_prop:
             return True
 
-        atomic_prop = atomic_prop.strip()
-
-        # Parse patterns like (element_type(element_type)) or (element_type[SB'])
-        # Handle multiple patterns separated by commas
-        patterns = atomic_prop.split(",")
-
-        for pattern in patterns:
+        for pattern in atomic_prop.strip().split(","):
             pattern = pattern.strip()
             if not pattern:
                 continue
 
-            # Extract neighbor element requirements from pattern
-            # Pattern format: (type1(type2)) means: has neighbor type1, which has neighbor type2
-            # Also simpler: (type1) just means has neighbor of type1
+            # Primary format stored by parser: "TYPE_OR_WILDATOM + COUNT" e.g. "XA1", "S1"
+            m = re.match(r'^([A-Za-z]+)(\d+)$', pattern)
+            if m:
+                req_type = m.group(1)
+                req_count = int(m.group(2))
+                resolved = wildatom_map.get(req_type, [req_type])
+                count = sum(1 for elem in neighbor_elements if elem in resolved)
+                if count < req_count:
+                    return False
+                continue
 
-            # Handle simple direct neighbor type patterns
+            # Fallback: nested form with outer parens e.g. "(XA1)" or "(C3(C3))"
             match = re.match(r"\((\w+)\)$", pattern)
             if match:
-                required_type = match.group(1)
-                # Check if any neighbor matches this type or is in WILDATOM
-                if not self._matches_wildatom(required_type, neighbor_elements, wildatom_map):
+                if not self._matches_wildatom(match.group(1), neighbor_elements, wildatom_map):
                     return False
+                continue
 
-            # Handle more complex patterns like (C3(C3))
-            # For now, just check direct neighbors
-            # Complex patterns with nested requirements are rare
             match = re.match(r"\((\w+)\((\w+)\)\)$", pattern)
             if match:
-                primary = match.group(1)
-                # Must have at least one neighbor matching primary type
-                if not self._matches_wildatom(primary, neighbor_elements, wildatom_map):
+                if not self._matches_wildatom(match.group(1), neighbor_elements, wildatom_map):
                     return False
 
         return True
@@ -389,10 +389,18 @@ def extract_atom_features(
         if atomic_num == 1:
             continue
 
-        # Total hydrogens (explicit + implicit on heavy atoms only)
-        num_explicit_h = atom.GetNumExplicitHs()
+        # After AllChem.AddHs, H atoms are explicit graph nodes, so
+        # GetNumExplicitHs() returns 0 (H is a real atom, not a valence annotation).
+        # Walk bonds to count actual H-atom neighbors; add GetNumImplicitHs for
+        # molecules that still carry implicit H (pre-AddHs path).
         num_implicit_h = atom.GetNumImplicitHs()
-        num_h = num_explicit_h + num_implicit_h
+        num_h = (
+            sum(
+                1 for bond in atom.GetBonds()
+                if mol.GetAtomWithIdx(bond.GetOtherAtomIdx(atom.GetIdx())).GetAtomicNum() == 1
+            )
+            + num_implicit_h
+        )
 
         # Count non-hydrogen bonds (standard degree)
         # Note: RDKit GetDegree() counts AROMATIC bonds as degree 1 each
