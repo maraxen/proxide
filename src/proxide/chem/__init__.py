@@ -1,5 +1,11 @@
 """Chemistry utilities and constants."""
 
+from proxide.chem.chi import (
+  CHI_ANGLES_ATOMS,
+  CHI_SYMMETRY_CLASS,
+  get_chi_symmetry_class,
+  verify_four_distinct_atoms,
+)
 from proxide.chem.partial_charges import (
   CHARGE_SOURCE_ESPALOMA_AM1BCC,
   assign_espaloma_charges_from_proxide_molecule,
@@ -14,4 +20,8 @@ __all__ = [
   "assign_espaloma_charges_rdkit",
   "assign_espaloma_charges_from_proxide_molecule",
   "assign_espaloma_charges_openff",
+  "CHI_ANGLES_ATOMS",
+  "CHI_SYMMETRY_CLASS",
+  "get_chi_symmetry_class",
+  "verify_four_distinct_atoms",
 ]

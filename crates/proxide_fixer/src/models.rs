@@ -72,7 +72,7 @@ fn filter_altlocs(data: &RawAtomData) -> Vec<usize> {
 
         groups
             .entry(key)
-            .or_default()
+            .or_insert_with(|| Vec::new())
             .push(AtomIndexWithOccupancy {
                 index: i,
                 occupancy: data.occupancy[i],

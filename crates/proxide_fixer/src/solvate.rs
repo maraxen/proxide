@@ -1,5 +1,5 @@
 use thiserror::Error;
-use crate::models::Topology;
+use crate::models::{Atom, Chain, Residue, Topology};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -92,24 +92,44 @@ impl<'a> Solvator<'a> {
                 report.waters_discarded = discarded;
             }
 
-            // Counterion neutralization — T11.3 fills this in
+            // T11.3: Counterion neutralization — place ions to neutralize net charge
+            if self.config.neutralize {
+                place_counterions(self.topology, report.net_charge_before, &mut report)?;
+            }
         }
 
         Ok(report)
     }
 }
 
-/// Compute net formal charge from residue protonation states.
-/// ARG/LYS/HIP: +1. ASP/GLU: -1. All others: 0.
+/// Compute the net formal charge from residue protonation-state names.
+///
+/// Rules (AMBER/CHARMM conventions after C7 protonation assignment):
+/// - ARG, LYS, HIP → +1
+/// - ASP, GLU → −1
+/// - Everything else → 0
 pub fn net_charge(topology: &Topology) -> f32 {
-    // Full implementation in T11.3
-    let _ = topology;
-    0.0
+    let mut charge = 0.0f32;
+    for chain in &topology.chains {
+        for residue in &chain.residues {
+            charge += match residue.name.as_str() {
+                "ARG" | "LYS" | "HIP" => 1.0,
+                "ASP" | "GLU" => -1.0,
+                _ => 0.0,
+            };
+        }
+    }
+    charge
 }
 
-/// Check if a residue name matches water (HOH or WAT).
+/// Check if a residue name matches water (HOH, WAT, TIP3, or SOL).
 fn is_water_residue(res_name: &str) -> bool {
-    res_name == "HOH" || res_name == "WAT"
+    matches!(res_name, "HOH" | "WAT" | "TIP3" | "SOL")
+}
+
+/// Check if a residue is an ion (NA, CL, MG, ZN, CA, K).
+fn is_ion(r: &Residue) -> bool {
+    matches!(r.name.as_str(), "NA" | "CL" | "MG" | "ZN" | "CA" | "K")
 }
 
 /// Check if an atom is a hydrogen.
@@ -123,6 +143,16 @@ fn euclidean_distance(p1: &[f32; 3], p2: &[f32; 3]) -> f32 {
     let dy = p2[1] - p1[1];
     let dz = p2[2] - p1[2];
     (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
+/// Minimum Euclidean distance from `pt` to any point in `set`.
+/// Returns `f32::MAX` when `set` is empty.
+fn min_dist_to_set(pt: &[f32; 3], set: &[[f32; 3]]) -> f32 {
+    set.iter()
+        .map(|p| {
+            ((pt[0] - p[0]).powi(2) + (pt[1] - p[1]).powi(2) + (pt[2] - p[2]).powi(2)).sqrt()
+        })
+        .fold(f32::MAX, f32::min)
 }
 
 /// Keep waters within `shell_radius` Å of any protein heavy atom.
@@ -193,7 +223,7 @@ fn triage_waters(topology: &mut Topology, shell_radius: f32) -> (usize, usize) {
     (kept_count, discarded_count)
 }
 
-/// Discard all HOH/WAT residues from the topology.
+/// Discard all HOH/WAT/TIP3/SOL residues from the topology.
 /// Returns the count of residues removed.
 fn discard_all_waters(topology: &mut Topology) -> usize {
     let mut total_removed = 0;
@@ -205,6 +235,226 @@ fn discard_all_waters(topology: &mut Topology) -> usize {
     }
 
     total_removed
+}
+
+/// Axis-aligned bounding box over a non-empty atom set.
+/// Returns `(min, max)` corners.
+fn bounding_box(atoms: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
+    let mut lo = [f32::MAX; 3];
+    let mut hi = [f32::MIN; 3];
+    for p in atoms {
+        for i in 0..3 {
+            if p[i] < lo[i] {
+                lo[i] = p[i];
+            }
+            if p[i] > hi[i] {
+                hi[i] = p[i];
+            }
+        }
+    }
+    (lo, hi)
+}
+
+/// Generate a uniform cubic grid over `bbox` with `spacing` Å between points.
+fn generate_grid(bbox: &([f32; 3], [f32; 3]), spacing: f32) -> Vec<[f32; 3]> {
+    let (lo, hi) = bbox;
+    let mut pts = Vec::new();
+    let mut x = lo[0];
+    while x <= hi[0] {
+        let mut y = lo[1];
+        while y <= hi[1] {
+            let mut z = lo[2];
+            while z <= hi[2] {
+                pts.push([x, y, z]);
+                z += spacing;
+            }
+            y += spacing;
+        }
+        x += spacing;
+    }
+    pts
+}
+
+/// Add a single-atom ION residue to the topology.
+///
+/// Ions are placed in a new chain with id "ION" (or "IO2", "IO3", … if that
+/// chain id already exists for non-ion content). Within an existing ION chain
+/// the residue is appended, so the chain grows naturally when multiple ions
+/// are placed in sequence.
+fn add_ion_to_topology(topology: &mut Topology, name: &str, pos: &[f32; 3], idx: usize) {
+    // Determine element from ion name.
+    let element = match name {
+        "NA" => "Na",
+        "CL" => "Cl",
+        "MG" => "Mg",
+        "ZN" => "Zn",
+        "CA" => "Ca",
+        "K" => "K",
+        other => other,
+    };
+
+    let atom = Atom {
+        name: name.to_string(),
+        element: element.to_string(),
+        coords: *pos,
+        alt_loc: ' ',
+        serial: idx as i32 + 1,
+        b_factor: 0.0,
+        occupancy: 1.0,
+        is_hetatm: true,
+    };
+
+    let residue = Residue {
+        name: name.to_string(),
+        res_id: idx as i32 + 1,
+        insertion_code: ' ',
+        atoms: vec![atom],
+    };
+
+    // Reuse an existing "ION" chain if it already holds only ion residues;
+    // otherwise push a new chain.
+    if let Some(chain) = topology
+        .chains
+        .iter_mut()
+        .find(|c| c.id == "ION" && c.residues.iter().all(|r| is_ion(r)))
+    {
+        chain.residues.push(residue);
+    } else {
+        topology.chains.push(Chain {
+            id: "ION".to_string(),
+            residues: vec![residue],
+        });
+    }
+}
+
+/// Core counterion placement routine.
+///
+/// Places Na⁺ (for net negative charge) or Cl⁻ (for net positive charge)
+/// at the lowest-approximate-ESP grid sites that satisfy distance constraints.
+///
+/// Returns `Ok(())` and populates `report.na_added` / `report.cl_added`.
+/// Returns `SolvationError::IonPlacementInfeasible` when the constraints
+/// cannot be satisfied even after relaxing the ion–ion separation floor.
+fn place_counterions(
+    topology: &mut Topology,
+    net: f32,
+    report: &mut SolvationReport,
+) -> Result<(), SolvationError> {
+    if net.abs() < 0.5 {
+        // Already neutral (or close enough).
+        return Ok(());
+    }
+
+    let needed = (net.abs() + 0.5) as usize;
+    let is_na = net < 0.0; // negative net charge → neutralize with Na⁺
+
+    // 1. Collect protein heavy-atom positions (exclude water, existing ions, H atoms).
+    let protein_atoms: Vec<[f32; 3]> = topology
+        .chains
+        .iter()
+        .flat_map(|c| c.residues.iter())
+        .filter(|r| !is_water_residue(&r.name) && !is_ion(r))
+        .flat_map(|r| r.atoms.iter())
+        .filter(|a| !a.name.starts_with('H'))
+        .map(|a| a.coords)
+        .collect();
+
+    if protein_atoms.is_empty() {
+        return Err(SolvationError::IonPlacementInfeasible {
+            needed,
+            placed: 0,
+        });
+    }
+
+    // 2. Bounding box + grid.
+    let bbox = bounding_box(&protein_atoms);
+    let grid_points = generate_grid(&bbox, ESP_GRID_SPACING_ANGSTROM);
+
+    // 3. Filter grid points too close to protein atoms.
+    let available: Vec<[f32; 3]> = grid_points
+        .into_iter()
+        .filter(|pt| min_dist_to_set(pt, &protein_atoms) >= MIN_ION_PROTEIN_SEPARATION)
+        .collect();
+
+    if available.is_empty() {
+        return Err(SolvationError::IonPlacementInfeasible {
+            needed,
+            placed: 0,
+        });
+    }
+
+    // 4. Score each candidate by a simplified |ESP|:
+    //    sum of 1/r² from every protein heavy atom (all treated as unit charge).
+    //    Lower ESP → better placement site (farther from charged protein surface).
+    let mut scored: Vec<([f32; 3], f32)> = available
+        .iter()
+        .map(|pt| {
+            let esp: f32 = protein_atoms
+                .iter()
+                .map(|pa| {
+                    let r2 = (pt[0] - pa[0]).powi(2)
+                        + (pt[1] - pa[1]).powi(2)
+                        + (pt[2] - pa[2]).powi(2);
+                    if r2 < 1.0 { 0.0 } else { 1.0 / r2 }
+                })
+                .sum();
+            (*pt, esp)
+        })
+        .collect();
+
+    // Ascending order: lowest |ESP| first (best site first).
+    scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // 5. Greedy selection with ion–ion separation; relax in 0.5 Å steps if needed.
+    let ion_name = if is_na { "NA" } else { "CL" };
+    let mut placed: Vec<[f32; 3]> = Vec::new();
+    let mut ion_ion_sep = MIN_ION_ION_SEPARATION;
+
+    loop {
+        placed.clear();
+        for (pt, _) in &scored {
+            if placed.len() >= needed {
+                break;
+            }
+            if min_dist_to_set(pt, &placed) >= ion_ion_sep {
+                placed.push(*pt);
+            }
+        }
+
+        if placed.len() >= needed {
+            break;
+        }
+
+        if ion_ion_sep <= ION_ION_SEPARATION_FLOOR {
+            // Cannot place even at the floor separation.
+            return Err(SolvationError::IonPlacementInfeasible {
+                needed,
+                placed: placed.len(),
+            });
+        }
+
+        ion_ion_sep -= 0.5;
+    }
+
+    // 6. Insert ions into topology.
+    for (i, pos) in placed.iter().enumerate() {
+        add_ion_to_topology(topology, ion_name, pos, i);
+    }
+
+    log::info!(
+        "counterion placement: placed {} {} ion(s) (net_charge_before={:.1})",
+        needed,
+        ion_name,
+        net
+    );
+
+    if is_na {
+        report.na_added = needed;
+    } else {
+        report.cl_added = needed;
+    }
+
+    Ok(())
 }
 
 /// Find the PDBFixer executable.
@@ -385,8 +635,6 @@ mod tests {
 
     #[test]
     fn triage_keeps_close_water_discards_far() {
-        use crate::models::{Atom, Chain, Residue};
-
         // Build a minimal test topology with:
         // - One protein residue (ALA) with CA at origin (0,0,0)
         // - One water (HOH) with O at (2.0, 0.0, 0.0) — 2.0 Å from CA → keep
@@ -464,8 +712,6 @@ mod tests {
 
     #[test]
     fn discard_all_waters_removes_all_hoh_wat() {
-        use crate::models::{Atom, Chain, Residue};
-
         let mut topology = Topology {
             chains: vec![Chain {
                 id: "A".to_string(),
@@ -573,8 +819,6 @@ mod tests {
 
     #[test]
     fn write_topology_to_pdb_basic() {
-        use crate::models::{Atom, Chain, Residue};
-
         let topology = Topology {
             chains: vec![Chain {
                 id: "A".to_string(),
@@ -614,8 +858,6 @@ mod tests {
 
     #[test]
     fn write_topology_with_hetatm() {
-        use crate::models::{Atom, Chain, Residue};
-
         let topology = Topology {
             chains: vec![Chain {
                 id: "A".to_string(),
@@ -679,5 +921,225 @@ mod tests {
 
         assert!(!cfg.build_solvation_box, "build_solvation_box should be false");
         assert!(cfg.keep_crystal_waters, "Should keep waters in native path");
+    }
+
+    // ── T11.3: net_charge and counterion tests ─────────────────────────────────
+
+    fn make_residue(name: &str, res_id: i32, x: f32, y: f32, z: f32) -> Residue {
+        Residue {
+            name: name.to_string(),
+            res_id,
+            insertion_code: ' ',
+            atoms: vec![Atom {
+                name: "CA".to_string(),
+                element: "C".to_string(),
+                coords: [x, y, z],
+                alt_loc: ' ',
+                serial: res_id,
+                b_factor: 0.0,
+                occupancy: 1.0,
+                is_hetatm: false,
+            }],
+        }
+    }
+
+    fn build_topology(residues: &[(&str, i32, f32, f32, f32)]) -> Topology {
+        let res_vec: Vec<Residue> = residues
+            .iter()
+            .map(|(name, id, x, y, z)| make_residue(name, *id, *x, *y, *z))
+            .collect();
+        Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues: res_vec,
+            }],
+        }
+    }
+
+    #[test]
+    fn net_charge_positive_residues() {
+        // ARG (+1) + LYS (+1) + GLU (−1) → net +1
+        let topology = build_topology(&[
+            ("ARG", 1, 0.0, 0.0, 0.0),
+            ("LYS", 2, 5.0, 0.0, 0.0),
+            ("GLU", 3, 10.0, 0.0, 0.0),
+        ]);
+        assert_eq!(net_charge(&topology), 1.0);
+    }
+
+    #[test]
+    fn net_charge_negative_residues() {
+        // ASP (−1) + GLU (−1) → net −2
+        let topology = build_topology(&[
+            ("ASP", 1, 0.0, 0.0, 0.0),
+            ("GLU", 2, 5.0, 0.0, 0.0),
+        ]);
+        assert_eq!(net_charge(&topology), -2.0);
+    }
+
+    #[test]
+    fn net_charge_hip_counted() {
+        // HIP (+1) is doubly-protonated histidine; HIE / HID are neutral
+        let topology = build_topology(&[
+            ("HIP", 1, 0.0, 0.0, 0.0),
+            ("HIE", 2, 5.0, 0.0, 0.0),
+            ("HID", 3, 10.0, 0.0, 0.0),
+        ]);
+        assert_eq!(net_charge(&topology), 1.0);
+    }
+
+    #[test]
+    fn net_charge_neutral_system() {
+        let topology = build_topology(&[
+            ("ALA", 1, 0.0, 0.0, 0.0),
+            ("GLY", 2, 5.0, 0.0, 0.0),
+        ]);
+        assert_eq!(net_charge(&topology), 0.0);
+    }
+
+    fn build_spread_topology() -> Topology {
+        // Four protein atoms spread across a 20 Å box so there is plenty of
+        // grid space more than 4 Å away from each atom.
+        let residues: Vec<Residue> = vec![
+            make_residue("ASP", 1, 0.0, 0.0, 0.0),
+            make_residue("ALA", 2, 20.0, 0.0, 0.0),
+            make_residue("ALA", 3, 0.0, 20.0, 0.0),
+            make_residue("ALA", 4, 0.0, 0.0, 20.0),
+        ];
+        Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues,
+            }],
+        }
+    }
+
+    #[test]
+    fn ion_placement_na_for_negative_net_charge() {
+        let mut topology = build_spread_topology();
+        // net = -1 → should place 1 Na⁺
+        let mut report = SolvationReport {
+            net_charge_before: -1.0,
+            ..Default::default()
+        };
+        place_counterions(&mut topology, -1.0, &mut report).expect("placement should succeed");
+        assert_eq!(report.na_added, 1);
+        assert_eq!(report.cl_added, 0);
+
+        // Topology should now contain an ION chain with a NA residue.
+        let ion_chain = topology
+            .chains
+            .iter()
+            .find(|c| c.id == "ION")
+            .expect("ION chain should be present");
+        assert_eq!(ion_chain.residues.len(), 1);
+        assert_eq!(ion_chain.residues[0].name, "NA");
+    }
+
+    #[test]
+    fn ion_placement_cl_for_positive_net_charge() {
+        let mut topology = build_spread_topology();
+        let mut report = SolvationReport {
+            net_charge_before: 1.0,
+            ..Default::default()
+        };
+        place_counterions(&mut topology, 1.0, &mut report).expect("placement should succeed");
+        assert_eq!(report.cl_added, 1);
+        assert_eq!(report.na_added, 0);
+
+        let ion_chain = topology
+            .chains
+            .iter()
+            .find(|c| c.id == "ION")
+            .expect("ION chain should be present");
+        assert_eq!(ion_chain.residues[0].name, "CL");
+    }
+
+    #[test]
+    fn ion_placement_no_op_when_neutral() {
+        let mut topology = build_spread_topology();
+        let mut report = SolvationReport {
+            net_charge_before: 0.0,
+            ..Default::default()
+        };
+        place_counterions(&mut topology, 0.0, &mut report).expect("no-op should succeed");
+        assert_eq!(report.na_added, 0);
+        assert_eq!(report.cl_added, 0);
+        // No ION chain should have been added.
+        assert!(topology.chains.iter().all(|c| c.id != "ION"));
+    }
+
+    #[test]
+    fn ion_placement_infeasible_error() {
+        // Pack atoms so densely that every grid point within the bounding box
+        // is within 4 Å of at least one protein atom — no valid site exists.
+        //
+        // Strategy: place atoms on a 1 Å grid within a 4×4×4 Å cube, then
+        // request ion placement. Every grid candidate is on or between these
+        // atoms so min_dist_to_set < 4.0 for all of them.
+        let mut residues = Vec::new();
+        let mut id = 1;
+        let step = 1.0f32;
+        for ix in 0..=4 {
+            for iy in 0..=4 {
+                for iz in 0..=4 {
+                    residues.push(make_residue(
+                        "ALA",
+                        id,
+                        ix as f32 * step,
+                        iy as f32 * step,
+                        iz as f32 * step,
+                    ));
+                    id += 1;
+                }
+            }
+        }
+        let mut topology = Topology {
+            chains: vec![Chain {
+                id: "A".to_string(),
+                residues,
+            }],
+        };
+
+        let mut report = SolvationReport {
+            net_charge_before: -1.0,
+            ..Default::default()
+        };
+        let result = place_counterions(&mut topology, -1.0, &mut report);
+        assert!(
+            matches!(result, Err(SolvationError::IonPlacementInfeasible { .. })),
+            "expected IonPlacementInfeasible, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn solvator_run_neutralize() {
+        let mut topology = build_spread_topology();
+        // ASP at origin carries −1.
+        let config = SolvationConfig {
+            build_solvation_box: false,
+            neutralize: true,
+            ..SolvationConfig::default()
+        };
+        let mut solvator = Solvator::new(&mut topology, config);
+        let report = solvator.run().expect("solvator run should succeed");
+        // net_charge_before for build_spread_topology (ASP = -1, three ALA = 0) = -1.
+        assert_eq!(report.net_charge_before, -1.0);
+        assert_eq!(report.na_added, 1);
+    }
+
+    #[test]
+    fn solvator_run_neutralize_disabled() {
+        let mut topology = build_spread_topology();
+        let config = SolvationConfig {
+            build_solvation_box: false,
+            neutralize: false,
+            ..SolvationConfig::default()
+        };
+        let mut solvator = Solvator::new(&mut topology, config);
+        let report = solvator.run().expect("solvator run should succeed");
+        assert_eq!(report.na_added, 0);
+        assert_eq!(report.cl_added, 0);
     }
 }
