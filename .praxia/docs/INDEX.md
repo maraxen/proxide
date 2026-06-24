@@ -22,6 +22,9 @@
 - [260602_contact-threshold-adr](decisions/260602_contact-threshold-adr.md) — ADR: CONTACT_THRESHOLD as public arg with cited const (vs. hard const)
 - [260623_coords_to_chi_path](decisions/260623_coords_to_chi_path.md) — ADR: pure-Python coords→χ + chi_to_coords chosen; PyO3/Rust deferred (B4 #2654)
 
+## Misc
+- [260623_gaff2-typing-debt](misc/260623_gaff2-typing-debt.md) — Tech debt: deeper GAFF2 audit (h_ew matching, parser edge cases) + parity CI tests vs OpenFF reference
+
 ## Specs
 - [260529_rotlib](specs/260529_rotlib.md) — `proxide-rotlib` crate: standalone Rust port of MSL RotamerLibrary — binary format, backbone binning, Frame/Transform placement
 - [260529_confind](specs/260529_confind.md) — `proxide-confind` crate: rayon ConFind reimplementation; depends on proxide-rotlib (rev 3)
