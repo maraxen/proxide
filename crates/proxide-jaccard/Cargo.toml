@@ -1,0 +1,45 @@
+[package]
+name        = "proxide-jaccard"
+version.workspace  = true
+edition.workspace  = true
+authors.workspace  = true
+license.workspace  = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace   = true
+description = "Pairwise Jaccard distance matrices over scaled-MinHash genome sketches (sourmash-style), parallelized with orx-parallel"
+keywords    = ["minhash", "jaccard", "genomics", "parquet", "bioinformatics"]
+categories  = ["science", "algorithms"]
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "proxide-jaccard"
+path = "src/bin/proxide-jaccard.rs"
+
+[[bench]]
+name = "bench_jaccard"
+harness = false
+
+[dependencies]
+arrow      = { version = "59.0.0", default-features = false, features = ["ipc"] }
+parquet    = { version = "59.0.0", default-features = false, features = ["arrow", "snap", "zstd"] }
+ndarray      = { version = "0.17.2", default-features = false, features = ["std"] }
+ndarray-npy  = { version = "0.10.0", default-features = false }
+orx-parallel = { workspace = true }
+thiserror    = { workspace = true }
+log          = { workspace = true }
+bincode      = { workspace = true }
+serde        = { workspace = true }
+
+[dev-dependencies]
+approx    = { workspace = true }
+tempfile  = "3"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+proxide-parallel-rt.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true

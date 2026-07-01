@@ -15,6 +15,7 @@ members = [
     "crates/proxide-confind",
     "crates/proxide-frag",
     "crates/proxide-parallel-rt",
+    "crates/proxide-jaccard",
 ]
 
 [workspace.package]
