@@ -10,8 +10,8 @@ use crate::chem::{
     build_resname_to_idx, chem_comp_type, is_peptide_linking_type, resolve_variant_alias,
     AliasMatchConfig, ResidueNamingConvention, UNK_RESTYPE_INDEX,
 };
-use crate::structure::RawAtomData;
 use crate::spec::OutputFormatTarget;
+use crate::structure::RawAtomData;
 use std::collections::{HashMap, HashSet};
 
 // Using hardcoded constants for now to avoid circular dependencies during the refactor.
@@ -284,10 +284,7 @@ impl ProcessedStructure {
 
     /// Extract AlphaFold-style backbone coordinates (N, CA, C, CB, O)
     /// Returns (N_res, 5, 3) array. Missing atoms are NaN.
-    pub fn extract_backbone_coords(
-        &self,
-        target: OutputFormatTarget,
-    ) -> Vec<[[f32; 3]; 5]> {
+    pub fn extract_backbone_coords(&self, target: OutputFormatTarget) -> Vec<[[f32; 3]; 5]> {
         let mut backbone = vec![[[f32::NAN; 3]; 5]; self.num_residues];
 
         let (idx_cb, idx_o) = match target {
@@ -832,8 +829,14 @@ mod tests {
         let processed = ProcessedStructure::from_raw(raw).unwrap();
 
         assert_eq!(processed.num_residues, 1);
-        assert!(processed.ligand_groups.is_empty(), "HSD must not be dropped as a ligand");
-        assert_eq!(processed.residue_info[0].res_name, "HSD", "original name must be preserved");
+        assert!(
+            processed.ligand_groups.is_empty(),
+            "HSD must not be dropped as a ligand"
+        );
+        assert_eq!(
+            processed.residue_info[0].res_name, "HSD",
+            "original name must be preserved"
+        );
         let his_idx = build_resname_to_idx()["HIS"];
         assert_eq!(processed.residue_info[0].res_type, his_idx);
         assert_eq!(processed.molecule_type[0], 0);
@@ -858,8 +861,7 @@ mod tests {
         assert!(processed.ligand_groups.is_empty());
         assert_eq!(processed.residue_info[0].res_name, "CYM");
         assert_eq!(
-            processed.residue_info[0].res_type,
-            UNK_RESTYPE_INDEX,
+            processed.residue_info[0].res_type, UNK_RESTYPE_INDEX,
             "must not be misaliased to CYS's type"
         );
     }
