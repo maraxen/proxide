@@ -6,10 +6,13 @@
 
 #![allow(dead_code)]
 
-use crate::chem::{build_resname_to_idx, UNK_RESTYPE_INDEX};
+use crate::chem::{
+    build_resname_to_idx, chem_comp_type, is_peptide_linking_type, resolve_variant_alias,
+    AliasMatchConfig, ResidueNamingConvention, UNK_RESTYPE_INDEX,
+};
 use crate::structure::RawAtomData;
 use crate::spec::OutputFormatTarget;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // Using hardcoded constants for now to avoid circular dependencies during the refactor.
 // They should be moved to a shared 'constants' crate eventually.
@@ -45,6 +48,18 @@ pub struct LigandInfo {
     pub res_id: i32,
 }
 
+/// Configuration for how [`ProcessedStructure::from_raw_with_config`]
+/// classifies residues whose name matches a known CHARMM/AMBER
+/// protonation-variant/disulfide-state alias (e.g. `HSD`, `CYX`). See
+/// [`crate::chem::ResidueNamingConvention`] for the tradeoff between the two
+/// modes -- the default (`Standard` + strict atom-composition check) is safe
+/// for files of unknown provenance.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ResidueClassificationConfig {
+    pub naming_convention: ResidueNamingConvention,
+    pub alias_match: AliasMatchConfig,
+}
+
 /// Processed structure with residue-level organization
 #[derive(Debug)]
 pub struct ProcessedStructure {
@@ -65,8 +80,20 @@ pub struct ProcessedStructure {
 }
 
 impl ProcessedStructure {
-    /// Create a ProcessedStructure from RawAtomData
+    /// Create a ProcessedStructure from RawAtomData, using the default
+    /// residue-classification config (`Standard` naming convention, strict
+    /// atom-composition check). See [`Self::from_raw_with_config`] to opt into
+    /// `ForceFieldPrepped` mode for files of known simulation-tool provenance.
     pub fn from_raw(raw_atoms: RawAtomData) -> Result<Self, String> {
+        Self::from_raw_with_config(raw_atoms, ResidueClassificationConfig::default())
+    }
+
+    /// Create a ProcessedStructure from RawAtomData with an explicit
+    /// residue-classification config. See [`ResidueClassificationConfig`].
+    pub fn from_raw_with_config(
+        raw_atoms: RawAtomData,
+        config: ResidueClassificationConfig,
+    ) -> Result<Self, String> {
         if raw_atoms.num_atoms == 0 {
             return Err("No atoms in structure".to_string());
         }
@@ -110,21 +137,64 @@ impl ProcessedStructure {
             let res_name = &raw_atoms.res_names[start_atom];
             let is_hetatm = raw_atoms.is_hetatm[start_atom];
 
-            if !is_hetatm {
-                // Protein Residue (ATOM record)
-                // Mark atoms as protein (0) - already 0 initialized but being explicit
+            // Observed heavy atom names (element != "H") for this residue
+            // instance, used by the CHARMM/AMBER alias-resolution
+            // atom-composition check below. Computed regardless of is_hetatm,
+            // since a variant name (e.g. HSD) can in principle arrive under
+            // either record type.
+            let observed_heavy_atoms: HashSet<&str> = atom_indices
+                .iter()
+                .filter(|&&idx| raw_atoms.elements[idx] != "H")
+                .map(|&idx| raw_atoms.atom_names[idx].as_str())
+                .collect();
+
+            // Try the two "this is really a protein residue" resolution paths
+            // BEFORE trusting the raw is_hetatm flag, so a residue like the
+            // CHARMM/AMBER protonation-variant `HSD` (which real-world QM/MM
+            // structure-prep tools frequently tag HETATM) is recognized as
+            // HIS rather than silently dropped into ligand_groups:
+            //   1. `resolve_variant_alias` (see chem::residues) -- known
+            //      simulation-tool naming conventions, atom-verified by
+            //      default (or trusted unconditionally under
+            //      ForceFieldPrepped, per `config`).
+            //   2. Genuine CCD (`chem::ccd`) peptide-linking type -- catches
+            //      real, unambiguous non-canonical residues (MSE, D-amino
+            //      acids, etc.) regardless of the file's HETATM flag.
+            let alias_resolved = resolve_variant_alias(
+                res_name,
+                &observed_heavy_atoms,
+                config.naming_convention,
+                &config.alias_match,
+            );
+            let ccd_is_protein = chem_comp_type(res_name)
+                .map(is_peptide_linking_type)
+                .unwrap_or(false);
+
+            // Name to use for res_type lookup: the alias's canonical parent if
+            // resolved; otherwise the residue's own (verbatim) name, but ONLY
+            // if it's a plain ATOM record or a genuine CCD-recognized protein
+            // residue -- this preserves today's exact behavior for ordinary
+            // ATOM records and un-recognized HETATM records alike.
+            let type_lookup_name = alias_resolved
+                .or_else(|| (!is_hetatm || ccd_is_protein).then_some(res_name.as_str()));
+
+            if let Some(type_lookup_name) = type_lookup_name {
+                // Protein residue.
                 for &idx in atom_indices {
                     molecule_type[idx] = 0;
                 }
 
-                // Map residue name to type index
                 let res_type = resname_to_idx
-                    .get(&res_name.clone())
+                    .get(type_lookup_name)
                     .copied()
                     .unwrap_or(UNK_RESTYPE_INDEX);
 
                 residue_info.push(ResidueInfo {
                     res_id: res_id.res_id,
+                    // Preserve the ORIGINAL, as-read name (e.g. "HSD"), not
+                    // the resolved canonical parent -- downstream consumers
+                    // that care about protonation/disulfide state (e.g.
+                    // force-field parameterization) must not lose it.
                     res_name: res_name.clone(),
                     res_type,
                     chain_id: res_id.chain_id.clone(),
@@ -711,5 +781,148 @@ mod tests {
         assert_eq!(processed.molecule_type[1], 1); // Ligand
         assert_eq!(processed.molecule_type[2], 2); // Solvent
         assert_eq!(processed.molecule_type[3], 3); // Ion
+    }
+
+    /// Builds one residue's worth of AtomRecords from a bare atom-name list.
+    /// Element is derived as the atom name's first character, which is
+    /// correct for every heavy-atom name used by these tests (no hydrogens
+    /// are constructed here, so the element != "H" filter in `from_raw` is a
+    /// no-op by construction -- exactly what these tests want to exercise).
+    fn make_residue_atoms(
+        res_name: &str,
+        atom_names: &[&str],
+        is_hetatm: bool,
+        serial_start: i32,
+    ) -> Vec<AtomRecord> {
+        atom_names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| AtomRecord {
+                serial: serial_start + i as i32,
+                atom_name: name.to_string(),
+                alt_loc: ' ',
+                res_name: res_name.to_string(),
+                chain_id: "A".to_string(),
+                res_seq: 1,
+                i_code: ' ',
+                x: i as f32,
+                y: 0.0,
+                z: 0.0,
+                occupancy: 1.0,
+                temp_factor: 20.0,
+                element: name[0..1].to_string(),
+                charge: None,
+                radius: None,
+                is_hetatm,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_charmm_his_variant_recognized_as_protein_via_alias() {
+        // Real CHARMM HSD: exactly His's heavy-atom set, tagged HETATM (as
+        // real QM/MM structure-prep tools commonly do) -- must resolve to HIS
+        // under the default (Standard) config, not be dropped as a ligand.
+        let his_atoms = crate::chem::residues::get_residue_atoms()["HIS"].clone();
+        let mut raw = RawAtomData::with_capacity(his_atoms.len());
+        for atom in make_residue_atoms("HSD", &his_atoms, true, 1) {
+            raw.add_atom(atom);
+        }
+
+        let processed = ProcessedStructure::from_raw(raw).unwrap();
+
+        assert_eq!(processed.num_residues, 1);
+        assert!(processed.ligand_groups.is_empty(), "HSD must not be dropped as a ligand");
+        assert_eq!(processed.residue_info[0].res_name, "HSD", "original name must be preserved");
+        let his_idx = build_resname_to_idx()["HIS"];
+        assert_eq!(processed.residue_info[0].res_type, his_idx);
+        assert_eq!(processed.molecule_type[0], 0);
+    }
+
+    #[test]
+    fn test_real_ccd_collision_recognized_as_protein_but_not_misaliased() {
+        // Real CCD CYM is S-methylcysteine: CYS's heavy atoms plus an extra
+        // methyl carbon ("CM"). Must NOT be aliased to CYS (the atom check
+        // rejects it), but IS a genuine CCD peptide-linking residue, so it
+        // should still land in residue_info (as UNK type), not ligand_groups.
+        let mut atoms: Vec<&str> = crate::chem::residues::get_residue_atoms()["CYS"].clone();
+        atoms.push("CM");
+        let mut raw = RawAtomData::with_capacity(atoms.len());
+        for atom in make_residue_atoms("CYM", &atoms, true, 1) {
+            raw.add_atom(atom);
+        }
+
+        let processed = ProcessedStructure::from_raw(raw).unwrap();
+
+        assert_eq!(processed.num_residues, 1);
+        assert!(processed.ligand_groups.is_empty());
+        assert_eq!(processed.residue_info[0].res_name, "CYM");
+        assert_eq!(
+            processed.residue_info[0].res_type,
+            UNK_RESTYPE_INDEX,
+            "must not be misaliased to CYS's type"
+        );
+    }
+
+    #[test]
+    fn test_unrelated_ccd_ligand_with_variant_name_stays_a_ligand() {
+        // Stand-in for the REAL CCD HSD (an unrelated small molecule, NOT
+        // histidine) -- atom names that don't remotely match His's imidazole
+        // ring template. Real CCD also says HSD is NON-POLYMER, so this must
+        // land in ligand_groups, not be aliased and not be CCD-rescued.
+        let atoms = ["C1", "C2", "O1", "O2", "O3"];
+        let mut raw = RawAtomData::with_capacity(atoms.len());
+        for atom in make_residue_atoms("HSD", &atoms, true, 1) {
+            raw.add_atom(atom);
+        }
+
+        let processed = ProcessedStructure::from_raw(raw).unwrap();
+
+        assert_eq!(processed.num_residues, 0);
+        assert_eq!(processed.ligand_groups.len(), 1);
+        assert_eq!(processed.ligand_groups[0].res_name, "HSD");
+    }
+
+    #[test]
+    fn test_force_field_prepped_convention_trusts_alias_unconditionally() {
+        // Same mismatched atom set as the collision test above, but under
+        // ForceFieldPrepped the caller asserts the file's provenance is known
+        // simulation output -- the alias should apply with no atom check.
+        let mut atoms: Vec<&str> = crate::chem::residues::get_residue_atoms()["CYS"].clone();
+        atoms.push("CM");
+        let mut raw = RawAtomData::with_capacity(atoms.len());
+        for atom in make_residue_atoms("CYM", &atoms, true, 1) {
+            raw.add_atom(atom);
+        }
+
+        let config = ResidueClassificationConfig {
+            naming_convention: ResidueNamingConvention::ForceFieldPrepped,
+            alias_match: AliasMatchConfig::default(),
+        };
+        let processed = ProcessedStructure::from_raw_with_config(raw, config).unwrap();
+
+        assert_eq!(processed.num_residues, 1);
+        assert!(processed.ligand_groups.is_empty());
+        let cys_idx = build_resname_to_idx()["CYS"];
+        assert_eq!(processed.residue_info[0].res_type, cys_idx);
+    }
+
+    #[test]
+    fn test_mse_recognized_as_protein_via_ccd_alone() {
+        // MSE (selenomethionine) is deliberately NOT in the alias table --
+        // it's an unambiguous, genuine CCD entry, so the CCD path (Part 2)
+        // alone must recognize it as protein, regardless of HETATM tagging.
+        let atoms = ["N", "CA", "C", "O", "CB", "CG", "SE", "CE"];
+        let mut raw = RawAtomData::with_capacity(atoms.len());
+        for atom in make_residue_atoms("MSE", &atoms, true, 1) {
+            raw.add_atom(atom);
+        }
+
+        let processed = ProcessedStructure::from_raw(raw).unwrap();
+
+        assert_eq!(processed.num_residues, 1);
+        assert!(processed.ligand_groups.is_empty());
+        assert_eq!(processed.residue_info[0].res_name, "MSE");
+        assert_eq!(processed.molecule_type[0], 0);
     }
 }

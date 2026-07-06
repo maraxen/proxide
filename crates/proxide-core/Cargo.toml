@@ -38,6 +38,13 @@ thiserror.workspace = true
 rand.workspace = true
 rand_distr.workspace = true
 
+# Bundled CCD chem_comp_type reference data (chem::ccd)
+prost = "0.13"
+zstd = "0.13"
+
+[build-dependencies]
+prost-build = "0.13"
+
 [features]
 default = []
 serde = ["dep:serde"]
