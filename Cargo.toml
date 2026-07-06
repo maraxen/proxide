@@ -18,7 +18,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0-alpha.10"
+version = "0.1.0-alpha.11"
 edition = "2021"
 authors = ["Proxide Contributors"]
 license = "MIT"
@@ -29,16 +29,16 @@ readme = "README.md"
 [workspace.dependencies]
 approx = "0.5"
 insta = { version = "1.39", features = ["glob"] }
-proxide-core = { path = "crates/proxide-core", version = "0.1.0-alpha.10" }
-proxide-geometry = { path = "crates/proxide-geometry", version = "0.1.0-alpha.10" }
-proxide-physics = { path = "crates/proxide-physics", version = "0.1.0-alpha.10" }
-proxide-io = { path = "crates/proxide-io", version = "0.1.0-alpha.10" }
-proxide-gaff = { path = "crates/proxide-gaff", version = "0.1.0-alpha.10" }
-proxide-units = { path = "crates/proxide-units", version = "0.1.0-alpha.10" }
-proxide-rotlib = { path = "crates/proxide-rotlib", version = "0.1.0-alpha.10" }
-proxide-confind = { path = "crates/proxide-confind", version = "0.1.0-alpha.10" }
-proxide-parallel-rt = { path = "crates/proxide-parallel-rt", version = "0.1.0-alpha.10" }
-proxide_rs = { path = "crates/proxide_rs", version = "0.1.0-alpha.10" }
+proxide-core = { path = "crates/proxide-core", version = "0.1.0-alpha.11" }
+proxide-geometry = { path = "crates/proxide-geometry", version = "0.1.0-alpha.11" }
+proxide-physics = { path = "crates/proxide-physics", version = "0.1.0-alpha.11" }
+proxide-io = { path = "crates/proxide-io", version = "0.1.0-alpha.11" }
+proxide-gaff = { path = "crates/proxide-gaff", version = "0.1.0-alpha.11" }
+proxide-units = { path = "crates/proxide-units", version = "0.1.0-alpha.11" }
+proxide-rotlib = { path = "crates/proxide-rotlib", version = "0.1.0-alpha.11" }
+proxide-confind = { path = "crates/proxide-confind", version = "0.1.0-alpha.11" }
+proxide-parallel-rt = { path = "crates/proxide-parallel-rt", version = "0.1.0-alpha.11" }
+proxide_rs = { path = "crates/proxide_rs", version = "0.1.0-alpha.11" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"
 nom = "7.1"

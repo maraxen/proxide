@@ -155,7 +155,7 @@ jobs:
             out=$(cargo publish --allow-dirty -p "$1" 2>&1) || rc=$?
             if [ $rc -eq 0 ]; then
               echo "$out"
-            elif echo "$out" | grep -q "already exists on crates.io"; then
+            elif echo "$out" | grep -qE "already exists on crates.io|already uploaded"; then
               echo "SKIP: $1 already published"
             else
               echo "$out" >&2; exit $rc

@@ -44,6 +44,10 @@ zstd = "0.13"
 
 [build-dependencies]
 prost-build = "0.13"
+# Vendored protoc binary so the build never depends on a system-installed
+# protoc -- required for CI wheel builds (Windows/macOS/manylinux Docker
+# runners have no protoc preinstalled; see build.rs).
+protoc-bin-vendored = "3.2.0"
 
 [features]
 default = []

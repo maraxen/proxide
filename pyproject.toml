@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "proxide"
-version = "0.1.0a10"
+version = "0.1.0a11"
 description = "Protein I/O for JAX with high-performance Rust backend"
 readme = "README.md"
 license = "MIT"
