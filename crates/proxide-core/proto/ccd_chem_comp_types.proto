@@ -1,0 +1,18 @@
+syntax = "proto3";
+package proxide.core.v1;
+
+// A minimal, bundled subset of the official PDB Chemical Component Dictionary
+// (CCD): just the id -> chem_comp.type mapping needed to classify a residue
+// name as a peptide/nucleotide/other component, regardless of a source file's
+// raw ATOM/HETATM flag. Deliberately excludes atom/bond geometry (proxide-core
+// already has its own heavy-atom templates for the residues it builds atom37
+// representations for) to keep this asset small relative to the full CCD.
+message ChemCompTypeTable {
+  string ccd_version = 1;      // source file date/version, for provenance
+  repeated ChemCompTypeEntry entries = 2;
+}
+
+message ChemCompTypeEntry {
+  string id = 1;               // e.g. "ALA", "MSE", "HIP"
+  string chem_comp_type = 2;   // e.g. "L-PEPTIDE LINKING", "NON-POLYMER"
+}
