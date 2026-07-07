@@ -14,6 +14,7 @@
 - [260602_rotlib-notebook-plan](research/260602_rotlib-notebook-plan.md) — NotebookLM research notebook plan: rotamer library + confind sources, prompts, and expected outputs for grounding project direction
 - [260603_master-rotlib-cartesian-derivation](research/260603_master-rotlib-cartesian-derivation.md) — #820: MASTER built rotlib.bin Cartesians from CHARMM ideal ICs (not Engh-Huber); measured ground truth root-causes the load_pb drift; fix = source ICs from proxide's bundled charmm36_protein.xml
 - [260603_branch-torsion-offset-diagnostic](research/260603_branch-torsion-offset-diagnostic.md) — #869 diagnostic: measure branch atom torsion offsets in MASTER rotlib.bin; hypothesis = failing residues (GLU/PHE/ASP/LEU/VAL/MET) have offset != template constant; pass = confines error source; fail = error from bond angles or CB placement
+- [260630_arrow-ipc-prototype](research/260630_arrow-ipc-prototype.md) — proxide-jaccard: Arrow IPC + sorted accession index prototype vs parquet+RowFilter (measured ~60x faster scattered queries on real data); planus vs flatbuffers vs Arrow IPC tradeoffs; metadata-isolation design for future taxa/uniprot columns
 
 ## Plans
 - [260602_rotlib-confind-actions](plans/260602_rotlib-confind-actions.md) — Post-NLM-synthesis action plan: rotlib and confind code/doc actions with citations
@@ -24,6 +25,7 @@
 
 ## Misc
 - [260623_gaff2-typing-debt](misc/260623_gaff2-typing-debt.md) — Tech debt: deeper GAFF2 audit (h_ew matching, parser edge cases) + parity CI tests vs OpenFF reference
+- [260630_jaccard-output-format-debt](misc/260630_jaccard-output-format-debt.md) — Tech debt: proxide-jaccard's dense symmetric .npy output is MVP-only; revisit (condensed/chunked/sparse) once matrix sizes are known
 
 ## Specs
 - [260529_rotlib](specs/260529_rotlib.md) — `proxide-rotlib` crate: standalone Rust port of MSL RotamerLibrary — binary format, backbone binning, Frame/Transform placement
@@ -33,6 +35,7 @@
 - [260605_browser-wasm-parallel](specs/260605_browser-wasm-parallel.md) — Browser WASM parallelism: orx-parallel + wasm-bindgen-rayon + proxide-parallel-rt; 6 open risks; awaiting oracle critique
 
 - [260618_system-prep-scope](specs/260618_system-prep-scope.md) — #977 EPIC RESEARCH: full system-prep audit — 12-component inventory (present/partial/missing), reference-tool matrix, MIT licensing survey, prioritized child DAG (C1–C13)
+- [260630_proxide-jaccard](specs/260630_proxide-jaccard.md) — `proxide-jaccard` crate: pairwise Jaccard distance matrices over scaled-MinHash genome sketches (parquet in, dense .npy out), orx-parallel triangle fill
 ## Dynamic Workflows
 > Executable Claude Code Workflow scripts (`Workflow({ scriptPath: ... })`). See [dynamic_workflows/INDEX.md](dynamic_workflows/INDEX.md).
 - [260602_dunbrack-rotlib-sprint.js](dynamic_workflows/260602_dunbrack-rotlib-sprint.js) — Sprint #12 executor: Dunbrack→protobuf rotlib + cis-PRO (Research ∥ P1→P6). Backlog #814–#820.

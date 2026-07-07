@@ -11,6 +11,7 @@ use crate::{forcefield, formats, formatters, geometry, physics, processing, spec
 use numpy::PyArray1;
 use numpy::PyArrayMethods;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 // Column indices for parameterizer output arrays
 const COL_BOND_LENGTH: usize = 0;
@@ -79,6 +80,69 @@ pub fn parse_pqr(py: Python<'_>, path: String) -> PyResult<PyObject> {
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("PQR parsing failed: {}", e)))?;
 
     raw_data.to_py_dict(py).map(|dict| dict.into_py(py))
+}
+
+/// Parse a FASTA/A3M alignment into a tokenized MSA.
+///
+/// Returns a dict: `{"msa": int8 (n_seqs, n_cols), "headers": list[str],
+/// "match_mask": list[bool]}`. Tokens index the alphabet
+/// `"ACDEFGHIKLMNPQRSTVWY-X"` (gap `-` = 20, unknown/`X` = 21); lowercase
+/// (a3m insertion) columns are dropped, so all rows share `n_cols`.
+#[pyfunction]
+pub fn read_fasta(py: Python<'_>, path: String) -> PyResult<PyObject> {
+    let msa = py
+        .allow_threads(|| formats::fasta::parse_a3m(&path).map_err(|e| e.to_string()))
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("FASTA/A3M parsing failed: {}", e))
+        })?;
+
+    let n_seqs = msa.sequences.len();
+    let n_cols = msa.sequences.first().map(|s| s.len()).unwrap_or(0);
+    if msa.sequences.iter().any(|s| s.len() != n_cols) {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "ragged records: parse_a3m returned rows of unequal length (not a rectangular MSA)",
+        ));
+    }
+    let mut flat: Vec<i8> = Vec::with_capacity(n_seqs * n_cols);
+    for row in &msa.sequences {
+        flat.extend_from_slice(row);
+    }
+    let dict = PyDict::new_bound(py);
+    let arr = PyArray1::from_slice_bound(py, &flat).reshape((n_seqs, n_cols))?;
+    dict.set_item("msa", arr)?;
+    dict.set_item("headers", msa.headers)?;
+    dict.set_item("match_mask", msa.match_mask)?;
+    Ok(dict.into_py(py))
+}
+
+/// Parse a Newick tree into array form.
+///
+/// Returns a dict: `{"adjacency": f32 (n_nodes, n_nodes) with
+/// adjacency[child, parent] = 1.0 (root has a self-loop), "parents": int32
+/// (n_nodes,), "post_order": int32 (n_nodes,), "leaf_names": list[str],
+/// "n_leaves": int}`. Nodes are ordered leaves-first then internal. Branch
+/// lengths are not represented.
+#[pyfunction]
+pub fn read_newick(py: Python<'_>, path: String) -> PyResult<PyObject> {
+    let tree = py
+        .allow_threads(|| formats::newick::parse_newick(&path).map_err(|e| e.to_string()))
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Newick parsing failed: {}", e))
+        })?;
+
+    let n = tree.adjacency.len();
+    let mut flat: Vec<f32> = Vec::with_capacity(n * n);
+    for row in &tree.adjacency {
+        flat.extend_from_slice(row);
+    }
+    let dict = PyDict::new_bound(py);
+    let adj = PyArray1::from_slice_bound(py, &flat).reshape((n, n))?;
+    dict.set_item("adjacency", adj)?;
+    dict.set_item("parents", PyArray1::from_slice_bound(py, &tree.parents))?;
+    dict.set_item("post_order", PyArray1::from_slice_bound(py, &tree.post_order))?;
+    dict.set_item("leaf_names", tree.leaf_names)?;
+    dict.set_item("n_leaves", tree.n_leaves)?;
+    Ok(dict.into_py(py))
 }
 
 /// Parse a FoldComp file and return AtomicSystem

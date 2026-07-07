@@ -15,6 +15,7 @@ members = [
     "crates/proxide-confind",
     "crates/proxide-frag",
     "crates/proxide-parallel-rt",
+    "crates/proxide-jaccard",
 ]
 
 [workspace.package]
@@ -38,6 +39,7 @@ proxide-units = { path = "crates/proxide-units", version = "0.1.0-alpha.11" }
 proxide-rotlib = { path = "crates/proxide-rotlib", version = "0.1.0-alpha.11" }
 proxide-confind = { path = "crates/proxide-confind", version = "0.1.0-alpha.11" }
 proxide-parallel-rt = { path = "crates/proxide-parallel-rt", version = "0.1.0-alpha.11" }
+proxide-jaccard = { path = "crates/proxide-jaccard", version = "0.1.0-alpha.11" }
 proxide_rs = { path = "crates/proxide_rs", version = "0.1.0-alpha.11" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"

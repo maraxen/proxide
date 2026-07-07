@@ -16,6 +16,7 @@ proxide_rs = { workspace = true }
 proxide-units = { workspace = true }
 proxide-gaff = { workspace = true }
 proxide-geometry = { workspace = true }
+proxide-jaccard = { workspace = true }
 bytemuck = "1.21.0"
 pyo3 = { workspace = true, features = ["extension-module"] }
 numpy = { workspace = true }

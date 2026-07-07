@@ -1,0 +1,33 @@
+---
+name: proxide-jaccard-spec
+description: proxide-jaccard crate — pairwise Jaccard distance matrices over scaled-MinHash genome sketches, parallelized with orx-parallel
+metadata:
+  type: project
+---
+
+`proxide-jaccard` (`crates/proxide-jaccard/`) computes the n×n pairwise Jaccard distance matrix for a requested set of accessions from a 2-column minhash parquet (`accession: Utf8`, `hashes_list: List<Int64>`).
+
+**Why:** Source data is sourmash-style scaled MinHash (FracMinHash) signatures across the GTDB RS226 + NCBI eukaryote/virus shards (see GTDB-Eight-shards plan). Hash-list length is variable per accession because scaled sketches keep every hash below a threshold rather than a fixed top-k — at equal scale this means Jaccard is computable directly from the stored hash sets (`|A∩B|/|A∪B|`), no resampling needed. The bottleneck is the O(n²) pairwise fill over a *requested* accession subset (e.g. from an MSA), not a full-corpus scan.
+
+**How to apply:** Use this crate (lib + `proxide-jaccard` CLI bin) whenever a distance/similarity matrix over named accessions is needed for a JAX pipeline. Locked decisions from the design conversation (260630):
+
+- Distance metric: Jaccard distance is the default (`1 - |A∩B|/|A∪B|`). Containment (`|A∩B|/|A|`, asymmetric — more informative than Jaccard for size-mismatched sketches, e.g. virus vs. vertebrate genome) added 260630 via `distance::{overlap, containment, overlap_coefficient}` and `matrix::pairwise_containment`, wired through the CLI as `--metric jaccard|containment`. Both share the same merge-intersection kernel — containment is free once Jaccard's `|A∩B|` is computed, not a second pass. No Mash-ANI estimate in v1.
+- Output: dense symmetric f32 `.npy` (via `ndarray-npy`) + a `<stem>.accessions.txt` sidecar manifest (one accession per line, in matrix row/col order) — picked for `jnp.load`/`np.load` ergonomics in the MVP. **This is intentional tech debt**, not the long-term format — see [[260630-jaccard-output-format-debt]].
+- Exposure: Rust crate + CLI binary only (`proxide-jaccard --input <parquet> --out <npy> [--accessions <file>]`). No PyO3 bindings yet — deferred until the file-round-trip workflow proves insufficient.
+- Parallelism: `orx-parallel` (already a workspace dependency, used the same way in `proxide-confind`), not "orc" (no such crate exists in this workspace or on crates.io — that was a mishearing of `orx-parallel`).
+
+**Architecture:**
+
+- `sketch.rs` — `SketchStore`: ragged/CSR layout (one flat `Vec<i64>` + offsets, not `HashMap<String, Vec<i64>>`) loaded via `parquet`+`arrow`. Filters to a requested accession set during the scan; hard-errors (`JaccardError::MissingAccessions`) if any requested accession isn't found, rather than silently shrinking the matrix. Handles both `List<Int64>` and `LargeList<Int64>` hashes_list (the real corpus, `signature_index_k31.parquet`, uses `large_list`). Pushes the accession filter into the parquet read itself: `prune_row_groups` skips row groups whose accession min/max stats prove no overlap (safe regardless of physical row order; the real corpus is globally sorted by accession across 20 row groups, so this is a large win there), and a `RowFilter`/`ArrowPredicateFn` decodes only the cheap `accession` column before deciding whether to decode `hashes_list` for each row (late materialization). Measured on the real 982,265-row corpus: clustered 300-accession query 0.16s/57MB RSS; scattered 300-accession query (worst case — touches all 20 row groups) 63.82s/205MB RSS, *slower* than an unfiltered full scan (42.35s) because `RowFilter`'s non-contiguous-row decode has real overhead when matches don't cluster (a caveat the API's own docs call out) — see [[arrow-ipc-prototype]] for a follow-up storage prototype that fixes the scattered case.
+- `distance.rs` — merge-based `jaccard_similarity`/`jaccard_distance` kernel, O(len_a+len_b), no allocation. Assumes sorted, deduplicated inputs (sourmash signatures are sets by construction, and the real corpus is sorted at merge time); `sketch.rs` sorts defensively on load but does not dedupe (precondition documented, not enforced — see code comment). Optimal only when both sketches are roughly the same order of magnitude; not optimal for highly size-skewed pairs (e.g. virus vs. vertebrate genomes at the same minhash scale) — a galloping/adaptive merge would help there but is deliberately not implemented until real cross-shard size skew is measured (decision from the 260630 design conversation: wait and measure first).
+- `matrix.rs` — `pairwise_jaccard_distance`: parallelizes by row (`(0..n).into_par().map(|i| ...)`), not flat-index unranking — simpler than triangular-index math, and `orx-parallel`'s work-stealing absorbs the per-row work imbalance. Diagonal is always 0.0 by construction (not routed through the general kernel, which would otherwise give two empty sketches a "distance" of 1.0 under the 0/0 convention). Measured 8.6x speedup vs. sequential on a 24-core box (NumThreads::Auto, no manual tuning needed).
+- `accessions.rs` — accession-list resolution; today a flat-file reader (`--accessions <file>`, one per line). FASTA-MSA-header extraction and GTDB-eight-shard merging are the planned Phase 2 additions to this module, not yet implemented.
+- `output.rs` — `.npy` + manifest writer.
+- `ipc_index.rs` — **experimental, not wired into the CLI.** Arrow IPC (uncompressed) + sorted in-memory accession index prototype, fixing the parquet path's scattered-query regression. Measured ~60x faster than parquet+RowFilter for scattered queries on real data, at the cost of ~+37% disk (the hash data is only 73% compressible under zstd, so there's little compression headroom to give up). See [[arrow-ipc-prototype]] for full measurements, the planus/flatbuffers tradeoff analysis, and the metadata-isolation design for future taxonomy/UniProt columns.
+
+Not yet implemented (deliberately out of v1 scope, not forgotten):
+1. FASTA MSA header → accession extraction.
+2. GTDB eight-shard merge/lookup (RS226 + 6 NCBI eukaryote subdivisions + NCBI viruses).
+3. ~~Parquet predicate pushdown / row-group skipping~~ — done (`sketch.rs::prune_row_groups` + `RowFilter`); see the real-data caveat above and [[arrow-ipc-prototype]] for the storage-format alternative that resolves it more fully.
+4. PyO3 bindings (`proxide_py` extension or a dedicated `proxide_jaccard_py`).
+5. Productionizing `ipc_index.rs` (wiring it into the CLI as an alternative backend, deciding on batch size, building/validating against the full corpus rather than a bounded slice) — currently a validated prototype, not a decision to ship yet.

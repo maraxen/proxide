@@ -1,5 +1,6 @@
-"""Data fetching utilities for protein structures."""
+"""IO utilities: structure fetching/parsing, plus FASTA/A3M and Newick parsers."""
 
+from proxide._proxider import read_fasta, read_newick  # type: ignore[unresolved-import]
 from proxide.io.fetching import (
   fetch_afdb,
   fetch_md_cath,
@@ -14,4 +15,6 @@ __all__ = [
   "parse_structure",
   "load_structure",
   "parse_input",
+  "read_fasta",
+  "read_newick",
 ]
