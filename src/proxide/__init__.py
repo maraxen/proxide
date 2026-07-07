@@ -53,7 +53,12 @@ from proxide.io.parsing.backend import (
   write_dcd,
 )
 
+# Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.
+from proxide import io, jaccard  # noqa: E402
+
 __all__ = [
+  "io",
+  "jaccard",
   # Structure parsing
   "parse_pdb",
   "parse_mmcif",

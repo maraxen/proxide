@@ -14,6 +14,7 @@ mod py_confind;
 mod py_frag;
 mod py_forcefield;
 mod py_hdf5;
+mod py_jaccard;
 mod py_parsers;
 mod py_rotlib;
 mod py_stream;
@@ -86,6 +87,11 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_parsers::parse_foldcomp, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_structure, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::project_to_mpnn_batch, m)?)?;
+
+    // Sequence + tree parsing (from py_parsers) and MinHash distances (from py_jaccard)
+    m.add_function(wrap_pyfunction!(py_parsers::read_fasta, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parsers::read_newick, m)?)?;
+    m.add_function(wrap_pyfunction!(py_jaccard::jaccard_distance_matrix, m)?)?;
 
     // Force field functions (from py_forcefield)
     m.add_function(wrap_pyfunction!(py_forcefield::load_forcefield, m)?)?;

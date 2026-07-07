@@ -2808,7 +2808,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-jaccard"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.11"
 dependencies = [
  "approx",
  "arrow",
@@ -2912,6 +2912,7 @@ dependencies = [
  "numpy",
  "proxide-gaff",
  "proxide-geometry",
+ "proxide-jaccard",
  "proxide-units",
  "proxide_rs",
  "pyo3",
