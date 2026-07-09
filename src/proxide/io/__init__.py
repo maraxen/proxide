@@ -1,5 +1,9 @@
 """IO utilities: structure fetching/parsing, plus FASTA/A3M and Newick parsers."""
 
+from __future__ import annotations
+
+from typing import Any
+
 from proxide._proxider import read_fasta, read_newick  # type: ignore[unresolved-import]
 from proxide.io.fetching import (
   fetch_afdb,
@@ -13,7 +17,6 @@ from proxide.io.fixtures import (
   save_tensor_bundle,
   unflatten_tensor_dict,
 )
-from proxide.io.parsing import load_structure, parse_input, parse_structure
 
 __all__ = [
   "fetch_afdb",
@@ -30,3 +33,17 @@ __all__ = [
   "load_tensor_bundle",
   "assert_bundle_keys",
 ]
+
+
+def __getattr__(name: str) -> Any:
+  # Lazy: parsing pulls JAX; fixtures/FASTA must work in torch-only vendor venvs.
+  if name in {"parse_structure", "load_structure", "parse_input"}:
+    from proxide.io.parsing import load_structure, parse_input, parse_structure
+
+    mapping = {
+      "parse_structure": parse_structure,
+      "load_structure": load_structure,
+      "parse_input": parse_input,
+    }
+    return mapping[name]
+  raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

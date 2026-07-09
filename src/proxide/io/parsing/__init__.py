@@ -1,6 +1,9 @@
 """Parsing utilities for various protein structure formats."""
 
-from proxide.io.parsing.backend import parse_structure
+from __future__ import annotations
+
+from typing import Any
+
 from proxide.io.parsing.dispatch import load_structure, parse_input
 from proxide.io.parsing.registry import (
   FormatNotSupportedError,
@@ -20,3 +23,11 @@ __all__ = [
   "FormatNotSupportedError",
   "ParserFunc",
 ]
+
+
+def __getattr__(name: str) -> Any:
+  if name == "parse_structure":
+    from proxide.io.parsing.backend import parse_structure
+
+    return parse_structure
+  raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
