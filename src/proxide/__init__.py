@@ -40,6 +40,9 @@ from proxide._proxider import (  # type: ignore[unresolved-import]
   parse_trr,
   # Trajectory parsing
   parse_xtc,
+  # Geometry
+  radius_of_gyration,
+  weighted_radius_of_gyration,
 )
 from proxide.io.fetching import (
   fetch_afdb,
@@ -71,6 +74,9 @@ __all__ = [
   "parse_dcd",
   "parse_trr",
   "TrajectoryStream",
+  # Geometry
+  "radius_of_gyration",
+  "weighted_radius_of_gyration",
   # HDF5
   "parse_mdtraj_h5_metadata",
   "parse_mdtraj_h5_frame",

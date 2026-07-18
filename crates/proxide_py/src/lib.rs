@@ -13,6 +13,7 @@ mod py_chemistry;
 mod py_confind;
 mod py_frag;
 mod py_forcefield;
+mod py_geometry;
 mod py_hdf5;
 mod py_jaccard;
 mod py_parsers;
@@ -125,6 +126,13 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_chemistry::get_water_model, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::compute_bicubic_params, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::parameterize_molecule, m)?)?;
+
+    // General geometry utilities (from py_geometry)
+    m.add_function(wrap_pyfunction!(py_geometry::radius_of_gyration, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        py_geometry::weighted_radius_of_gyration,
+        m
+    )?)?;
 
     // Register Python wrappers
     m.add_class::<PyAtomicSystem>()?;

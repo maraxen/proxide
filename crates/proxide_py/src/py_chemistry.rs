@@ -275,7 +275,7 @@ pub fn assign_espaloma_charges(
     Ok(PyArray1::from_vec_bound(py, charges).into_py(py))
 }
 
-fn extract_coords(py: Python<'_>, obj: &PyObject) -> PyResult<Vec<[f32; 3]>> {
+pub(crate) fn extract_coords(py: Python<'_>, obj: &PyObject) -> PyResult<Vec<[f32; 3]>> {
     let bound = obj.bind(py);
 
     if let Ok(l) = bound.downcast::<PyList>() {
