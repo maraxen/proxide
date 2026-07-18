@@ -58,3 +58,19 @@ def test_weighted_radius_of_gyration_length_mismatch_raises():
     weights = [1.0]  # deliberately wrong length
     with pytest.raises(ValueError):
         weighted_radius_of_gyration(coords, weights)
+
+
+def test_weighted_radius_of_gyration_nan_weight_propagates_nan():
+    # Regression test (found by audit): a NaN weight must not silently read
+    # as 0.0 -- for an MD frame-quality filter, a silent 0.0 reads as
+    # "maximally compact" and would be KEPT by a >-threshold reject filter
+    # instead of surfacing as bad input.
+    coords = [[10.0, 0.0, 0.0], [-10.0, 0.0, 0.0]]
+    weights = [float("nan"), 1.0]
+    assert np.isnan(weighted_radius_of_gyration(coords, weights))
+
+
+def test_weighted_radius_of_gyration_all_zero_weights_is_zero_not_nan():
+    coords = [[10.0, 0.0, 0.0], [-10.0, 0.0, 0.0]]
+    weights = [0.0, 0.0]
+    assert weighted_radius_of_gyration(coords, weights) == 0.0

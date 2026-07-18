@@ -50,10 +50,18 @@ pub fn weighted_radius_of_gyration(coords: &[[f32; 3]], weights: &[f32]) -> f32 
         total_weight += w;
     }
 
-    if total_weight > 0.0 {
-        (weighted_sum_sq / total_weight).sqrt()
-    } else {
+    // NOTE: intentionally `== 0.0`, not `> 0.0`. The prior `> 0.0` guard
+    // silently returned 0.0 for a NaN total_weight too (`NaN > 0.0` is false
+    // in IEEE-754), which is the worst possible failure direction for an MD
+    // frame-quality filter: a NaN mass (e.g. a bad lookup) would read as a
+    // maximally-compact frame and be silently KEPT by a >-threshold reject
+    // filter instead of surfacing as bad input. `== 0.0` is also false for
+    // NaN, so NaN (and any pathological negative-sum weights) now correctly
+    // propagates through the division into a NaN result instead.
+    if total_weight == 0.0 {
         0.0
+    } else {
+        (weighted_sum_sq / total_weight).sqrt()
     }
 }
 
@@ -111,5 +119,39 @@ mod tests {
         let rg_w = weighted_radius_of_gyration(&coords, &weights);
         let rg_unweighted = radius_of_gyration(&coords);
         assert!(rg_w < rg_unweighted);
+    }
+
+    #[test]
+    fn test_weighted_radius_of_gyration_nan_weight_propagates_nan_not_zero() {
+        // Regression test: a NaN weight (e.g. a bad mass lookup) must NOT
+        // silently read as 0.0 -- for an MD frame-quality filter, a silent
+        // 0.0 reads as "maximally compact" and would be KEPT by a
+        // >-threshold reject filter instead of surfacing as bad input.
+        let coords = [[10.0, 0.0, 0.0], [-10.0, 0.0, 0.0]];
+        let weights = [f32::NAN, 1.0];
+        let rg = weighted_radius_of_gyration(&coords, &weights);
+        assert!(rg.is_nan(), "expected NaN to propagate, got {}", rg);
+    }
+
+    #[test]
+    fn test_weighted_radius_of_gyration_all_zero_weights_is_zero_not_nan() {
+        // The true degenerate case (no mass at all) should still cleanly
+        // return 0.0, not NaN -- only NaN/negative-sum inputs should NaN out.
+        let coords = [[10.0, 0.0, 0.0], [-10.0, 0.0, 0.0]];
+        let weights = [0.0, 0.0];
+        let rg = weighted_radius_of_gyration(&coords, &weights);
+        assert_eq!(rg, 0.0);
+    }
+
+    #[test]
+    fn test_radius_of_gyration_all_identical_points_is_zero() {
+        let coords = [[3.0, 3.0, 3.0]; 5];
+        assert_eq!(radius_of_gyration(&coords), 0.0);
+    }
+
+    #[test]
+    fn test_radius_of_gyration_nan_coordinate_propagates_nan() {
+        let coords = [[f32::NAN, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        assert!(radius_of_gyration(&coords).is_nan());
     }
 }

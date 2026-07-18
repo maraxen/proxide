@@ -134,11 +134,15 @@ mod tests {
 
     #[test]
     fn test_pure_rotation_zero_rmsd() {
-        // b is a rotated 90deg about z: (x,y,z) -> (-y,x,z).
+        // b is a rotated 90deg about z: (x,y,z) -> (-y,x,z). Tight tolerance:
+        // the direct-residual RMSD form is machine-precision-clean here (no
+        // catastrophic cancellation), unlike the algebraic-identity form
+        // this replaced (see module doc) which was measured to give ~4e-3
+        // for an equivalent case.
         let a = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5, 0.0], [2.0, -1.0, 1.0]];
         let b: Vec<[f32; 3]> = a.iter().map(|p| [-p[1], p[0], p[2]]).collect();
         let result = rmsd_with_centering(&a, &b);
-        assert!(result.rmsd < 1e-3, "expected ~0 rmsd for a pure rotation, got {}", result.rmsd);
+        assert!(result.rmsd < 1e-5, "expected ~0 rmsd for a pure rotation, got {}", result.rmsd);
     }
 
     #[test]
@@ -182,5 +186,65 @@ mod tests {
         let b: [[f32; 3]; 0] = [];
         let result = kabsch_rmsd(&a, &b);
         assert!(result.rmsd.is_infinite());
+    }
+
+    #[test]
+    fn test_single_point_zero_rmsd() {
+        // A single point, centered on itself, lands at the origin regardless
+        // of its original coordinates -- RMSD must be exactly 0, and the SVD
+        // of the resulting zero-vector H must not panic or produce NaN.
+        let a = [[1.0, 2.0, 3.0]];
+        let b = [[4.0, 5.0, 6.0]];
+        let result = rmsd_with_centering(&a, &b);
+        assert!(result.rmsd.is_finite(), "rmsd={}", result.rmsd);
+        assert!(result.rmsd < 1e-5, "rmsd={}", result.rmsd);
+    }
+
+    #[test]
+    fn test_all_identical_points_degenerate_case_no_panic() {
+        // H = A^T B is the zero matrix (every point is at the origin after
+        // centering) -- a genuinely rank-0 SVD input. Must not panic; result
+        // should be finite (0, by convention -- two degenerate point clouds
+        // trivially superpose).
+        let a = [[3.0, 3.0, 3.0]; 5];
+        let b = [[7.0, -2.0, 1.0]; 5];
+        let result = rmsd_with_centering(&a, &b);
+        assert!(result.rmsd.is_finite(), "rmsd={}", result.rmsd);
+    }
+
+    #[test]
+    fn test_chiral_mirror_case_forces_proper_rotation() {
+        // b is a's mirror image through the xy-plane (negate z) -- NOT
+        // reachable by any proper rotation. det(V U^T) is negative here
+        // (independently confirmed via numpy: det=-1 before correction),
+        // exercising the reflection-correction branch. The constrained
+        // (proper-rotation-only) optimum is a known, numpy-cross-checked
+        // value, not a hand guess.
+        let a = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]];
+        let b = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0], [0.0, 0.0, 0.0]];
+        // Note: rmsd_with_centering, not the low-level kabsch_rmsd -- a/b
+        // above are NOT pre-centered (centroid is (0.25,0.25,0.25), not the
+        // origin), matching how the numpy verification centered first too.
+        let result = rmsd_with_centering(&a, &b);
+        assert!(
+            (result.rmsd - 0.5).abs() < 1e-4,
+            "expected rmsd=0.5 (numpy-verified, proper-rotation-constrained optimum), got {}",
+            result.rmsd
+        );
+        // The reflection guard must have engaged: the resulting rotation
+        // matrix should be a proper rotation (det = +1), not a reflection.
+        let r = &result.rotation;
+        let det = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
+            - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
+            + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+        assert!((det - 1.0).abs() < 1e-4, "expected a proper rotation (det=1), got det={}", det);
+    }
+
+    #[test]
+    fn test_nan_coordinate_propagates_nan_not_silent_value() {
+        let a = [[f32::NAN, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        let b = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        let result = rmsd_with_centering(&a, &b);
+        assert!(result.rmsd.is_nan(), "expected NaN to propagate, got {}", result.rmsd);
     }
 }
