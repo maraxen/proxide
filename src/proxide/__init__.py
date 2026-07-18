@@ -24,6 +24,8 @@ from proxide._proxider import (  # type: ignore[unresolved-import]
   compute_bicubic_params,
   get_mdcath_replicas,
   get_water_model,
+  # Geometry
+  kabsch_rmsd,
   # Force fields
   load_forcefield,
   parameterize_molecule,
@@ -40,7 +42,6 @@ from proxide._proxider import (  # type: ignore[unresolved-import]
   parse_trr,
   # Trajectory parsing
   parse_xtc,
-  # Geometry
   radius_of_gyration,
   weighted_radius_of_gyration,
 )
@@ -77,6 +78,7 @@ __all__ = [
   # Geometry
   "radius_of_gyration",
   "weighted_radius_of_gyration",
+  "kabsch_rmsd",
   # HDF5
   "parse_mdtraj_h5_metadata",
   "parse_mdtraj_h5_frame",

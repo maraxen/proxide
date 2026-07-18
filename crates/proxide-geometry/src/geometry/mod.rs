@@ -13,6 +13,7 @@ pub mod neighbors;
 pub mod nerf;
 pub mod radial_basis;
 pub mod radius_of_gyration;
+pub mod rmsd;
 pub mod solvent;
 pub mod topology;
 pub mod transforms;
@@ -34,6 +35,8 @@ pub use nerf::*;
 pub use radial_basis::*;
 #[allow(unused_imports)]
 pub use radius_of_gyration::*;
+#[allow(unused_imports)]
+pub use rmsd::*;
 #[allow(unused_imports)]
 pub use solvent::*;
 #[allow(unused_imports)]

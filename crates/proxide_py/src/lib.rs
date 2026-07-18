@@ -133,6 +133,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
         py_geometry::weighted_radius_of_gyration,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(py_geometry::kabsch_rmsd, m)?)?;
 
     // Register Python wrappers
     m.add_class::<PyAtomicSystem>()?;
