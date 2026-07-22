@@ -56,7 +56,7 @@ once_cell = "1.19"
 nalgebra = "0.33"
 rand = "0.8"
 rand_distr = "0.4"
-molly = "0.4.0"
+molly = "0.6"
 hdf5 = { package = "hdf5-metno", version = "0.11", features = ["static"] }
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }

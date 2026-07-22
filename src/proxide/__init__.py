@@ -5,9 +5,13 @@ Rust backend (`_proxider`) for fast protein I/O, force field parameterization,
 and seamless integration with JAX MD.
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 __version__ = "0.1.0"
 
-# Re-export Rust extension functions for unified API
+# Re-export Rust extension functions for unified API (no JAX required).
 from proxide._proxider import (  # type: ignore[unresolved-import]
   AtomicSystem,
   CoordFormat,
@@ -50,14 +54,9 @@ from proxide.io.fetching import (
   fetch_foldcomp_database,
   fetch_rcsb,
 )
-from proxide.io.parsing.backend import (
-  TrajectoryStream,
-  iterload,
-  parse_structure,
-  write_dcd,
-)
 
 # Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.
+# `proxide.io` is importable without JAX (fixtures / FASTA); parsing is lazy.
 from proxide import io, jaccard  # noqa: E402
 
 __all__ = [
@@ -107,3 +106,22 @@ __all__ = [
   "fetch_afdb",
   "fetch_foldcomp_database",
 ]
+
+
+def __getattr__(name: str) -> Any:
+  # Lazy: parsing.backend imports jax.numpy.
+  if name in {"TrajectoryStream", "iterload", "parse_structure", "write_dcd"}:
+    from proxide.io.parsing.backend import (
+      TrajectoryStream,
+      iterload,
+      parse_structure,
+      write_dcd,
+    )
+
+    return {
+      "TrajectoryStream": TrajectoryStream,
+      "iterload": iterload,
+      "parse_structure": parse_structure,
+      "write_dcd": write_dcd,
+    }[name]
+  raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
