@@ -1213,12 +1213,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glam"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "151665d9be52f9bb40fc7966565d39666f2d1e69233571b71b87791c7e0528b3"
-
-[[package]]
 name = "globset"
 version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1966,13 +1960,9 @@ dependencies = [
 
 [[package]]
 name = "molly"
-version = "0.4.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fface8027716e2d4e86da4eba909d04eaaa8c3feefcc6f25ab92f5b44708c929"
-dependencies = [
- "clap",
- "glam",
-]
+checksum = "80fc11cdd24f997d0db799faf11a20c1902a49e6b45157977137188ef13f3848"
 
 [[package]]
 name = "multimap"
@@ -2787,6 +2777,7 @@ dependencies = [
 name = "proxide-io"
 version = "0.1.0-alpha.12"
 dependencies = [
+ "bincode",
  "flate2",
  "getrandom 0.2.17",
  "hdf5-metno",
@@ -2802,6 +2793,7 @@ dependencies = [
  "proxide-parallel-rt",
  "quick-xml",
  "reqwest",
+ "serde",
  "tempfile",
  "thiserror",
 ]
