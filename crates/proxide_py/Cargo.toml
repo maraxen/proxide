@@ -23,12 +23,13 @@ numpy = { workspace = true }
 nalgebra.workspace = true
 pyo3-log = { workspace = true }
 log = "0.4"
+molly = { workspace = true, optional = true }
 
 [features]
 default = ["full"]
 fetching = ["proxide_rs/fetching"]
 hdf5 = ["proxide_rs/hdf5"]
-xtc = ["proxide_rs/xtc"]
+xtc = ["proxide_rs/xtc", "dep:molly"]
 parallel = ["proxide_rs/parallel"]
 foldcomp = ["proxide_rs/foldcomp"]
 full = ["fetching", "hdf5", "xtc", "parallel", "foldcomp"]

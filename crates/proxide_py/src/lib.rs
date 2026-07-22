@@ -20,6 +20,7 @@ mod py_parsers;
 mod py_rotlib;
 mod py_stream;
 mod py_trajectory;
+mod py_xtc_reader;
 
 // Internal re-exports of core modules
 pub(crate) use proxide_rs::{
@@ -103,6 +104,13 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_trajectory::parse_dcd, m)?)?;
     m.add_function(wrap_pyfunction!(py_trajectory::parse_trr, m)?)?;
     m.add_function(wrap_pyfunction!(py_trajectory::parse_mdc, m)?)?;
+
+    // Lazy/parallel XTC reading (from py_xtc_reader) — stride + atom-selection
+    // random-access reads via the XtcReader offset cursor / read_frames_parallel.
+    #[cfg(feature = "xtc")]
+    m.add_function(wrap_pyfunction!(py_xtc_reader::read_xtc_lazy, m)?)?;
+    #[cfg(feature = "xtc")]
+    m.add_function(wrap_pyfunction!(py_xtc_reader::read_xtc_parallel, m)?)?;
 
     // HDF5 parsing functions (from py_hdf5)
     #[cfg(feature = "hdf5")]
