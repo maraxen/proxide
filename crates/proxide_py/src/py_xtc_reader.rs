@@ -69,12 +69,15 @@ fn frame_to_angstroms_selected(
 }
 
 #[cfg(feature = "xtc")]
+#[allow(clippy::too_many_arguments)]
 fn frames_to_pydict(
     py: Python<'_>,
     num_frames: usize,
     num_atoms: usize,
     flat_coords: Vec<f32>,
     flat_boxes: Vec<f32>,
+    flat_times: Vec<f32>,
+    total_frames_on_disk: usize,
 ) -> PyResult<PyObject> {
     let dict = PyDict::new_bound(py);
     dict.set_item("num_frames", num_frames)?;
@@ -93,6 +96,11 @@ fn frames_to_pydict(
         pyo3::exceptions::PyValueError::new_err(format!("Failed to reshape box_vectors: {}", e))
     })?;
     dict.set_item("box_vectors", box_reshaped)?;
+
+    let times_array = PyArray1::from_slice_bound(py, &flat_times);
+    dict.set_item("times", times_array)?;
+
+    dict.set_item("total_frames_on_disk", total_frames_on_disk)?;
 
     Ok(dict.into_py(py))
 }
@@ -114,7 +122,7 @@ pub fn read_xtc_lazy(
         use crate::formats::xtc::XtcReader;
         use molly::selection::AtomSelection;
 
-        let (num_frames, num_atoms, flat_coords, flat_boxes) = py
+        let (num_frames, num_atoms, flat_coords, flat_boxes, flat_times, total_frames) = py
             .allow_threads(|| -> Result<_, String> {
                 let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
                 let total_frames = reader.frame_count().map_err(|e| e.to_string())?;
@@ -126,6 +134,7 @@ pub fn read_xtc_lazy(
 
                 let mut flat_coords = Vec::with_capacity(indices.len() * selected_natoms * 3);
                 let mut flat_boxes = Vec::with_capacity(indices.len() * 9);
+                let mut flat_times = Vec::with_capacity(indices.len());
                 let mut num_atoms = 0usize;
                 for &index in &indices {
                     let frame = reader
@@ -137,12 +146,28 @@ pub fn read_xtc_lazy(
                     flat_boxes.extend_from_slice(&b[0]);
                     flat_boxes.extend_from_slice(&b[1]);
                     flat_boxes.extend_from_slice(&b[2]);
+                    flat_times.push(frame.time);
                 }
-                Ok((indices.len(), num_atoms, flat_coords, flat_boxes))
+                Ok((
+                    indices.len(),
+                    num_atoms,
+                    flat_coords,
+                    flat_boxes,
+                    flat_times,
+                    total_frames,
+                ))
             })
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
-        frames_to_pydict(py, num_frames, num_atoms, flat_coords, flat_boxes)
+        frames_to_pydict(
+            py,
+            num_frames,
+            num_atoms,
+            flat_coords,
+            flat_boxes,
+            flat_times,
+            total_frames,
+        )
     }
 
     #[cfg(not(feature = "xtc"))]
@@ -171,7 +196,7 @@ pub fn read_xtc_parallel(
     {
         use crate::formats::xtc::{read_frames_parallel, XtcReader};
 
-        let (num_frames, num_atoms, flat_coords, flat_boxes) = py
+        let (num_frames, num_atoms, flat_coords, flat_boxes, flat_times, total_frames) = py
             .allow_threads(|| -> Result<_, String> {
                 let (total_frames, n_atoms) = {
                     let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
@@ -187,6 +212,7 @@ pub fn read_xtc_parallel(
 
                 let mut flat_coords = Vec::with_capacity(frames.len() * selected_natoms * 3);
                 let mut flat_boxes = Vec::with_capacity(frames.len() * 9);
+                let mut flat_times = Vec::with_capacity(frames.len());
                 let mut num_atoms = 0usize;
                 for frame in &frames {
                     let (c, b) = frame_to_angstroms_selected(frame, &atom_indices);
@@ -195,12 +221,28 @@ pub fn read_xtc_parallel(
                     flat_boxes.extend_from_slice(&b[0]);
                     flat_boxes.extend_from_slice(&b[1]);
                     flat_boxes.extend_from_slice(&b[2]);
+                    flat_times.push(frame.time);
                 }
-                Ok((frames.len(), num_atoms, flat_coords, flat_boxes))
+                Ok((
+                    frames.len(),
+                    num_atoms,
+                    flat_coords,
+                    flat_boxes,
+                    flat_times,
+                    total_frames,
+                ))
             })
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
-        frames_to_pydict(py, num_frames, num_atoms, flat_coords, flat_boxes)
+        frames_to_pydict(
+            py,
+            num_frames,
+            num_atoms,
+            flat_coords,
+            flat_boxes,
+            flat_times,
+            total_frames,
+        )
     }
 
     #[cfg(not(all(feature = "xtc", feature = "parallel")))]

@@ -32,6 +32,9 @@ N_FRAMES = 2500
 N_ATOMS = 240
 COORD_TOLERANCE_ANGSTROM = 0.01  # matches test_trajectory_parity.py — XTC's
 # single-precision lossy-compression round-trip tolerance, not bit-exactness.
+TIME_TOLERANCE_PS = 1e-4  # XTC frame times are stored as plain (not lossily
+# compressed) floats, unlike coordinates — this is single-precision f32
+# round-trip tolerance, not the coordinate compression tolerance above.
 
 
 def _build_synthetic_xtc(path: Path):
@@ -93,7 +96,11 @@ def synthetic_xtc(tmp_path_factory):
     pytest.skip("MDTraj not installed")
   path = tmp_path_factory.mktemp("xtc_reader_parity") / "synthetic.xtc"
   topology = _build_synthetic_xtc(path)
-  return path, topology
+  # Ground truth for total_frames_on_disk: the true unstrided frame count,
+  # established independently via a full stride=1 mdtraj load rather than
+  # just trusting the N_FRAMES constant used to generate the fixture.
+  true_total_frames = mdtraj.load(str(path), top=topology).n_frames
+  return path, topology, true_total_frames
 
 
 CASES = [
@@ -111,7 +118,7 @@ CASES = [
 ]
 
 
-def _assert_parity(proxide_result: dict, mdtraj_traj) -> None:
+def _assert_parity(proxide_result: dict, mdtraj_traj, true_total_frames: int) -> None:
   mdtraj_coords = mdtraj_traj.xyz * 10.0  # nm -> Angstroms
   mdtraj_box = mdtraj_traj.unitcell_vectors * 10.0  # nm -> Angstroms
 
@@ -123,16 +130,23 @@ def _assert_parity(proxide_result: dict, mdtraj_traj) -> None:
     proxide_result["box_vectors"], mdtraj_box, atol=COORD_TOLERANCE_ANGSTROM
   )
 
+  assert proxide_result["times"].shape == (proxide_result["num_frames"],)
+  np.testing.assert_allclose(
+    proxide_result["times"], mdtraj_traj.time, atol=TIME_TOLERANCE_PS
+  )
+
+  assert proxide_result["total_frames_on_disk"] == true_total_frames
+
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
 @pytest.mark.parametrize("stride, atom_indices", CASES)
 def test_read_xtc_lazy_matches_mdtraj(synthetic_xtc, stride, atom_indices):
   import proxide
 
-  path, topology = synthetic_xtc
+  path, topology, true_total_frames = synthetic_xtc
   result = proxide.read_xtc_lazy(str(path), stride=stride, atom_indices=atom_indices)
   reference = mdtraj.load(str(path), top=topology, stride=stride, atom_indices=atom_indices)
-  _assert_parity(result, reference)
+  _assert_parity(result, reference, true_total_frames)
 
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
@@ -140,10 +154,10 @@ def test_read_xtc_lazy_matches_mdtraj(synthetic_xtc, stride, atom_indices):
 def test_read_xtc_parallel_matches_mdtraj(synthetic_xtc, stride, atom_indices):
   import proxide
 
-  path, topology = synthetic_xtc
+  path, topology, true_total_frames = synthetic_xtc
   result = proxide.read_xtc_parallel(str(path), stride=stride, atom_indices=atom_indices)
   reference = mdtraj.load(str(path), top=topology, stride=stride, atom_indices=atom_indices)
-  _assert_parity(result, reference)
+  _assert_parity(result, reference, true_total_frames)
 
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
@@ -151,7 +165,7 @@ def test_read_xtc_lazy_and_parallel_agree(synthetic_xtc):
   """Both new bindings should decode identical numbers, independent of mdtraj."""
   import proxide
 
-  path, _topology = synthetic_xtc
+  path, _topology, true_total_frames = synthetic_xtc
   lazy = proxide.read_xtc_lazy(str(path), stride=2, atom_indices=[0, 5, 10])
   parallel = proxide.read_xtc_parallel(str(path), stride=2, atom_indices=[0, 5, 10])
 
@@ -159,6 +173,8 @@ def test_read_xtc_lazy_and_parallel_agree(synthetic_xtc):
   assert lazy["num_atoms"] == parallel["num_atoms"]
   np.testing.assert_allclose(lazy["coordinates"], parallel["coordinates"])
   np.testing.assert_allclose(lazy["box_vectors"], parallel["box_vectors"])
+  np.testing.assert_allclose(lazy["times"], parallel["times"])
+  assert lazy["total_frames_on_disk"] == parallel["total_frames_on_disk"] == true_total_frames
 
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
@@ -172,7 +188,7 @@ def test_atom_indices_preserve_order_and_duplicates(synthetic_xtc, fn_name):
   """
   import proxide
 
-  path, _topology = synthetic_xtc
+  path, _topology, _true_total_frames = synthetic_xtc
   fn = getattr(proxide, fn_name)
   requested = [5, 2, 5, 0, 41]
 
@@ -190,7 +206,7 @@ def test_out_of_range_atom_index_raises(synthetic_xtc, fn_name):
   """An out-of-range atom index must raise a clean error, not panic."""
   import proxide
 
-  path, _topology = synthetic_xtc
+  path, _topology, _true_total_frames = synthetic_xtc
   fn = getattr(proxide, fn_name)
   with pytest.raises(ValueError, match="out of range"):
     fn(str(path), atom_indices=[0, N_ATOMS + 100])
