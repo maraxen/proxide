@@ -112,6 +112,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
+dependencies = [
+ "derive_arbitrary",
+]
+
+[[package]]
 name = "arc-swap"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -916,6 +925,17 @@ dependencies = [
  "lock_api",
  "once_cell",
  "parking_lot_core",
+]
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -2037,6 +2057,7 @@ dependencies = [
  "ndarray 0.17.2",
  "num-traits",
  "py_literal",
+ "zip",
 ]
 
 [[package]]
@@ -2696,7 +2717,7 @@ checksum = "95067976aca6421a523e491fce939a3e65249bac4b977adee0ee9771568e8aa3"
 
 [[package]]
 name = "proxide-confind"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "approx",
  "criterion",
@@ -2716,7 +2737,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-core"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "bytemuck",
  "log",
@@ -2735,7 +2756,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-frag"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "approx",
  "bincode",
@@ -2751,7 +2772,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-gaff"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "lazy_static",
  "log",
@@ -2763,7 +2784,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-geometry"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "bytemuck",
  "log",
@@ -2775,7 +2796,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-io"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "bincode",
  "flate2",
@@ -2786,6 +2807,8 @@ dependencies = [
  "log",
  "memmap2",
  "molly",
+ "ndarray 0.17.2",
+ "ndarray-npy",
  "nom",
  "orx-parallel",
  "proxide-core",
@@ -2800,7 +2823,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-jaccard"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "approx",
  "arrow",
@@ -2819,11 +2842,11 @@ dependencies = [
 
 [[package]]
 name = "proxide-parallel-rt"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 
 [[package]]
 name = "proxide-physics"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "approx",
  "bytemuck",
@@ -2839,7 +2862,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-rotlib"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "clap",
  "prost",
@@ -2856,11 +2879,11 @@ dependencies = [
 
 [[package]]
 name = "proxide-units"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 
 [[package]]
 name = "proxide-wasm"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "getrandom 0.2.17",
  "nom",
@@ -2879,7 +2902,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_fixer"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "log",
  "nalgebra",
@@ -2896,7 +2919,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_py"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "bytemuck",
  "log",
@@ -2914,7 +2937,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_rs"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "bytemuck",
  "lazy_static",
@@ -4589,6 +4612,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "zip"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb2a05c7c36fde6c09b08576c9f7fb4cda705990f73b58fe011abf7dfb24168b"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "indexmap",
+ "memchr",
 ]
 
 [[package]]

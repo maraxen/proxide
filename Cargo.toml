@@ -19,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 edition = "2021"
 authors = ["Proxide Contributors"]
 license = "MIT"
@@ -30,17 +30,17 @@ readme = "README.md"
 [workspace.dependencies]
 approx = "0.5"
 insta = { version = "1.39", features = ["glob"] }
-proxide-core = { path = "crates/proxide-core", version = "0.1.0-alpha.14" }
-proxide-geometry = { path = "crates/proxide-geometry", version = "0.1.0-alpha.14" }
-proxide-physics = { path = "crates/proxide-physics", version = "0.1.0-alpha.14" }
-proxide-io = { path = "crates/proxide-io", version = "0.1.0-alpha.14" }
-proxide-gaff = { path = "crates/proxide-gaff", version = "0.1.0-alpha.14" }
-proxide-units = { path = "crates/proxide-units", version = "0.1.0-alpha.14" }
-proxide-rotlib = { path = "crates/proxide-rotlib", version = "0.1.0-alpha.14" }
-proxide-confind = { path = "crates/proxide-confind", version = "0.1.0-alpha.14" }
-proxide-parallel-rt = { path = "crates/proxide-parallel-rt", version = "0.1.0-alpha.14" }
-proxide-jaccard = { path = "crates/proxide-jaccard", version = "0.1.0-alpha.14" }
-proxide_rs = { path = "crates/proxide_rs", version = "0.1.0-alpha.14" }
+proxide-core = { path = "crates/proxide-core", version = "0.1.0-alpha.15" }
+proxide-geometry = { path = "crates/proxide-geometry", version = "0.1.0-alpha.15" }
+proxide-physics = { path = "crates/proxide-physics", version = "0.1.0-alpha.15" }
+proxide-io = { path = "crates/proxide-io", version = "0.1.0-alpha.15" }
+proxide-gaff = { path = "crates/proxide-gaff", version = "0.1.0-alpha.15" }
+proxide-units = { path = "crates/proxide-units", version = "0.1.0-alpha.15" }
+proxide-rotlib = { path = "crates/proxide-rotlib", version = "0.1.0-alpha.15" }
+proxide-confind = { path = "crates/proxide-confind", version = "0.1.0-alpha.15" }
+proxide-parallel-rt = { path = "crates/proxide-parallel-rt", version = "0.1.0-alpha.15" }
+proxide-jaccard = { path = "crates/proxide-jaccard", version = "0.1.0-alpha.15" }
+proxide_rs = { path = "crates/proxide_rs", version = "0.1.0-alpha.15" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"
 nom = "7.1"
@@ -61,4 +61,6 @@ hdf5 = { package = "hdf5-metno", version = "0.11", features = ["static"] }
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 bincode = "1.3"
+ndarray = { version = "0.17", default-features = false }
+ndarray-npy = { version = "0.10", default-features = false, features = ["npz"] }
 criterion = "0.5"

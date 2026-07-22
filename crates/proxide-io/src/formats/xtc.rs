@@ -126,17 +126,97 @@ impl OffsetCache {
         }
     }
 
+    /// MDAnalysis `XDRBaseReader` sidecar: `.{basename}_offsets.npz`
+    /// (e.g. `production.xtc` → `.production.xtc_offsets.npz`).
+    fn mda_sidecar_path(traj_path: &Path) -> PathBuf {
+        let parent = traj_path.parent().unwrap_or_else(|| Path::new("."));
+        let name = traj_path
+            .file_name()
+            .map(|n| n.to_owned())
+            .unwrap_or_default();
+        let mut hidden = std::ffi::OsString::from(".");
+        hidden.push(&name);
+        hidden.push("_offsets.npz");
+        parent.join(hidden)
+    }
+
     /// Load and validate the sidecar for `traj_path`. Returns `None` on any
     /// miss, mismatch, or corruption — callers fall back to a rescan.
+    ///
+    /// On a proxide `.offsets` miss, also tries an MDAnalysis
+    /// `.xtc_offsets.npz` sidecar. Matching size + natoms converts it into a
+    /// proxide bincode sidecar (mtime taken from `stat()` at convert time —
+    /// MDA's `ctime` is intentionally ignored).
     fn load(traj_path: &Path, meta: &std::fs::Metadata, natoms: usize) -> Option<Self> {
         let sidecar = Self::sidecar_path(traj_path);
-        let file = File::open(sidecar).ok()?;
-        let cache: Self = bincode::deserialize_from(io::BufReader::new(file)).ok()?;
-        if cache.matches(meta, natoms) {
-            Some(cache)
-        } else {
-            None
+        if let Ok(file) = File::open(sidecar) {
+            if let Ok(cache) = bincode::deserialize_from::<_, Self>(io::BufReader::new(file)) {
+                if cache.matches(meta, natoms) {
+                    return Some(cache);
+                }
+            }
         }
+        Self::try_load_mda_npz(traj_path, meta, natoms)
+    }
+
+    /// Best-effort import of an MDAnalysis offset npz. Any failure returns
+    /// `None` so the caller falls through to `determine_offsets`.
+    fn try_load_mda_npz(
+        traj_path: &Path,
+        meta: &std::fs::Metadata,
+        natoms: usize,
+    ) -> Option<Self> {
+        let mda_path = Self::mda_sidecar_path(traj_path);
+        let file = File::open(&mda_path).ok()?;
+        let mut npz = ndarray_npy::NpzReader::new(file).ok()?;
+
+        let offsets_arr: ndarray::Array1<i64> = npz.by_name("offsets").ok()?;
+        if offsets_arr.is_empty() {
+            return None;
+        }
+
+        let file_size = Self::npz_scalar_as_u64(&mut npz, "size")?;
+        let n_atoms = Self::npz_scalar_as_u64(&mut npz, "n_atoms")? as usize;
+        if file_size != meta.len() || n_atoms != natoms {
+            return None;
+        }
+
+        let offsets: Vec<u64> = offsets_arr.iter().map(|&x| x as u64).collect();
+        let cache = Self::from_metadata(meta, natoms, offsets).ok()?;
+        // Persist proxide sidecar so the next open skips both MDA and rescan.
+        if cache.store(traj_path).is_ok() {
+            log::info!(
+                "Imported MDAnalysis offset cache {} → {}",
+                mda_path.display(),
+                Self::sidecar_path(traj_path).display()
+            );
+        }
+        Some(cache)
+    }
+
+    /// Read a 0-d (or length-1) integer array from an NPZ under `name`.
+    /// Tries i64 then i32 — MDAnalysis writes `size` as `<i8` and `n_atoms` as `<i4`.
+    fn npz_scalar_as_u64<R: io::Read + io::Seek>(
+        npz: &mut ndarray_npy::NpzReader<R>,
+        name: &str,
+    ) -> Option<u64> {
+        if let Ok(arr) = npz.by_name::<ndarray::OwnedRepr<i64>, ndarray::Ix0>(name) {
+            return Some(arr.into_scalar() as u64);
+        }
+        if let Ok(arr) = npz.by_name::<ndarray::OwnedRepr<i64>, ndarray::Ix1>(name) {
+            if arr.len() == 1 {
+                return Some(arr[0] as u64);
+            }
+        }
+        if let Ok(arr) = npz.by_name::<ndarray::OwnedRepr<i32>, ndarray::Ix0>(name) {
+            return Some(arr.into_scalar() as u64);
+        }
+        if let Ok(arr) = npz.by_name::<ndarray::OwnedRepr<i32>, ndarray::Ix1>(name) {
+            if arr.len() == 1 {
+                return Some(arr[0] as u64);
+            }
+        }
+        None
     }
 
     /// Persist via temp-file-then-rename, so a concurrent reader never observes
