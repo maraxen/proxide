@@ -208,6 +208,111 @@ fn test_read_frames_parallel_matches_serial() {
     assert_eq!(parallel_positions, serial);
 }
 
+/// Write an MDAnalysis-shaped `.{name}_offsets.npz` via numpy (same keys/dtypes
+/// as `XDRBaseReader._read_offsets`).
+fn write_mda_offsets_npz(
+    traj_path: &Path,
+    offsets: &[u64],
+    file_size: u64,
+    n_atoms: i32,
+) {
+    let parent = traj_path.parent().unwrap();
+    let name = traj_path.file_name().unwrap().to_string_lossy();
+    let mda_path = parent.join(format!(".{name}_offsets.npz"));
+    let offsets_lit = offsets
+        .iter()
+        .map(|o| o.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let script = format!(
+        "import numpy as np\n\
+         np.savez({mda_path:?},\n\
+                  offsets=np.array([{offsets_lit}], dtype=np.int64),\n\
+                  size=np.int64({file_size}),\n\
+                  ctime=np.float64(0.0),\n\
+                  n_atoms=np.int32({n_atoms}))\n"
+    );
+    let status = std::process::Command::new("python3")
+        .arg("-c")
+        .arg(&script)
+        .status()
+        .expect("failed to spawn python3 for MDA npz fixture");
+    assert!(status.success(), "python3 MDA npz writer failed");
+    assert!(mda_path.exists(), "MDA npz was not written");
+}
+
+fn molly_offsets_and_natoms(path: &Path) -> (Vec<u64>, usize) {
+    use molly::XTCReader;
+    let mut reader = XTCReader::open(path).expect("molly open failed");
+    reader.home().unwrap();
+    let header = reader.read_header().expect("read_header failed");
+    let natoms = header.natoms;
+    reader.home().unwrap();
+    let offsets = reader
+        .determine_offsets(None)
+        .expect("determine_offsets failed")
+        .into_vec();
+    (offsets, natoms)
+}
+
+/// On a proxide `.offsets` miss, a matching MDAnalysis `.xtc_offsets.npz` must
+/// be imported (and rewritten as the bincode sidecar) so cold `determine_offsets`
+/// is skipped.
+#[test]
+fn test_mda_offsets_npz_imported_when_proxide_sidecar_missing() {
+    let Some(xtc_path) = test_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let proxide_sidecar = PathBuf::from(format!("{}.offsets", path.display()));
+    assert!(!proxide_sidecar.exists());
+
+    let (offsets, n_atoms) = molly_offsets_and_natoms(&path);
+    let n_frames = offsets.len();
+    let file_size = std::fs::metadata(&path).unwrap().len();
+    write_mda_offsets_npz(&path, &offsets, file_size, n_atoms as i32);
+
+    // Fresh open: must import MDA npz, create proxide sidecar, agree on count.
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    assert_eq!(reader.frame_count().unwrap(), n_frames);
+    assert_eq!(reader.n_atoms().unwrap(), n_atoms);
+    assert!(
+        proxide_sidecar.exists(),
+        "proxide sidecar should be written after MDA import"
+    );
+
+    // Second open reuses the converted proxide sidecar.
+    let mut reader2 = XtcReader::open(&path).expect("re-open failed");
+    assert_eq!(reader2.frame_count().unwrap(), n_frames);
+}
+
+/// MDA npz with a mismatched file size must not be trusted — fall through to
+/// a real `determine_offsets` scan (which still produces a correct count).
+#[test]
+fn test_mda_offsets_npz_size_mismatch_falls_through_to_scan() {
+    let Some(xtc_path) = test_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let proxide_sidecar = PathBuf::from(format!("{}.offsets", path.display()));
+
+    let (offsets, n_atoms) = molly_offsets_and_natoms(&path);
+    let n_frames = offsets.len();
+    write_mda_offsets_npz(
+        &path,
+        &offsets,
+        std::fs::metadata(&path).unwrap().len().saturating_add(1),
+        n_atoms as i32,
+    );
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    assert_eq!(reader.frame_count().unwrap(), n_frames);
+    assert!(
+        proxide_sidecar.exists(),
+        "scan should still write proxide sidecar"
+    );
+}
+
 /// At real scale (thousands of frames): the offset-cache sidecar must be
 /// created once and reused, `frame_count()` must not require decoding any
 /// coordinates, and a random subset of frames read via `read_frame_at` must
