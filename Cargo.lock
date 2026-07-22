@@ -2696,7 +2696,7 @@ checksum = "95067976aca6421a523e491fce939a3e65249bac4b977adee0ee9771568e8aa3"
 
 [[package]]
 name = "proxide-confind"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "approx",
  "criterion",
@@ -2716,7 +2716,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-core"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "bytemuck",
  "log",
@@ -2735,7 +2735,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-frag"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "approx",
  "bincode",
@@ -2751,7 +2751,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-gaff"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "lazy_static",
  "log",
@@ -2763,7 +2763,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-geometry"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "bytemuck",
  "log",
@@ -2775,7 +2775,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-io"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "bincode",
  "flate2",
@@ -2800,7 +2800,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-jaccard"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "approx",
  "arrow",
@@ -2819,11 +2819,11 @@ dependencies = [
 
 [[package]]
 name = "proxide-parallel-rt"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 
 [[package]]
 name = "proxide-physics"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "approx",
  "bytemuck",
@@ -2839,7 +2839,7 @@ dependencies = [
 
 [[package]]
 name = "proxide-rotlib"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "clap",
  "prost",
@@ -2856,11 +2856,11 @@ dependencies = [
 
 [[package]]
 name = "proxide-units"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 
 [[package]]
 name = "proxide-wasm"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "getrandom 0.2.17",
  "nom",
@@ -2879,7 +2879,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_fixer"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "log",
  "nalgebra",
@@ -2896,7 +2896,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_py"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "bytemuck",
  "log",
@@ -2913,7 +2913,7 @@ dependencies = [
 
 [[package]]
 name = "proxide_rs"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "bytemuck",
  "lazy_static",
