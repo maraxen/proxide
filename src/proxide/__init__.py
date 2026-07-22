@@ -12,6 +12,9 @@ from typing import Any
 __version__ = "0.1.0"
 
 # Re-export Rust extension functions for unified API (no JAX required).
+# Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.
+# `proxide.io` is importable without JAX (fixtures / FASTA); parsing is lazy.
+from proxide import io, jaccard  # noqa: E402
 from proxide._proxider import (  # type: ignore[unresolved-import]
   AtomicSystem,
   CoordFormat,
@@ -47,6 +50,8 @@ from proxide._proxider import (  # type: ignore[unresolved-import]
   # Trajectory parsing
   parse_xtc,
   radius_of_gyration,
+  read_xtc_lazy,
+  read_xtc_parallel,
   weighted_radius_of_gyration,
 )
 from proxide.io.fetching import (
@@ -54,10 +59,6 @@ from proxide.io.fetching import (
   fetch_foldcomp_database,
   fetch_rcsb,
 )
-
-# Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.
-# `proxide.io` is importable without JAX (fixtures / FASTA); parsing is lazy.
-from proxide import io, jaccard  # noqa: E402
 
 __all__ = [
   "io",
@@ -73,6 +74,8 @@ __all__ = [
   "parse_xtc",
   "parse_dcd",
   "parse_trr",
+  "read_xtc_lazy",
+  "read_xtc_parallel",
   "TrajectoryStream",
   # Geometry
   "radius_of_gyration",

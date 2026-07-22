@@ -1,0 +1,76 @@
+[experiment]
+hypothesis = """
+biosensors currently loads XTC trajectories via mdtraj on engaging, which
+bottlenecks on single-threaded decompression of 20-25GB/~90k-frame production
+trajectories and re-scans frame offsets from scratch on every process start.
+
+proxide's new PyO3-exposed XtcReader (offset-cache-backed lazy cursor) and
+read_frames_parallel (per-worker file handles) should beat mdtraj.load on
+wall-clock decode time at production-representative scale (20k+ frames,
+5k+ atoms), with read_xtc_lazy's advantage growing on repeat opens of the
+same file (warm cache skips the header-only offset scan) and
+read_xtc_parallel's advantage coming from concurrent decode regardless of
+cache state.
+"""
+
+[outcomes.pass]
+condition = """
+Both proxide paths (read_xtc_lazy warm, read_xtc_parallel cold or warm) beat
+mdtraj.load's median wall-clock time at 20k+ frame / 5k+ atom scale.
+"""
+signals = [
+  "read_xtc_parallel median_s < mdtraj median_s (any cache state) → concurrent decode wins outright",
+  "read_xtc_lazy warm median_s < read_xtc_lazy cold median_s → offset cache is paying for itself",
+]
+interpretation = """
+If both hold: proxide's lazy/parallel paths are a clear win for biosensors'
+repeat-open, large-trajectory workload — worth pursuing the naurmalade
+integration follow-up.
+"""
+
+[outcomes.marginal]
+condition = """
+proxide paths are competitive (within ~20%) but do not clearly beat mdtraj,
+or the offset-cache warm/cold gap is negligible at this trajectory size
+(single large file — the cache's win compounds across *many* repeat opens,
+which a single-file benchmark run understates).
+"""
+signals = [
+  "cold vs warm difference for read_xtc_lazy/read_xtc_parallel < 10% of median",
+  "read_xtc_parallel median_s within 20% of mdtraj median_s",
+]
+interpretation = """
+Re-run with --repeats increased and/or simulate the real workflow (many
+repeat opens of the same file across process starts, matching engaging's
+network-filesystem-heavy access pattern) before drawing a conclusion either
+way.
+"""
+
+[outcomes.fail]
+condition = """
+Either proxide path errors, produces a wall-clock time significantly worse
+than mdtraj's baseline, or the parity test (test_xtc_reader_parity.py) does
+not also pass — a fast-but-wrong reader is not a usable result.
+"""
+signals = [
+  "PyValueError / exception during read_xtc_lazy or read_xtc_parallel",
+  "median_s for either proxide path > 2x mdtraj's median_s",
+]
+interpretation = """
+Investigate whether the offset scan or per-frame decode is doing unnecessary
+work (e.g. re-scanning offsets on every call instead of reusing the
+in-memory/sidecar cache); check parity test results for a correctness
+regression before assuming this is purely a performance issue.
+"""
+
+[result_schema]
+n_frames = "int: synthetic trajectory frame count"
+n_atoms = "int: synthetic trajectory atom count"
+stride = "int: frame stride passed to all three read paths"
+mdtraj = { seconds = "list[float]: per-repeat wall-clock seconds", summary = "median_s/min_s/max_s" }
+read_xtc_lazy = { cold = "seconds + summary, sidecar deleted before each call", warm = "seconds + summary, sidecar reused" }
+read_xtc_parallel = { cold = "seconds + summary, sidecar deleted before each call", warm = "seconds + summary, sidecar reused" }
+
+[result_schema.provenance]
+script_path = "benchmarks/bench_xtc_decode.py"
+fixture = "generated fresh per run into a tempdir; never checked into git (too large — see script docstring)"
