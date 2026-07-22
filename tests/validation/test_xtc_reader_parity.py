@@ -101,6 +101,13 @@ CASES = [
   pytest.param(3, None, id="stride3"),
   pytest.param(1, [0, 4, 8, 40, 41, 200], id="atom_subset"),
   pytest.param(5, [1, 2, 3, 100], id="stride5_atom_subset"),
+  # Unsorted atom_indices: mdtraj preserves the exact given order (fancy
+  # indexing), so the bindings must too — a Mask-based selection (e.g.
+  # molly's AtomSelection::from_index_list) would silently sort these and
+  # diverge. (mdtraj.load rejects duplicate atom_indices outright, so that
+  # case is covered separately below via a ground-truth numpy comparison
+  # rather than against mdtraj.)
+  pytest.param(1, [200, 0, 41, 8, 4, 40], id="atom_subset_unsorted"),
 ]
 
 
@@ -152,3 +159,38 @@ def test_read_xtc_lazy_and_parallel_agree(synthetic_xtc):
   assert lazy["num_atoms"] == parallel["num_atoms"]
   np.testing.assert_allclose(lazy["coordinates"], parallel["coordinates"])
   np.testing.assert_allclose(lazy["box_vectors"], parallel["box_vectors"])
+
+
+@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
+@pytest.mark.parametrize("fn_name", ["read_xtc_lazy", "read_xtc_parallel"])
+def test_atom_indices_preserve_order_and_duplicates(synthetic_xtc, fn_name):
+  """atom_indices order/duplicates must be preserved exactly (numpy fancy-
+  indexing semantics), matching mdtraj — not silently sorted/deduped by a
+  Mask-style selection. mdtraj.load itself rejects duplicate atom_indices
+  outright, so the ground truth here is the full (unselected) read, fancy-
+  indexed in Python, rather than mdtraj.
+  """
+  import proxide
+
+  path, _topology = synthetic_xtc
+  fn = getattr(proxide, fn_name)
+  requested = [5, 2, 5, 0, 41]
+
+  full = fn(str(path))
+  subset = fn(str(path), atom_indices=requested)
+
+  expected_coords = full["coordinates"][:, requested, :]
+  np.testing.assert_allclose(subset["coordinates"], expected_coords)
+  assert subset["num_atoms"] == len(requested)
+
+
+@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
+@pytest.mark.parametrize("fn_name", ["read_xtc_lazy", "read_xtc_parallel"])
+def test_out_of_range_atom_index_raises(synthetic_xtc, fn_name):
+  """An out-of-range atom index must raise a clean error, not panic."""
+  import proxide
+
+  path, _topology = synthetic_xtc
+  fn = getattr(proxide, fn_name)
+  with pytest.raises(ValueError, match="out of range"):
+    fn(str(path), atom_indices=[0, N_ATOMS + 100])

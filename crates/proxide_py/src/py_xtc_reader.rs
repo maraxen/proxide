@@ -12,22 +12,34 @@ fn build_frame_indices(n_frames: usize, stride: usize) -> Vec<usize> {
     (0..n_frames).step_by(stride.max(1)).collect()
 }
 
+/// Validate that every requested atom index is in bounds for a trajectory with
+/// `n_atoms` atoms. Called once up front so an out-of-range index surfaces as
+/// a clean `PyValueError`, not a panic from unchecked indexing deep in the
+/// per-frame decode loop.
 #[cfg(feature = "xtc")]
-fn build_selection(atom_indices: &Option<Vec<usize>>) -> molly::selection::AtomSelection {
-    match atom_indices {
-        Some(indices) => {
-            let indices: Vec<u32> = indices.iter().map(|&i| i as u32).collect();
-            molly::selection::AtomSelection::from_index_list(&indices)
+fn validate_atom_indices(atom_indices: &Option<Vec<usize>>, n_atoms: usize) -> Result<(), String> {
+    if let Some(indices) = atom_indices {
+        if let Some(&bad) = indices.iter().find(|&&i| i >= n_atoms) {
+            return Err(format!(
+                "atom index {bad} out of range for trajectory with {n_atoms} atoms"
+            ));
         }
-        None => molly::selection::AtomSelection::All,
     }
+    Ok(())
 }
 
-/// Convert a decoded molly frame (nm) into Angstrom-scale flat coords + box vectors.
+/// Convert a decoded molly frame (nm) into Angstrom-scale flat coords + box
+/// vectors, selecting/reordering atoms exactly as `atom_indices` specifies —
+/// order and duplicates preserved, matching mdtraj's `atom_indices` fancy-
+/// indexing semantics.
 ///
-/// Mirrors `proxide_io::formats::xtc`'s private `frame_to_angstroms` helper —
-/// duplicated here since that helper isn't exported, and `read_frames_parallel`
-/// hands back raw (nm-scale) `molly::Frame`s with no atom-selection support.
+/// Deliberately does *not* use `molly::selection::AtomSelection::from_index_list`
+/// for this: that builds a boolean `Mask`, which silently returns atoms in
+/// ascending index order with duplicates collapsed — diverging from mdtraj
+/// (and from a caller's expectations) whenever `atom_indices` isn't already
+/// sorted and unique. Mirrors `proxide_io::formats::xtc`'s private
+/// `frame_to_angstroms` helper for the no-selection case (that helper isn't
+/// exported).
 #[cfg(feature = "xtc")]
 fn frame_to_angstroms_selected(
     frame: &molly::Frame,
@@ -100,22 +112,26 @@ pub fn read_xtc_lazy(
     #[cfg(feature = "xtc")]
     {
         use crate::formats::xtc::XtcReader;
+        use molly::selection::AtomSelection;
 
         let (num_frames, num_atoms, flat_coords, flat_boxes) = py
             .allow_threads(|| -> Result<_, String> {
                 let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
                 let total_frames = reader.frame_count().map_err(|e| e.to_string())?;
-                let indices = build_frame_indices(total_frames, stride);
-                let selection = build_selection(&atom_indices);
+                let n_atoms = reader.n_atoms().map_err(|e| e.to_string())?;
+                validate_atom_indices(&atom_indices, n_atoms)?;
 
-                let mut flat_coords = Vec::new();
-                let mut flat_boxes = Vec::new();
+                let indices = build_frame_indices(total_frames, stride);
+                let selected_natoms = atom_indices.as_ref().map_or(n_atoms, Vec::len);
+
+                let mut flat_coords = Vec::with_capacity(indices.len() * selected_natoms * 3);
+                let mut flat_boxes = Vec::with_capacity(indices.len() * 9);
                 let mut num_atoms = 0usize;
                 for &index in &indices {
                     let frame = reader
-                        .read_frame_at(index, &selection)
+                        .read_frame_at(index, &AtomSelection::All)
                         .map_err(|e| e.to_string())?;
-                    let (c, b) = frame_to_angstroms_selected(&frame, &None);
+                    let (c, b) = frame_to_angstroms_selected(&frame, &atom_indices);
                     num_atoms = c.len() / 3;
                     flat_coords.extend_from_slice(&c);
                     flat_boxes.extend_from_slice(&b[0]);
@@ -140,7 +156,9 @@ pub fn read_xtc_lazy(
 
 /// Read an XTC trajectory's frames concurrently via `read_frames_parallel`
 /// (each worker opens its own file handle and seeks directly to its assigned
-/// offset). Same stride/atom_indices calling convention as [`read_xtc_lazy`].
+/// offset). Same stride/atom_indices calling convention as [`read_xtc_lazy`]
+/// — order and duplicates in `atom_indices` are preserved exactly, matching
+/// mdtraj's `atom_indices` semantics.
 #[pyfunction]
 #[pyo3(signature = (path, stride=1, atom_indices=None))]
 pub fn read_xtc_parallel(
@@ -155,15 +173,20 @@ pub fn read_xtc_parallel(
 
         let (num_frames, num_atoms, flat_coords, flat_boxes) = py
             .allow_threads(|| -> Result<_, String> {
-                let total_frames = {
+                let (total_frames, n_atoms) = {
                     let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
-                    reader.frame_count().map_err(|e| e.to_string())?
+                    let total_frames = reader.frame_count().map_err(|e| e.to_string())?;
+                    let n_atoms = reader.n_atoms().map_err(|e| e.to_string())?;
+                    (total_frames, n_atoms)
                 };
+                validate_atom_indices(&atom_indices, n_atoms)?;
+
                 let indices = build_frame_indices(total_frames, stride);
+                let selected_natoms = atom_indices.as_ref().map_or(n_atoms, Vec::len);
                 let frames = read_frames_parallel(&path, &indices).map_err(|e| e.to_string())?;
 
-                let mut flat_coords = Vec::new();
-                let mut flat_boxes = Vec::new();
+                let mut flat_coords = Vec::with_capacity(frames.len() * selected_natoms * 3);
+                let mut flat_boxes = Vec::with_capacity(frames.len() * 9);
                 let mut num_atoms = 0usize;
                 for frame in &frames {
                     let (c, b) = frame_to_angstroms_selected(frame, &atom_indices);
