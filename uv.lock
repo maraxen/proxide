@@ -3104,7 +3104,7 @@ wheels = [
 
 [[package]]
 name = "proxide"
-version = "0.1.0a13"
+version = "0.1.0a15"
 source = { editable = "." }
 dependencies = [
     { name = "array-record" },
