@@ -16,6 +16,7 @@ members = [
     "crates/proxide-frag",
     "crates/proxide-parallel-rt",
     "crates/proxide-jaccard",
+    "crates/proxide-tmalign",
 ]
 
 [workspace.package]
@@ -40,6 +41,7 @@ proxide-rotlib = { path = "crates/proxide-rotlib", version = "0.1.0-alpha.15" }
 proxide-confind = { path = "crates/proxide-confind", version = "0.1.0-alpha.15" }
 proxide-parallel-rt = { path = "crates/proxide-parallel-rt", version = "0.1.0-alpha.15" }
 proxide-jaccard = { path = "crates/proxide-jaccard", version = "0.1.0-alpha.15" }
+proxide-tmalign = { path = "crates/proxide-tmalign", version = "0.1.0-alpha.15" }
 proxide_rs = { path = "crates/proxide_rs", version = "0.1.0-alpha.15" }
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 numpy = "0.22"

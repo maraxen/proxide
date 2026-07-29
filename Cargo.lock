@@ -2878,6 +2878,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxide-tmalign"
+version = "0.1.0-alpha.12"
+dependencies = [
+ "approx",
+ "getrandom 0.2.17",
+ "log",
+ "nalgebra",
+ "ndarray 0.17.2",
+ "orx-parallel",
+ "proxide-core",
+ "proxide-io",
+ "proxide-parallel-rt",
+ "thiserror",
+]
+
+[[package]]
 name = "proxide-units"
 version = "0.1.0-alpha.15"
 
