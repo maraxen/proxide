@@ -28,6 +28,8 @@ pub mod d0;
 pub mod error;
 pub mod kabsch;
 pub mod nw;
+pub mod score;
+pub mod seed;
 pub mod seq;
 pub mod structure;
 
