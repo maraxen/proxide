@@ -155,19 +155,12 @@ pub fn get_score_fast(
         d002t = d002t.max(sorted_dists[2]);
     }
 
-    // Filter pairs and re-fit.
+    // Filter pairs and re-fit, escalating the cutoff by 0.5 repeatedly while
+    // fewer than 3 pairs survive (TMalign.h's `while(1){...if(j<3&&n_ali>3)
+    // d002t+=0.5; else break;}` — a real loop, not a single-shot retry).
     let mut r1_filtered = Vec::new();
     let mut r2_filtered = Vec::new();
-    for (i, (&pt1, &pt2)) in r1.iter().zip(r2.iter()).enumerate() {
-        if squared_distances[i] <= d002t {
-            r1_filtered.push(pt1);
-            r2_filtered.push(pt2);
-        }
-    }
-
-    // Escalate cutoff if too few pairs remain.
-    if r1_filtered.len() < 3 && r1.len() > 3 {
-        d002t += 0.5;
+    loop {
         r1_filtered.clear();
         r2_filtered.clear();
         for (i, (&pt1, &pt2)) in r1.iter().zip(r2.iter()).enumerate() {
@@ -175,6 +168,11 @@ pub fn get_score_fast(
                 r1_filtered.push(pt1);
                 r2_filtered.push(pt2);
             }
+        }
+        if r1_filtered.len() < 3 && r1.len() > 3 {
+            d002t += 0.5;
+        } else {
+            break;
         }
     }
 
@@ -185,21 +183,11 @@ pub fn get_score_fast(
     };
     let tmscore1 = evaluate_tm_score(coords1, coords2, alignment, &result2.rotation, &result2.translation, d0, l_norm);
 
-    // Iteration 3: Re-fit with tighter cutoff.
-    let d002t_iter3 = d0_search_sq + 1.0;
+    // Iteration 3: Re-fit with tighter cutoff, same repeated-escalation loop.
+    let mut d002t_iter3_esc = d0_search_sq + 1.0;
     let mut r1_filtered3 = Vec::new();
     let mut r2_filtered3 = Vec::new();
-    for (i, (&pt1, &pt2)) in r1.iter().zip(r2.iter()).enumerate() {
-        if squared_distances[i] <= d002t_iter3 {
-            r1_filtered3.push(pt1);
-            r2_filtered3.push(pt2);
-        }
-    }
-
-    // Escalate if too few.
-    let mut d002t_iter3_esc = d002t_iter3;
-    if r1_filtered3.len() < 3 && r1.len() > 3 {
-        d002t_iter3_esc += 0.5;
+    loop {
         r1_filtered3.clear();
         r2_filtered3.clear();
         for (i, (&pt1, &pt2)) in r1.iter().zip(r2.iter()).enumerate() {
@@ -207,6 +195,11 @@ pub fn get_score_fast(
                 r1_filtered3.push(pt1);
                 r2_filtered3.push(pt2);
             }
+        }
+        if r1_filtered3.len() < 3 && r1.len() > 3 {
+            d002t_iter3_esc += 0.5;
+        } else {
+            break;
         }
     }
 

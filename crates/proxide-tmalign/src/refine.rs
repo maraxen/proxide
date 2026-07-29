@@ -32,21 +32,28 @@ fn apply_transform_inline(
 
 /// Helper to compute TM-score for a subset of aligned pairs at a given distance cutoff.
 ///
-/// Mimics USalign's `score_fun8`: collects pairs within distance `d`,
-/// with a fallback loop that increases `d` by 0.5 if fewer than 3 pairs survive
-/// (and the total count > 3). Returns the collected indices and the normalized score.
+/// Mimics USalign's `score_fun8` with `score_sum_method=8` (`TMalign.h:11-51`):
+/// collects pairs within distance `d` into `aligned_indices` (for the caller's
+/// next re-fit), with a fallback loop that increases `d` by 0.5 repeatedly
+/// while fewer than 3 pairs survive (and the total count > 3). The summed
+/// score, separately, only counts pairs within the fixed `score_d8` cutoff
+/// (`if(di<=score_d8_cut) score_sum+=...` — pairs beyond it contribute
+/// nothing, they are NOT summed unconditionally like the `score_sum_method=0`
+/// branch this function must NOT be confused with).
 fn score_fun8(
     coords1_rotated: &[Vector3<f32>],
     coords2: &[Vector3<f32>],
     d0: f32,
     d_cutoff: f32,
     l_norm: usize,
+    score_d8: f32,
 ) -> (Vec<usize>, f32) {
     if l_norm == 0 {
         return (Vec::new(), 0.0);
     }
 
     let d0_sq = d0 * d0;
+    let score_d8_sq = score_d8 * score_d8;
     let mut d = d_cutoff;
 
     loop {
@@ -61,8 +68,10 @@ fn score_fun8(
             if dist_sq < d_sq {
                 aligned_indices.push(i);
             }
-            // Always accumulate score for all pairs (score_sum_method=8 in the C code)
-            score_sum += 1.0 / (1.0 + dist_sq / d0_sq);
+            // score_sum_method=8: only pairs within score_d8 contribute.
+            if dist_sq <= score_d8_sq {
+                score_sum += 1.0 / (1.0 + dist_sq / d0_sq);
+            }
         }
 
         // If fewer than 3 pairs and we have more than 3 total, increase cutoff.
@@ -107,6 +116,7 @@ pub(crate) fn tmscore8_search(
     }
 
     let lali = coords1_aligned.len();
+    let score_d8 = crate::d0::score_d8(l_norm);
     let mut best_result = KabschResult {
         rmsd: f32::INFINITY,
         rotation: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
@@ -148,7 +158,7 @@ pub(crate) fn tmscore8_search(
                 .map(|&p| apply_transform(&kabsch_result, p))
                 .collect();
 
-            let (_aligned_indices, score) = score_fun8(&rotated, coords2_aligned, d0, d0_search - 1.0, l_norm);
+            let (_aligned_indices, score) = score_fun8(&rotated, coords2_aligned, d0, d0_search - 1.0, l_norm, score_d8);
             if score > best_score {
                 best_score = score;
                 best_result = kabsch_result.clone();
@@ -179,7 +189,7 @@ pub(crate) fn tmscore8_search(
                     .iter()
                     .map(|&p| apply_transform(&new_result, p))
                     .collect();
-                let (new_indices, score_new) = score_fun8(&rotated_new, coords2_aligned, d0, d0_search + 1.0, l_norm);
+                let (new_indices, score_new) = score_fun8(&rotated_new, coords2_aligned, d0, d0_search + 1.0, l_norm, score_d8);
 
                 if score_new > best_score {
                     best_score = score_new;
@@ -273,8 +283,7 @@ pub fn dp_iter(
     let gap_open_values = [-0.6_f32, 0.0_f32];
     let d0_sq = d0 * d0;
 
-    // Pairs from the seed alignment, used to derive the starting rotation for
-    // each gap_open pass (before any refinement has happened).
+    // Pairs from the seed alignment, used to derive the starting rotation.
     let initial_pairs: Vec<(Vector3<f32>, Vector3<f32>)> = initial_alignment
         .iter()
         .filter_map(|&(i_opt, j_opt)| match (i_opt, j_opt) {
@@ -286,6 +295,30 @@ pub fn dp_iter(
         .collect();
     let identity_transform = ([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [0.0_f32; 3]);
 
+    // Rotation/translation state carried forward across BOTH the outer
+    // gap_open loop AND every inner iteration — updated from
+    // `tmscore8_search`'s refined result at the end of every iteration
+    // (regardless of whether it improved the running best). Matches
+    // `DP_iter`'s actual `t,u` semantics (TMalign.h:1408+): they are input
+    // parameters the caller set via its own `detailed_search`
+    // (`TMscore8_search`-based, NOT a naive whole-alignment Kabsch fit) before
+    // the first gap_open pass, and are never reset for the second pass. Two
+    // bugs are fixed by initializing this ONCE, here, via `tmscore8_search`:
+    // (a) re-deriving via `kabsch_superpose` on `best_alignment` per-iteration
+    // would silently repeat the same NWDP_TM computation on any non-improving
+    // iteration instead of continuing to explore from the latest refinement;
+    // (b) re-initializing per `gap_idx` (the previous version of this fix)
+    // discarded the first gap_open pass's converged state when moving to the
+    // second, and used an unrefined naive fit to begin with, rather than the
+    // outlier-excluding fit `tmscore8_search` finds.
+    let (mut current_rotation, mut current_translation) = if initial_pairs.is_empty() {
+        identity_transform
+    } else {
+        let (p1, p2): (Vec<_>, Vec<_>) = initial_pairs.iter().cloned().unzip();
+        let (refined, _) = tmscore8_search(&p1, &p2, d0, d0_search, l_norm);
+        (refined.rotation, refined.translation)
+    };
+
     let (gap_start, gap_end) = gap_open_range;
     for gap_idx in gap_start..gap_end {
         if gap_idx >= gap_open_values.len() {
@@ -293,22 +326,6 @@ pub fn dp_iter(
         }
         let gap_open = gap_open_values[gap_idx];
         let mut tmscore_old = 0.0_f32;
-
-        // Rotation/translation state carried forward across iterations within
-        // this gap_open pass — updated from `tmscore8_search`'s refined result
-        // at the end of every iteration (regardless of whether it improved the
-        // running best), matching DP_iter's "t,u carry over to the next
-        // NWDP_TM call" behavior. Re-deriving this from `best_alignment` each
-        // iteration (the prior bug here) would silently repeat the same
-        // NWDP_TM computation on any non-improving iteration instead of
-        // continuing to explore from the latest refinement.
-        let (mut current_rotation, mut current_translation) = if initial_pairs.is_empty() {
-            identity_transform
-        } else {
-            let (p1, p2): (Vec<_>, Vec<_>) = initial_pairs.iter().cloned().unzip();
-            let kabsch_result = kabsch_superpose(&p1, &p2);
-            (kabsch_result.rotation, kabsch_result.translation)
-        };
 
         for iteration in 0..max_iterations {
             // Run NWDP_TM with rotation-aware scoring against the carried-forward rotation.
@@ -453,7 +470,9 @@ mod tests {
         let d_cutoff = 2.0;
         let l_norm = 3;
 
-        let (indices, _score) = score_fun8(&coords1, &coords2, d0, d_cutoff, l_norm);
+        // score_d8=f32::INFINITY: this test only checks aligned_indices
+        // collection (gated on d_cutoff), not the score_d8-gated score sum.
+        let (indices, _score) = score_fun8(&coords1, &coords2, d0, d_cutoff, l_norm, f32::INFINITY);
 
         // Should collect the two close pairs, not the far one.
         assert_eq!(indices.len(), 2, "Expected 2 close pairs, got {}", indices.len());
@@ -468,7 +487,7 @@ mod tests {
         let d_cutoff = 2.0;
         let l_norm = 0;
 
-        let (_indices, score) = score_fun8(&coords1, &coords2, d0, d_cutoff, l_norm);
+        let (_indices, score) = score_fun8(&coords1, &coords2, d0, d_cutoff, l_norm, f32::INFINITY);
         assert_eq!(score, 0.0);
     }
 

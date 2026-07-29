@@ -22,13 +22,24 @@ pub fn d0_final(l_norm: usize) -> f32 {
     base_d0(l_norm).max(D0_MIN_FINAL)
 }
 
+/// `parameter_set4search`'s own small-`Lnorm` branch/floor — NOT the same as
+/// [`base_d0`] (`parameter_set4final`'s `Lnorm<=21 -> 0.5`). Verbatim port of
+/// `param_set.h:18-19`: `Lnorm<=19 -> d0=0.168`.
+fn search_base_d0(l_norm: usize) -> f32 {
+    if l_norm <= 19 {
+        0.168
+    } else {
+        1.24 * (l_norm as f32 - 15.0).cbrt() - 1.8
+    }
+}
+
 /// `(d0, d0_search)` used during the SEARCH-phase (seeding/refinement)
 /// scoring — looser than [`d0_final`] so a promising-but-not-yet-optimal
 /// alignment isn't discarded early. Verbatim port of
-/// `parameter_set4search`: the base d0 formula, then `D0_MIN = d0 + 0.8`
+/// `parameter_set4search`: `search_base_d0`, then `D0_MIN = d0 + 0.8`
 /// used as `d0`, with `d0_search` further clamped to `[4.5, 8.0]`.
 pub fn d0_search(l_norm: usize) -> (f32, f32) {
-    let d0 = base_d0(l_norm) + 0.8;
+    let d0 = search_base_d0(l_norm) + 0.8;
     let d0_search = d0.clamp(4.5, 8.0);
     (d0, d0_search)
 }

@@ -84,8 +84,10 @@ pub fn thread_gapless(
         // Score this alignment.
         let score = get_score_fast(coords1, coords2, &alignment, d0, d0_search, l_norm);
 
-        // Keep the best.
-        if score > best_score {
+        // Keep the best. `>=` (not `>`): TMalign.h's get_initial (line 674:
+        // `if(tmscore>=tmscore_max)`) and get_initial_fgt's inner loops both
+        // keep the LAST candidate on an exact tie, not the first.
+        if score >= best_score {
             best_score = score;
             best_alignment = alignment;
         }

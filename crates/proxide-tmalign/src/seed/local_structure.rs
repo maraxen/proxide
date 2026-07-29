@@ -125,7 +125,13 @@ pub fn get_initial5(
                 let translation = &kabsch_result.translation;
 
                 // Run rotation-aware DP with score computed on the fly.
-                // The score closure computes: 1 / (1 + dist / d02)
+                // The score closure computes: 1 / (1 + dist_sq / d02), where
+                // d02 is ALREADY squared (d01*d01 above) — per NW.h's
+                // rotation-aware NWDP_TM overload, `dist()` returns squared
+                // Euclidean distance (basic_fun.h), not distance. Dividing
+                // unsquared distance by a squared d02 (an earlier version of
+                // this closure did `sq_dist.sqrt() / d02`) mixes units and
+                // shapes the whole score matrix incorrectly.
                 let score_fn = |i_idx: usize, j_idx: usize| -> f32 {
                     let p1 = coords1[i_idx];
                     let p2 = coords2[j_idx];
@@ -137,10 +143,7 @@ pub fn get_initial5(
                     let diff = rotated - p2;
                     let sq_dist = diff.norm_squared();
 
-                    // Compute TM-score-weighted similarity: 1 / (1 + dist / d02).
-                    // Note: dist is the *distance*, not squared distance.
-                    let dist = sq_dist.sqrt();
-                    1.0 / (1.0 + dist / d02)
+                    1.0 / (1.0 + sq_dist / d02)
                 };
 
                 // Run the shared simplified-Gotoh NWDP_TM core with gap_open = 0.0
