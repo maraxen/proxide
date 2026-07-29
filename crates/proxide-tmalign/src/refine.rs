@@ -84,7 +84,13 @@ fn score_fun8(
 /// cutoff.
 ///
 /// Returns `(best_rotation, best_translation, best_tm_score)`.
-fn tmscore8_search(
+///
+/// `pub(crate)`: also called by `pipeline.rs`'s final stage to get the
+/// definitive rotation for the best alignment across all seeds — a plain
+/// whole-alignment `kabsch_superpose` there would refit including whatever
+/// outlier pairs this multi-scale search excludes, silently discarding the
+/// better fit this function found.
+pub(crate) fn tmscore8_search(
     coords1_aligned: &[Vector3<f32>],
     coords2_aligned: &[Vector3<f32>],
     d0: f32,

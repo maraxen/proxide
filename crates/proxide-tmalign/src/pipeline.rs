@@ -299,8 +299,25 @@ pub fn tmalign_pair_serial(
         ));
     }
 
-    // Final Kabsch fit to get definitive rotation and translation.
-    let final_result = kabsch_superpose(&coords1_aligned, &coords2_aligned);
+    // Final refinement to get the definitive rotation and translation.
+    //
+    // NOT a plain kabsch_superpose over every aligned pair: dp_iter's internal
+    // tmscore8_search already found a distance-cutoff-refined rotation that
+    // excludes outlier pairs from the fit (that's precisely how it achieves a
+    // good TM-score) — dp_iter only returns the alignment + score, not that
+    // rotation, so re-deriving it here via a naive whole-alignment fit would
+    // refit including those outliers and produce a substantially worse
+    // (higher-RMSD, lower-TM-score) superposition than what was actually
+    // found during refinement. Re-running tmscore8_search one more time on
+    // the final best alignment (mirroring TMalign_main's own final
+    // `detailed_search_standard` re-fit) recovers that definitive fit.
+    let (final_result, _) = crate::refine::tmscore8_search(
+        &coords1_aligned,
+        &coords2_aligned,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+    );
 
     // Compute final TM-scores using d0_final (strict thresholds) for each normalization length.
     let d0_final_xlen = d0::d0_final(xlen);
