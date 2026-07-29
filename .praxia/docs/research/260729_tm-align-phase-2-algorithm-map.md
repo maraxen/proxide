@@ -9,6 +9,52 @@ sources: '~/repos/USalign @ 177cc8a (v20240303), TMalign.h + NW.h + param_set.h'
 ---
 # TM-align Phase 2 algorithm map
 
+> **Addendum (260729, post-implementation review)**: implementing against this doc and then
+> empirically parity-testing against the real `TMalign` binary surfaced 6 real deviations a
+> dedicated Sonnet review found by re-reading the C++ source directly — this doc's summaries
+> were mostly right but missed some exact semantics. Corrections, in case this doc is used again
+> for a rewrite or a different port:
+>
+> - **`score_fun8`'s `score_sum_method=8`** (§2/§3 both use it) gates the *score sum* on a fixed
+>   `score_d8` cutoff (`TMalign.h:11-51`: `if(di<=score_d8_cut) score_sum+=...`) — pairs beyond
+>   `score_d8` contribute **zero**, not a small positive term. Unconditional summation over all
+>   pairs is `score_sum_method=0`'s behavior, a different mode entirely. `score_d8 = 1.5*Lnorm^0.3
+>   + 3.5` (already correctly captured in `d0.rs::score_d8`, this doc's §4 final-stage bullet on
+>   `score_d8` was right — the miss was in not connecting it to `score_fun8`'s own gating).
+> - **`get_score_fast`'s escalation** (§2): confirmed by direct read to be a genuine repeated
+>   `while(1){...}` loop (`TMalign.h:550-571`, `:591-612`), not single-shot — this doc's original
+>   phrasing ("escalating +0.5 if <3 pairs survive") was ambiguous on this point and the first
+>   implementation pass read it as single-shot.
+> - **`DP_iter`'s `t,u` are true input/output parameters** (§3): they persist across BOTH gap_open
+>   passes within one `DP_iter` call, seeded before the call by the caller's own `detailed_search`
+>   (a `TMscore8_search`-based refined fit, NOT a naive whole-alignment Kabsch fit) — not reset
+>   per gap_open value. This doc's §3 said "t,u carry over to the next NWDP_TM call" but didn't
+>   spell out that this persistence spans the *entire* `DP_iter` invocation, nor that the seeding
+>   fit itself must come from `TMscore8_search`.
+> - **Squared vs. unsquared distance**: `NW.h`'s rotation-aware `NWDP_TM` overload's `dist()` helper
+>   (`basic_fun.h`) returns **squared** Euclidean distance, and `d02` is already squared
+>   (`d01*d01`) — the score formula is `dist_sq/d02`, a dimensionless ratio. A port that takes
+>   `sqrt()` of the distance before dividing by (squared) `d02` mixes units and shapes the entire
+>   score matrix wrong. Worth stating explicitly since it's an easy mistake to repeat.
+> - **`parameter_set4search`'s small-`Lnorm` branch differs from `parameter_set4final`'s**:
+>   `param_set.h:18-19` uses `Lnorm<=19 → d0=0.168` for the search phase, vs. `parameter_set4final`
+>   (`param_set.h:61`) using `Lnorm<=21 → d0=0.5`. Reusing one `base_d0` helper for both phases (as
+>   the first implementation pass did) is wrong for small structures, even though it happens to be
+>   latent/invisible for any test pair with `Lnorm` comfortably above both thresholds.
+> - **Tie-breaks favor `>=`, not `>`**, in `get_initial`'s and `get_initial_fgt`'s best-candidate
+>   selection (`TMalign.h:674`, `:1357`, `:1390`) — keeps the *last* candidate on an exact
+>   floating-point tie. Only matters for symmetric/near-symmetric structure pairs.
+>
+> **Still-open empirical gap**: even after fixing all 6 of the above, `crates/proxide-tmalign`'s
+> `tmalign_pair_serial` on USalign's own bundled `PDB1.pdb`/`PDB2.pdb` sample (250×166 residues)
+> produces `n_aligned=163` vs. the reference binary's `Lali=119`, despite TM-scores matching within
+> ~0.004 absolute (0.4308/0.6205 vs. reference 0.4265/0.6163) both before and after the fixes —
+> bit-identical output pre/post-fix on this specific pair, which is itself informative: `dp_iter`
+> already iterates to `|ΔTM|<1e-6` convergence (up to 30×), so these were mostly *path*-level fixes
+> that don't change *which fixed point* it converges to for this pair. The `n_aligned` gap is likely
+> something more structural in the DP/NWDP_TM convergence dynamics — not yet root-caused, flagged as
+> follow-up work for a dedicated debugging session (see backlog).
+
 Ground-truth reference for implementing `crates/proxide-tmalign`'s Phase 2 (remaining seed
 strategies + `DP_iter` refinement). Companion to
 [specs/260729_proxide-tmalign-phases-2-5](../specs/260729_proxide-tmalign-phases-2-5.md), which
