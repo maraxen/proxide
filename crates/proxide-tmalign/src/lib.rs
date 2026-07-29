@@ -29,6 +29,7 @@ pub mod error;
 pub mod kabsch;
 pub mod nw;
 pub mod nwdp_tm;
+pub mod pipeline;
 pub mod refine;
 pub mod score;
 pub mod seed;
