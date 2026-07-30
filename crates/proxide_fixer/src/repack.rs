@@ -294,7 +294,7 @@ fn calculate_burial_order(chains: &[Chain]) -> Vec<(usize, usize, usize)> {
     }
 
     // Sort by descending neighbor count
-    residues_with_neighbors.sort_by(|a, b| b.1.cmp(&a.1));
+    residues_with_neighbors.sort_by_key(|r| std::cmp::Reverse(r.1));
     residues_with_neighbors
         .into_iter()
         .map(|(idx, _)| idx)
@@ -593,7 +593,7 @@ impl<'a> SidechainRepacker<'a> {
             .collect();
 
         // Sort by descending burial count (most buried first)
-        burial_counts.sort_by(|a, b| b.1.cmp(&a.1));
+        burial_counts.sort_by_key(|b| std::cmp::Reverse(b.1));
 
         // Repack each shell residue with BestRotamer mode
         for ((chain_idx, res_idx), _) in burial_counts {

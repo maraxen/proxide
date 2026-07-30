@@ -298,7 +298,7 @@ fn build_library(
     }
 
     // Sort residues by code
-    residues.sort_by(|a, b| a.code.cmp(&b.code));
+    residues.sort_by_key(|r| r.code.clone());
 
     let lib = rotlib_v1::RotamerLibrary {
         version: 1,

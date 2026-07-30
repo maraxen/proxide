@@ -59,7 +59,7 @@ impl DunbrackSource {
                 .iter()
                 .map(|(&key, rots)| (key, rots.iter().map(|r| r.count as u64).sum()))
                 .collect();
-            bin_counts.sort_by(|a, b| b.1.cmp(&a.1)); // descending
+            bin_counts.sort_by_key(|b| std::cmp::Reverse(b.1)); // descending
             let best_bin_key = bin_counts.first().map(|&(k, _)| k).unwrap_or((0, 0));
 
             for (&(phi_bin, psi_bin), rots) in bins.iter() {
