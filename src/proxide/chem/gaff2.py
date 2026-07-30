@@ -7,6 +7,7 @@ to RDKit molecules.
 
 from __future__ import annotations
 
+import math as _math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,7 +89,9 @@ class Gaff2Rule:
         # Special case: if atom is aromatic, only accept rules with AR in h_ew or chem_env
         # This prevents non-aromatic rules like cs, c from matching aromatic C
         if is_aromatic:
-            has_ar_marker = (self.h_ew and 'AR' in self.h_ew) or (self.chem_env and 'AR' in self.chem_env)
+            has_ar_marker = (
+                (self.h_ew and 'AR' in self.h_ew) or (self.chem_env and 'AR' in self.chem_env)
+            )
             if not has_ar_marker:
                 return False
 
@@ -124,7 +127,7 @@ class Gaff2Rule:
         wildatom_map: dict[str, list[str]],
     ) -> bool:
         """Check chemical environment conditions.
-        
+
         Parses patterns like:
         - [RG3]-[RG9]: ring size
         - [AR1], [AR2], [AR3]: aromaticity requirements
@@ -717,8 +720,6 @@ def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
 # H-type assignment and OpenMM FFXML builder
 # ---------------------------------------------------------------------------
 
-import math as _math
-
 _KCAL_TO_KJ = 4.184
 _BOND_K_CONV = 2.0 * _KCAL_TO_KJ / (0.1 ** 2)   # kcal/mol/Å² → kJ/mol/nm²
 _BOND_R_CONV = 0.1                                  # Å → nm
@@ -761,7 +762,7 @@ _BOND_TYPE_SUB = {
 }
 
 
-def assign_pdb_atom_names(rdmol: "Chem.Mol") -> list[str]:
+def assign_pdb_atom_names(rdmol: Chem.Mol) -> list[str]:
     """Assign unique PDB atom names to rdmol in-place and return them.
 
     If an atom already has a non-empty MonomerInfo name it is kept as-is.
@@ -821,7 +822,7 @@ def _lookup_angle_params(
 
 
 def build_gaff2_ffxml(
-    rdmol: "Chem.Mol",
+    rdmol: Chem.Mol,
     resname: str,
     charges: list[float],
     *,
@@ -1225,7 +1226,7 @@ def parameterize_gaff_with_rdkit(
                     neighbor_idx = bond3.GetOtherAtomIdx(k)
                     if neighbor_idx <= k or neighbor_idx == j:
                         continue
-                    l = neighbor_idx
+                    l_idx = neighbor_idx
                     t_i = atom_types[i] if i < len(atom_types) else "x"
                     t_j = atom_types[j] if j < len(atom_types) else "x"
                     t_k = atom_types[k] if k < len(atom_types) else "x"
@@ -1241,7 +1242,7 @@ def parameterize_gaff_with_rdkit(
                         torsion_params = params['torsions'].get(key_sub, [])
 
                     torsions.append({
-                        'i': i, 'j': j, 'k': k, 'l': l,
+                        'i': i, 'j': j, 'k': k, 'l': l_idx,
                         'types': key,
                         'params': torsion_params,
                     })

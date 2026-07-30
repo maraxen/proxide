@@ -23,7 +23,6 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from subprocess import run as subprocess_run
 
 # grpcio-tools, zstandard, protobuf available via uv --with
 import zstandard
@@ -179,8 +178,12 @@ def verify_identity_with_master(pb_lib, rotlib_bin_path: Path) -> dict:
             continue
 
         master_entry = master_lib[code]
-        master_bins_dict = {(b[0], b[1]): (b[2], rotamers)
-                            for b, rotamers in zip(master_entry["bins"], master_entry["rot_bins"])}
+        master_bins_dict = {
+            (b[0], b[1]): (b[2], rotamers)
+            for b, rotamers in zip(
+                master_entry["bins"], master_entry["rot_bins"], strict=False
+            )
+        }
 
         for bin_entry in res.bins:
             phi, psi = bin_entry.phi, bin_entry.psi
@@ -203,7 +206,9 @@ def verify_identity_with_master(pb_lib, rotlib_bin_path: Path) -> dict:
 
             # Compare each rotamer
             match = True
-            for i, (pb_rot, master_rot) in enumerate(zip(bin_entry.rotamers, master_rotamers)):
+            for i, (pb_rot, master_rot) in enumerate(
+                zip(bin_entry.rotamers, master_rotamers, strict=False)
+            ):
                 pb_prob = pb_rot.prob
                 master_prob = master_rot["prob"]
                 if abs(pb_prob - master_prob) > 1e-5:
@@ -224,7 +229,7 @@ def verify_identity_with_master(pb_lib, rotlib_bin_path: Path) -> dict:
                     match = False
                     break
 
-                for j, (pb_c, master_c) in enumerate(zip(pb_chi, master_chi)):
+                for j, (pb_c, master_c) in enumerate(zip(pb_chi, master_chi, strict=False)):
                     if abs(pb_c - master_c) > 1e-2:
                         logger.warning(f"{code} ({phi}, {psi}) rot{i} chi{j}: "
                                        f"{pb_c} vs {master_c}")
@@ -315,7 +320,8 @@ def self_test():
 
     for i, (phi, psi) in enumerate(expected_bins):
         assert filtered_res.bins[i].phi == phi and filtered_res.bins[i].psi == psi, \
-            f"bin {i}: expected ({phi}, {psi}), got ({filtered_res.bins[i].phi}, {filtered_res.bins[i].psi})"
+            f"bin {i}: expected ({phi}, {psi}), " \
+            f"got ({filtered_res.bins[i].phi}, {filtered_res.bins[i].psi})"
 
     # Test CA-origin reframe
     logger.info("Testing CA-origin reframe...")
@@ -385,7 +391,8 @@ def main(argv=None) -> int:
                     default=Path("/home/marielle/repos/mosaist/testfiles/rotlib.bin"),
                     help="MASTER rotlib.bin for identity verification")
     ap.add_argument("--out-pb", type=Path,
-                    help="output path for filtered .pb.zst (default: $CLAUDE_JOB_DIR/tmp/pb36.pb.zst)")
+                    help="output path for filtered .pb.zst "
+                         "(default: $CLAUDE_JOB_DIR/tmp/pb36.pb.zst)")
     ap.add_argument("--log-level", default="INFO",
                     choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                     help="logging level")
@@ -394,9 +401,11 @@ def main(argv=None) -> int:
     ap.add_argument("--self-test", action="store_true",
                     help="run self-test and exit")
     ap.add_argument("--reframe-ca-origin", action="store_true",
-                    help="reframe rotamer coords from N-origin to CA-origin frame by subtracting offset")
+                    help="reframe rotamer coords from N-origin to CA-origin frame "
+                         "by subtracting offset")
     ap.add_argument("--reframe-offset", type=str, default="1.458,0,0",
-                    help="reframe offset as 'x,y,z' (default: 1.458,0,0 for N-CA bond); only used with --reframe-ca-origin")
+                    help="reframe offset as 'x,y,z' (default: 1.458,0,0 for N-CA bond); "
+                         "only used with --reframe-ca-origin")
 
     args = ap.parse_args(argv)
 
@@ -446,8 +455,8 @@ def main(argv=None) -> int:
             # Count before
             in_residues = len(lib.residues)
             in_bins_total = sum(len(r.bins) for r in lib.residues)
-            in_phi_centers = {r.code: len(r.phi_centers) for r in lib.residues}
-            in_psi_centers = {r.code: len(r.psi_centers) for r in lib.residues}
+            {r.code: len(r.phi_centers) for r in lib.residues}
+            {r.code: len(r.psi_centers) for r in lib.residues}
             logger.info(f"Loaded {in_residues} residues, {in_bins_total} total bins")
 
             # Filter
@@ -470,8 +479,8 @@ def main(argv=None) -> int:
             # Count after
             out_residues = len(filtered_lib.residues)
             out_bins_total = sum(len(r.bins) for r in filtered_lib.residues)
-            out_phi_centers = {r.code: len(r.phi_centers) for r in filtered_lib.residues}
-            out_psi_centers = {r.code: len(r.psi_centers) for r in filtered_lib.residues}
+            {r.code: len(r.phi_centers) for r in filtered_lib.residues}
+            {r.code: len(r.psi_centers) for r in filtered_lib.residues}
             logger.info(f"Processed to {out_residues} residues, {out_bins_total} total bins")
 
             # Verify identity
@@ -486,7 +495,9 @@ def main(argv=None) -> int:
             serialized = filtered_lib.SerializeToString()
             cctx = zstandard.ZstdCompressor()
             compressed = cctx.compress(serialized)
-            logger.info(f"Serialized {len(serialized)} bytes, compressed to {len(compressed)} bytes")
+            logger.info(
+                f"Serialized {len(serialized)} bytes, compressed to {len(compressed)} bytes"
+            )
 
             # Compute SHA256
             import hashlib
@@ -503,8 +514,11 @@ def main(argv=None) -> int:
 
             # Report
             report = {
-                "in_grid": f"37x37 (before filtering)",
-                "out_grid": f"36x36 (after filtering)" + (" + CA-origin reframe" if args.reframe_ca_origin else ""),
+                "in_grid": "37x37 (before filtering)",
+                "out_grid": (
+                    "36x36 (after filtering)"
+                    + (" + CA-origin reframe" if args.reframe_ca_origin else "")
+                ),
                 "reframe_applied": args.reframe_ca_origin,
                 "reframe_offset": list(offset) if args.reframe_ca_origin else None,
                 "residues": out_residues,
@@ -517,7 +531,6 @@ def main(argv=None) -> int:
             }
 
             # JSON to stdout and log
-            import sys
             report_json = json.dumps(report, indent=2)
             print(report_json)
             logger.info(f"Report: {report_json}")

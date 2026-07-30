@@ -307,25 +307,39 @@ class Protein:
         atom_mask=convert(atom_mask_2d, dtype=np.float32),
         # Optional fields
         charges=convert(rust_dict["charges"]) if rust_dict.get("charges") is not None else None,
-        radii=convert(rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32) if (rust_dict.get("radii") or rust_dict.get("gbsa_radii")) is not None else None,
-        sigmas=convert(rust_dict.get("sigmas"), dtype=np.float32) if rust_dict.get("sigmas") is not None else None,
-        epsilons=convert(rust_dict.get("epsilons"), dtype=np.float32) if rust_dict.get("epsilons") is not None else None,
+        radii=convert(rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32)
+        if (rust_dict.get("radii") or rust_dict.get("gbsa_radii")) is not None
+        else None,
+        sigmas=convert(rust_dict.get("sigmas"), dtype=np.float32)
+        if rust_dict.get("sigmas") is not None
+        else None,
+        epsilons=convert(rust_dict.get("epsilons"), dtype=np.float32)
+        if rust_dict.get("epsilons") is not None
+        else None,
         molecule_type=convert(rust_dict["molecule_type"])
         if rust_dict.get("molecule_type") is not None
         else None,
         atom_types=rust_dict.get("atom_types"),
         bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
-        bond_params=convert(rust_dict.get("bond_params"), dtype=np.float32) if rust_dict.get("bond_params") is not None else None,
+        bond_params=convert(rust_dict.get("bond_params"), dtype=np.float32)
+        if rust_dict.get("bond_params") is not None
+        else None,
         angles=convert(rust_dict["angles"]) if rust_dict.get("angles") is not None else None,
-        angle_params=convert(rust_dict.get("angle_params"), dtype=np.float32) if rust_dict.get("angle_params") is not None else None,
+        angle_params=convert(rust_dict.get("angle_params"), dtype=np.float32)
+        if rust_dict.get("angle_params") is not None
+        else None,
         proper_dihedrals=convert(rust_dict["dihedrals"])
         if rust_dict.get("dihedrals") is not None
         else None,
-        dihedral_params=convert(rust_dict.get("dihedral_params"), dtype=np.float32) if rust_dict.get("dihedral_params") is not None else None,
+        dihedral_params=convert(rust_dict.get("dihedral_params"), dtype=np.float32)
+        if rust_dict.get("dihedral_params") is not None
+        else None,
         impropers=convert(rust_dict["impropers"])
         if rust_dict.get("impropers") is not None
         else None,
-        improper_params=convert(rust_dict.get("improper_params"), dtype=np.float32) if rust_dict.get("improper_params") is not None else None,
+        improper_params=convert(rust_dict.get("improper_params"), dtype=np.float32)
+        if rust_dict.get("improper_params") is not None
+        else None,
         vdw_features=convert(rust_dict["vdw_features"])
         if rust_dict.get("vdw_features") is not None
         else None,
@@ -347,19 +361,29 @@ class Protein:
         constrained_bonds=convert(rust_dict.get("constrained_bonds"))
         if rust_dict.get("constrained_bonds") is not None
         else None,
-        constrained_bond_lengths=convert(rust_dict.get("constrained_bond_lengths"), dtype=np.float32) if rust_dict.get("constrained_bond_lengths") is not None else None,
+        constrained_bond_lengths=convert(
+            rust_dict.get("constrained_bond_lengths"), dtype=np.float32
+        )
+        if rust_dict.get("constrained_bond_lengths") is not None
+        else None,
         gbsa_scales=convert(rust_dict.get("gbsa_scales"))
         if rust_dict.get("gbsa_scales") is not None
         else None,
-        scaled_radii=convert(rust_dict.get("scaled_radii"), dtype=np.float32) if rust_dict.get("scaled_radii") is not None else None,
+        scaled_radii=convert(rust_dict.get("scaled_radii"), dtype=np.float32)
+        if rust_dict.get("scaled_radii") is not None
+        else None,
         urey_bradley_bonds=convert(rust_dict.get("urey_bradley_bonds"))
         if rust_dict.get("urey_bradley_bonds") is not None
         else None,
-        urey_bradley_params=convert(rust_dict.get("urey_bradley_params"), dtype=np.float32) if rust_dict.get("urey_bradley_params") is not None else None,
+        urey_bradley_params=convert(rust_dict.get("urey_bradley_params"), dtype=np.float32)
+        if rust_dict.get("urey_bradley_params") is not None
+        else None,
         cmap_torsions=convert(rust_dict.get("cmap_torsions"))
         if rust_dict.get("cmap_torsions") is not None
         else None,
-        cmap_energy_grids=convert(rust_dict.get("cmap_energy_grids"), dtype=np.float32) if rust_dict.get("cmap_energy_grids") is not None else None,
+        cmap_energy_grids=convert(rust_dict.get("cmap_energy_grids"), dtype=np.float32)
+        if rust_dict.get("cmap_energy_grids") is not None
+        else None,
         cmap_indices=convert(rust_dict.get("cmap_indices"))
         if rust_dict.get("cmap_indices") is not None
         else None,
@@ -406,7 +430,9 @@ class Protein:
       elements=elements,
       atom_names=atom_names,
       charges=_slice_if_padded(rust_dict.get("charges")),
-      radii=_slice_if_padded(rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32),
+      radii=_slice_if_padded(
+          rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32
+      ),
       sigmas=_slice_if_padded(rust_dict.get("sigmas"), dtype=np.float32),
       epsilons=_slice_if_padded(rust_dict.get("epsilons"), dtype=np.float32),
       molecule_type=convert(rust_dict["molecule_type"])
@@ -414,15 +440,23 @@ class Protein:
       else None,
       atom_types=rust_dict.get("atom_types"),
       bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
-      bond_params=convert(rust_dict.get("bond_params"), dtype=np.float32) if rust_dict.get("bond_params") is not None else None,
+      bond_params=convert(rust_dict.get("bond_params"), dtype=np.float32)
+      if rust_dict.get("bond_params") is not None
+      else None,
       angles=convert(rust_dict["angles"]) if rust_dict.get("angles") is not None else None,
-      angle_params=convert(rust_dict.get("angle_params"), dtype=np.float32) if rust_dict.get("angle_params") is not None else None,
+      angle_params=convert(rust_dict.get("angle_params"), dtype=np.float32)
+      if rust_dict.get("angle_params") is not None
+      else None,
       proper_dihedrals=convert(rust_dict["dihedrals"])
       if rust_dict.get("dihedrals") is not None
       else None,
-      dihedral_params=convert(rust_dict.get("dihedral_params"), dtype=np.float32) if rust_dict.get("dihedral_params") is not None else None,
+      dihedral_params=convert(rust_dict.get("dihedral_params"), dtype=np.float32)
+      if rust_dict.get("dihedral_params") is not None
+      else None,
       impropers=convert(rust_dict["impropers"]) if rust_dict.get("impropers") is not None else None,
-      improper_params=convert(rust_dict.get("improper_params"), dtype=np.float32) if rust_dict.get("improper_params") is not None else None,
+      improper_params=convert(rust_dict.get("improper_params"), dtype=np.float32)
+      if rust_dict.get("improper_params") is not None
+      else None,
       vdw_features=convert(rust_dict["vdw_features"])
       if rust_dict.get("vdw_features") is not None
       else None,
@@ -438,17 +472,25 @@ class Protein:
       constrained_bonds=convert(rust_dict.get("constrained_bonds"))
       if rust_dict.get("constrained_bonds") is not None
       else None,
-      constrained_bond_lengths=convert(rust_dict.get("constrained_bond_lengths"), dtype=np.float32) if rust_dict.get("constrained_bond_lengths") is not None else None,
+      constrained_bond_lengths=convert(
+          rust_dict.get("constrained_bond_lengths"), dtype=np.float32
+      )
+      if rust_dict.get("constrained_bond_lengths") is not None
+      else None,
       gbsa_scales=_slice_if_padded(rust_dict.get("gbsa_scales")),
       scaled_radii=_slice_if_padded(rust_dict.get("scaled_radii"), dtype=np.float32),
       urey_bradley_bonds=convert(rust_dict.get("urey_bradley_bonds"))
       if rust_dict.get("urey_bradley_bonds") is not None
       else None,
-      urey_bradley_params=convert(rust_dict.get("urey_bradley_params"), dtype=np.float32) if rust_dict.get("urey_bradley_params") is not None else None,
+      urey_bradley_params=convert(rust_dict.get("urey_bradley_params"), dtype=np.float32)
+      if rust_dict.get("urey_bradley_params") is not None
+      else None,
       cmap_torsions=convert(rust_dict.get("cmap_torsions"))
       if rust_dict.get("cmap_torsions") is not None
       else None,
-      cmap_energy_grids=convert(rust_dict.get("cmap_energy_grids"), dtype=np.float32) if rust_dict.get("cmap_energy_grids") is not None else None,
+      cmap_energy_grids=convert(rust_dict.get("cmap_energy_grids"), dtype=np.float32)
+      if rust_dict.get("cmap_energy_grids") is not None
+      else None,
       cmap_indices=convert(rust_dict.get("cmap_indices"))
       if rust_dict.get("cmap_indices") is not None
       else None,
@@ -461,7 +503,9 @@ class Protein:
       pairs_14=convert(rust_dict.get("pairs_14"), dtype=np.int32)
       if rust_dict.get("pairs_14") is not None
       else None,
-      exception_14_params=convert(rust_dict.get("exception_14_params"), dtype=np.float32) if rust_dict.get("exception_14_params") is not None else None,
+      exception_14_params=convert(rust_dict.get("exception_14_params"), dtype=np.float32)
+      if rust_dict.get("exception_14_params") is not None
+      else None,
       atom_res_index=convert(rust_dict.get("atom_residue_ids"), dtype=np.int32)
       if rust_dict.get("atom_residue_ids") is not None
       else None,

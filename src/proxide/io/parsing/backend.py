@@ -304,19 +304,19 @@ def _resolve_altlocs(raw: "RawAtomData", mode: str = "occupancy") -> "RawAtomDat
 
   from collections import defaultdict
 
-  keys = list(zip(raw.chain_ids, raw.res_ids, raw.atom_names))
+  keys = list(zip(raw.chain_ids, raw.res_ids, raw.atom_names, strict=False))
   key_to_indices: dict = defaultdict(list)
   for i, k in enumerate(keys):
     key_to_indices[k].append(i)
 
   keep: list[int] = []
-  for k in keys:
+  for _k in keys:
     # Only add the representative for this key once (use a sentinel)
     pass
   # Build ordered list of kept indices (preserve original order of first winner)
   seen: set = set()
   keep = []
-  for i, k in enumerate(keys):
+  for _i, k in enumerate(keys):
     if k not in seen:
       idxs = key_to_indices[k]
       if len(idxs) == 1:
@@ -337,7 +337,7 @@ def _resolve_altlocs(raw: "RawAtomData", mode: str = "occupancy") -> "RawAtomDat
   coords_arr = np.asarray(raw.coords)
   occ_arr = np.asarray(raw.occupancies)
   bfac_arr = np.asarray(raw.b_factors)
-  res_ids_arr = np.asarray(raw.res_ids)
+  np.asarray(raw.res_ids)
 
   return RawAtomData(
     num_atoms=len(keep),
@@ -617,7 +617,8 @@ def parse_structure(
       2.  **Altloc Resolution**: Duplicate (chain, res_id, atom_name) rows are resolved
           by highest occupancy before Rust atom37 assembly (unless ``altloc="all"``).
       3.  **Parsing**: Reads structure into Rust logic representation.
-      4.  **Correction**: Adds hydrogens, infers bonds, or parameterizes MD if requested in ``spec``.
+      4.  **Correction**: Adds hydrogens, infers bonds, or parameterizes MD if requested
+          in ``spec``.
       5.  **Conversion**: Returns a Python ``Protein`` object with JAX arrays.
 
   Args:
@@ -685,7 +686,7 @@ class TrajectoryStream:
 
 def iterload(file_path: str | Path, chunk_size: int = 100):
   """Stream a trajectory file in chunks (Legacy alias).
-  
+
   .. warning::
       This function is an alias for :class:`TrajectoryStream`. Use the class
       for type hinting and a cleaner API.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Verify CB frame-angle hypothesis: test whether closer CB at θ=108.37° corresponds to farther terminals.
+"""Verify CB frame-angle hypothesis: test whether closer CB at θ=108.37° corresponds to
+farther terminals.
 
 Hypothesis: θ=108.37° (CB angle matched to MASTER's measured value) makes CB's position
 CLOSER to MASTER's stored CB, but the DOWNSTREAM/TERMINAL sidechain atoms move FARTHER
@@ -24,10 +25,8 @@ Canonical backbone frame (from proxide tests):
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import math
-import struct
 import sys
 import tempfile
 from pathlib import Path
@@ -40,7 +39,7 @@ logger = logging.getLogger("verify_residual_downstream_vs_cb")
 # Add scripts/analysis to path to import parse_rotlib
 sys.path.insert(0, str(Path(__file__).parent))
 
-from extract_rotlib_geometry import parse_rotlib
+from extract_rotlib_geometry import parse_rotlib  # noqa: E402 (needs sys.path.insert above)
 
 
 def compile_proto_runtime(proto_dir: Path, output_dir: Path) -> str:
@@ -318,8 +317,14 @@ def compare_libraries(pb1_path, pb2_path, rotlib_path, residues, dry_run=False, 
         # Compute per-atom distances
         atom_data = []
         for atom_idx, atom_name in enumerate(atom_names):
-            if atom_idx >= len(coords1) or atom_idx >= len(coords2) or atom_idx >= len(coords_master):
-                logger.warning("%s atom %d (%s) out of range in one library", aa, atom_idx, atom_name)
+            if (
+                atom_idx >= len(coords1)
+                or atom_idx >= len(coords2)
+                or atom_idx >= len(coords_master)
+            ):
+                logger.warning(
+                    "%s atom %d (%s) out of range in one library", aa, atom_idx, atom_name
+                )
                 continue
 
             dist1 = euclidean_distance(coords1[atom_idx], coords_master[atom_idx])
@@ -382,8 +387,14 @@ def format_results_table(results):
     lines = []
     lines.append("## Residual Comparison Table")
     lines.append("")
-    lines.append("| Residue | CB dist (θ=113.5°) | CB dist (θ=108.37°) | CB Δ | Term mean (θ=113.5°) | Term mean (θ=108.37°) | Term Δ | Notes |")
-    lines.append("|---------|-------------------|-------------------|------|----------------------|----------------------|--------|-------|")
+    lines.append(
+        "| Residue | CB dist (θ=113.5°) | CB dist (θ=108.37°) | CB Δ | "
+        "Term mean (θ=113.5°) | Term mean (θ=108.37°) | Term Δ | Notes |"
+    )
+    lines.append(
+        "|---------|-------------------|-------------------|------|"
+        "----------------------|----------------------|--------|-------|"
+    )
 
     for aa in sorted(results.keys()):
         data = results[aa]
@@ -413,7 +424,8 @@ def format_results_table(results):
             hypothesis_marker = "✗ refute (opposite)"
 
         lines.append(
-            f"| {aa} | {cb_113:.4f} | {cb_108:.4f} | {cb_delta_str} | {term_113:.4f} | {term_108:.4f} | {term_delta_str} | {hypothesis_marker} |"
+            f"| {aa} | {cb_113:.4f} | {cb_108:.4f} | {cb_delta_str} | "
+            f"{term_113:.4f} | {term_108:.4f} | {term_delta_str} | {hypothesis_marker} |"
         )
 
     return "\n".join(lines)
@@ -492,7 +504,12 @@ def main():
 
         # Compare libraries
         results = compare_libraries(
-            args.pb113, args.pb108, args.rotlib, residues, dry_run=args.dry_run, rotlib_pb2=rotlib_pb2
+            args.pb113,
+            args.pb108,
+            args.rotlib,
+            residues,
+            dry_run=args.dry_run,
+            rotlib_pb2=rotlib_pb2,
         )
 
         if args.dry_run:
@@ -520,7 +537,12 @@ def main():
             term_113 = data["terminal_mean_dist_pb113"]
             term_108 = data["terminal_mean_dist_pb108"]
 
-            if cb_113 is not None and cb_108 is not None and term_113 is not None and term_108 is not None:
+            if (
+                cb_113 is not None
+                and cb_108 is not None
+                and term_113 is not None
+                and term_108 is not None
+            ):
                 cb_delta = cb_108 - cb_113
                 term_delta = term_108 - term_113
                 if cb_delta < 0 and term_delta > 0:
@@ -535,18 +557,33 @@ def main():
         print("")
         print("## CONCLUSION")
         print("")
-        print(f"Results: {confirm_count} confirm hypothesis, {refute_both_improve} show both improve, "
-              f"{refute_both_worsen} show both worsen, {refute_opposite} show opposite pattern")
+        print(
+            f"Results: {confirm_count} confirm hypothesis, "
+            f"{refute_both_improve} show both improve, "
+            f"{refute_both_worsen} show both worsen, {refute_opposite} show opposite pattern"
+        )
         print("")
 
-        if confirm_count > 0 and (refute_both_improve + refute_both_worsen + refute_opposite) == 0:
-            print(f"HYPOTHESIS CONFIRMED: All {confirm_count} residues show CB closer at θ=108.37° but terminals farther.")
+        if (
+            confirm_count > 0
+            and (refute_both_improve + refute_both_worsen + refute_opposite) == 0
+        ):
+            print(
+                f"HYPOTHESIS CONFIRMED: All {confirm_count} residues show CB closer at "
+                f"θ=108.37° but terminals farther."
+            )
             print("The residual drift is downstream sidechain geometry, not CB frame angle.")
         elif refute_both_improve >= 4:
-            print(f"HYPOTHESIS REFUTED: {refute_both_improve}/{len(results)} residues show BOTH CB AND terminals improve at θ=108.37°.")
-            print("This suggests the N-CA-CB angle (at θ=108.37°) is part of the solution, not just a symptom.")
+            print(
+                f"HYPOTHESIS REFUTED: {refute_both_improve}/{len(results)} residues show BOTH "
+                f"CB AND terminals improve at θ=108.37°."
+            )
+            print(
+                "This suggests the N-CA-CB angle (at θ=108.37°) is part of the solution, "
+                "not just a symptom."
+            )
         else:
-            print(f"MIXED RESULTS: Pattern unclear. Interpretation requires further investigation.")
+            print("MIXED RESULTS: Pattern unclear. Interpretation requires further investigation.")
 
 
 if __name__ == "__main__":

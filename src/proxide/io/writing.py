@@ -29,7 +29,9 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
     # Use CA for a simplified PDB if only 1 residue per row
     # Or properly format Atom37.
     # For now, let's use full_coordinates if available
-    coords = protein.full_coordinates if protein.full_coordinates is not None else coords.reshape(-1, 3)
+    coords = (
+      protein.full_coordinates if protein.full_coordinates is not None else coords.reshape(-1, 3)
+    )
 
   atom_names = getattr(protein, "atom_names", None)
   res_names = getattr(protein, "res_names", None)
@@ -71,7 +73,11 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
       atom_name = atom_names[i] if i < len(atom_names) else "CA"
       res_name = res_names[i] if i < len(res_names) else "UNK"
       res_id = res_ids[i] if i < len(res_ids) else (i + 1)
-      chain_id = chain_ids[0] if chain_ids and len(chain_ids) == 1 else (chain_ids[i] if i < len(chain_ids) else "A")
+      chain_id = (
+        chain_ids[0]
+        if chain_ids and len(chain_ids) == 1
+        else (chain_ids[i] if i < len(chain_ids) else "A")
+      )
       element = elements[i] if i < len(elements) else atom_name[0]
 
       x, y, z = coords[i]
@@ -100,7 +106,9 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
 
   coords = protein.coordinates
   if coords.ndim == 3:
-    coords = protein.full_coordinates if protein.full_coordinates is not None else coords.reshape(-1, 3)
+    coords = (
+      protein.full_coordinates if protein.full_coordinates is not None else coords.reshape(-1, 3)
+    )
 
   atom_names = getattr(protein, "atom_names", None)
   res_names = getattr(protein, "res_names", None)
@@ -140,7 +148,11 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
       atom_name = atom_names[i] if i < len(atom_names) else "CA"
       res_name = res_names[i] if i < len(res_names) else "UNK"
       res_id = res_ids[i] if i < len(res_ids) else (i + 1)
-      chain_id = chain_ids[0] if chain_ids and len(chain_ids) == 1 else (chain_ids[i] if i < len(chain_ids) else "A")
+      chain_id = (
+        chain_ids[0]
+        if chain_ids and len(chain_ids) == 1
+        else (chain_ids[i] if i < len(chain_ids) else "A")
+      )
       element = elements[i] if i < len(elements) else atom_name[0]
 
       x, y, z = coords[i]

@@ -65,7 +65,8 @@ def assign_espaloma_charges_rdkit(
             from expaloma.featurize import from_rdkit_mol
         except ImportError as e:
             raise ImportError(
-                "expaloma (for featurization) is not installed. Install proxide with [espaloma] extra."
+                "expaloma (for featurization) is not installed. "
+                "Install proxide with [espaloma] extra."
             ) from e
 
         # 1. Featurize (still using Python/RDKit part of expaloma)
