@@ -5,7 +5,7 @@ import pathlib
 import re
 import warnings
 from collections.abc import Generator, Iterator, Sequence
-from typing import IO, Any, Literal
+from typing import IO, Any, Literal, cast
 
 from proxide.core.containers import Protein
 from proxide.io.parsing.dispatch import load_structure as parse_input
@@ -146,14 +146,18 @@ def _get_input_chain_pairs(
     return ((i, chain_list) for i in inputs)
 
   if isinstance(chain_id_arg, dict):
+    # Narrowing doesn't propagate into a nested function's closure — capture
+    # the narrowed dict in its own variable so _get_chain_from_dict sees the
+    # dict[str, str] type instead of the full chain_id_arg union.
+    chain_id_dict = cast("dict[str, str]", chain_id_arg)
 
     def _get_chain_from_dict(item: str | pathlib.Path | IO[str]) -> str | set[str]:
       key = str(item)
-      if key in chain_id_arg:
-        return chain_id_arg[key]
+      if key in chain_id_dict:
+        return chain_id_dict[key]
 
-      if isinstance(item, pathlib.Path) and item.name in chain_id_arg:
-        return chain_id_arg[item.name]
+      if isinstance(item, pathlib.Path) and item.name in chain_id_dict:
+        return chain_id_dict[item.name]
 
       msg = f"Input '{key}' not found in chain_id dictionary keys."
       raise ValueError(msg)

@@ -107,7 +107,7 @@ def _get_buffer_size(
   # Find the datasets with non-batched elements.
   dss = _find_prefetch_iter_dataset_parents(ds)
   average_elem_size_mb = _get_average_element_size_mb(
-    dss,  # type: ignore[invalid-argument-type]
+    dss,
     samples_to_check=samples_to_check,
   )
   if max_buffer_size is None:
@@ -179,7 +179,7 @@ def pick_performance_config(
 
 def _find_prefetch_iter_dataset_parents(
   ds: dataset.IterDataset | dataset.MapDataset,
-) -> list[dataset.IterDataset | dataset.MapDataset | None]:
+) -> list[dataset.IterDataset | dataset.MapDataset]:
   """Find the parents of PrefetchIterDatasets.
 
   Used for finding dataset with non-batched elements.
@@ -188,8 +188,7 @@ def _find_prefetch_iter_dataset_parents(
     ds: The input dataset.
 
   Returns:
-    The list of parents of PrefetchIterDataset or None if no PrefetchIterDataset
-    is found.
+    The list of parents of PrefetchIterDataset — empty if none is found.
 
   """
   prefetch_iter_dataset_parents = []
