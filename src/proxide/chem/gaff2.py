@@ -768,7 +768,7 @@ def assign_pdb_atom_names(rdmol: Chem.Mol) -> list[str]:  # ty: ignore[unresolve
     If an atom already has a non-empty MonomerInfo name it is kept as-is.
     New names are element+counter (e.g. C1, C2, O1, H1 …).
     """
-    from rdkit.Chem import AtomPDBResidueInfo
+    from rdkit.Chem import AtomPDBResidueInfo  # ty: ignore[unresolved-import]
 
     counts: dict[str, int] = {}
     names: list[str] = []

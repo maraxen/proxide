@@ -42,7 +42,7 @@ def assign_espaloma_charges_rdkit(
         ImportError: If the chosen backend's dependencies (expaloma for JAX) are not installed.
         ValueError: If an invalid backend is specified.
     """
-    from rdkit import Chem
+    from rdkit import Chem  # ty: ignore[unresolved-import]
 
     # Deep copy and sanitize to ensure consistent featurization
     mol = Chem.Mol(mol)
@@ -50,7 +50,7 @@ def assign_espaloma_charges_rdkit(
 
     if backend == "jax":
         try:
-            from expaloma.infer import charges_for_rdkit_mol
+            from expaloma.infer import charges_for_rdkit_mol  # ty: ignore[unresolved-import]
         except ImportError as e:
             raise ImportError(
                 "expaloma is not installed. Install proxide with [espaloma] extra."
@@ -62,7 +62,7 @@ def assign_espaloma_charges_rdkit(
         from proxide._proxider import assign_espaloma_charges  # ty: ignore[unresolved-import]
 
         try:
-            from expaloma.featurize import from_rdkit_mol
+            from expaloma.featurize import from_rdkit_mol  # ty: ignore[unresolved-import]
         except ImportError as e:
             raise ImportError(
                 "expaloma (for featurization) is not installed. "
