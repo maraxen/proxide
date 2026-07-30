@@ -69,7 +69,7 @@ pub fn evaluate_tm_score(
 /// Apply rotation and translation: `R·p + t`.
 ///
 /// Helper for rotating a single point using a row-major rotation matrix.
-fn apply_transform_with_matrix(
+pub(crate) fn apply_transform_with_matrix(
     p: Vector3<f32>,
     rotation: &[[f32; 3]; 3],
     translation: &[f32; 3],

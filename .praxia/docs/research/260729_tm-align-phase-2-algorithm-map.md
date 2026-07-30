@@ -45,15 +45,30 @@ sources: '~/repos/USalign @ 177cc8a (v20240303), TMalign.h + NW.h + param_set.h'
 >   selection (`TMalign.h:674`, `:1357`, `:1390`) — keeps the *last* candidate on an exact
 >   floating-point tie. Only matters for symmetric/near-symmetric structure pairs.
 >
-> **Still-open empirical gap**: even after fixing all 6 of the above, `crates/proxide-tmalign`'s
-> `tmalign_pair_serial` on USalign's own bundled `PDB1.pdb`/`PDB2.pdb` sample (250×166 residues)
-> produces `n_aligned=163` vs. the reference binary's `Lali=119`, despite TM-scores matching within
-> ~0.004 absolute (0.4308/0.6205 vs. reference 0.4265/0.6163) both before and after the fixes —
-> bit-identical output pre/post-fix on this specific pair, which is itself informative: `dp_iter`
-> already iterates to `|ΔTM|<1e-6` convergence (up to 30×), so these were mostly *path*-level fixes
-> that don't change *which fixed point* it converges to for this pair. The `n_aligned` gap is likely
-> something more structural in the DP/NWDP_TM convergence dynamics — not yet root-caused, flagged as
-> follow-up work for a dedicated debugging session (see backlog).
+> **`n_aligned` gap — closed (260729, second addendum).** The gap described in the paragraph below
+> was **not** a DP/NWDP_TM convergence issue as originally hypothesized — it was a missing final-stage
+> filter. `TMalign_main` (`TMalign.h:3554-3593`) walks the winning alignment under the *definitive*
+> rotation and keeps only pairs within `score_d8` distance before reporting `Lali`/`n_ali8`; pairs
+> that survived the raw DP but land far apart post-rotation don't count, even though `NWDP_TM`'s
+> diagonal score (always positive — no penalty for a bad match) let them stay in the alignment map.
+> `pipeline.rs`'s final stage never applied this filter, so `n_aligned` tracked the raw DP pair count
+> instead of the reference's filtered `Lali`. Fixed by filtering the alignment by `score_d8` (using
+> the already-correct `d0::score_d8` cutoff, previously only wired into `refine.rs`'s internal
+> `score_fun8`) before computing both `n_aligned` and the final TM-score sum. Result on the same
+> PDB1.pdb/PDB2.pdb pair: `n_aligned` now matches the reference **exactly** (119, was 163), and the
+> TM-scores also tightened further (0.4265/0.6161 vs. reference 0.4265/0.6163 — within ~0.0002, down
+> from ~0.004). Self-alignment remains an exact match (`n_aligned=250=250`, TM=1.0). Backlog #3788
+> closed.
+>
+> **Still-open empirical gap (historical — see resolution above)**: even after fixing all 6 of the
+> above, `crates/proxide-tmalign`'s `tmalign_pair_serial` on USalign's own bundled `PDB1.pdb`/`PDB2.pdb`
+> sample (250×166 residues) produces `n_aligned=163` vs. the reference binary's `Lali=119`, despite
+> TM-scores matching within ~0.004 absolute (0.4308/0.6205 vs. reference 0.4265/0.6163) both before
+> and after the fixes — bit-identical output pre/post-fix on this specific pair, which is itself
+> informative: `dp_iter` already iterates to `|ΔTM|<1e-6` convergence (up to 30×), so these were
+> mostly *path*-level fixes that don't change *which fixed point* it converges to for this pair. The
+> `n_aligned` gap is likely something more structural in the DP/NWDP_TM convergence dynamics — not yet
+> root-caused, flagged as follow-up work for a dedicated debugging session (see backlog).
 
 Ground-truth reference for implementing `crates/proxide-tmalign`'s Phase 2 (remaining seed
 strategies + `DP_iter` refinement). Companion to

@@ -23,20 +23,22 @@
 //! canonical single score, "normalized by length of the reference
 //! structure").
 //!
-//! ## Known gap (tracked, not yet closed)
+//! ## `n_aligned` gap — closed (was backlog #3788)
 //!
-//! `n_aligned` does not yet match the reference exactly (163 vs 119 for the
-//! PDB1/PDB2 pair) even though the TM-scores land within ~0.004 absolute —
-//! our alignment includes more (weakly-contributing) pairs than the
-//! reference's tighter Lali=119. The TM-score match this close is strong
-//! evidence the core algorithm (seeding, DP_iter, final refinement) is
-//! fundamentally sound, but this is not yet a bit-for-bit port: tolerances
-//! below are set to what's *empirically achieved*, not the stricter 1e-4
-//! target in `.praxia/docs/specs/260729_proxide-tmalign-phases-2-5.md` —
-//! tightening this gap (likely the pre-DP_iter gate score approximation
-//! noted in pipeline.rs, or a remaining seed/DP subtlety) is follow-up work,
-//! not blocking Phase 2's "first honest parity-verified milestone" per se,
-//! but blocking the *stricter* parity bar the original plan set.
+//! `n_aligned` previously didn't match the reference exactly (163 vs 119 for
+//! the PDB1/PDB2 pair) even though TM-scores landed within ~0.004 absolute.
+//! Root cause: `pipeline.rs`'s final stage counted every raw DP-aligned pair
+//! instead of filtering by `score_d8` under the definitive rotation, as
+//! `TMalign_main` does (`TMalign.h:3554-3593`) before reporting `Lali`/
+//! `n_ali8`. `NWDP_TM`'s diagonal score is always positive, so the DP has no
+//! penalty for admitting a geometrically bad match — such pairs barely move
+//! the TM-score but were still counted. Fixed by applying the `score_d8`
+//! filter in `pipeline.rs` before computing `n_aligned` and the final
+//! TM-score sum; `n_aligned` now matches the reference exactly (119) on this
+//! pair. TM-score tolerance below is left at the empirically-achieved 0.01
+//! (not the stricter `1e-4` aspirational target in
+//! `.praxia/docs/specs/260729_proxide-tmalign-phases-2-5.md`) since the fix
+//! only affects pair *counting*, not the underlying seed/DP_iter numerics.
 
 mod common;
 
@@ -61,6 +63,7 @@ fn tmalign_pdb1_vs_pdb2_matches_reference_tm_scores() {
 
     const REF_TM1: f32 = 0.4265;
     const REF_TM2: f32 = 0.6163;
+    const REF_N_ALIGNED: usize = 119;
 
     assert!(
         (result.tm_score_norm1 - REF_TM1).abs() < TOLERANCE,
@@ -75,6 +78,11 @@ fn tmalign_pdb1_vs_pdb2_matches_reference_tm_scores() {
         result.tm_score_norm2,
         REF_TM2,
         (result.tm_score_norm2 - REF_TM2).abs()
+    );
+    assert_eq!(
+        result.n_aligned, REF_N_ALIGNED,
+        "n_aligned: got {}, expected exact match with reference Lali {}",
+        result.n_aligned, REF_N_ALIGNED
     );
 }
 
@@ -97,5 +105,11 @@ fn tmalign_self_alignment_yields_near_perfect_tm_score() {
         (result.tm_score_norm2 - 1.0).abs() < TOLERANCE,
         "self-alignment tm_score_norm2 should be ~1.0, got {:.4}",
         result.tm_score_norm2
+    );
+    // Reference: TMalign PDB1.pdb PDB1.pdb -outfmt 2 -> L1=L2=Lali=250 exactly.
+    assert_eq!(
+        result.n_aligned, 250,
+        "self-alignment n_aligned should exactly match structure length 250, got {}",
+        result.n_aligned
     );
 }

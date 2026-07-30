@@ -21,7 +21,7 @@
 use crate::d0;
 use crate::error::TmAlignError;
 use crate::refine::dp_iter;
-use crate::score::evaluate_tm_score;
+use crate::score::{apply_transform_with_matrix, evaluate_tm_score};
 use crate::seed::{run_seed, AlignmentMap, SeedKind};
 use crate::kabsch::kabsch_superpose;
 use crate::nw::AlignedPair;
@@ -31,7 +31,10 @@ use nalgebra::Vector3;
 /// and final TM-scores normalized by both structure lengths.
 #[derive(Debug, Clone)]
 pub struct TmAlignResult {
-    /// Alignment map: `(Some(i), Some(j))` for aligned residue pairs, gaps as `None`.
+    /// Raw alignment map from the winning seed's DP: `(Some(i), Some(j))` for
+    /// aligned residue pairs, gaps as `None`. NOT filtered by `score_d8` — may
+    /// contain pairs that land beyond `score_d8` post-rotation and therefore
+    /// don't count toward [`Self::n_aligned`] (see its doc).
     pub alignment: AlignmentMap,
     /// Optimal rotation matrix (row-major 3×3).
     pub rotation: [[f32; 3]; 3],
@@ -41,7 +44,12 @@ pub struct TmAlignResult {
     pub tm_score_norm1: f32,
     /// TM-score normalized by structure 2 length (canonical single TM-score).
     pub tm_score_norm2: f32,
-    /// Number of residue pairs in the final alignment.
+    /// Number of residue pairs in the final alignment whose post-rotation
+    /// distance is within the `score_d8` cutoff (USalign's `Lali`/`n_ali8` —
+    /// `TMalign.h:3554-3593`). This is *not* a raw count of `Some/Some` pairs
+    /// in [`Self::alignment`]: `NWDP_TM`'s diagonal score is always positive,
+    /// so the DP has no penalty for admitting a geometrically bad match, and
+    /// such pairs are excluded here even though they remain in the raw map.
     pub n_aligned: usize,
 }
 
@@ -81,7 +89,10 @@ pub struct TmAlignResult {
 ///    → DP_iter(0..2, 30).
 /// 6. Fragment gapless (e) → gate `TM > TMmax*ddcc` → DP_iter(1..2, 2 iters).
 /// 7. Final stage: re-compute TM-scores using `d0_final` (not search-phase d0),
-///    normalized by both structure lengths.
+///    normalized by both structure lengths. Before scoring, the alignment is
+///    filtered by `score_d8` (`TMalign.h:3554-3593`): pairs that land beyond
+///    `score_d8` under the definitive rotation don't count toward `n_aligned`
+///    or the TM-score sum, even if the DP's raw alignment included them.
 #[allow(unused_assignments)] // tmmax's final write (after the last seed) is never read back, by design
 pub fn tmalign_pair_serial(
     coords1: &[Vector3<f32>],
@@ -292,8 +303,8 @@ pub fn tmalign_pair_serial(
             })
             .unzip();
 
-    let n_aligned = coords1_aligned.len();
-    if n_aligned == 0 {
+    let n_aligned_raw = coords1_aligned.len();
+    if n_aligned_raw == 0 {
         return Err(TmAlignError::Parse(
             "Final alignment has no aligned pairs".to_string(),
         ));
@@ -319,6 +330,34 @@ pub fn tmalign_pair_serial(
         l_norm,
     );
 
+    // Filter by score_d8 under the definitive rotation before reporting
+    // n_aligned or summing the final TM-score (TMalign.h:3554-3593). Pairs
+    // that survived the raw DP alignment but land beyond score_d8 once the
+    // final rotation is applied don't count as "aligned" for reporting
+    // purposes, even though nwdp_tm's diagonal score (always positive, no
+    // penalty for a bad match) let them stay in the raw alignment map.
+    // Without this filter n_aligned tracks the raw DP pair count instead of
+    // USalign's own Lali/n_ali8, which is what produced the previously-open
+    // n_aligned discrepancy (backlog #3788): TM-scores matched the reference
+    // within ~0.4% while n_aligned came out far too high (163 vs 119) because
+    // those extra pairs contribute almost nothing to the TM-score sum but
+    // still counted toward the raw total.
+    let score_d8_cutoff = d0::score_d8(l_norm);
+    let filtered_alignment: Vec<AlignedPair> = alignment
+        .iter()
+        .copied()
+        .filter(|&(i_opt, j_opt)| match (i_opt, j_opt) {
+            (Some(i), Some(j)) if i < coords1.len() && j < coords2.len() => {
+                let rotated =
+                    apply_transform_with_matrix(coords1[i], &final_result.rotation, &final_result.translation);
+                (rotated - coords2[j]).norm() <= score_d8_cutoff
+            }
+            _ => false,
+        })
+        .collect();
+
+    let n_aligned = filtered_alignment.len();
+
     // Compute final TM-scores using d0_final (strict thresholds) for each normalization length.
     let d0_final_xlen = d0::d0_final(xlen);
     let d0_final_ylen = d0::d0_final(ylen);
@@ -326,7 +365,7 @@ pub fn tmalign_pair_serial(
     let tm_score_norm1 = evaluate_tm_score(
         coords1,
         coords2,
-        &alignment,
+        &filtered_alignment,
         &final_result.rotation,
         &final_result.translation,
         d0_final_xlen,
@@ -336,7 +375,7 @@ pub fn tmalign_pair_serial(
     let tm_score_norm2 = evaluate_tm_score(
         coords1,
         coords2,
-        &alignment,
+        &filtered_alignment,
         &final_result.rotation,
         &final_result.translation,
         d0_final_ylen,

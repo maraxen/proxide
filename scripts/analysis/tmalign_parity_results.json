@@ -1,19 +1,19 @@
 {
   "usalign_repo_git_sha": "177cc8a2bbd3e2a6e9c5faaaa4ff5dfa1e6048f7",
-  "max_abs_tm_diff": 0.00432189999999999,
-  "max_abs_n_aligned_diff": 44,
+  "max_abs_tm_diff": 0.00022599999999994846,
+  "max_abs_n_aligned_diff": 0,
   "pairs": [
     {
       "pair": "PDB1.pdb_vs_PDB2.pdb",
       "ref_tm1": 0.4265,
       "ref_tm2": 0.6163,
       "ref_lali": 119,
-      "rust_tm_score_norm1": 0.4308219,
-      "rust_tm_score_norm2": 0.6205193,
-      "rust_n_aligned": 163,
-      "diff_tm1": 0.00432189999999999,
-      "diff_tm2": 0.004219300000000037,
-      "n_aligned_diff": 44
+      "rust_tm_score_norm1": 0.42651522,
+      "rust_tm_score_norm2": 0.616074,
+      "rust_n_aligned": 119,
+      "diff_tm1": 1.521999999998247e-05,
+      "diff_tm2": 0.00022599999999994846,
+      "n_aligned_diff": 0
     },
     {
       "pair": "PDB1.pdb_vs_PDB1.pdb",
