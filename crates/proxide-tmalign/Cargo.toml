@@ -18,9 +18,9 @@ crate-type = ["rlib"]
 name = "tmalign"
 path = "src/bin/tmalign.rs"
 
-# NOTE: `bench_pairwise` ([[bench]], criterion) is added once parallel.rs
-# exists (Phase 3b, see .praxia/docs/specs/260729_proxide-tmalign-phases-2-5.md)
-# — declaring it before the source file exists would break `cargo check`.
+[[bench]]
+name = "bench_pairwise"
+harness = false
 
 [dependencies]
 proxide-core.workspace     = true
@@ -33,6 +33,8 @@ log              = { workspace = true }
 
 [dev-dependencies]
 approx    = { workspace = true }
+criterion = { workspace = true }
+rand      = { workspace = true }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 proxide-parallel-rt.workspace = true

@@ -167,10 +167,12 @@ pub fn tmalign_pair(
     // orx-parallel's default IterationOrder is `Ordered`, so `collect()` below
     // preserves seed_kinds' input order -- essential since the pop()s after it
     // rely on positional a/b/c/e correspondence.
-    let mut seed_results: Vec<Result<AlignmentMap, TmAlignError>> = seed_kinds
+    let par = seed_kinds
         .into_par()
-        .map(|kind| run_seed(kind, coords1, coords2, d0_search_phase, d0_search, l_norm, None))
-        .collect();
+        .map(|kind| run_seed(kind, coords1, coords2, d0_search_phase, d0_search, l_norm, None));
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let par = par.num_threads(proxide_parallel_rt::num_threads());
+    let mut seed_results: Vec<Result<AlignmentMap, TmAlignError>> = par.collect();
 
     let seed_e = seed_results.pop().expect("4 seeds dispatched");
     let seed_c = seed_results.pop().expect("4 seeds dispatched");
