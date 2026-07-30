@@ -19,6 +19,7 @@ mod py_jaccard;
 mod py_parsers;
 mod py_rotlib;
 mod py_stream;
+mod py_tmalign;
 mod py_trajectory;
 mod py_xtc_reader;
 
@@ -94,6 +95,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_parsers::read_fasta, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::read_newick, m)?)?;
     m.add_function(wrap_pyfunction!(py_jaccard::jaccard_distance_matrix, m)?)?;
+    m.add_function(wrap_pyfunction!(py_tmalign::tm_align, m)?)?;
 
     // Force field functions (from py_forcefield)
     m.add_function(wrap_pyfunction!(py_forcefield::load_forcefield, m)?)?;
