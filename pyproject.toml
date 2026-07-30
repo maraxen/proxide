@@ -135,8 +135,29 @@ pylint.max-args = 15
 [tool.ty.environment]
 root = ["src/proxide"]
 
+[tool.ty.src]
+# None of these are part of the shippable package surface: tests/ is
+# excluded from ruff for the same reason (see [tool.ruff]); scripts/ and
+# benchmarks/ are one-off research/debug scripts (not installed, frequently
+# import sibling scripts by bare name assuming a specific run context ty's
+# static resolution can't follow, or use optional heavy deps not in the
+# checked venv); docs/ is Sphinx configuration, not application code.
+exclude = ["tests", "scripts", "benchmarks", "docs"]
+
 [tool.ty.rules]
 invalid-type-form = "ignore"
+
+# openmm.unit's Quantity/Unit system (mass * u.amu, cutoff * u.nanometer,
+# etc.) relies on __mul__/__rmul__ operator overloads and dynamically-set
+# module attributes that openmm's type stubs don't declare — verified at
+# runtime that `openmm.unit.nanometer` and the multiplication both work
+# correctly; this is a stub-completeness gap in openmm, not a bug here.
+[[tool.ty.overrides]]
+include = ["src/proxide/core/projector.py"]
+
+[tool.ty.overrides.rules]
+unresolved-attribute = "ignore"
+unsupported-operator = "ignore"
 
 [dependency-groups]
 dev = [
