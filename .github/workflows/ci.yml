@@ -71,6 +71,14 @@ jobs:
 
   rust-checks:
     runs-on: ubuntu-latest
+    env:
+      # HDF5's file-open path takes a POSIX advisory lock by default; under
+      # cargo test's default parallel test threads, two `hdf5::File::create`
+      # calls (even against distinct tempdir paths) can race and fail with
+      # "unable to lock file, errno = 11". This disables that locking, which
+      # single-process test runs don't need. Verified locally: without it,
+      # mdcath_h5/mdtraj_h5 tests fail intermittently; with it, 5/5 clean runs.
+      HDF5_USE_FILE_LOCKING: "FALSE"
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
