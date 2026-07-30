@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Command;
 use thiserror::Error;
 
@@ -57,18 +57,23 @@ pub fn run_propka(pdb_path: &Path, _ph: f32) -> Result<PkaTable, PropkaError> {
     // propka3 writes <stem>.pka in the current working directory (or sometimes next to the input)
     // Try to locate it
     let pka_path = if let Some(stem) = pdb_path.file_stem() {
-        pdb_path.parent().unwrap_or_else(|| Path::new(".")).join(format!("{}.pka", stem.to_string_lossy()))
+        pdb_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(format!("{}.pka", stem.to_string_lossy()))
     } else {
-        return Err(PropkaError::Parse("Cannot determine pKa output filename".to_string()));
+        return Err(PropkaError::Parse(
+            "Cannot determine pKa output filename".to_string(),
+        ));
     };
 
     // Also try cwd just in case
     let pka_path = if pka_path.exists() {
         pka_path
     } else {
-        let stem = pdb_path.file_stem().ok_or_else(|| {
-            PropkaError::Parse("Cannot extract PDB filename stem".to_string())
-        })?;
+        let stem = pdb_path
+            .file_stem()
+            .ok_or_else(|| PropkaError::Parse("Cannot extract PDB filename stem".to_string()))?;
         std::env::current_dir()
             .ok()
             .map(|cwd| cwd.join(format!("{}.pka", stem.to_string_lossy())))
@@ -76,8 +81,7 @@ pub fn run_propka(pdb_path: &Path, _ph: f32) -> Result<PkaTable, PropkaError> {
     };
 
     // Read and parse the .pka file
-    let pka_content = std::fs::read_to_string(&pka_path)
-        .map_err(|e| PropkaError::Io(e))?;
+    let pka_content = std::fs::read_to_string(&pka_path).map_err(PropkaError::Io)?;
 
     parse_pka_summary(&pka_content)
 }

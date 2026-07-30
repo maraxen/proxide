@@ -1,5 +1,5 @@
-use proxide_rs::structure::RawAtomData;
 use proxide_rs::structure::systems::{AtomicSystem, AtomicSystemArgs};
+use proxide_rs::structure::RawAtomData;
 use std::collections::HashMap;
 
 /// Atom index + selection info for altloc filtering
@@ -72,7 +72,7 @@ fn filter_altlocs(data: &RawAtomData) -> Vec<usize> {
 
         groups
             .entry(key)
-            .or_insert_with(|| Vec::new())
+            .or_default()
             .push(AtomIndexWithOccupancy {
                 index: i,
                 occupancy: data.occupancy[i],
@@ -130,7 +130,11 @@ impl Topology {
             let atom = Atom {
                 name: data.atom_names[i].clone(),
                 element: data.elements[i].clone(),
-                coords: [data.coords[i * 3], data.coords[i * 3 + 1], data.coords[i * 3 + 2]],
+                coords: [
+                    data.coords[i * 3],
+                    data.coords[i * 3 + 1],
+                    data.coords[i * 3 + 2],
+                ],
                 alt_loc: data.alt_locs[i],
                 serial: data.serial_numbers[i],
                 b_factor: data.b_factors[i],
@@ -151,10 +155,10 @@ impl Topology {
             }
 
             let chain = chains.last_mut().unwrap();
-            if chain.residues.is_empty() || 
-               chain.residues.last().unwrap().res_id != res_id ||
-               chain.residues.last().unwrap().insertion_code != ins_code ||
-               chain.residues.last().unwrap().name != *res_name 
+            if chain.residues.is_empty()
+                || chain.residues.last().unwrap().res_id != res_id
+                || chain.residues.last().unwrap().insertion_code != ins_code
+                || chain.residues.last().unwrap().name != *res_name
             {
                 chain.residues.push(Residue {
                     name: res_name.clone(),

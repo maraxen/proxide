@@ -1,7 +1,7 @@
-use thiserror::Error;
 use crate::models::{Atom, Chain, Residue, Topology};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use thiserror::Error;
 
 // Constants declared here (not hidden in algorithm) — these are test-assertion targets.
 pub const ESP_GRID_SPACING_ANGSTROM: f32 = 1.0;
@@ -67,8 +67,7 @@ impl<'a> Solvator<'a> {
     }
 
     pub fn run(&mut self) -> Result<SolvationReport, SolvationError> {
-        let mut report = SolvationReport::default();
-        report.net_charge_before = net_charge(self.topology);
+        let mut report = SolvationReport { net_charge_before: net_charge(self.topology), ..Default::default() };
 
         // Mutually exclusive: PDBFixer solvation box OR native water triage + counterions
         if self.config.build_solvation_box {
@@ -83,7 +82,8 @@ impl<'a> Solvator<'a> {
         } else {
             // T11.2 + T11.3: Native water triage and counterion placement
             if self.config.keep_crystal_waters {
-                let (kept, discarded) = triage_waters(self.topology, self.config.water_shell_radius);
+                let (kept, discarded) =
+                    triage_waters(self.topology, self.config.water_shell_radius);
                 report.waters_kept = kept;
                 report.waters_discarded = discarded;
             } else {
@@ -149,9 +149,7 @@ fn euclidean_distance(p1: &[f32; 3], p2: &[f32; 3]) -> f32 {
 /// Returns `f32::MAX` when `set` is empty.
 fn min_dist_to_set(pt: &[f32; 3], set: &[[f32; 3]]) -> f32 {
     set.iter()
-        .map(|p| {
-            ((pt[0] - p[0]).powi(2) + (pt[1] - p[1]).powi(2) + (pt[2] - p[2]).powi(2)).sqrt()
-        })
+        .map(|p| ((pt[0] - p[0]).powi(2) + (pt[1] - p[1]).powi(2) + (pt[2] - p[2]).powi(2)).sqrt())
         .fold(f32::MAX, f32::min)
 }
 
@@ -316,7 +314,7 @@ fn add_ion_to_topology(topology: &mut Topology, name: &str, pos: &[f32; 3], idx:
     if let Some(chain) = topology
         .chains
         .iter_mut()
-        .find(|c| c.id == "ION" && c.residues.iter().all(|r| is_ion(r)))
+        .find(|c| c.id == "ION" && c.residues.iter().all(is_ion))
     {
         chain.residues.push(residue);
     } else {
@@ -360,10 +358,7 @@ fn place_counterions(
         .collect();
 
     if protein_atoms.is_empty() {
-        return Err(SolvationError::IonPlacementInfeasible {
-            needed,
-            placed: 0,
-        });
+        return Err(SolvationError::IonPlacementInfeasible { needed, placed: 0 });
     }
 
     // 2. Bounding box + grid.
@@ -377,10 +372,7 @@ fn place_counterions(
         .collect();
 
     if available.is_empty() {
-        return Err(SolvationError::IonPlacementInfeasible {
-            needed,
-            placed: 0,
-        });
+        return Err(SolvationError::IonPlacementInfeasible { needed, placed: 0 });
     }
 
     // 4. Score each candidate by a simplified |ESP|:
@@ -392,10 +384,13 @@ fn place_counterions(
             let esp: f32 = protein_atoms
                 .iter()
                 .map(|pa| {
-                    let r2 = (pt[0] - pa[0]).powi(2)
-                        + (pt[1] - pa[1]).powi(2)
-                        + (pt[2] - pa[2]).powi(2);
-                    if r2 < 1.0 { 0.0 } else { 1.0 / r2 }
+                    let r2 =
+                        (pt[0] - pa[0]).powi(2) + (pt[1] - pa[1]).powi(2) + (pt[2] - pa[2]).powi(2);
+                    if r2 < 1.0 {
+                        0.0
+                    } else {
+                        1.0 / r2
+                    }
                 })
                 .sum();
             (*pt, esp)
@@ -461,6 +456,7 @@ fn place_counterions(
 /// Priority order:
 /// 1. PDBFIXER_EXEC environment variable
 /// 2. "pdbfixer" on PATH
+///
 /// Returns Err(SolvationError::PdbFixerNotInstalled) if not found.
 fn find_pdbfixer() -> Result<PathBuf, SolvationError> {
     // Check PDBFIXER_EXEC environment variable first
@@ -555,10 +551,7 @@ fn run_pdbfixer_solvate(
     let pdbfixer = find_pdbfixer()?;
 
     // Create temp directory
-    let tmp_dir = std::env::temp_dir().join(format!(
-        "proxide_pdbfixer_{}",
-        std::process::id()
-    ));
+    let tmp_dir = std::env::temp_dir().join(format!("proxide_pdbfixer_{}", std::process::id()));
     std::fs::create_dir_all(&tmp_dir)?;
 
     let input_pdb = tmp_dir.join("input.pdb");
@@ -884,7 +877,10 @@ mod tests {
 
         assert!(result.is_ok());
         let content = std::fs::read_to_string(&tmp_path).expect("Failed to read PDB");
-        assert!(content.contains("HETATM"), "PDB should contain HETATM records for water");
+        assert!(
+            content.contains("HETATM"),
+            "PDB should contain HETATM records for water"
+        );
 
         let _ = std::fs::remove_file(&tmp_path);
     }
@@ -903,7 +899,10 @@ mod tests {
             cfg.build_solvation_box,
             "build_solvation_box should be true"
         );
-        assert!(!cfg.build_solvation_box || cfg.neutralize, "Neutralize can be true or false");
+        assert!(
+            !cfg.build_solvation_box || cfg.neutralize,
+            "Neutralize can be true or false"
+        );
 
         // The run() method must NOT call native water triage or counterion placement
         // when build_solvation_box=true (verified by code inspection of the conditional branch).
@@ -919,7 +918,10 @@ mod tests {
             ..SolvationConfig::default()
         };
 
-        assert!(!cfg.build_solvation_box, "build_solvation_box should be false");
+        assert!(
+            !cfg.build_solvation_box,
+            "build_solvation_box should be false"
+        );
         assert!(cfg.keep_crystal_waters, "Should keep waters in native path");
     }
 
@@ -970,10 +972,7 @@ mod tests {
     #[test]
     fn net_charge_negative_residues() {
         // ASP (−1) + GLU (−1) → net −2
-        let topology = build_topology(&[
-            ("ASP", 1, 0.0, 0.0, 0.0),
-            ("GLU", 2, 5.0, 0.0, 0.0),
-        ]);
+        let topology = build_topology(&[("ASP", 1, 0.0, 0.0, 0.0), ("GLU", 2, 5.0, 0.0, 0.0)]);
         assert_eq!(net_charge(&topology), -2.0);
     }
 
@@ -990,10 +989,7 @@ mod tests {
 
     #[test]
     fn net_charge_neutral_system() {
-        let topology = build_topology(&[
-            ("ALA", 1, 0.0, 0.0, 0.0),
-            ("GLY", 2, 5.0, 0.0, 0.0),
-        ]);
+        let topology = build_topology(&[("ALA", 1, 0.0, 0.0, 0.0), ("GLY", 2, 5.0, 0.0, 0.0)]);
         assert_eq!(net_charge(&topology), 0.0);
     }
 
