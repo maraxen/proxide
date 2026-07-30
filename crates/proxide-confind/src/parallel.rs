@@ -4,8 +4,8 @@ use crate::coords::ResidueIndex;
 use crate::error::ConFindError;
 use crate::params::{aa_propensity, AA_NAMES, CONT_DIST};
 use dashmap::DashMap;
-use proxide_rotlib::{RotamerId, RotamerLibrary};
 use orx_parallel::{IntoParIter, ParIter};
+use proxide_rotlib::{RotamerId, RotamerLibrary};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -209,20 +209,22 @@ pub fn run_phases_b_c(
     // Phase C — freedom (parallel over residues, after B2 completes).
     {
         let residues_vec: Vec<ResidueIndex> = residues.to_vec();
-        let par = residues_vec.into_par().map(|ri| -> Result<(), ConFindError> {
-            let cp = coll_prob_out.get(&ri).ok_or(ConFindError::NotCached(ri))?;
-            let cache = cache_map.get(&ri).ok_or(ConFindError::NotCached(ri))?;
-            let f = crate::freedom::compute_freedom(
-                &cp,
-                cache.surviving_rotamers.len(),
-                cache.n_library_rotamers,
-                lo_cut,
-                hi_cut,
-                2,
-            );
-            freedom_out.insert(ri, f);
-            Ok(())
-        });
+        let par = residues_vec
+            .into_par()
+            .map(|ri| -> Result<(), ConFindError> {
+                let cp = coll_prob_out.get(&ri).ok_or(ConFindError::NotCached(ri))?;
+                let cache = cache_map.get(&ri).ok_or(ConFindError::NotCached(ri))?;
+                let f = crate::freedom::compute_freedom(
+                    &cp,
+                    cache.surviving_rotamers.len(),
+                    cache.n_library_rotamers,
+                    lo_cut,
+                    hi_cut,
+                    2,
+                );
+                freedom_out.insert(ri, f);
+                Ok(())
+            });
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         let par = par.num_threads(proxide_parallel_rt::num_threads());
         par.collect::<Vec<_>>()

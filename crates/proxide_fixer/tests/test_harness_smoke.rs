@@ -1,20 +1,36 @@
 mod common;
 
-use common::{fixture, load_topology, fixture_path_str};
+use common::{fixture, fixture_path_str, load_topology};
 
 #[test]
 fn test_fixture_path_exists() {
     let path = fixture("clean_small.pdb");
-    assert!(path.exists(), "clean_small.pdb fixture not found at {:?}", path);
+    assert!(
+        path.exists(),
+        "clean_small.pdb fixture not found at {:?}",
+        path
+    );
 
     let path = fixture("disulfide_pair.pdb");
-    assert!(path.exists(), "disulfide_pair.pdb fixture not found at {:?}", path);
+    assert!(
+        path.exists(),
+        "disulfide_pair.pdb fixture not found at {:?}",
+        path
+    );
 
     let path = fixture("missing_atoms.pdb");
-    assert!(path.exists(), "missing_atoms.pdb fixture not found at {:?}", path);
+    assert!(
+        path.exists(),
+        "missing_atoms.pdb fixture not found at {:?}",
+        path
+    );
 
     let path = fixture("chain_break.pdb");
-    assert!(path.exists(), "chain_break.pdb fixture not found at {:?}", path);
+    assert!(
+        path.exists(),
+        "chain_break.pdb fixture not found at {:?}",
+        path
+    );
 }
 
 #[test]
@@ -86,18 +102,10 @@ fn test_load_topology_disulfide_pair() {
 
     // Verify both residues are CYS
     for (i, res) in chain.residues.iter().enumerate() {
-        assert_eq!(
-            res.name, "CYS",
-            "Residue {} should be CYS",
-            i + 1
-        );
+        assert_eq!(res.name, "CYS", "Residue {} should be CYS", i + 1);
 
         // Find SG atom in this residue
-        let sg_atoms: Vec<_> = res
-            .atoms
-            .iter()
-            .filter(|atom| atom.name == "SG")
-            .collect();
+        let sg_atoms: Vec<_> = res.atoms.iter().filter(|atom| atom.name == "SG").collect();
         assert_eq!(
             sg_atoms.len(),
             1,
@@ -152,16 +160,8 @@ fn test_load_topology_missing_atoms() {
     let res2 = &chain.residues[1];
     assert_eq!(res2.name, "GLY");
 
-    let c_atoms: Vec<_> = res2
-        .atoms
-        .iter()
-        .filter(|a| a.name == "C")
-        .collect();
-    let o_atoms: Vec<_> = res2
-        .atoms
-        .iter()
-        .filter(|a| a.name == "O")
-        .collect();
+    let c_atoms: Vec<_> = res2.atoms.iter().filter(|a| a.name == "C").collect();
+    let o_atoms: Vec<_> = res2.atoms.iter().filter(|a| a.name == "O").collect();
 
     assert_eq!(
         c_atoms.len(),
@@ -175,16 +175,8 @@ fn test_load_topology_missing_atoms() {
     );
 
     // Verify N and CA are still present
-    let n_atoms: Vec<_> = res2
-        .atoms
-        .iter()
-        .filter(|a| a.name == "N")
-        .collect();
-    let ca_atoms: Vec<_> = res2
-        .atoms
-        .iter()
-        .filter(|a| a.name == "CA")
-        .collect();
+    let n_atoms: Vec<_> = res2.atoms.iter().filter(|a| a.name == "N").collect();
+    let ca_atoms: Vec<_> = res2.atoms.iter().filter(|a| a.name == "CA").collect();
 
     assert_eq!(n_atoms.len(), 1, "GLY should still have N");
     assert_eq!(ca_atoms.len(), 1, "GLY should still have CA");
@@ -199,7 +191,11 @@ fn test_load_topology_chain_break() {
     );
 
     let topology = topology.unwrap();
-    assert_eq!(topology.chains.len(), 1, "chain_break should be single chain");
+    assert_eq!(
+        topology.chains.len(),
+        1,
+        "chain_break should be single chain"
+    );
 
     let chain = &topology.chains[0];
     assert_eq!(
@@ -246,13 +242,8 @@ fn test_harness_consistent_fixture_format() {
         assert!(path.exists(), "Fixture {} not found", name);
 
         // Try to read as text and verify it starts with HEADER or REMARK/ATOM
-        let content = std::fs::read_to_string(&path)
-            .expect(&format!("Failed to read {}", name));
-        assert!(
-            !content.is_empty(),
-            "Fixture {} is empty",
-            name
-        );
+        let content = std::fs::read_to_string(&path).expect(&format!("Failed to read {}", name));
+        assert!(!content.is_empty(), "Fixture {} is empty", name);
 
         // Ensure it has ATOM records
         assert!(

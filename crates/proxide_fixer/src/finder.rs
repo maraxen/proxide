@@ -29,7 +29,10 @@ impl Topology {
                         }
                     }
                 } else {
-                    eprintln!("Warning: Template for residue {} not found in library", residue.name);
+                    eprintln!(
+                        "Warning: Template for residue {} not found in library",
+                        residue.name
+                    );
                 }
             }
         }
@@ -39,7 +42,7 @@ impl Topology {
 
 #[cfg(test)]
 mod tests {
-    use crate::models::{Atom, Residue, Chain, Topology};
+    use crate::models::{Atom, Chain, Residue, Topology};
     use crate::templates::{ResidueLibrary, ResidueTemplate, TemplateAtom};
 
     #[test]
@@ -48,9 +51,21 @@ mod tests {
         library.insert(ResidueTemplate {
             name: "ALA".to_string(),
             atoms: vec![
-                TemplateAtom { name: "N".to_string(), element: "N".to_string(), coords: [0.0, 0.0, 0.0] },
-                TemplateAtom { name: "CA".to_string(), element: "C".to_string(), coords: [0.0, 0.0, 0.0] },
-                TemplateAtom { name: "CB".to_string(), element: "C".to_string(), coords: [0.0, 0.0, 0.0] },
+                TemplateAtom {
+                    name: "N".to_string(),
+                    element: "N".to_string(),
+                    coords: [0.0, 0.0, 0.0],
+                },
+                TemplateAtom {
+                    name: "CA".to_string(),
+                    element: "C".to_string(),
+                    coords: [0.0, 0.0, 0.0],
+                },
+                TemplateAtom {
+                    name: "CB".to_string(),
+                    element: "C".to_string(),
+                    coords: [0.0, 0.0, 0.0],
+                },
             ],
             bonds: vec![],
         });
@@ -63,8 +78,26 @@ mod tests {
                     res_id: 1,
                     insertion_code: ' ',
                     atoms: vec![
-                        Atom { name: "N".to_string(), element: "N".to_string(), coords: [0.0, 0.0, 0.0], alt_loc: ' ', serial: 1, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
-                        Atom { name: "CA".to_string(), element: "C".to_string(), coords: [0.0, 0.0, 0.0], alt_loc: ' ', serial: 2, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
+                        Atom {
+                            name: "N".to_string(),
+                            element: "N".to_string(),
+                            coords: [0.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 1,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [0.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 2,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
                     ],
                 }],
             }],

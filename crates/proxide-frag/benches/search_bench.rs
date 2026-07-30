@@ -63,10 +63,12 @@ fn search_benchmarks(c: &mut Criterion) {
                 })
             });
 
-            let bench_id_prefilt = BenchmarkId::new("search_prefiltered", format!("N{}_eps{}", size, epsilon));
+            let bench_id_prefilt =
+                BenchmarkId::new("search_prefiltered", format!("N{}_eps{}", size, epsilon));
             c.bench_with_input(bench_id_prefilt, &size, |b, _| {
                 b.iter(|| {
-                    let _ = black_box(&db).search_prefiltered(black_box(&query), black_box(*epsilon));
+                    let _ =
+                        black_box(&db).search_prefiltered(black_box(&query), black_box(*epsilon));
                 })
             });
         }

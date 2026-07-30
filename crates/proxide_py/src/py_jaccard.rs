@@ -33,36 +33,37 @@ pub fn jaccard_distance_matrix(
 ) -> PyResult<PyObject> {
     let metric_owned = metric.to_string();
     let (flat, n, accessions) = py
-        .allow_threads(
-            || -> Result<(Vec<f32>, usize, Vec<String>), String> {
-                let wanted = match accessions_path.as_deref() {
-                    Some(p) => Some(read_accession_list(Path::new(p)).map_err(|e| e.to_string())?),
-                    None => None,
-                };
-                let store = SketchStore::load_parquet(Path::new(&parquet_path), wanted.as_deref())
-                    .map_err(|e| e.to_string())?;
-                let mat = match metric_owned.as_str() {
-                    "jaccard" => pairwise_jaccard_distance(&store),
-                    "containment" => pairwise_containment(&store),
-                    other => {
-                        return Err(format!(
-                            "unknown metric: {other} (expected 'jaccard' or 'containment')"
-                        ))
-                    }
-                };
-                let n = store.len();
-                // Matrices are built via ndarray `Array2::zeros`, so they are
-                // C-contiguous and `as_slice()` yields the row-major buffer.
-                let flat = mat
-                    .as_slice()
-                    .ok_or_else(|| "distance matrix is not contiguous".to_string())?
-                    .to_vec();
-                let accessions = store.accessions().to_vec();
-                Ok((flat, n, accessions))
-            },
-        )
+        .allow_threads(|| -> Result<(Vec<f32>, usize, Vec<String>), String> {
+            let wanted = match accessions_path.as_deref() {
+                Some(p) => Some(read_accession_list(Path::new(p)).map_err(|e| e.to_string())?),
+                None => None,
+            };
+            let store = SketchStore::load_parquet(Path::new(&parquet_path), wanted.as_deref())
+                .map_err(|e| e.to_string())?;
+            let mat = match metric_owned.as_str() {
+                "jaccard" => pairwise_jaccard_distance(&store),
+                "containment" => pairwise_containment(&store),
+                other => {
+                    return Err(format!(
+                        "unknown metric: {other} (expected 'jaccard' or 'containment')"
+                    ))
+                }
+            };
+            let n = store.len();
+            // Matrices are built via ndarray `Array2::zeros`, so they are
+            // C-contiguous and `as_slice()` yields the row-major buffer.
+            let flat = mat
+                .as_slice()
+                .ok_or_else(|| "distance matrix is not contiguous".to_string())?
+                .to_vec();
+            let accessions = store.accessions().to_vec();
+            Ok((flat, n, accessions))
+        })
         .map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("jaccard_distance_matrix failed: {}", e))
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "jaccard_distance_matrix failed: {}",
+                e
+            ))
         })?;
 
     let dict = PyDict::new_bound(py);

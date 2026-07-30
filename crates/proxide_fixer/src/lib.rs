@@ -1,12 +1,12 @@
-pub mod models;
-pub mod templates;
-pub mod finder;
 pub mod builder;
-pub mod repack;
-pub mod pipeline;
-pub mod solvate;
+pub mod finder;
 pub mod loop_model;
+pub mod models;
 pub mod mutate;
+pub mod pipeline;
+pub mod repack;
+pub mod solvate;
+pub mod templates;
 
 #[cfg(feature = "amber_ff")]
 pub mod amber_ff;
@@ -17,7 +17,12 @@ pub mod propka_wrap;
 #[cfg(feature = "protonation")]
 pub mod protonation_state;
 
-#[cfg(any(feature = "protonation", feature = "capping", feature = "stereo", feature = "disulfide"))]
+#[cfg(any(
+    feature = "protonation",
+    feature = "capping",
+    feature = "stereo",
+    feature = "disulfide"
+))]
 pub mod sanitizers;
 
 pub trait Sanitizer {

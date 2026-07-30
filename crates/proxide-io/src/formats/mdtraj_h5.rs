@@ -218,20 +218,26 @@ mod tests {
 
         {
             let h5file = hdf5::File::create(path_str).unwrap();
-            
+
             // coordinates
             let coords = vec![1.0f32; 2 * 3 * 3]; // 2 frames, 3 atoms, 3 coords
-            h5file.new_dataset::<f32>()
+            h5file
+                .new_dataset::<f32>()
                 .shape((2, 3, 3))
-                .create("coordinates").unwrap()
-                .write_raw(&coords).unwrap();
-            
+                .create("coordinates")
+                .unwrap()
+                .write_raw(&coords)
+                .unwrap();
+
             // time
             let time = vec![0.0f64, 1.0f64];
-            h5file.new_dataset::<f64>()
+            h5file
+                .new_dataset::<f64>()
                 .shape(2)
-                .create("time").unwrap()
-                .write(&time).unwrap();
+                .create("time")
+                .unwrap()
+                .write(&time)
+                .unwrap();
         }
 
         let metadata = parse_mdtraj_h5_metadata(path_str).unwrap();
@@ -243,7 +249,7 @@ mod tests {
         // 1.0 nm * 10.0 = 10.0 Angstrom
         assert_eq!(frame.coords[0], 10.0);
         assert_eq!(frame.time, Some(1.0));
-        
+
         let raw = mdtraj_to_raw_atom_data(&metadata, &frame);
         assert_eq!(raw.num_atoms, 3);
     }

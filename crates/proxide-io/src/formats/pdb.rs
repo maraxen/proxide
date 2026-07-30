@@ -93,7 +93,10 @@ pub fn parse_pdb_from_reader<R: BufRead>(
                     current_model = model_num;
                 }
             }
-        } else if trimmed.starts_with("ENDMDL") || trimmed.starts_with("TER") || trimmed.starts_with("ANISOU") {
+        } else if trimmed.starts_with("ENDMDL")
+            || trimmed.starts_with("TER")
+            || trimmed.starts_with("ANISOU")
+        {
             // TER and ANISOU are explicitly ignored for now but could trigger state changes
             continue;
         } else if trimmed.starts_with("ATOM") || trimmed.starts_with("HETATM") {
@@ -203,7 +206,8 @@ mod tests {
     #[test]
     fn test_parse_4_char_atom_name() {
         // 1H5' should be captured correctly
-        let line = "ATOM      1 1H5' ALA A   1      20.154  29.699   5.276  1.00 49.05           H  ";
+        let line =
+            "ATOM      1 1H5' ALA A   1      20.154  29.699   5.276  1.00 49.05           H  ";
         let atom = parse_atom_line(line).unwrap();
         assert_eq!(atom.atom_name, "1H5'");
     }
@@ -214,7 +218,7 @@ mod tests {
         assert!(parse_atom_line("ATOM").is_none());
 
         // Temp factor fallback and element inference
-        let line = "ATOM      1  N   ALA A   1      20.154  29.699   5.276"; 
+        let line = "ATOM      1  N   ALA A   1      20.154  29.699   5.276";
         let atom = parse_atom_line(line).unwrap();
         assert_eq!(atom.temp_factor, 0.0);
         assert_eq!(atom.element, "N");
@@ -228,11 +232,12 @@ mod tests {
 
     #[test]
     fn test_pdb_with_ter_and_anisou() {
-        let pdb_content = "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N
+        let pdb_content =
+            "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N
 ANISOU    1  N   ALA A   1   1000   1000   1000      0      0      0       N
 TER       2      ALA A   1
 ATOM      3  N   ALA B   1      10.000   0.000   0.000  1.00  0.00           N";
-        
+
         let (raw_data, _) = parse_pdb_from_reader(pdb_content.as_bytes()).unwrap();
 
         assert_eq!(raw_data.num_atoms, 2);

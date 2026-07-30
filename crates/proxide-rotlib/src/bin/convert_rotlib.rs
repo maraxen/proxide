@@ -4,24 +4,27 @@
 /// builds sidechain coordinates using template geometry and NeRF, and serializes to
 /// compressed protobuf.
 use clap::Parser;
+use proxide_rotlib::geometry::{
+    apply_ic_table, build_standard_sidechain, ccd_parser::parse_ccd_ic_table, proline_template,
+    rtf_parser::parse_rtf_ic_table, standard_residue_template, ProlineBuilder,
+};
+use proxide_rotlib::pb::proxide::rotlib::v1::ResidueGeometryTable;
+use proxide_rotlib::pb::rotlib_v1;
+use proxide_rotlib::rotlib_source::{DunbrackSource, RotlibSource};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use tracing::{info, warn};
-use proxide_rotlib::pb::rotlib_v1;
-use proxide_rotlib::pb::proxide::rotlib::v1::ResidueGeometryTable;
-use proxide_rotlib::geometry::{
-    standard_residue_template, proline_template, build_standard_sidechain, ProlineBuilder,
-    apply_ic_table, rtf_parser::parse_rtf_ic_table, ccd_parser::parse_ccd_ic_table,
-};
-use proxide_rotlib::rotlib_source::{RotlibSource, DunbrackSource};
 
 #[derive(Parser, Debug)]
 #[command(name = "convert_rotlib")]
 #[command(about = "Convert rotamer library to proxide protobuf format")]
 struct Args {
     /// Path to input rotamer library file (legacy)
-    #[arg(long, default_value = "data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib")]
+    #[arg(
+        long,
+        default_value = "data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib"
+    )]
     input: PathBuf,
 
     /// Path to output protobuf file
@@ -58,13 +61,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Box::new(source)
         }
         Some(other) => {
-            return Err(
-                format!(
-                    "Unknown --rotlib-source format '{}'. Use 'dunbrack:<path>'.",
-                    other
-                )
-                .into(),
-            );
+            return Err(format!(
+                "Unknown --rotlib-source format '{}'. Use 'dunbrack:<path>'.",
+                other
+            )
+            .into());
         }
         None => {
             // Backwards compatibility: default to --input if present
@@ -110,13 +111,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(table)
         }
         Some(other) => {
-            return Err(
-                format!(
-                    "Unknown --ic-source format '{}'. Use 'rtf:<path>' or 'ccd:<dir>'.",
-                    other
-                )
-                .into(),
-            );
+            return Err(format!(
+                "Unknown --ic-source format '{}'. Use 'rtf:<path>' or 'ccd:<dir>'.",
+                other
+            )
+            .into());
         }
         None => {
             info!("No --ic-source specified; using Engh-Huber template defaults.");
@@ -129,7 +128,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Built library with {} residue types", lib.residues.len());
 
     // Serialize and compress
-    info!("Serializing and compressing to {}...", args.output.display());
+    info!(
+        "Serializing and compressing to {}...",
+        args.output.display()
+    );
     let encoded = prost::Message::encode_to_vec(&lib);
     let compressed = zstd::encode_all(&encoded[..], 19)?;
 
@@ -144,7 +146,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
 
 /// Build the protobuf RotamerLibrary from a RotlibSource.
 fn build_library(

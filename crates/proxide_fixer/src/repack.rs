@@ -1,4 +1,4 @@
-use crate::models::{Atom, Residue, Topology, Chain};
+use crate::models::{Atom, Chain, Residue, Topology};
 use log::warn;
 use proxide_rotlib::RotamerLibrary;
 use std::collections::HashMap;
@@ -14,10 +14,18 @@ pub enum RepackError {
     InvalidBackbone(String),
 
     #[error("missing sidechain atoms for {aa} at {chain}:{res_id}")]
-    MissingSidechain { chain: String, res_id: i32, aa: String },
+    MissingSidechain {
+        chain: String,
+        res_id: i32,
+        aa: String,
+    },
 
     #[error("residue not found: {chain}:{res_id}{insertion_code}")]
-    ResidueNotFound { chain: String, res_id: i32, insertion_code: char },
+    ResidueNotFound {
+        chain: String,
+        res_id: i32,
+        insertion_code: char,
+    },
 }
 
 /// Enum for selecting which residues to repack.
@@ -68,10 +76,7 @@ fn get_element_radius(element: &str) -> f32 {
 
 /// Calculate the clash penalty for a rotamer candidate against already-placed atoms.
 /// Uses soft repulsion: penalty accumulates for any pair where distance < r_i + r_j.
-fn calculate_clash_penalty(
-    candidate_atoms: &[(String, [f32; 3])],
-    placed_atoms: &[Atom],
-) -> f64 {
+fn calculate_clash_penalty(candidate_atoms: &[(String, [f32; 3])], placed_atoms: &[Atom]) -> f64 {
     let mut penalty: f64 = 0.0;
 
     for (cand_name, cand_coords) in candidate_atoms {
@@ -240,14 +245,13 @@ fn is_incomplete(residue: &Residue, lib: &RotamerLibrary) -> bool {
         Err(_) => return false, // Unknown AA, skip
     };
 
-    let present_names: std::collections::HashSet<_> = residue
-        .atoms
-        .iter()
-        .map(|a| a.name.as_str())
-        .collect();
+    let present_names: std::collections::HashSet<_> =
+        residue.atoms.iter().map(|a| a.name.as_str()).collect();
 
     // Incomplete if any library atom is missing
-    lib_names.iter().any(|name| !present_names.contains(name.as_str()))
+    lib_names
+        .iter()
+        .any(|name| !present_names.contains(name.as_str()))
 }
 
 /// Calculate approximate burial order: residues with more neighbors within ~8 Å are more buried.
@@ -291,7 +295,10 @@ fn calculate_burial_order(chains: &[Chain]) -> Vec<(usize, usize, usize)> {
 
     // Sort by descending neighbor count
     residues_with_neighbors.sort_by(|a, b| b.1.cmp(&a.1));
-    residues_with_neighbors.into_iter().map(|(idx, _)| idx).collect()
+    residues_with_neighbors
+        .into_iter()
+        .map(|(idx, _)| idx)
+        .collect()
 }
 
 impl<'a> SidechainRepacker<'a> {
@@ -317,7 +324,9 @@ impl<'a> SidechainRepacker<'a> {
         let residue = &mut chain.residues[res_idx];
 
         // Retain only atoms whose names are in keep_names
-        residue.atoms.retain(|atom| keep_names.contains(&atom.name.as_str()));
+        residue
+            .atoms
+            .retain(|atom| keep_names.contains(&atom.name.as_str()));
     }
 
     /// Rebuild sidechain from rotamer library at the residue's phi/psi.
@@ -402,7 +411,8 @@ impl<'a> SidechainRepacker<'a> {
                         .iter()
                         .enumerate()
                         .find_map(|(r_idx, residue)| {
-                            if residue.res_id == res_id && residue.insertion_code == insertion_code {
+                            if residue.res_id == res_id && residue.insertion_code == insertion_code
+                            {
                                 Some((c_idx, r_idx))
                             } else {
                                 None
@@ -419,7 +429,9 @@ impl<'a> SidechainRepacker<'a> {
             })?;
 
         // Get residue info
-        let aa = self.topology.chains[chain_idx].residues[res_idx].name.clone();
+        let aa = self.topology.chains[chain_idx].residues[res_idx]
+            .name
+            .clone();
 
         // Collect all already-placed atoms
         let mut placed_atoms = Vec::new();
@@ -451,20 +463,20 @@ impl<'a> SidechainRepacker<'a> {
         self.strip_sidechain(chain_idx, res_idx, &aa);
 
         // Rebuild from rotamer library
-        if let Some(placed_atoms_new) = self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi) {
+        if let Some(placed_atoms_new) = self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)
+        {
             // Update serial numbers and place atoms
             let chain = &mut self.topology.chains[chain_idx];
             let residue = &mut chain.residues[res_idx];
-            let max_serial = residue
-                .atoms
-                .iter()
-                .map(|a| a.serial)
-                .max()
-                .unwrap_or(0);
+            let max_serial = residue.atoms.iter().map(|a| a.serial).max().unwrap_or(0);
 
             for (i, placed_atom) in placed_atoms_new.iter().enumerate() {
                 // Check if this atom already exists (e.g., backbone atoms)
-                if let Some(pos) = residue.atoms.iter().position(|a| a.name == placed_atom.name) {
+                if let Some(pos) = residue
+                    .atoms
+                    .iter()
+                    .position(|a| a.name == placed_atom.name)
+                {
                     // Update coordinates only
                     residue.atoms[pos].coords = placed_atom.coords;
                 } else {
@@ -508,25 +520,21 @@ impl<'a> SidechainRepacker<'a> {
 
         for (target_chain_id, target_res_id, target_insertion_code) in targets {
             // Find the target residue
-            let target_ca = self
-                .topology
-                .chains
-                .iter()
-                .find_map(|chain| {
-                    if chain.id == *target_chain_id {
-                        chain.residues.iter().find_map(|res| {
-                            if res.res_id == *target_res_id
-                                && res.insertion_code == *target_insertion_code
-                            {
-                                find_atom(res, "CA")
-                            } else {
-                                None
-                            }
-                        })
-                    } else {
-                        None
-                    }
-                });
+            let target_ca = self.topology.chains.iter().find_map(|chain| {
+                if chain.id == *target_chain_id {
+                    chain.residues.iter().find_map(|res| {
+                        if res.res_id == *target_res_id
+                            && res.insertion_code == *target_insertion_code
+                        {
+                            find_atom(res, "CA")
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                }
+            });
 
             if let Some(target_ca_coords) = target_ca {
                 // Collect all residues within radius
@@ -559,14 +567,17 @@ impl<'a> SidechainRepacker<'a> {
             .iter()
             .map(|&(chain_idx, res_idx)| {
                 let mut count = 0;
-                if let Some(ca_coords) = find_atom(&self.topology.chains[chain_idx].residues[res_idx], "CA") {
+                if let Some(ca_coords) =
+                    find_atom(&self.topology.chains[chain_idx].residues[res_idx], "CA")
+                {
                     for &(other_chain_idx, other_res_idx) in &shell_vec {
                         if (chain_idx, res_idx) == (other_chain_idx, other_res_idx) {
                             continue;
                         }
-                        if let Some(other_ca) =
-                            find_atom(&self.topology.chains[other_chain_idx].residues[other_res_idx], "CA")
-                        {
+                        if let Some(other_ca) = find_atom(
+                            &self.topology.chains[other_chain_idx].residues[other_res_idx],
+                            "CA",
+                        ) {
                             let dx = ca_coords[0] - other_ca[0];
                             let dy = ca_coords[1] - other_ca[1];
                             let dz = ca_coords[2] - other_ca[2];
@@ -590,11 +601,7 @@ impl<'a> SidechainRepacker<'a> {
             let (aa, res_id, chain_id) = {
                 let chain = &self.topology.chains[chain_idx];
                 let residue = &chain.residues[res_idx];
-                (
-                    residue.name.clone(),
-                    residue.res_id,
-                    chain.id.clone(),
-                )
+                (residue.name.clone(), residue.res_id, chain.id.clone())
             };
 
             // Skip GLY and ALA
@@ -734,7 +741,11 @@ impl<'a> SidechainRepacker<'a> {
                 let residue = &mut chain.residues[res_idx];
                 for placed_atom in &best_placed.atoms {
                     // Check if this atom already exists in the residue
-                    if let Some(pos) = residue.atoms.iter().position(|a| a.name == placed_atom.name) {
+                    if let Some(pos) = residue
+                        .atoms
+                        .iter()
+                        .position(|a| a.name == placed_atom.name)
+                    {
                         // Update coordinates
                         residue.atoms[pos].coords = [
                             placed_atom.xyz[0] as f32,
@@ -801,11 +812,7 @@ impl<'a> SidechainRepacker<'a> {
             let (aa, res_id, chain_id) = {
                 let chain = &self.topology.chains[chain_idx];
                 let residue = &chain.residues[res_idx];
-                (
-                    residue.name.clone(),
-                    residue.res_id,
-                    chain.id.clone(),
-                )
+                (residue.name.clone(), residue.res_id, chain.id.clone())
             };
 
             // Skip GLY and ALA for CompleteMissingOnly and RepackAll modes
@@ -837,7 +844,11 @@ impl<'a> SidechainRepacker<'a> {
             let (n_atom, ca_atom, c_atom) = {
                 let chain = &self.topology.chains[chain_idx];
                 let residue = &chain.residues[res_idx];
-                (find_atom(residue, "N"), find_atom(residue, "CA"), find_atom(residue, "C"))
+                (
+                    find_atom(residue, "N"),
+                    find_atom(residue, "CA"),
+                    find_atom(residue, "C"),
+                )
             };
 
             if n_atom.is_none() || ca_atom.is_none() || c_atom.is_none() {
@@ -866,21 +877,21 @@ impl<'a> SidechainRepacker<'a> {
                 self.strip_sidechain(chain_idx, res_idx, &aa);
 
                 // Rebuild from rotamer library
-                if let Some(placed_atoms) = self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)
+                if let Some(placed_atoms) =
+                    self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)
                 {
                     // Update serial numbers and place atoms
                     let chain = &mut self.topology.chains[chain_idx];
                     let residue = &mut chain.residues[res_idx];
-                    let max_serial = residue
-                        .atoms
-                        .iter()
-                        .map(|a| a.serial)
-                        .max()
-                        .unwrap_or(0);
+                    let max_serial = residue.atoms.iter().map(|a| a.serial).max().unwrap_or(0);
 
                     for (i, placed_atom) in placed_atoms.iter().enumerate() {
                         // Check if this atom already exists (e.g., backbone atoms)
-                        if let Some(pos) = residue.atoms.iter().position(|a| a.name == placed_atom.name) {
+                        if let Some(pos) = residue
+                            .atoms
+                            .iter()
+                            .position(|a| a.name == placed_atom.name)
+                        {
                             // Update coordinates only
                             residue.atoms[pos].coords = placed_atom.coords;
                         } else {
@@ -956,7 +967,12 @@ impl<'a> SidechainRepacker<'a> {
                 let candidate_atoms: Vec<(String, [f32; 3])> = placed_rot
                     .atoms
                     .iter()
-                    .map(|a| (a.name.clone(), [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32]))
+                    .map(|a| {
+                        (
+                            a.name.clone(),
+                            [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32],
+                        )
+                    })
                     .collect();
 
                 // Calculate clash penalty
@@ -988,7 +1004,12 @@ impl<'a> SidechainRepacker<'a> {
             let candidate_atoms: Vec<(String, [f32; 3])> = best_placed
                 .atoms
                 .iter()
-                .map(|a| (a.name.clone(), [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32]))
+                .map(|a| {
+                    (
+                        a.name.clone(),
+                        [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32],
+                    )
+                })
                 .collect();
             let final_clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms);
 
@@ -997,7 +1018,11 @@ impl<'a> SidechainRepacker<'a> {
             let residue = &mut chain.residues[res_idx];
             for placed_atom in &best_placed.atoms {
                 // Check if this atom already exists in the residue
-                if let Some(pos) = residue.atoms.iter().position(|a| a.name == placed_atom.name) {
+                if let Some(pos) = residue
+                    .atoms
+                    .iter()
+                    .position(|a| a.name == placed_atom.name)
+                {
                     // Update coordinates
                     residue.atoms[pos].coords = [
                         placed_atom.xyz[0] as f32,
@@ -1025,7 +1050,9 @@ impl<'a> SidechainRepacker<'a> {
             }
 
             report.residues_completed += 1;
-            report.residue_details.push((chain_id, res_id, aa, best_rot, final_clash));
+            report
+                .residue_details
+                .push((chain_id, res_id, aa, best_rot, final_clash));
         }
 
         Ok(report)
@@ -1152,18 +1179,16 @@ mod tests {
     fn test_clash_penalty_calculation() {
         // Test the clash penalty function directly
         let candidate = vec![("CG".to_string(), [0.0, 0.0, 0.0])];
-        let placed = vec![
-            Atom {
-                name: "N".to_string(),
-                element: "N".to_string(),
-                coords: [0.1, 0.0, 0.0], // Very close, should cause clash
-                alt_loc: ' ',
-                serial: 1,
-                b_factor: 0.0,
-                occupancy: 1.0,
-                is_hetatm: false,
-            },
-        ];
+        let placed = vec![Atom {
+            name: "N".to_string(),
+            element: "N".to_string(),
+            coords: [0.1, 0.0, 0.0], // Very close, should cause clash
+            alt_loc: ' ',
+            serial: 1,
+            b_factor: 0.0,
+            occupancy: 1.0,
+            is_hetatm: false,
+        }];
 
         let penalty = calculate_clash_penalty(&candidate, &placed);
         assert!(penalty > 0.0, "Penalty should be positive for a clash");
@@ -1228,18 +1253,16 @@ mod tests {
             name: "GLY".to_string(),
             res_id: 1,
             insertion_code: ' ',
-            atoms: vec![
-                Atom {
-                    name: "N".to_string(),
-                    element: "N".to_string(),
-                    coords: [0.0, 0.0, 0.0],
-                    alt_loc: ' ',
-                    serial: 1,
-                    b_factor: 0.0,
-                    occupancy: 1.0,
-                    is_hetatm: false,
-                },
-            ],
+            atoms: vec![Atom {
+                name: "N".to_string(),
+                element: "N".to_string(),
+                coords: [0.0, 0.0, 0.0],
+                alt_loc: ' ',
+                serial: 1,
+                b_factor: 0.0,
+                occupancy: 1.0,
+                is_hetatm: false,
+            }],
         };
 
         assert!(
@@ -1270,7 +1293,11 @@ mod tests {
         assert_eq!(topology.chains.len(), 1);
         let residue_before = &topology.chains[0].residues[0];
         assert_eq!(residue_before.name, "LYS");
-        let atom_names_before: Vec<_> = residue_before.atoms.iter().map(|a| a.name.as_str()).collect();
+        let atom_names_before: Vec<_> = residue_before
+            .atoms
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect();
 
         // Should have backbone + CB initially
         assert!(atom_names_before.contains(&"N"));
@@ -1292,7 +1319,11 @@ mod tests {
 
         // Verify sidechain was rebuilt with expected atoms
         let residue_after = &topology.chains[0].residues[0];
-        let atom_names_after: Vec<_> = residue_after.atoms.iter().map(|a| a.name.as_str()).collect();
+        let atom_names_after: Vec<_> = residue_after
+            .atoms
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect();
 
         // Should have backbone atoms
         assert!(atom_names_after.contains(&"N"));
@@ -1365,14 +1396,14 @@ mod tests {
         let ca_dist = ((ca_before[0] - ca_after[0]).powi(2)
             + (ca_before[1] - ca_after[1]).powi(2)
             + (ca_before[2] - ca_after[2]).powi(2))
-            .sqrt();
+        .sqrt();
         assert!(ca_dist < 0.01, "CA should not move during ForceRebuild");
 
         // CB should not move (it's in the keep list)
         let cb_dist = ((cb_before[0] - cb_after[0]).powi(2)
             + (cb_before[1] - cb_after[1]).powi(2)
             + (cb_before[2] - cb_after[2]).powi(2))
-            .sqrt();
+        .sqrt();
         assert!(cb_dist < 0.01, "CB should not move during ForceRebuild");
     }
 
@@ -1534,7 +1565,10 @@ mod tests {
         let mut repacker = SidechainRepacker::new(&mut topology, &lib);
         let result = repacker.rebuild_residue("B", 999, ' ');
 
-        assert!(result.is_err(), "rebuild_residue should error for missing residue");
+        assert!(
+            result.is_err(),
+            "rebuild_residue should error for missing residue"
+        );
         match result {
             Err(RepackError::ResidueNotFound {
                 chain,
@@ -1571,7 +1605,10 @@ mod tests {
         let mut repacker = SidechainRepacker::new(&mut topology, &lib);
         let result = repacker.repack_neighbourhood(&[], 8.0);
 
-        assert!(result.is_ok(), "repack_neighbourhood should return Ok for empty targets");
+        assert!(
+            result.is_ok(),
+            "repack_neighbourhood should return Ok for empty targets"
+        );
     }
 
     #[test]

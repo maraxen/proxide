@@ -9,7 +9,5 @@
 pub mod constants;
 pub mod registry;
 
-pub use constants::{
-    KCAL_TO_KJ, KJ_TO_KCAL, NM_TO_ANGSTROM, ANGSTROM_TO_NM, BOND_K_FACTOR,
-};
-pub use registry::{UnitSystem, UnitConversionSpec};
+pub use constants::{ANGSTROM_TO_NM, BOND_K_FACTOR, KCAL_TO_KJ, KJ_TO_KCAL, NM_TO_ANGSTROM};
+pub use registry::{UnitConversionSpec, UnitSystem};

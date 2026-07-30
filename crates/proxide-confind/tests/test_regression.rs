@@ -1,8 +1,8 @@
 mod common;
 
-use common::{make_synthetic_backbone, load_rotlib_or_skip};
-use proxide_confind::ConFind;
+use common::{load_rotlib_or_skip, make_synthetic_backbone};
 use proxide_confind::coords::ResidueIndex;
+use proxide_confind::ConFind;
 
 #[test]
 #[ignore = "requires rotamer library — set RLIB env var to run"]
@@ -68,7 +68,10 @@ fn freedom_fully_isolated_is_near_1() {
 
     let residues = vec![ResidueIndex(0)];
     let result = confind.contacts(&residues, 0.0);
-    assert!(result.is_ok(), "contacts should succeed for isolated residue");
+    assert!(
+        result.is_ok(),
+        "contacts should succeed for isolated residue"
+    );
 
     // Freedom should be high (>0.9) for isolated residue
     // (may not be exactly 1.0 if some rotamers clash with self-backbone)
@@ -97,14 +100,20 @@ fn contact_degree_symmetry() {
     // For any pair in contact list, degree lookup should be symmetric
     for (i, (a, b)) in contact.pairs.iter().enumerate() {
         let stored_degree = contact.degrees[i];
-        
+
         // degree(a, b) and degree(b, a) should return same value
         if let Some(deg_ab) = contact.degree(*a, *b) {
-            assert_eq!(deg_ab, stored_degree, "Stored degree should match degree lookup");
+            assert_eq!(
+                deg_ab, stored_degree,
+                "Stored degree should match degree lookup"
+            );
         }
-        
+
         if let Some(deg_ba) = contact.degree(*b, *a) {
-            assert_eq!(deg_ba, stored_degree, "degree(a, b) should equal degree(b, a)");
+            assert_eq!(
+                deg_ba, stored_degree,
+                "degree(a, b) should equal degree(b, a)"
+            );
         }
     }
 }

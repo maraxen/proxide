@@ -1,4 +1,4 @@
-use crate::models::{Topology, Atom, Residue};
+use crate::models::{Atom, Residue, Topology};
 use proxide_geometry::geometry::nerf::Nerf;
 use thiserror::Error;
 
@@ -38,7 +38,10 @@ impl<'a> CapSanitizer<'a> {
     }
 
     /// Run capping on internal breaks. Returns the list of applied caps.
-    pub fn run(&mut self, breaks: &[crate::sanitizers::capping::BreakSite]) -> Result<Vec<AppliedCap>, CapError> {
+    pub fn run(
+        &mut self,
+        breaks: &[crate::sanitizers::capping::BreakSite],
+    ) -> Result<Vec<AppliedCap>, CapError> {
         let mut applied_caps = Vec::new();
 
         for break_site in breaks {
@@ -63,8 +66,15 @@ impl<'a> CapSanitizer<'a> {
                 .ok_or_else(|| CapError::General("Downstream residue not found".to_string()))?;
 
             // Get the next serial number (max of all atoms in topology + 1)
-            let max_serial = self.topology.chains.iter()
-                .flat_map(|c| c.residues.iter().flat_map(|r| r.atoms.iter().map(|a| a.serial)))
+            let max_serial = self
+                .topology
+                .chains
+                .iter()
+                .flat_map(|c| {
+                    c.residues
+                        .iter()
+                        .flat_map(|r| r.atoms.iter().map(|a| a.serial))
+                })
                 .max()
                 .unwrap_or(0);
 
@@ -75,7 +85,9 @@ impl<'a> CapSanitizer<'a> {
                 &break_site.chain,
                 max_serial + 1,
             )?;
-            self.topology.chains[chain_idx].residues.insert(upstream_res_idx + 1, ace_res);
+            self.topology.chains[chain_idx]
+                .residues
+                .insert(upstream_res_idx + 1, ace_res);
             applied_caps.push(AppliedCap {
                 chain: break_site.chain.clone(),
                 res_id: break_site.res_id_upstream,
@@ -83,8 +95,15 @@ impl<'a> CapSanitizer<'a> {
             });
 
             // Get updated max_serial after ACE insertion
-            let max_serial = self.topology.chains.iter()
-                .flat_map(|c| c.residues.iter().flat_map(|r| r.atoms.iter().map(|a| a.serial)))
+            let max_serial = self
+                .topology
+                .chains
+                .iter()
+                .flat_map(|c| {
+                    c.residues
+                        .iter()
+                        .flat_map(|r| r.atoms.iter().map(|a| a.serial))
+                })
                 .max()
                 .unwrap_or(0);
 
@@ -95,7 +114,9 @@ impl<'a> CapSanitizer<'a> {
                 &break_site.chain,
                 max_serial + 1,
             )?;
-            self.topology.chains[chain_idx].residues.insert(downstream_res_idx + 1, nme_res);
+            self.topology.chains[chain_idx]
+                .residues
+                .insert(downstream_res_idx + 1, nme_res);
             applied_caps.push(AppliedCap {
                 chain: break_site.chain.clone(),
                 res_id: break_site.res_id_downstream,
@@ -103,7 +124,9 @@ impl<'a> CapSanitizer<'a> {
             });
 
             // Re-sort residues by res_id to maintain order
-            self.topology.chains[chain_idx].residues.sort_by_key(|r| (r.res_id, r.insertion_code));
+            self.topology.chains[chain_idx]
+                .residues
+                .sort_by_key(|r| (r.res_id, r.insertion_code));
         }
 
         Ok(applied_caps)
@@ -148,7 +171,7 @@ fn create_ace_residue(
     // Place CY extending from upstream C, using N-CA-C angle reference
     let cy_coords = Nerf::place_atom(
         &[o_atom.coords, c_atom.coords, ca_atom.coords],
-        1.52, // C-C single bond from upstream C
+        1.52,  // C-C single bond from upstream C
         120.0, // sp2-like angle
         180.0, // trans to existing O
     );
@@ -156,7 +179,7 @@ fn create_ace_residue(
     // Place OY (oxygen) doubly bonded to CY
     let oy_coords = Nerf::place_atom(
         &[ca_atom.coords, c_atom.coords, cy_coords],
-        1.25, // C=O double bond
+        1.25,  // C=O double bond
         123.0, // sp2 angle
         180.0, // trans to CA
     );
@@ -164,9 +187,9 @@ fn create_ace_residue(
     // Place CAY (methyl carbon) bonded to CY
     let cay_coords = Nerf::place_atom(
         &[oy_coords, cy_coords, c_atom.coords],
-        1.52, // C-C single bond
+        1.52,  // C-C single bond
         120.0, // sp3-like angle
-        0.0, // positioned in remaining space
+        0.0,   // positioned in remaining space
     );
 
     let mut atoms = vec![
@@ -204,7 +227,8 @@ fn create_ace_residue(
 
     // Ensure all atoms have finite coordinates
     for atom in &mut atoms {
-        if !atom.coords[0].is_finite() || !atom.coords[1].is_finite() || !atom.coords[2].is_finite() {
+        if !atom.coords[0].is_finite() || !atom.coords[1].is_finite() || !atom.coords[2].is_finite()
+        {
             atom.coords = c_atom.coords; // fallback to upstream C position
         }
     }
@@ -253,7 +277,7 @@ fn create_nme_residue(
 
     let cat_coords = Nerf::place_atom(
         &[c_atom.coords, ca_atom.coords, n_atom.coords],
-        1.33, // N-C single bond (peptide-like)
+        1.33,  // N-C single bond (peptide-like)
         120.0, // C-N-C angle
         180.0, // trans to CA
     );
@@ -283,7 +307,8 @@ fn create_nme_residue(
 
     // Ensure finite coordinates
     for atom in &mut atoms {
-        if !atom.coords[0].is_finite() || !atom.coords[1].is_finite() || !atom.coords[2].is_finite() {
+        if !atom.coords[0].is_finite() || !atom.coords[1].is_finite() || !atom.coords[2].is_finite()
+        {
             atom.coords = n_atom.coords; // fallback
         }
     }
@@ -301,7 +326,6 @@ mod tests {
     use super::*;
     use crate::models::Chain;
     use crate::sanitizers::capping::CappingSanitizer;
-
 
     /// Build a minimal backbone residue (N, CA, C, O)
     fn build_backbone_residue(name: &str, res_id: i32, serial_base: i32) -> Residue {
@@ -454,9 +478,21 @@ mod tests {
         cap_sanitizer.run(&breaks).unwrap();
 
         // Caps must sit between the flanking residues, in order
-        let names: Vec<_> = topology.chains[0].residues.iter().map(|r| r.name.clone()).collect();
-        assert_eq!(names, vec!["ALA", "ACE", "GLY", "NME"], "ACE before GLY, NME after GLY");
-        let keys: Vec<_> = topology.chains[0].residues.iter().map(|r| (r.res_id, r.insertion_code)).collect();
+        let names: Vec<_> = topology.chains[0]
+            .residues
+            .iter()
+            .map(|r| r.name.clone())
+            .collect();
+        assert_eq!(
+            names,
+            vec!["ALA", "ACE", "GLY", "NME"],
+            "ACE before GLY, NME after GLY"
+        );
+        let keys: Vec<_> = topology.chains[0]
+            .residues
+            .iter()
+            .map(|r| (r.res_id, r.insertion_code))
+            .collect();
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted, "residues sorted by (res_id, insertion_code)");
@@ -500,7 +536,12 @@ mod tests {
             assert!(atom.coords[0].is_finite(), "ACE {} x not finite", atom.name);
             assert!(atom.coords[1].is_finite(), "ACE {} y not finite", atom.name);
             assert!(atom.coords[2].is_finite(), "ACE {} z not finite", atom.name);
-            assert_ne!(atom.coords, [0.0, 0.0, 0.0], "ACE {} has placeholder coords", atom.name);
+            assert_ne!(
+                atom.coords,
+                [0.0, 0.0, 0.0],
+                "ACE {} has placeholder coords",
+                atom.name
+            );
         }
     }
 
@@ -626,13 +667,22 @@ mod tests {
         let applied_caps = cap_sanitizer.run(&breaks).unwrap();
 
         // ACE should have res_id 5 (upstream)
-        let ace_cap = applied_caps.iter().find(|c| c.kind == CapKind::Ace).unwrap();
+        let ace_cap = applied_caps
+            .iter()
+            .find(|c| c.kind == CapKind::Ace)
+            .unwrap();
         assert_eq!(ace_cap.res_id, 5, "ACE should have upstream res_id");
 
         // NME should have res_id 10 (downstream), not 5
         // THIS SHOULD FAIL WITH CURRENT CODE because NME gets res_id_upstream instead of res_id_downstream
-        let nme_cap = applied_caps.iter().find(|c| c.kind == CapKind::Nme).unwrap();
-        assert_eq!(nme_cap.res_id, 10, "NME should have downstream res_id (currently fails because code uses upstream)");
+        let nme_cap = applied_caps
+            .iter()
+            .find(|c| c.kind == CapKind::Nme)
+            .unwrap();
+        assert_eq!(
+            nme_cap.res_id, 10,
+            "NME should have downstream res_id (currently fails because code uses upstream)"
+        );
 
         // After sort, residues should be: ALA(5), ACE(5,'A'), NME(10,'B'), GLY(10)
         let ace_res = topology.chains[0]
@@ -647,7 +697,10 @@ mod tests {
             .iter()
             .find(|r| r.name == "NME")
             .unwrap();
-        assert_eq!(nme_res.res_id, 10, "NME residue should have res_id 10 (currently fails because code uses upstream)");
+        assert_eq!(
+            nme_res.res_id, 10,
+            "NME residue should have res_id 10 (currently fails because code uses upstream)"
+        );
     }
 
     #[test]
@@ -691,12 +744,24 @@ mod tests {
         let upstream_c_coords = [2.009, 1.391, 0.0]; // From build_backbone_residue
 
         // CY should NOT be at the same position as upstream C
-        assert_ne!(cy_atom.coords, upstream_c_coords, "CY should not be co-located with upstream backbone C");
+        assert_ne!(
+            cy_atom.coords, upstream_c_coords,
+            "CY should not be co-located with upstream backbone C"
+        );
 
         // CY should have finite coordinates (not NaN/Inf)
-        assert!(cy_atom.coords[0].is_finite(), "CY x coordinate should be finite");
-        assert!(cy_atom.coords[1].is_finite(), "CY y coordinate should be finite");
-        assert!(cy_atom.coords[2].is_finite(), "CY z coordinate should be finite");
+        assert!(
+            cy_atom.coords[0].is_finite(),
+            "CY x coordinate should be finite"
+        );
+        assert!(
+            cy_atom.coords[1].is_finite(),
+            "CY y coordinate should be finite"
+        );
+        assert!(
+            cy_atom.coords[2].is_finite(),
+            "CY z coordinate should be finite"
+        );
 
         // CY should be close to upstream C but not identical (reasonable bond distance ~1.5 Å)
         let dx = cy_atom.coords[0] - upstream_c_coords[0];
@@ -705,6 +770,10 @@ mod tests {
         let distance = (dx * dx + dy * dy + dz * dz).sqrt();
 
         // New NeRF geometry may place CY further out; accept up to ~2.6 Å
-        assert!(distance > 0.8 && distance < 3.0, "CY should be bonded at reasonable distance, got {}", distance);
+        assert!(
+            distance > 0.8 && distance < 3.0,
+            "CY should be bonded at reasonable distance, got {}",
+            distance
+        );
     }
 }

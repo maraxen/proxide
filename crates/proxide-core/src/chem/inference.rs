@@ -69,7 +69,10 @@ impl EspalomaWeights {
 
         let num_layers = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
         if num_layers != N_SAGE_LAYERS {
-            return Err(format!("Expected {} layers, found {}", N_SAGE_LAYERS, num_layers));
+            return Err(format!(
+                "Expected {} layers, found {}",
+                N_SAGE_LAYERS, num_layers
+            ));
         }
 
         let data_len = bytes.len() - 12;
@@ -78,7 +81,10 @@ impl EspalomaWeights {
             + (2 * SAGE_HIDDEN + 2) * 4;
 
         if data_len < expected_len {
-            return Err(format!("Data length mismatch: expected {}, got {}", expected_len, data_len));
+            return Err(format!(
+                "Data length mismatch: expected {}, got {}",
+                expected_len, data_len
+            ));
         }
 
         let data: &[f32] = bytemuck::cast_slice(&bytes[12..]);
@@ -271,7 +277,8 @@ mod tests {
 
     #[test]
     fn test_embedded_weights_parsing() {
-        let weights = EspalomaWeights::from_bytes(EMBEDDED_WEIGHTS).expect("Failed to parse embedded weights");
+        let weights = EspalomaWeights::from_bytes(EMBEDDED_WEIGHTS)
+            .expect("Failed to parse embedded weights");
         assert_eq!(weights.sages.len(), 4);
         assert_eq!(weights.w_f_in.nrows(), 128);
         assert_eq!(weights.w_f_in.ncols(), 116);
@@ -280,15 +287,15 @@ mod tests {
     #[test]
     fn test_infer_charges_simple() {
         let weights = EspalomaWeights::from_bytes(EMBEDDED_WEIGHTS).unwrap();
-        
+
         // One atom (dummy features)
         let x = DM::zeros(1, FEATURE_UNITS);
-        
+
         let senders = vec![];
         let receivers = vec![];
         let segment_ids = vec![0];
         let total_charges = vec![0.0];
-        
+
         let charges = infer_charges(
             &weights,
             &x,
@@ -298,22 +305,22 @@ mod tests {
             1,
             &total_charges,
         );
-        
+
         assert_eq!(charges.len(), 1);
         // Single atom with 0.0 total charge must have 0.0 charge due to QEq constraint
         assert!((charges[0]).abs() < 1e-5);
-        
+
         // Two atoms, bonded
         let mut x2 = DM::zeros(2, FEATURE_UNITS);
         // Set some dummy features to differentiate them
-        x2[(0, 0)] = 1.0; 
+        x2[(0, 0)] = 1.0;
         x2[(1, 1)] = 1.0;
-        
+
         let senders2 = vec![0, 1];
         let receivers2 = vec![1, 0];
         let segment_ids2 = vec![0, 0];
         let total_charges2 = vec![0.0];
-        
+
         let charges2 = infer_charges(
             &weights,
             &x2,
@@ -323,7 +330,7 @@ mod tests {
             1,
             &total_charges2,
         );
-        
+
         assert_eq!(charges2.len(), 2);
         // Sum should be zero
         assert!((charges2[0] + charges2[1]).abs() < 1e-5);
@@ -336,7 +343,7 @@ mod tests {
         data[0..4].copy_from_slice(b"EXPA");
         data[4..8].copy_from_slice(&1u32.to_le_bytes());
         data[8..12].copy_from_slice(&4u32.to_le_bytes());
-        
+
         let result = EspalomaWeights::from_bytes(&data);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Data length mismatch"));

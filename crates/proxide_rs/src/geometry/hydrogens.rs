@@ -5,12 +5,12 @@
 //!
 //! Reference: hydride library (biotite-dev/hydride)
 
-use proxide_core::chem::bonds::get_bond_order;
-use proxide_geometry::geometry::fragment_library::{calculate_hydrogen_positions, FragmentLibrary};
 use crate::geometry::relax::{relax_hydrogens, RelaxOptions};
 use crate::processing::residues::ProcessedStructure;
-use proxide_core::structure::AtomRecord;
 use once_cell::sync::OnceCell;
+use proxide_core::chem::bonds::get_bond_order;
+use proxide_core::structure::AtomRecord;
+use proxide_geometry::geometry::fragment_library::{calculate_hydrogen_positions, FragmentLibrary};
 use std::collections::HashMap;
 
 // Embed the fragment library binary at compile time.
@@ -462,24 +462,28 @@ mod tests {
     #[test]
     fn test_add_hydrogens_comprehensive() {
         init_fragment_library();
-        
+
         // 1. Test basic addition (e.g. C with N bond)
         let mut structure = create_mock_structure();
         let mut bonds = vec![[0, 1]];
         let added = add_hydrogens(&mut structure, &mut bonds).expect("Failed to add hydrogens");
         assert!(added > 0, "Should have added hydrogens");
-        
+
         // C should have 3 Hydrogens, N should have 2 hydrogens (if terminal)
-        // This depends on the fragment library definition. 
+        // This depends on the fragment library definition.
         // Based on typical chemical rules for the mock setup:
         assert!(added >= 2, "Expected at least 2 hydrogens, got {}", added);
-        
+
         // 2. Verify coordinates are not zero and not overlapping
         for i in 2..structure.raw_atoms.num_atoms {
             let x = structure.raw_atoms.coords[i * 3];
             let y = structure.raw_atoms.coords[i * 3 + 1];
             let z = structure.raw_atoms.coords[i * 3 + 2];
-            assert!(x != 0.0 || y != 0.0 || z != 0.0, "H coordinate at index {} is 0.0", i);
+            assert!(
+                x != 0.0 || y != 0.0 || z != 0.0,
+                "H coordinate at index {} is 0.0",
+                i
+            );
         }
 
         // 3. Test fully saturated atom (Carbon with 4 other heavy atoms)
@@ -496,10 +500,15 @@ mod tests {
                     chain_id: "B".to_string(),
                     res_seq: 1,
                     i_code: ' ',
-                    x: 0.0, y: 0.0, z: 0.0,
-                    occupancy: 1.0, temp_factor: 0.0,
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    occupancy: 1.0,
+                    temp_factor: 0.0,
                     element: "C".to_string(),
-                    charge: None, radius: None, is_hetatm: false,
+                    charge: None,
+                    radius: None,
+                    is_hetatm: false,
                 });
                 // 4 Neighbors
                 for i in 0..4 {
@@ -511,12 +520,31 @@ mod tests {
                         chain_id: "B".to_string(),
                         res_seq: 1,
                         i_code: ' ',
-                        x: if i == 0 {1.0} else {if i == 1 {-1.0} else {0.0}},
-                        y: if i == 2 {1.0} else {if i == 3 {-1.0} else {0.0}},
+                        x: if i == 0 {
+                            1.0
+                        } else {
+                            if i == 1 {
+                                -1.0
+                            } else {
+                                0.0
+                            }
+                        },
+                        y: if i == 2 {
+                            1.0
+                        } else {
+                            if i == 3 {
+                                -1.0
+                            } else {
+                                0.0
+                            }
+                        },
                         z: 0.0,
-                        occupancy: 1.0, temp_factor: 0.0,
+                        occupancy: 1.0,
+                        temp_factor: 0.0,
                         element: "C".to_string(),
-                        charge: None, radius: None, is_hetatm: false,
+                        charge: None,
+                        radius: None,
+                        is_hetatm: false,
                     });
                 }
                 atoms
@@ -540,10 +568,9 @@ mod tests {
         };
         let mut sat_bonds = vec![[0, 1], [0, 2], [0, 3], [0, 4]];
         let added_sat = add_hydrogens(&mut sat_structure, &mut sat_bonds).expect("Failed");
-        // For now, just ensure it runs without error. 
+        // For now, just ensure it runs without error.
         // Ideally it should be 0, but current library/code might behave differently.
-        assert!(added_sat >= 0); 
-
+        assert!(added_sat >= 0);
 
         // 4. Test disjoint atoms (e.g. two carbons not bonded)
         let mut disj_structure = ProcessedStructure {
@@ -558,10 +585,15 @@ mod tests {
                         chain_id: "C".to_string(),
                         res_seq: 1,
                         i_code: ' ',
-                        x: (i * 10) as f32, y: 0.0, z: 0.0,
-                        occupancy: 1.0, temp_factor: 0.0,
+                        x: (i * 10) as f32,
+                        y: 0.0,
+                        z: 0.0,
+                        occupancy: 1.0,
+                        temp_factor: 0.0,
                         element: "C".to_string(),
-                        charge: None, radius: None, is_hetatm: false,
+                        charge: None,
+                        radius: None,
+                        is_hetatm: false,
                     });
                 }
                 atoms
@@ -585,7 +617,10 @@ mod tests {
         };
         let mut disj_bonds = vec![];
         let added_disj = add_hydrogens(&mut disj_structure, &mut disj_bonds).expect("Failed");
-        assert!(added_disj > 0, "Disjoint carbons should still have hydrogens added, got {}", added_disj);
+        assert!(
+            added_disj > 0,
+            "Disjoint carbons should still have hydrogens added, got {}",
+            added_disj
+        );
     }
 }
-

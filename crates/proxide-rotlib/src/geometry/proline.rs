@@ -12,8 +12,8 @@
 //! for proline requires a multi-angle / minimization ring closure (see
 //! .praxia/docs/research/260603_master-rotlib-cartesian-derivation.md, follow-up).
 
-use crate::RotlibError;
 use super::template::ResidueTemplate;
+use crate::RotlibError;
 use proxide_geometry::geometry::nerf::Nerf;
 
 /// Ideal CD-N bond length (Å) — CCD PRO.cif value; proline keeps self-consistent CCD
@@ -72,7 +72,11 @@ impl ProlineBuilder {
     /// # Returns
     /// ProlineCoords with sidechain atoms (CB, CG, CD) and recovered χ angles.
     /// If ring closure fails: error message includes achieved CD-N distance.
-    pub fn build(&self, backbone_frame: &[[f32; 3]; 3], chi_angles: [f32; 3]) -> Result<ProlineCoords, RotlibError> {
+    pub fn build(
+        &self,
+        backbone_frame: &[[f32; 3]; 3],
+        chi_angles: [f32; 3],
+    ) -> Result<ProlineCoords, RotlibError> {
         let n_f32 = backbone_frame[0];
         let ca_f32 = backbone_frame[1];
         let c_f32 = backbone_frame[2];
@@ -106,7 +110,10 @@ impl ProlineBuilder {
         // Solve CB-CG-CD angle θ to close the ring.
         // We want to find θ such that |CD(θ) − N| = CD_N_IDEAL (CHARMM 1.455 Å).
         let theta_result = solve_cg_cd_angle(
-            ca_f32, cb_f32, cg_f32, n_f32,
+            ca_f32,
+            cb_f32,
+            cg_f32,
+            n_f32,
             cd_bond.bond_length,
             chi_angles[1], // χ2 exact
         )?;
@@ -138,8 +145,12 @@ impl ProlineBuilder {
 /// # Returns
 /// (θ in degrees, CD position in f32) or RotlibError if bisection fails.
 fn solve_cg_cd_angle(
-    ca: [f32; 3], cb: [f32; 3], cg: [f32; 3], n: [f32; 3],
-    cd_bond_len: f32, chi2_deg: f32,
+    ca: [f32; 3],
+    cb: [f32; 3],
+    cg: [f32; 3],
+    n: [f32; 3],
+    cd_bond_len: f32,
+    chi2_deg: f32,
 ) -> Result<(f32, [f32; 3]), RotlibError> {
     // Bisection bounds: angle must be in physically reasonable range.
     // CHARMM angles are typically ~110°; expand range slightly to accommodate.
@@ -209,7 +220,8 @@ fn solve_cg_cd_angle(
     let cd_final = Nerf::place_atom(&[ca, cb, cg], cd_bond_len, theta_final, chi2_deg);
     Err(RotlibError::InvalidFormat(format!(
         "proline ring closure: bisection max iterations. CD-N = {:.3} Å (ideal {:.3})",
-        distance_3d(cd_final, n), CD_N_IDEAL
+        distance_3d(cd_final, n),
+        CD_N_IDEAL
     )))
 }
 
@@ -234,7 +246,11 @@ fn compute_dihedral(p0: [f32; 3], p1: [f32; 3], p2: [f32; 3], p3: [f32; 3]) -> f
     let n2 = cross(v2, v3);
     let cross12 = cross(n1, n2);
 
-    let y_sign = if dot(v2, cross12) >= 0.0 { 1.0_f32 } else { -1.0_f32 };
+    let y_sign = if dot(v2, cross12) >= 0.0 {
+        1.0_f32
+    } else {
+        -1.0_f32
+    };
     let y = magnitude(cross12) * y_sign;
     let x = dot(n1, n2);
     y.atan2(x) * 180.0 / std::f32::consts::PI
@@ -255,7 +271,6 @@ fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
 fn magnitude(a: [f32; 3]) -> f32 {
     (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt()
 }
-
 
 #[cfg(test)]
 mod tests {

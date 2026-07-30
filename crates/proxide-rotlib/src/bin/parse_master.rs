@@ -21,18 +21,20 @@
 /// WARNING: Output carries CC-BY-NC-SA license. Do NOT commit to version control.
 use clap::Parser;
 use prost::Message;
+use proxide_rotlib::RotamerLibrary;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use proxide_rotlib::RotamerLibrary;
 use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
 #[command(name = "parse_master")]
 #[command(about = "Convert Mosaist MASTER rotlib.bin to proxide protobuf format")]
-#[command(long_about = "Parse Mosaist MASTER binary rotamer library and convert to \
+#[command(
+    long_about = "Parse Mosaist MASTER binary rotamer library and convert to \
     proxide RotamerLibrary protobuf (PRECOMPUTED geometry mode). Output carries \
-    CC-BY-NC-SA license (Grigoryan lab, Dartmouth). NOT FOR REDISTRIBUTION.")]
+    CC-BY-NC-SA license (Grigoryan lab, Dartmouth). NOT FOR REDISTRIBUTION."
+)]
 struct Args {
     /// Path to input Mosaist rotlib.bin file
     #[arg(long)]
@@ -57,7 +59,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let master_lib = RotamerLibrary::load(&args.input)?;
 
     // Convert to protobuf format
-    info!("Converting {} residues to protobuf", master_lib.residue_codes().len());
+    info!(
+        "Converting {} residues to protobuf",
+        master_lib.residue_codes().len()
+    );
 
     let pb_lib = master_lib.to_protobuf(
         "master_precomputed".to_string(),
@@ -72,7 +77,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let compressed = zstd::encode_all(encoded.as_slice(), 0)?;
 
     // Write to output file
-    info!("Writing {} bytes to {}", compressed.len(), args.output.display());
+    info!(
+        "Writing {} bytes to {}",
+        compressed.len(),
+        args.output.display()
+    );
     let mut output_file = File::create(&args.output)?;
     output_file.write_all(&compressed)?;
 

@@ -1,6 +1,6 @@
 use proxide_core::structure::systems::AtomicSystem;
-use proxide_io::formats::pdb::parse_pdb_file;
 use proxide_geometry::generate_topology;
+use proxide_io::formats::pdb::parse_pdb_file;
 use std::path::PathBuf;
 
 #[test]
@@ -12,7 +12,7 @@ fn test_smoke_parsing_topology_physics() {
         return;
     }
     let (raw_data, _model_ids) = parse_pdb_file(&pdb_path).expect("Failed to parse PDB");
-    
+
     let res_ids = raw_data.res_ids.clone();
     let coords = raw_data.coords.clone();
     let elements = raw_data.elements.clone();
@@ -35,7 +35,7 @@ fn test_smoke_parsing_topology_physics() {
         residue_index: Some(raw_data.res_ids),
         chain_index: Some(res_ids),
     });
-    
+
     assert!(system.num_atoms > 0, "System should have atoms");
 
     // 2. Topology

@@ -6,9 +6,9 @@ use crate::grid::ProximityGrid;
 use crate::parallel::{contact_degree_raw, run_phases_b_c};
 use crate::params::{CLASH_DIST, DCUT, HI_COLL_PROB_CUT, LO_COLL_PROB_CUT};
 use dashmap::DashMap;
+use orx_parallel::{IntoParIter, ParIter};
 use proxide_core::processing::residues::ResidueId;
 use proxide_rotlib::{RotamerId, RotamerLibrary};
-use orx_parallel::{IntoParIter, ParIter};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -25,10 +25,10 @@ pub struct ConFind {
     /// Full protein backbone extracted from the processed structure.
     pub backbone: Arc<ProteinBackbone>,
 
-    bb_grid: Arc<ProximityGrid<usize>>,   // tag = index into bb_atoms
+    bb_grid: Arc<ProximityGrid<usize>>, // tag = index into bb_atoms
     ca_grid: Arc<ProximityGrid<ResidueIndex>>,
     bb_atoms: Arc<Vec<[f64; 3]>>,
-    bb_atom_res: Arc<Vec<ResidueIndex>>,  // parallel to bb_atoms
+    bb_atom_res: Arc<Vec<ResidueIndex>>, // parallel to bb_atoms
 
     cache: DashMap<ResidueIndex, Arc<ResidueCache>>,
     coll_prob: DashMap<ResidueIndex, HashMap<Arc<RotamerId>, f64>>,
@@ -37,23 +37,19 @@ pub struct ConFind {
 
 impl ConFind {
     /// Initialize a ConFind session with rotamer library, backbone geometry, and `strict` flag.
-    pub fn new(
-        rotlib: Arc<RotamerLibrary>,
-        backbone: Arc<ProteinBackbone>,
-        strict: bool,
-    ) -> Self {
+    pub fn new(rotlib: Arc<RotamerLibrary>, backbone: Arc<ProteinBackbone>, strict: bool) -> Self {
         // Build backbone atom flat vec and atom→residue mapping.
         let (bb_atoms_vec, bb_atom_res_vec) = build_bb_atoms(&backbone);
         // Grid over all backbone atoms; tag = atom index.
         let bb_atom_tags: Vec<usize> = (0..bb_atoms_vec.len()).collect();
-        let bb_grid = Arc::new(ProximityGrid::build(&bb_atoms_vec, bb_atom_tags, CLASH_DIST));
+        let bb_grid = Arc::new(ProximityGrid::build(
+            &bb_atoms_vec,
+            bb_atom_tags,
+            CLASH_DIST,
+        ));
 
         // CA grid for neighbor queries; tag = ResidueIndex.
-        let ca_points: Vec<[f64; 3]> = backbone
-            .bb
-            .iter()
-            .filter_map(|rb| rb.ca)
-            .collect();
+        let ca_points: Vec<[f64; 3]> = backbone.bb.iter().filter_map(|rb| rb.ca).collect();
         let ca_tags: Vec<ResidueIndex> = backbone
             .bb
             .iter()
@@ -101,7 +97,9 @@ impl ConFind {
     pub fn cache_all(&self) -> Result<(), ConFindError> {
         let n = self.backbone.bb.len() as u32;
         let indices: Vec<u32> = (0..n).collect();
-        let par = indices.into_par().map(|i| self.cache_residue(ResidueIndex(i)));
+        let par = indices
+            .into_par()
+            .map(|i| self.cache_residue(ResidueIndex(i)));
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         let par = par.num_threads(proxide_parallel_rt::num_threads());
         par.collect::<Vec<_>>()
@@ -131,9 +129,23 @@ impl ConFind {
         aa_allowed_a: Option<&[&str]>,
         aa_allowed_b: Option<&[&str]>,
     ) -> Result<(f64, Vec<crate::parallel::ClashTuple>), ConFindError> {
-        let ca = self.cache.get(&res_a).ok_or(ConFindError::NotCached(res_a))?;
-        let cb = self.cache.get(&res_b).ok_or(ConFindError::NotCached(res_b))?;
-        contact_degree_raw(res_a, res_b, &ca, &cb, &self.rotlib, aa_allowed_a, aa_allowed_b)
+        let ca = self
+            .cache
+            .get(&res_a)
+            .ok_or(ConFindError::NotCached(res_a))?;
+        let cb = self
+            .cache
+            .get(&res_b)
+            .ok_or(ConFindError::NotCached(res_b))?;
+        contact_degree_raw(
+            res_a,
+            res_b,
+            &ca,
+            &cb,
+            &self.rotlib,
+            aa_allowed_a,
+            aa_allowed_b,
+        )
     }
 
     /// Full contact + freedom pipeline (Phases A–C).
@@ -237,8 +249,7 @@ impl ConFind {
                     continue;
                 }
                 // Skip same-chain adjacent residues.
-                if self.backbone.chain_map[ri.0 as usize]
-                    == self.backbone.chain_map[rj.0 as usize]
+                if self.backbone.chain_map[ri.0 as usize] == self.backbone.chain_map[rj.0 as usize]
                 {
                     let diff = (rj.0 as usize).saturating_sub(ri.0 as usize);
                     if diff <= ignore_flanking {
@@ -251,10 +262,9 @@ impl ConFind {
                     for bi in start_b..end_b {
                         let a = &bb_atoms[ai];
                         let b = &bb_atoms[bi];
-                        let d = ((a[0] - b[0]).powi(2)
-                            + (a[1] - b[1]).powi(2)
-                            + (a[2] - b[2]).powi(2))
-                        .sqrt();
+                        let d =
+                            ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2))
+                                .sqrt();
                         if d < min_d {
                             min_d = d;
                         }

@@ -9,12 +9,12 @@
 //! - Field names prefixed with `_` define the columns
 //! - Data rows follow in space-separated or quoted-string format
 
+use super::template::ResidueTemplate;
+use crate::RotlibError;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use crate::RotlibError;
-use super::template::ResidueTemplate;
-use tracing::{warn, debug};
+use tracing::{debug, warn};
 
 /// A simple CIF parser for extracting bond and angle records.
 struct CifParser {
@@ -78,7 +78,10 @@ impl CifParser {
 
                 // Check if we have collected all fields for this row
                 let next_line = self.lines.get(self.pos).map(|s| s.as_str()).unwrap_or("");
-                if next_line.starts_with('_') || next_line.starts_with("loop_") || next_line.starts_with("data_") {
+                if next_line.starts_with('_')
+                    || next_line.starts_with("loop_")
+                    || next_line.starts_with("data_")
+                {
                     break;
                 }
             } else {
@@ -129,8 +132,9 @@ type AngleMap = HashMap<(String, String, String), f32>;
 
 /// Parse a CIF file and extract bond and angle ideal values.
 fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| RotlibError::InvalidFormat(format!("Failed to read CIF file {}: {}", path.display(), e)))?;
+    let content = fs::read_to_string(path).map_err(|e| {
+        RotlibError::InvalidFormat(format!("Failed to read CIF file {}: {}", path.display(), e))
+    })?;
 
     let mut bonds = HashMap::new();
     let mut angles = HashMap::new();
@@ -152,9 +156,12 @@ fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
                 for i in 0..atom_id_1.len() {
                     let a1 = &atom_id_1[i];
                     let a2 = &atom_id_2[i];
-                    let d: f32 = dist_ideal[i].parse()
-                        .map_err(|_| RotlibError::InvalidFormat(
-                            format!("Invalid bond distance: {}", dist_ideal[i])))?;
+                    let d: f32 = dist_ideal[i].parse().map_err(|_| {
+                        RotlibError::InvalidFormat(format!(
+                            "Invalid bond distance: {}",
+                            dist_ideal[i]
+                        ))
+                    })?;
                     let key = if a1 <= a2 {
                         (a1.clone(), a2.clone())
                     } else {
@@ -175,9 +182,9 @@ fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
                     let a1 = &atom_id_1[i];
                     let a2 = &atom_id_2[i];
                     let a3 = &atom_id_3[i];
-                    let ang: f32 = angle_ideal[i].parse()
-                        .map_err(|_| RotlibError::InvalidFormat(
-                            format!("Invalid angle: {}", angle_ideal[i])))?;
+                    let ang: f32 = angle_ideal[i].parse().map_err(|_| {
+                        RotlibError::InvalidFormat(format!("Invalid angle: {}", angle_ideal[i]))
+                    })?;
                     angles.insert((a1.clone(), a2.clone(), a3.clone()), ang);
                 }
             }
@@ -192,26 +199,34 @@ fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
 /// Parse all CCD CIF files in a directory and return a ResidueGeometryTable (proto).
 ///
 /// Wraps [`parse_ccd_ic_table_raw`] and converts local IcRecord to proto IcRecord.
-pub fn parse_ccd_ic_table(ccd_dir: &str) -> Result<crate::pb::proxide::rotlib::v1::ResidueGeometryTable, RotlibError> {
-    use crate::pb::proxide::rotlib::v1::{ResidueGeometryTable, ResidueGeometry, IcRecord as ProtoIcRecord};
+pub fn parse_ccd_ic_table(
+    ccd_dir: &str,
+) -> Result<crate::pb::proxide::rotlib::v1::ResidueGeometryTable, RotlibError> {
+    use crate::pb::proxide::rotlib::v1::{
+        IcRecord as ProtoIcRecord, ResidueGeometry, ResidueGeometryTable,
+    };
     let raw = parse_ccd_ic_table_raw(ccd_dir)?;
-    let residues = raw.into_iter().map(|(name, records)| {
-        ResidueGeometry {
+    let residues = raw
+        .into_iter()
+        .map(|(name, records)| ResidueGeometry {
             name,
-            ic: records.into_iter().map(|r| ProtoIcRecord {
-                atom_i: r.atom_i,
-                atom_j: r.atom_j,
-                atom_k: r.atom_k,
-                atom_l: r.atom_l,
-                branch: r.branch,
-                b_ij: r.b_ij,
-                theta_ijk: r.theta_ijk,
-                phi_ijkl: r.phi_ijkl,
-                theta_jkl: r.theta_jkl,
-                b_kl: r.b_kl,
-            }).collect(),
-        }
-    }).collect();
+            ic: records
+                .into_iter()
+                .map(|r| ProtoIcRecord {
+                    atom_i: r.atom_i,
+                    atom_j: r.atom_j,
+                    atom_k: r.atom_k,
+                    atom_l: r.atom_l,
+                    branch: r.branch,
+                    b_ij: r.b_ij,
+                    theta_ijk: r.theta_ijk,
+                    phi_ijkl: r.phi_ijkl,
+                    theta_jkl: r.theta_jkl,
+                    b_kl: r.b_kl,
+                })
+                .collect(),
+        })
+        .collect();
     Ok(ResidueGeometryTable {
         source: "pdb_ccd".to_string(),
         version: "pdb_ccd_2024".to_string(),
@@ -225,15 +240,18 @@ pub fn parse_ccd_ic_table(ccd_dir: &str) -> Result<crate::pb::proxide::rotlib::v
 pub fn parse_ccd_ic_table_raw(ccd_dir: &str) -> Result<Vec<(String, Vec<IcRecord>)>, RotlibError> {
     let path = Path::new(ccd_dir);
     if !path.is_dir() {
-        return Err(RotlibError::InvalidFormat(format!("{} is not a directory", ccd_dir)));
+        return Err(RotlibError::InvalidFormat(format!(
+            "{} is not a directory",
+            ccd_dir
+        )));
     }
 
     let mut result = Vec::new();
 
     // Standard amino acids (3-letter codes)
     let standard_aas = vec![
-        "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU",
-        "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+        "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS", "MET", "PHE",
+        "PRO", "SER", "THR", "TRP", "TYR", "VAL",
     ];
 
     for aa_code in standard_aas {
@@ -248,8 +266,13 @@ pub fn parse_ccd_ic_table_raw(ccd_dir: &str) -> Result<Vec<(String, Vec<IcRecord
                 // Build IC records from the bonds and angles
                 let ic_records = build_ic_records_for_residue(aa_code, &bonds, &angles)?;
                 result.push((aa_code.to_string(), ic_records));
-                debug!("Parsed CCD for {}: {} bonds, {} angles, {} IC records",
-                    aa_code, bonds.len(), angles.len(), result.last().unwrap().1.len());
+                debug!(
+                    "Parsed CCD for {}: {} bonds, {} angles, {} IC records",
+                    aa_code,
+                    bonds.len(),
+                    angles.len(),
+                    result.last().unwrap().1.len()
+                );
             }
             Err(e) => {
                 warn!("Failed to parse CCD for {}: {}", aa_code, e);
@@ -343,12 +366,10 @@ fn resolve_atom_parents(template: &ResidueTemplate, parent_idx: usize) -> (usize
             if let Some(bond) = template.bonds[parent_idx] {
                 let b_idx = bond.parent_idx;
                 let a_idx = match b_idx {
-                    0 => 2,  // B=N: A=backbone_C
-                    1 => 0,  // B=CA: A=N
-                    2 => 1,  // B=backbone_C: A=CA
-                    _ => template.bonds[b_idx]
-                        .map(|bb| bb.parent_idx)
-                        .unwrap_or(0),
+                    0 => 2, // B=N: A=backbone_C
+                    1 => 0, // B=CA: A=N
+                    2 => 1, // B=backbone_C: A=CA
+                    _ => template.bonds[b_idx].map(|bb| bb.parent_idx).unwrap_or(0),
                 };
                 (b_idx, a_idx)
             } else {
@@ -392,7 +413,12 @@ fn lookup_bond(bonds: &HashMap<(String, String), f32>, atom_a: &str, atom_b: &st
 }
 
 /// Look up bond angle from CCD data. Returns a default (109.5°) if not found.
-fn lookup_angle(angles: &HashMap<(String, String, String), f32>, a1: &str, center: &str, a3: &str) -> f32 {
+fn lookup_angle(
+    angles: &HashMap<(String, String, String), f32>,
+    a1: &str,
+    center: &str,
+    a3: &str,
+) -> f32 {
     angles
         .get(&(a1.to_string(), center.to_string(), a3.to_string()))
         .or_else(|| angles.get(&(a3.to_string(), center.to_string(), a1.to_string())))
@@ -413,9 +439,7 @@ mod tests {
             "./tests/data/ccd",
         ];
 
-        let result = ccd_paths
-            .iter()
-            .find_map(|p| parse_ccd_ic_table(p).ok());
+        let result = ccd_paths.iter().find_map(|p| parse_ccd_ic_table(p).ok());
 
         // At minimum, the function should work with a path that exists
         assert!(result.is_some() || true, "Should handle paths gracefully");

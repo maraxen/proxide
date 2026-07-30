@@ -1,5 +1,5 @@
-use proxide_geometry::geometry::cell_list::CellList;
 use crate::processing::residues::ProcessedStructure;
+use proxide_geometry::geometry::cell_list::CellList;
 
 /// Normalizes a single residue's name across both the ResidueInfo and its constituent RawAtoms
 fn rename_residue(processed: &mut ProcessedStructure, res_idx: usize, new_name: &str) {

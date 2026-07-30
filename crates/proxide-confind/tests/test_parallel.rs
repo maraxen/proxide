@@ -1,8 +1,8 @@
 mod common;
 
-use common::{make_synthetic_backbone, load_rotlib_or_skip};
-use proxide_confind::ConFind;
+use common::{load_rotlib_or_skip, make_synthetic_backbone};
 use proxide_confind::coords::ResidueIndex;
+use proxide_confind::ConFind;
 
 #[test]
 #[ignore = "requires rotamer library — set RLIB env var to run"]
@@ -40,7 +40,12 @@ fn parallel_determinism_contacts() {
     // Assert degrees are identical (or very close due to floating point)
     assert_eq!(contact1.degrees.len(), contact2.degrees.len());
     for (d1, d2) in contact1.degrees.iter().zip(&contact2.degrees) {
-        assert!((d1 - d2).abs() < 1e-12, "Degrees should match: {} vs {}", d1, d2);
+        assert!(
+            (d1 - d2).abs() < 1e-12,
+            "Degrees should match: {} vs {}",
+            d1,
+            d2
+        );
     }
 }
 

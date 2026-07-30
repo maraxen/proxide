@@ -1,8 +1,8 @@
 #[path = "helpers.rs"]
 mod helpers;
 
-use helpers::{write_minimal_lib, BinSpec, RotSpec, real_rotlib_path};
-use proxide_rotlib::{RotamerLibrary, RotamerId, RotlibError};
+use helpers::{real_rotlib_path, write_minimal_lib, BinSpec, RotSpec};
+use proxide_rotlib::{RotamerId, RotamerLibrary, RotlibError};
 
 /// Create a 9-bin "TST" library for probability tests.
 /// phi_centers = {-120, 0, 120}, psi_centers = {-120, 0, 120}
@@ -151,8 +151,8 @@ fn test_prob_by_id_oob_rot_index() {
 fn test_prob_sum_real_rotlib() {
     let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
     let aa_names = [
-        "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS", "MET",
-        "PHE", "SER", "THR", "TRP", "TYR", "VAL",
+        "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS", "MET", "PHE",
+        "SER", "THR", "TRP", "TYR", "VAL",
     ];
 
     for aa in &aa_names {

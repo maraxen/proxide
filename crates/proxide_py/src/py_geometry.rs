@@ -32,7 +32,11 @@ pub fn weighted_radius_of_gyration(
             "coordinates and weights must be the same length",
         ));
     }
-    Ok(proxide_geometry::geometry::radius_of_gyration::weighted_radius_of_gyration(&coords, &weights))
+    Ok(
+        proxide_geometry::geometry::radius_of_gyration::weighted_radius_of_gyration(
+            &coords, &weights,
+        ),
+    )
 }
 
 /// Compute the optimal RMSD (and superposition rotation) between two
@@ -66,7 +70,11 @@ pub fn kabsch_rmsd(py: Python<'_>, coords_a: PyObject, coords_b: PyObject) -> Py
     dict.set_item("rmsd", result.rmsd)?;
     dict.set_item(
         "rotation",
-        result.rotation.iter().map(|row| row.to_vec()).collect::<Vec<_>>(),
+        result
+            .rotation
+            .iter()
+            .map(|row| row.to_vec())
+            .collect::<Vec<_>>(),
     )?;
     Ok(dict.into_py(py))
 }

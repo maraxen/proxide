@@ -21,23 +21,23 @@ use proxide_io::formats::pdb::parse_pdb_from_reader;
 /// - Residue names are preserved for each atom (parallel to atoms vec).
 pub fn parse_pdb(text: &str) -> Result<WasmMol, String> {
     // Parse using proxide-io's PDB parser
-    let (raw_data, _model_ids) = parse_pdb_from_reader(text.as_bytes())
-        .map_err(|e| format!("PDB parse error: {}", e))?;
+    let (raw_data, _model_ids) =
+        parse_pdb_from_reader(text.as_bytes()).map_err(|e| format!("PDB parse error: {}", e))?;
 
     // Convert atoms from RawAtomData to WasmAtom
     let mut atoms = Vec::with_capacity(raw_data.num_atoms);
     for i in 0..raw_data.num_atoms {
         let element = &raw_data.elements[i];
-        let atomic_num = element_to_z(element)
-            .ok_or_else(|| format!("Unknown element: {}", element))?;
+        let atomic_num =
+            element_to_z(element).ok_or_else(|| format!("Unknown element: {}", element))?;
 
         atoms.push(WasmAtom {
             idx: i,
             atomic_num,
-            formal_charge: 0,    // PDB doesn't provide formal charges
-            implicit_h: 0,       // PDB doesn't distinguish implicit H; deferred to topology
-            in_ring: false,      // Ring detection deferred to topology module
-            is_aromatic: false,  // Aromaticity detection deferred to topology module
+            formal_charge: 0,         // PDB doesn't provide formal charges
+            implicit_h: 0,            // PDB doesn't distinguish implicit H; deferred to topology
+            in_ring: false,           // Ring detection deferred to topology module
+            is_aromatic: false,       // Aromaticity detection deferred to topology module
             atom_type: String::new(), // To be populated by assign_params()
         });
     }
@@ -132,10 +132,7 @@ END\n\
     fn pdb_no_atoms_fails() {
         let empty_pdb = "END\n";
         let result = parse_pdb(empty_pdb);
-        assert!(
-            result.is_err(),
-            "PDB with no atoms should fail to parse"
-        );
+        assert!(result.is_err(), "PDB with no atoms should fail to parse");
     }
 
     #[test]
