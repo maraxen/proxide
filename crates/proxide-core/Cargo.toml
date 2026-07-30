@@ -53,3 +53,12 @@ protoc-bin-vendored = "3.2.0"
 default = []
 serde = ["dep:serde"]
 testing = []
+
+# `rand`/`rand_distr` pull in `getrandom`, which refuses to compile for
+# wasm32-unknown-unknown without the "js" feature. proxide-io and
+# proxide-frag already declare this; proxide-core needs its own copy
+# because cargo-hack checks each crate via its own --manifest-path, so
+# feature unification with a sibling crate's override doesn't apply unless
+# that sibling is actually in this crate's own dependency graph.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }

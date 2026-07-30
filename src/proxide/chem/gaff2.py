@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 try:
     from rdkit import Chem
 except ImportError:
-    Chem = None  # ty: ignore[invalid-assignment]
+    Chem = None
 
 
 @dataclass
@@ -1052,7 +1052,7 @@ def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:
     try:
         from expaloma.featurize import from_rdkit_mol
     except ImportError:
-        from_rdkit_mol = None  # ty: ignore[invalid-assignment]
+        from_rdkit_mol = None
 
     if assign_rust_charges and from_rdkit_mol:
         try:

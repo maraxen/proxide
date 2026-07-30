@@ -89,7 +89,10 @@ jobs:
       - name: Feature Powerset Check (Native)
         run: cargo hack check --feature-powerset
       - name: WASM Compatibility Check
-        run: cargo hack check --target wasm32-unknown-unknown --no-default-features
+        # proxide_py binds CPython via PyO3 (pyo3-ffi needs libc types that
+        # don't exist on wasm32-unknown-unknown) and was never meant to be
+        # wasm-compatible; exclude it from this check.
+        run: cargo hack check --target wasm32-unknown-unknown --no-default-features --exclude proxide_py
       - name: Run Workspace Tests
         run: cargo test --workspace
       - name: Run Serial Fallback Tests

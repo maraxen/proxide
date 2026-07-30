@@ -227,7 +227,12 @@ invalid-argument-type = "ignore"
 # `uv pip install .[dev]` resolutions, so it's handled file-wide instead.
 # unresolved-attribute follows from the same root cause: once the import
 # is Unknown-typed, `Chem.Mol`/`Chem.X` attribute access on it would
-# otherwise need its own per-line ignore.
+# otherwise need its own per-line ignore. invalid-assignment covers the
+# `except ImportError: Chem = None` / `from_rdkit_mol = None` fallback
+# pattern — whether ty narrows the `if TYPE_CHECKING:` import to a
+# concrete module/function type (making `= None` a real mismatch) or to
+# Unknown (making it fine) has been observed to depend on the exact
+# resolved Python/dependency versions, not just whether rdkit is present.
 [[tool.ty.overrides]]
 include = [
   "src/proxide/chem/gaff2.py",
@@ -237,6 +242,7 @@ include = [
 
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
+invalid-assignment = "ignore"
 unresolved-attribute = "ignore"
 
 [dependency-groups]
