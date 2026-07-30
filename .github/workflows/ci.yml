@@ -85,7 +85,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace -- -D warnings
       - name: Feature Powerset Check (Native)
-        run: cargo hack --feature-powerset --check
+        run: cargo hack check --feature-powerset
       - name: WASM Compatibility Check
         run: cargo hack --target wasm32-unknown-unknown --no-default-features check
       - name: Run Workspace Tests
