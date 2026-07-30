@@ -346,7 +346,7 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       elif self.features is None:  # Legacy behavior: default to zeros
         physics_features = default_physics
 
-    return Protein(
+    return Protein(  # ty: ignore[missing-argument]
       coordinates=coordinates,
       aatype=aatype,
       atom_mask=atom_mask_2d,

@@ -15,7 +15,7 @@ from collections.abc import Iterator, Sequence
 from io import StringIO
 from typing import cast
 
-import h5py
+import h5py  # ty: ignore[unresolved-import]
 import hydride
 import numpy as np
 from biotite import structure

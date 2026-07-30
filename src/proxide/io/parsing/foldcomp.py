@@ -116,7 +116,7 @@ def get_protein_structures(
         num_res = len(sequence)
         atom_mask = np.ones((coordinates.shape[0], 37), dtype=np.float32)
 
-        yield Protein(
+        yield Protein(  # ty: ignore[missing-argument]
           coordinates=jnp.array(coordinates, dtype=jnp.float32),
           aatype=jnp.array(sequence, dtype=jnp.int32),
           atom_mask=jnp.array(atom_mask, dtype=jnp.float32),

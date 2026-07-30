@@ -6,7 +6,7 @@ from collections.abc import Iterator, Sequence
 from typing import IO, Any
 
 import hydride
-import mdtraj as md
+import mdtraj as md  # ty: ignore[unresolved-import]
 import numpy as np
 from biotite import structure
 from biotite.structure import AtomArray, AtomArrayStack, filter_solvent
@@ -301,7 +301,7 @@ def parse_mdtraj_to_processed_structure(  # noqa: C901
     # (missing coordinates/topology at root)
     import warnings
 
-    import h5py
+    import h5py  # ty: ignore[unresolved-import]
 
     if isinstance(source, (str, pathlib.Path)) and str(source).endswith((".h5", ".hdf5")):
       try:

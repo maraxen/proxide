@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from rdkit import Chem
+    from rdkit import Chem  # ty: ignore[unresolved-import]
 
 try:
-    from rdkit import Chem
+    from rdkit import Chem  # ty: ignore[unresolved-import]
 except ImportError:
     Chem = None  # ty: ignore[invalid-assignment]
 
@@ -368,7 +368,7 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
 
 
 def extract_atom_features(
-    mol: Chem.Mol,
+    mol: Chem.Mol,  # ty: ignore[unresolved-attribute]
 ) -> list[dict]:
     """Extract features from RDKit molecule needed for GAFF2 typing.
 
@@ -481,7 +481,7 @@ def extract_atom_features(
 
 
 def assign_gaff2_atom_types(
-    mol: Chem.Mol,
+    mol: Chem.Mol,  # ty: ignore[unresolved-attribute]
     rules: list[Gaff2Rule] | None = None,
     wildatom_map: dict[str, list[str]] | None = None,
 ) -> list[str]:
@@ -762,7 +762,7 @@ _BOND_TYPE_SUB = {
 }
 
 
-def assign_pdb_atom_names(rdmol: Chem.Mol) -> list[str]:
+def assign_pdb_atom_names(rdmol: Chem.Mol) -> list[str]:  # ty: ignore[unresolved-attribute]
     """Assign unique PDB atom names to rdmol in-place and return them.
 
     If an atom already has a non-empty MonomerInfo name it is kept as-is.
@@ -822,7 +822,7 @@ def _lookup_angle_params(
 
 
 def build_gaff2_ffxml(
-    rdmol: Chem.Mol,
+    rdmol: Chem.Mol,  # ty: ignore[unresolved-attribute]
     resname: str,
     charges: list[float],
     *,
@@ -1031,13 +1031,13 @@ def build_gaff2_ffxml(
     return "\n".join(lines)
 
 
-def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:
+def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:  # ty: ignore[unresolved-attribute]
     """Compute partial charges using expaloma or fallback to Gasteiger.
 
     Tries native Rust expaloma first, then RDKit Gasteiger as fallback.
     Returns zero charges if nothing is available.
     """
-    from rdkit import Chem
+    from rdkit import Chem  # ty: ignore[unresolved-import]
 
     mol_copy = Chem.Mol(mol)
     Chem.SanitizeMol(mol_copy)
@@ -1050,7 +1050,7 @@ def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:
         assign_rust_charges = None
 
     try:
-        from expaloma.featurize import from_rdkit_mol
+        from expaloma.featurize import from_rdkit_mol  # ty: ignore[unresolved-import]
     except ImportError:
         from_rdkit_mol = None  # ty: ignore[invalid-assignment]
 
@@ -1089,7 +1089,7 @@ def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:
 
 
 def parameterize_gaff_with_rdkit(
-    mol: Chem.Mol,
+    mol: Chem.Mol,  # ty: ignore[unresolved-attribute]
     gaff_version: str = "gaff-2.2.20",
 ) -> dict:
     """Assign GAFF2 parameters to an RDKit molecule.
