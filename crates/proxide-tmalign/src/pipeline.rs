@@ -1,8 +1,17 @@
-//! Serial TM-align pipeline: orchestrates all 5 seeding strategies with
-//! refinement and produces the final TM-score result.
+//! TM-align pipeline: orchestrates all 5 seeding strategies with refinement
+//! and produces the final TM-score result.
 //!
-//! This module implements the entry point `tmalign_pair_serial`, which runs the
-//! complete TM-align algorithm on a pair of protein structures in sequence:
+//! This module implements two entry points running the same algorithm on a
+//! pair of protein structures:
+//!
+//! - `tmalign_pair_serial` — fully sequential.
+//! - `tmalign_pair` — seeds (a)/(b)/(c)/(e)'s raw generation runs concurrently
+//!   via `orx-parallel`'s `.into_par()`; the gating/refinement/best-tracking logic
+//!   (and seed (d), which depends on the running-best alignment) stays
+//!   sequential in both. See [`tmalign_pair`]'s doc for why only seed
+//!   generation is parallelized, not the full candidate set.
+//!
+//! Both share the same 5-seed sequence:
 //!
 //! 1. **Seed (a): Gapless threading** — slides one sequence over the other.
 //! 2. **Seed (b): Secondary structure** — aligns via SS-letter identity, gated on
@@ -26,6 +35,7 @@ use crate::seed::{run_seed, AlignmentMap, SeedKind};
 use crate::kabsch::kabsch_superpose;
 use crate::nw::AlignedPair;
 use nalgebra::Vector3;
+use orx_parallel::{IntoParIter, ParIter};
 
 /// Result of TM-align pairwise alignment: alignment map, rotation, translation,
 /// and final TM-scores normalized by both structure lengths.
@@ -101,28 +111,103 @@ pub fn tmalign_pair_serial(
     if coords1.is_empty() || coords2.is_empty() {
         return Err(TmAlignError::EmptyStructure);
     }
+    let l_norm = coords1.len().min(coords2.len());
+    let (d0_search_phase, d0_search) = d0::d0_search(l_norm);
 
+    let seed_a = run_seed(SeedKind::GaplessThreading, coords1, coords2, d0_search_phase, d0_search, l_norm, None);
+    let seed_b = run_seed(SeedKind::SecondaryStructure, coords1, coords2, d0_search_phase, d0_search, l_norm, None);
+    let seed_c = run_seed(SeedKind::LocalStructure, coords1, coords2, d0_search_phase, d0_search, l_norm, None);
+    let seed_e = run_seed(SeedKind::FragmentGapless, coords1, coords2, d0_search_phase, d0_search, l_norm, None);
+
+    tmalign_pair_from_seeds(coords1, coords2, l_norm, d0_search_phase, d0_search, seed_a, seed_b, seed_c, seed_e)
+}
+
+/// Parallel twin of [`tmalign_pair_serial`]: seeds (a)/(b)/(c)/(e)'s raw
+/// generation (`run_seed`, independent of each other's *values* — only
+/// gated by a later score threshold, which stays sequential below) runs
+/// concurrently via `orx-parallel`'s `.into_par()`. Everything downstream —
+/// gating decisions, `DP_iter` refinement, best-alignment tracking, seed
+/// (d)'s dependent generation (it requires the running-best alignment as
+/// an input and therefore cannot be precomputed here), and the final
+/// `score_d8`-filtered scoring — is bit-for-bit identical to
+/// `tmalign_pair_serial`'s sequential logic in [`tmalign_pair_from_seeds`],
+/// so the two should agree *exactly*, not merely within a floating-point
+/// reduction-order tolerance: no floating-point sum is reordered by this
+/// split, only four independent function calls are made concurrently
+/// instead of in series.
+///
+/// This is a more conservative parallelization than "run all up-to-10
+/// (seed, gap_open) candidates independently and take the max": that
+/// framing doesn't hold for this pipeline (see backlog #3758's resolution
+/// notes) because seed (d) has a genuine data dependency on the running
+/// best alignment, and seeds (b)/(c)/(e) are conditionally skipped based
+/// on a running best-score threshold that only exists after earlier seeds
+/// have run — parallelizing across the *gated* candidates risks admitting
+/// a seed the serial version would have skipped, which could disagree with
+/// `tmalign_pair_serial`. Parallelizing only the four independent seeds'
+/// (comparatively cheap) raw-generation step is safe because the
+/// expensive, order-sensitive `DP_iter` refinement and gating stay exactly
+/// as they were.
+pub fn tmalign_pair(
+    coords1: &[Vector3<f32>],
+    coords2: &[Vector3<f32>],
+) -> Result<TmAlignResult, TmAlignError> {
+    if coords1.is_empty() || coords2.is_empty() {
+        return Err(TmAlignError::EmptyStructure);
+    }
+    let l_norm = coords1.len().min(coords2.len());
+    let (d0_search_phase, d0_search) = d0::d0_search(l_norm);
+
+    let seed_kinds = vec![
+        SeedKind::GaplessThreading,
+        SeedKind::SecondaryStructure,
+        SeedKind::LocalStructure,
+        SeedKind::FragmentGapless,
+    ];
+    // orx-parallel's default IterationOrder is `Ordered`, so `collect()` below
+    // preserves seed_kinds' input order -- essential since the pop()s after it
+    // rely on positional a/b/c/e correspondence.
+    let mut seed_results: Vec<Result<AlignmentMap, TmAlignError>> = seed_kinds
+        .into_par()
+        .map(|kind| run_seed(kind, coords1, coords2, d0_search_phase, d0_search, l_norm, None))
+        .collect();
+
+    let seed_e = seed_results.pop().expect("4 seeds dispatched");
+    let seed_c = seed_results.pop().expect("4 seeds dispatched");
+    let seed_b = seed_results.pop().expect("4 seeds dispatched");
+    let seed_a = seed_results.pop().expect("4 seeds dispatched");
+
+    tmalign_pair_from_seeds(coords1, coords2, l_norm, d0_search_phase, d0_search, seed_a, seed_b, seed_c, seed_e)
+}
+
+/// Shared sequential core for both [`tmalign_pair_serial`] and
+/// [`tmalign_pair`]: consumes seeds (a)/(b)/(c)/(e)'s already-computed raw
+/// generation results (identical whether they were produced serially or
+/// concurrently) and replicates `TMalign_main`'s exact gated sequential
+/// order — gating, `DP_iter` refinement, best-alignment tracking, seed
+/// (d)'s dependent generation, and the final `score_d8`-filtered scoring.
+#[allow(unused_assignments)] // tmmax's final write (after the last seed) is never read back, by design
+#[allow(clippy::too_many_arguments)] // matches seed/mod.rs's run_seed and refine.rs's existing dispatch-function convention
+fn tmalign_pair_from_seeds(
+    coords1: &[Vector3<f32>],
+    coords2: &[Vector3<f32>],
+    l_norm: usize,
+    d0_search_phase: f32,
+    d0_search: f32,
+    seed_a: Result<AlignmentMap, TmAlignError>,
+    seed_b: Result<AlignmentMap, TmAlignError>,
+    seed_c: Result<AlignmentMap, TmAlignError>,
+    seed_e: Result<AlignmentMap, TmAlignError>,
+) -> Result<TmAlignResult, TmAlignError> {
     let xlen = coords1.len();
     let ylen = coords2.len();
-    let l_norm = xlen.min(ylen);
-
-    // Compute search-phase d0 and d0_search.
-    let (d0_search_phase, d0_search) = d0::d0_search(l_norm);
     let ddcc = if l_norm <= 40 { 0.1 } else { 0.4 };
 
     let mut tmmax = -1.0_f32;
     let mut best_alignment: Option<AlignmentMap> = None;
 
     // ==================== Seed (a): Gapless threading ====================
-    match run_seed(
-        SeedKind::GaplessThreading,
-        coords1,
-        coords2,
-        d0_search_phase,
-        d0_search,
-        l_norm,
-        None,
-    ) {
+    match seed_a {
         Ok(alignment) => {
             // Run DP_iter with gap_open range [0, 2) = [-0.6, 0.0]
             let (refined_alignment, tm_score) = dp_iter(
@@ -146,15 +231,7 @@ pub fn tmalign_pair_serial(
     }
 
     // ==================== Seed (b): Secondary structure ====================
-    match run_seed(
-        SeedKind::SecondaryStructure,
-        coords1,
-        coords2,
-        d0_search_phase,
-        d0_search,
-        l_norm,
-        None,
-    ) {
+    match seed_b {
         Ok(alignment) => {
             // Gate: only refine if raw score > TMmax * 0.2
             let raw_score = score_alignment(&alignment, coords1, coords2, d0_search_phase, l_norm);
@@ -181,15 +258,7 @@ pub fn tmalign_pair_serial(
     }
 
     // ==================== Seed (c): Local structure ====================
-    match run_seed(
-        SeedKind::LocalStructure,
-        coords1,
-        coords2,
-        d0_search_phase,
-        d0_search,
-        l_norm,
-        None,
-    ) {
+    match seed_c {
         Ok(alignment) => {
             // Gate: only refine if raw score > TMmax * ddcc
             let raw_score = score_alignment(&alignment, coords1, coords2, d0_search_phase, l_norm);
@@ -252,15 +321,7 @@ pub fn tmalign_pair_serial(
     }
 
     // ==================== Seed (e): Fragment gapless ====================
-    match run_seed(
-        SeedKind::FragmentGapless,
-        coords1,
-        coords2,
-        d0_search_phase,
-        d0_search,
-        l_norm,
-        None,
-    ) {
+    match seed_e {
         Ok(alignment) => {
             // Gate: only refine if raw score > TMmax * ddcc
             let raw_score = score_alignment(&alignment, coords1, coords2, d0_search_phase, l_norm);
@@ -519,5 +580,81 @@ mod tests {
 
         let trans = &res.translation;
         assert!(trans.iter().all(|&t| t.abs() < 0.1));
+    }
+
+    // ------------------------------------------------------------------
+    // tmalign_pair (parallel) vs tmalign_pair_serial parity — backlog #3758
+    // ------------------------------------------------------------------
+
+    /// tmalign_pair's four independent seeds run concurrently, but the
+    /// downstream gating/refinement/scoring is bit-for-bit identical logic
+    /// (tmalign_pair_from_seeds) — so results must match tmalign_pair_serial
+    /// exactly, not just within a tolerance.
+    fn assert_exact_parity(coords1: &[Vector3<f32>], coords2: &[Vector3<f32>]) {
+        let serial = tmalign_pair_serial(coords1, coords2);
+        let parallel = tmalign_pair(coords1, coords2);
+
+        match (serial, parallel) {
+            (Ok(s), Ok(p)) => {
+                assert_eq!(s.n_aligned, p.n_aligned, "n_aligned mismatch");
+                assert_eq!(s.tm_score_norm1, p.tm_score_norm1, "tm_score_norm1 mismatch");
+                assert_eq!(s.tm_score_norm2, p.tm_score_norm2, "tm_score_norm2 mismatch");
+                assert_eq!(s.rotation, p.rotation, "rotation mismatch");
+                assert_eq!(s.translation, p.translation, "translation mismatch");
+                assert_eq!(s.alignment, p.alignment, "alignment mismatch");
+            }
+            (Err(_), Err(_)) => {} // both agree on failure
+            (s, p) => panic!("serial/parallel disagreed on success: serial={s:?}, parallel={p:?}"),
+        }
+    }
+
+    #[test]
+    fn tmalign_pair_matches_serial_on_identical_structures() {
+        let coords = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(3.8, 0.0, 0.0),
+            Vector3::new(7.6, 0.0, 0.0),
+            Vector3::new(11.4, 0.0, 0.0),
+            Vector3::new(15.2, 0.0, 0.0),
+        ];
+        assert_exact_parity(&coords, &coords);
+    }
+
+    #[test]
+    fn tmalign_pair_matches_serial_on_different_lengths() {
+        let coords1 = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(3.8, 0.0, 0.0),
+            Vector3::new(7.6, 0.0, 0.0),
+            Vector3::new(11.4, 0.0, 0.0),
+            Vector3::new(15.2, 0.0, 0.0),
+        ];
+        let coords2 = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(3.8, 0.0, 0.0),
+            Vector3::new(7.6, 0.0, 0.0),
+        ];
+        assert_exact_parity(&coords1, &coords2);
+    }
+
+    #[test]
+    fn tmalign_pair_matches_serial_on_non_collinear_structure() {
+        let coords: Vec<Vector3<f32>> = (0..8)
+            .map(|i| {
+                let angle = i as f32 * 100.0_f32.to_radians();
+                let z = i as f32 * 1.5;
+                Vector3::new(2.3 * angle.cos(), 2.3 * angle.sin(), z)
+            })
+            .collect();
+        assert_exact_parity(&coords, &coords);
+    }
+
+    #[test]
+    fn tmalign_pair_empty_structures_return_error() {
+        let empty: Vec<Vector3<f32>> = vec![];
+        let coords = vec![Vector3::new(0.0, 0.0, 0.0)];
+
+        assert!(tmalign_pair(&empty, &coords).is_err());
+        assert!(tmalign_pair(&coords, &empty).is_err());
     }
 }

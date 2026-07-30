@@ -42,7 +42,7 @@
 
 mod common;
 
-use proxide_tmalign::pipeline::tmalign_pair_serial;
+use proxide_tmalign::pipeline::{tmalign_pair, tmalign_pair_serial};
 
 /// Absolute tolerance on TM-scores, empirically set from the current
 /// implementation's observed deviation (~0.004) plus margin — NOT the
@@ -112,4 +112,31 @@ fn tmalign_self_alignment_yields_near_perfect_tm_score() {
         "self-alignment n_aligned should exactly match structure length 250, got {}",
         result.n_aligned
     );
+}
+
+/// backlog #3758: `tmalign_pair` (orx-parallel twin) must agree EXACTLY with
+/// `tmalign_pair_serial` on the real USalign fixture pair — not just within
+/// the reference-binary tolerance above, since the parallel split only
+/// reorders which of 4 independent seed-generation calls happen concurrently,
+/// touching no floating-point summation order.
+#[test]
+fn tmalign_pair_matches_serial_exactly_on_pdb1_vs_pdb2() {
+    let Some(p1) = common::load_usalign_sample("PDB1.pdb") else {
+        return;
+    };
+    let Some(p2) = common::load_usalign_sample("PDB2.pdb") else {
+        return;
+    };
+
+    let serial = tmalign_pair_serial(&p1.coords, &p2.coords)
+        .expect("tmalign_pair_serial should succeed on the USalign sample pair");
+    let parallel = tmalign_pair(&p1.coords, &p2.coords)
+        .expect("tmalign_pair should succeed on the USalign sample pair");
+
+    assert_eq!(serial.n_aligned, parallel.n_aligned, "n_aligned mismatch");
+    assert_eq!(serial.tm_score_norm1, parallel.tm_score_norm1, "tm_score_norm1 mismatch");
+    assert_eq!(serial.tm_score_norm2, parallel.tm_score_norm2, "tm_score_norm2 mismatch");
+    assert_eq!(serial.rotation, parallel.rotation, "rotation mismatch");
+    assert_eq!(serial.translation, parallel.translation, "translation mismatch");
+    assert_eq!(serial.alignment, parallel.alignment, "alignment mismatch");
 }
