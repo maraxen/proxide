@@ -162,6 +162,45 @@ include = ["src/proxide/core/projector.py"]
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
 unresolved-attribute = "ignore"
+
+# `Protein` (proxide.core.containers) is a flax.struct.dataclass whose
+# coulomb14scale/lj14scale fields have `default=None` via
+# struct.field(default=None, pytree_node=False) — ty doesn't recognize
+# flax.struct's dataclass-transform the way it does stdlib dataclasses, so
+# it sometimes treats these as required. Observed to flip between "real
+# error" and "unused ignore comment" across separate `uv pip install .[dev]`
+# runs (uv.lock isn't consulted by `uv pip install`, so exact transitive
+# versions of flax/etc. aren't pinned) — a file-level rule override doesn't
+# have an "unused" state the way an inline comment does, so it's robust to
+# that drift where a per-line ignore isn't.
+[[tool.ty.overrides]]
+include = [
+  "src/proxide/io/parsing/foldcomp.py",
+  "src/proxide/io/parsing/utils.py",
+  "src/proxide/io/streaming/array_record.py",
+]
+
+[tool.ty.overrides.rules]
+missing-argument = "ignore"
+
+# Same drift-sensitivity as above, for two more patterns:
+# - __getitem__ overrides narrowing grain's RandomAccessDataSource base
+#   signature (SupportsIndex -> Protein) — a deliberate, accepted narrowing.
+# - biotite.structure.connect_via_residue_names/connect_via_distances —
+#   real, standard biotite APIs (verified to exist and work at runtime);
+#   whether ty can see them through biotite's compiled backend has varied
+#   across separate dependency resolutions.
+[[tool.ty.overrides]]
+include = [
+  "src/proxide/ops/dataset.py",
+  "src/proxide/io/streaming/array_record.py",
+  "src/proxide/io/parsing/mdtraj.py",
+  "src/proxide/io/streaming/mdcath.py",
+]
+
+[tool.ty.overrides.rules]
+invalid-method-override = "ignore"
+unresolved-attribute = "ignore"
 unsupported-operator = "ignore"
 
 [dependency-groups]

@@ -240,7 +240,7 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
     """Return the total number of records."""
     return len(self._record_indices)
 
-  def __getitem__(self, index: SupportsIndex) -> Protein:  # ty: ignore[invalid-method-override]
+  def __getitem__(self, index: SupportsIndex) -> Protein:
     """Load and deserialize a protein structure.
 
     Args:
@@ -346,7 +346,7 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       elif self.features is None:  # Legacy behavior: default to zeros
         physics_features = default_physics
 
-    return Protein(  # ty: ignore[missing-argument]
+    return Protein(
       coordinates=coordinates,
       aatype=aatype,
       atom_mask=atom_mask_2d,

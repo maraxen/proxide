@@ -219,7 +219,7 @@ fn dihedral_angle(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> f64
         angle_deg = -angle_deg;
     }
 
-    angle_deg as f64
+    angle_deg
 }
 
 /// Compute cross product of two 3D vectors.

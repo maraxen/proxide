@@ -75,7 +75,7 @@ class ProteinDataSource(grain.RandomAccessDataSource):
     """Return the total number of frames available."""
     return self._length
 
-  def __getitem__(self, index: SupportsIndex) -> Protein:  # ty: ignore[invalid-method-override]
+  def __getitem__(self, index: SupportsIndex) -> Protein:
     """Return the Protein at the specified index.
 
     Args:

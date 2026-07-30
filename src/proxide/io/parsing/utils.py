@@ -335,7 +335,7 @@ def processed_structure_to_protein_tuples(
     )
     atom_mask_2d = static_features.static_atom_mask_37.astype(np.float32)
 
-    return Protein(  # ty: ignore[missing-argument]
+    return Protein(
       coordinates=jnp.array(coords_37, dtype=jnp.float32),
       aatype=jnp.array(static_features.aatype, dtype=jnp.int8),
       atom_mask=jnp.array(atom_mask_2d, dtype=jnp.float32),

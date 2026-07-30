@@ -509,7 +509,7 @@ fn write_topology_to_pdb(topology: &Topology, path: &Path) -> Result<(), Solvati
                     format!("{:1$}", atom.name, 4), // Left-justify to 4 chars
                     ' ',                             // alt_loc
                     format!("{:3}", residue.name),   // res_name (3 chars)
-                    &chain.id,                       // chain_id
+                    chain.id,                        // chain_id
                     residue.res_id,                  // res_seq
                     residue.insertion_code,          // i_code
                     x,
@@ -517,7 +517,7 @@ fn write_topology_to_pdb(topology: &Topology, path: &Path) -> Result<(), Solvati
                     z,
                     atom.occupancy,
                     atom.b_factor,
-                    &atom.element // element symbol
+                    atom.element // element symbol
                 );
 
                 lines.push(line);
