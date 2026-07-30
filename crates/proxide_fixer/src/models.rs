@@ -70,14 +70,11 @@ fn filter_altlocs(data: &RawAtomData) -> Vec<usize> {
             atom_name: data.atom_names[i].clone(),
         };
 
-        groups
-            .entry(key)
-            .or_default()
-            .push(AtomIndexWithOccupancy {
-                index: i,
-                occupancy: data.occupancy[i],
-                alt_loc: data.alt_locs[i],
-            });
+        groups.entry(key).or_default().push(AtomIndexWithOccupancy {
+            index: i,
+            occupancy: data.occupancy[i],
+            alt_loc: data.alt_locs[i],
+        });
     }
 
     let mut selected_indices = Vec::new();

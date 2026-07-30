@@ -67,7 +67,10 @@ impl<'a> Solvator<'a> {
     }
 
     pub fn run(&mut self) -> Result<SolvationReport, SolvationError> {
-        let mut report = SolvationReport { net_charge_before: net_charge(self.topology), ..Default::default() };
+        let mut report = SolvationReport {
+            net_charge_before: net_charge(self.topology),
+            ..Default::default()
+        };
 
         // Mutually exclusive: PDBFixer solvation box OR native water triage + counterions
         if self.config.build_solvation_box {
