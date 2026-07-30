@@ -47,6 +47,11 @@ pub struct DcdTrajectory {
     pub times: Vec<f32>,
     pub coordinates: Vec<f32>, // All frames concatenated
     pub coords: Vec<Vec<f32>>, // [N_frames][N_atoms * 3]
+    /// Per-frame `[a, b, c, alpha_deg, beta_deg, gamma_deg]` — lengths in Å,
+    /// angles in degrees. Already reordered/decoded from the raw on-disk
+    /// CHARMM/NAMD layout by [`dcd_unit_cell_to_lengths_angles`]; NOT the
+    /// raw bytes (unlike [`DcdFrame::unit_cell`], which stays in on-disk
+    /// order for `read_frame`/`read_frame_at` callers).
     pub unit_cells: Option<Vec<[f64; 6]>>,
 }
 
@@ -59,16 +64,29 @@ pub struct DcdWriter {
 }
 
 impl DcdWriter {
-    pub fn create(path: &str, n_atoms: usize, _delta: f32, has_unit_cell: bool) -> Result<Self, DcdError> {
+    pub fn create(
+        path: &str,
+        n_atoms: usize,
+        _delta: f32,
+        has_unit_cell: bool,
+    ) -> Result<Self, DcdError> {
         let file = File::create(path)?;
         // NOTE: Minimal implementation of DCD header writing.
         // A full implementation would need to pre-allocate space for the header
         // and come back to update n_frames after writing the frames.
         // For now, this is a placeholder to satisfy the compilation requirements.
-        Ok(DcdWriter { writer: file, n_atoms, has_unit_cell })
+        Ok(DcdWriter {
+            writer: file,
+            n_atoms,
+            has_unit_cell,
+        })
     }
 
-    pub fn write_frame(&mut self, _coordinates: &[f32], _unit_cell: Option<&[f64; 6]>) -> Result<(), DcdError> {
+    pub fn write_frame(
+        &mut self,
+        _coordinates: &[f32],
+        _unit_cell: Option<&[f64; 6]>,
+    ) -> Result<(), DcdError> {
         // Placeholder implementation
         Ok(())
     }
@@ -105,8 +123,16 @@ impl<R: Read + Seek> DcdReader<R> {
         if self.header.has_unit_cell {
             let mut len_buf = [0u8; 4];
             self.reader.read_exact(&mut len_buf)?;
-            let len = if self.header.is_little_endian { i32::from_le_bytes(len_buf) } else { i32::from_be_bytes(len_buf) };
-            if len != 48 { return Err(DcdError::InvalidFormat("Unit cell block length mismatch".to_string())); }
+            let len = if self.header.is_little_endian {
+                i32::from_le_bytes(len_buf)
+            } else {
+                i32::from_be_bytes(len_buf)
+            };
+            if len != 48 {
+                return Err(DcdError::InvalidFormat(
+                    "Unit cell block length mismatch".to_string(),
+                ));
+            }
             let mut uc_data = [0u8; 48];
             self.reader.read_exact(&mut uc_data)?;
             self.reader.read_exact(&mut len_buf)?; // closing length
@@ -114,7 +140,11 @@ impl<R: Read + Seek> DcdReader<R> {
             let mut uc = [0.0f64; 6];
             for i in 0..6 {
                 let b = &uc_data[i * 8..(i + 1) * 8];
-                uc[i] = if self.header.is_little_endian { f64::from_le_bytes(b.try_into().unwrap()) } else { f64::from_be_bytes(b.try_into().unwrap()) };
+                uc[i] = if self.header.is_little_endian {
+                    f64::from_le_bytes(b.try_into().unwrap())
+                } else {
+                    f64::from_be_bytes(b.try_into().unwrap())
+                };
             }
             unit_cell = Some(uc);
         }
@@ -123,8 +153,17 @@ impl<R: Read + Seek> DcdReader<R> {
         for dim in 0..3 {
             let mut len_buf = [0u8; 4];
             self.reader.read_exact(&mut len_buf)?;
-            let len = if self.header.is_little_endian { i32::from_le_bytes(len_buf) } else { i32::from_be_bytes(len_buf) };
-            if len != (n_atoms * 4) as i32 { return Err(DcdError::InvalidFormat(format!("Coordinate block {} length mismatch", dim))); }
+            let len = if self.header.is_little_endian {
+                i32::from_le_bytes(len_buf)
+            } else {
+                i32::from_be_bytes(len_buf)
+            };
+            if len != (n_atoms * 4) as i32 {
+                return Err(DcdError::InvalidFormat(format!(
+                    "Coordinate block {} length mismatch",
+                    dim
+                )));
+            }
 
             let mut coord_buf = vec![0u8; n_atoms * 4];
             self.reader.read_exact(&mut coord_buf)?;
@@ -132,11 +171,18 @@ impl<R: Read + Seek> DcdReader<R> {
 
             for i in 0..n_atoms {
                 let b = &coord_buf[i * 4..(i + 1) * 4];
-                all_coords[i * 3 + dim] = if self.header.is_little_endian { f32::from_le_bytes(b.try_into().unwrap()) } else { f32::from_be_bytes(b.try_into().unwrap()) };
+                all_coords[i * 3 + dim] = if self.header.is_little_endian {
+                    f32::from_le_bytes(b.try_into().unwrap())
+                } else {
+                    f32::from_be_bytes(b.try_into().unwrap())
+                };
             }
         }
 
-        Ok(Some(DcdFrame { coordinates: all_coords, unit_cell }))
+        Ok(Some(DcdFrame {
+            coordinates: all_coords,
+            unit_cell,
+        }))
     }
 
     pub fn new(mut reader: R) -> Result<Self, DcdError> {
@@ -245,7 +291,7 @@ impl<R: Read + Seek> DcdReader<R> {
             )));
         }
 
-        let offset = self.frame_start_pos as u64 + (frame_index as u64 * self.frame_stride as u64);
+        let offset = self.frame_start_pos + (frame_index as u64 * self.frame_stride as u64);
         self.reader.seek(SeekFrom::Start(offset))?;
 
         // Reuse read_frame logic by reading from the seeked position
@@ -255,8 +301,16 @@ impl<R: Read + Seek> DcdReader<R> {
         if self.header.has_unit_cell {
             let mut len_buf = [0u8; 4];
             self.reader.read_exact(&mut len_buf)?;
-            let len = if self.header.is_little_endian { i32::from_le_bytes(len_buf) } else { i32::from_be_bytes(len_buf) };
-            if len != 48 { return Err(DcdError::InvalidFormat("Unit cell block length mismatch".to_string())); }
+            let len = if self.header.is_little_endian {
+                i32::from_le_bytes(len_buf)
+            } else {
+                i32::from_be_bytes(len_buf)
+            };
+            if len != 48 {
+                return Err(DcdError::InvalidFormat(
+                    "Unit cell block length mismatch".to_string(),
+                ));
+            }
             let mut uc_data = [0u8; 48];
             self.reader.read_exact(&mut uc_data)?;
             self.reader.read_exact(&mut len_buf)?;
@@ -264,7 +318,11 @@ impl<R: Read + Seek> DcdReader<R> {
             let mut uc = [0.0f64; 6];
             for i in 0..6 {
                 let b = &uc_data[i * 8..(i + 1) * 8];
-                uc[i] = if self.header.is_little_endian { f64::from_le_bytes(b.try_into().unwrap()) } else { f64::from_be_bytes(b.try_into().unwrap()) };
+                uc[i] = if self.header.is_little_endian {
+                    f64::from_le_bytes(b.try_into().unwrap())
+                } else {
+                    f64::from_be_bytes(b.try_into().unwrap())
+                };
             }
             unit_cell = Some(uc);
         }
@@ -273,8 +331,17 @@ impl<R: Read + Seek> DcdReader<R> {
         for dim in 0..3 {
             let mut len_buf = [0u8; 4];
             self.reader.read_exact(&mut len_buf)?;
-            let len = if self.header.is_little_endian { i32::from_le_bytes(len_buf) } else { i32::from_be_bytes(len_buf) };
-            if len != (n_atoms * 4) as i32 { return Err(DcdError::InvalidFormat(format!("Coordinate block {} length mismatch", dim))); }
+            let len = if self.header.is_little_endian {
+                i32::from_le_bytes(len_buf)
+            } else {
+                i32::from_be_bytes(len_buf)
+            };
+            if len != (n_atoms * 4) as i32 {
+                return Err(DcdError::InvalidFormat(format!(
+                    "Coordinate block {} length mismatch",
+                    dim
+                )));
+            }
 
             let mut coord_buf = vec![0u8; n_atoms * 4];
             self.reader.read_exact(&mut coord_buf)?;
@@ -282,11 +349,18 @@ impl<R: Read + Seek> DcdReader<R> {
 
             for i in 0..n_atoms {
                 let b = &coord_buf[i * 4..(i + 1) * 4];
-                all_coords[i * 3 + dim] = if self.header.is_little_endian { f32::from_le_bytes(b.try_into().unwrap()) } else { f32::from_be_bytes(b.try_into().unwrap()) };
+                all_coords[i * 3 + dim] = if self.header.is_little_endian {
+                    f32::from_le_bytes(b.try_into().unwrap())
+                } else {
+                    f32::from_be_bytes(b.try_into().unwrap())
+                };
             }
         }
 
-        Ok(DcdFrame { coordinates: all_coords, unit_cell })
+        Ok(DcdFrame {
+            coordinates: all_coords,
+            unit_cell,
+        })
     }
 }
 
@@ -317,6 +391,31 @@ pub fn read_dcd_frame_at(path: &str, frame_index: usize) -> Result<FrameWithBox,
     })
 }
 
+/// Convert a DCD unit-cell record from its raw on-disk order/encoding to
+/// `[a, b, c, alpha_deg, beta_deg, gamma_deg]`.
+///
+/// The CHARMM/NAMD DCD unit-cell block stores 6 doubles as
+/// `[A, gamma_or_cos(gamma), B, beta_or_cos(beta), alpha_or_cos(alpha), C]`
+/// — lengths and angles interleaved, not grouped, and the angle slots are
+/// historically ambiguous: NAMD 2.1+ and modern CHARMM write cosines, but
+/// older CHARMM wrote the angles directly in degrees. There is no format
+/// flag distinguishing the two; VMD's DCD plugin (and MDTraj's reader,
+/// which wraps it) resolve this the same way: an angle slot's magnitude is
+/// bounded to `[-1, 1]` only if it's a cosine, so any slot with
+/// `abs(value) <= 1.0` is treated as `cos(angle)` and converted via
+/// `arccos`, otherwise it's assumed to already be in degrees.
+fn dcd_unit_cell_to_lengths_angles(raw: [f64; 6]) -> [f64; 6] {
+    let [a, s_gamma, b, s_beta, s_alpha, c] = raw;
+    let resolve = |slot: f64| -> f64 {
+        if slot.abs() <= 1.0 {
+            slot.acos().to_degrees()
+        } else {
+            slot
+        }
+    };
+    [a, b, c, resolve(s_alpha), resolve(s_beta), resolve(s_gamma)]
+}
+
 pub fn parse_dcd(path: &str) -> Result<DcdTrajectory, DcdError> {
     let mut reader = DcdReader::open(path)?;
     let n_frames = reader.header.n_frames;
@@ -325,7 +424,11 @@ pub fn parse_dcd(path: &str) -> Result<DcdTrajectory, DcdError> {
     let mut all_coords = Vec::with_capacity(n_frames * n_atoms * 3);
     let mut coords = Vec::with_capacity(n_frames);
     let mut times = Vec::with_capacity(n_frames);
-    let mut unit_cells = if reader.header.has_unit_cell { Some(Vec::with_capacity(n_frames)) } else { None };
+    let mut unit_cells = if reader.header.has_unit_cell {
+        Some(Vec::with_capacity(n_frames))
+    } else {
+        None
+    };
 
     for _ in 0..n_frames {
         if let Some(frame) = reader.read_frame()? {
@@ -333,7 +436,8 @@ pub fn parse_dcd(path: &str) -> Result<DcdTrajectory, DcdError> {
             all_coords.extend(frame.coordinates);
             times.push(0.0); // Placeholder for time
             if let Some(ref mut ucs) = unit_cells {
-                ucs.push(frame.unit_cell.unwrap_or([0.0; 6]));
+                let raw = frame.unit_cell.unwrap_or([0.0; 6]);
+                ucs.push(dcd_unit_cell_to_lengths_angles(raw));
             }
         } else {
             return Err(DcdError::UnexpectedEof);
@@ -387,5 +491,43 @@ mod tests {
         let mut dcd_reader = DcdReader::new(reader).unwrap();
         let frame = dcd_reader.read_frame().unwrap().unwrap();
         assert_eq!(frame.coordinates, vec![1.0, 1.0, 1.0]);
+    }
+
+    /// Real raw unit-cell bytes from MDTraj's own `frame0.dcd` test fixture
+    /// (`tests/data/trajectories/frame0.dcd`), captured directly from
+    /// `parse_dcd` before this conversion existed. Cross-checked against
+    /// that same file's `mdtraj.load(...).unitcell_lengths`/`.unitcell_angles`
+    /// (independently computed by MDTraj's own DCD reader) — this is a
+    /// triclinic box (angles ~70.5/109.5/70.5°, not 90°), so this test
+    /// exercises the cosine-decoding path, not just an orthorhombic passthrough.
+    #[test]
+    fn dcd_unit_cell_conversion_matches_mdtraj_reference() {
+        let raw = [
+            25.733_098_98,
+            0.333_337_75,
+            25.733_356_48,
+            -0.333_336_37,
+            0.333_327_45,
+            25.733_469_01,
+        ];
+        let [a, b, c, alpha, beta, gamma] = dcd_unit_cell_to_lengths_angles(raw);
+
+        assert!((a - 25.733099).abs() < 1e-3, "a: {a}");
+        assert!((b - 25.733356).abs() < 1e-3, "b: {b}");
+        assert!((c - 25.733469).abs() < 1e-3, "c: {c}");
+        assert!((alpha - 70.52914).abs() < 1e-2, "alpha: {alpha}");
+        assert!((beta - 109.471405).abs() < 1e-2, "beta: {beta}");
+        assert!((gamma - 70.52851).abs() < 1e-2, "gamma: {gamma}");
+    }
+
+    #[test]
+    fn dcd_unit_cell_conversion_passes_through_degree_encoded_angles() {
+        // Older CHARMM files store the angle slots as raw degrees (not
+        // cosines) — any value outside [-1, 1] must be left untouched.
+        let raw = [30.0, 90.0, 30.0, 90.0, 90.0, 30.0];
+        let [a, b, c, alpha, beta, gamma] = dcd_unit_cell_to_lengths_angles(raw);
+
+        assert_eq!((a, b, c), (30.0, 30.0, 30.0));
+        assert_eq!((alpha, beta, gamma), (90.0, 90.0, 90.0));
     }
 }
