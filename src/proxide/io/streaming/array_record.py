@@ -12,7 +12,7 @@ import grain.python as grain
 import jax.numpy as jnp
 import msgpack
 import msgpack_numpy as m
-from array_record.python.array_record_module import (  # type: ignore[unresolved-import]
+from array_record.python.array_record_module import (  # ty: ignore[unresolved-import]
   ArrayRecordReader,
 )
 
@@ -240,7 +240,7 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
     """Return the total number of records."""
     return len(self._record_indices)
 
-  def __getitem__(self, index: SupportsIndex) -> Protein:  # type: ignore[override]
+  def __getitem__(self, index: SupportsIndex) -> Protein:  # ty: ignore[invalid-method-override]
     """Load and deserialize a protein structure.
 
     Args:

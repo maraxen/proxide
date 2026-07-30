@@ -294,7 +294,7 @@ def parameterize(
         "bonds": np.array(mol.bonds),
       }
 
-      np.savez_compressed(output, **data)
+      np.savez_compressed(output, **data)  # ty: ignore[invalid-argument-type]
 
     console.print(f"[bold green]✓[/bold green] Parameterized and saved to [cyan]{output}[/cyan]")
 

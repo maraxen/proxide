@@ -196,5 +196,5 @@ def write_npz(protein: Protein, path: str | Path) -> Path:
   # Filter out None values
   data = {k: v for k, v in data.items() if v is not None}
 
-  np.savez_compressed(path, **data)
+  np.savez_compressed(path, **data)  # ty: ignore[invalid-argument-type]
   return path

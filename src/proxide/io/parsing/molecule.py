@@ -276,8 +276,8 @@ class Molecule:
     mol = Chem.AddHs(mol)
 
     # Generate 3D coordinates
-    AllChem.EmbedMolecule(mol, randomSeed=42)  # type: ignore[attr-defined]
-    AllChem.MMFFOptimizeMolecule(mol)  # type: ignore[attr-defined]
+    AllChem.EmbedMolecule(mol, randomSeed=42)  # ty: ignore[unresolved-attribute]
+    AllChem.MMFFOptimizeMolecule(mol)  # ty: ignore[unresolved-attribute]
 
     conf = mol.GetConformer()
 

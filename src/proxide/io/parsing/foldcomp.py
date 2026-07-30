@@ -17,7 +17,7 @@ from proxide.core.containers import Protein, ProteinStream
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
-  import foldcomp  # type: ignore[unresolved-import]
+  import foldcomp  # ty: ignore[unresolved-import]
 
   FOLDCOMP_INSTALLED = True
 else:

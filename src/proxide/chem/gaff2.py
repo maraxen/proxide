@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 try:
     from rdkit import Chem
 except ImportError:
-    Chem = None  # type: ignore[assignment]
+    Chem = None  # ty: ignore[invalid-assignment]
 
 
 @dataclass
@@ -1043,14 +1043,16 @@ def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:
     Chem.SanitizeMol(mol_copy)
 
     try:
-        from proxide._proxider import assign_espaloma_charges as assign_rust_charges
+        from proxide._proxider import (  # ty: ignore[unresolved-import]
+            assign_espaloma_charges as assign_rust_charges,
+        )
     except ImportError:
         assign_rust_charges = None
 
     try:
         from expaloma.featurize import from_rdkit_mol
     except ImportError:
-        from_rdkit_mol = None
+        from_rdkit_mol = None  # ty: ignore[invalid-assignment]
 
     if assign_rust_charges and from_rdkit_mol:
         try:
@@ -1187,7 +1189,7 @@ def parameterize_gaff_with_rdkit(
 
     # Look up angle parameters
     for a in angles:
-        t1, t2, t3 = a['types']
+        t1, t2, t3 = a['types']  # ty: ignore[not-iterable]
         key = (t1, t2, t3)
         if key in params['angles']:
             kt, t0 = params['angles'][key]

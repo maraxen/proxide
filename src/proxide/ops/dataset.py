@@ -75,7 +75,7 @@ class ProteinDataSource(grain.RandomAccessDataSource):
     """Return the total number of frames available."""
     return self._length
 
-  def __getitem__(self, index: SupportsIndex) -> Protein:  # type: ignore[override]
+  def __getitem__(self, index: SupportsIndex) -> Protein:  # ty: ignore[invalid-method-override]
     """Return the Protein at the specified index.
 
     Args:
@@ -253,6 +253,6 @@ def create_protein_dataset(  # noqa: PLR0913
   )
 
   if hasattr(source, "skipped_frames"):
-    iter_ds.skipped_frames = source.skipped_frames  # type: ignore[attr-defined]
+    iter_ds.skipped_frames = source.skipped_frames  # ty: ignore[unresolved-attribute]
 
   return iter_ds

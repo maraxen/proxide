@@ -59,7 +59,7 @@ def assign_espaloma_charges_rdkit(
         return np.asarray(out, dtype=np.float64)
 
     elif backend == "rust":
-        from proxide._proxider import assign_espaloma_charges
+        from proxide._proxider import assign_espaloma_charges  # ty: ignore[unresolved-import]
 
         try:
             from expaloma.featurize import from_rdkit_mol
@@ -138,7 +138,9 @@ def assign_espaloma_charges_openff(molecule: Any) -> np.ndarray:
       ImportError: If ``openff-toolkit`` or ``espaloma_charge`` is missing.
   """
   try:
-    from espaloma_charge.openff_wrapper import EspalomaChargeToolkitWrapper
+    from espaloma_charge.openff_wrapper import (  # ty: ignore[unresolved-import]
+      EspalomaChargeToolkitWrapper,
+    )
   except ImportError as e:
     raise ImportError(
       "openff-toolkit and espaloma_charge are required for this entry point. "

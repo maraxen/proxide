@@ -15,8 +15,8 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import ArrayLike
 
-from proxide import _proxider  # type: ignore[unresolved-import]
-from proxide._proxider import OutputSpec  # type: ignore[unresolved-import]
+from proxide import _proxider
+from proxide._proxider import OutputSpec  # ty: ignore[unresolved-import]
 from proxide.core.atomic_system import (
   AtomicConstants,
   AtomicState,
@@ -343,7 +343,7 @@ def _resolve_altlocs(raw: "RawAtomData", mode: str = "occupancy") -> "RawAtomDat
     num_atoms=len(keep),
     atom_names=[raw.atom_names[i] for i in keep],
     res_names=[raw.res_names[i] for i in keep],
-    res_ids=[raw.res_ids[i] for i in keep],  # type: ignore[arg-type]
+    res_ids=[raw.res_ids[i] for i in keep],  # ty: ignore[invalid-argument-type]
     chain_ids=[raw.chain_ids[i] for i in keep],
     coords=coords_arr[keep],
     elements=[raw.elements[i] for i in keep],
@@ -674,7 +674,7 @@ class TrajectoryStream:
         file_path: Path to the trajectory file (.xtc, .dcd).
         chunk_size: Number of frames per chunk.
     """
-    from proxide._proxider import PyTrajectoryIterator  # type: ignore
+    from proxide._proxider import PyTrajectoryIterator  # ty: ignore[unresolved-import]
 
     self.file_path = file_path
     self.chunk_size = chunk_size
@@ -710,7 +710,7 @@ def write_dcd(file_path: str | Path, n_atoms: int, delta: float = 1.0, has_unit_
       delta: Time step
       has_unit_cell: Whether to include unit cell data
   """
-  from proxide._proxider import PyDcdWriter  # type: ignore
+  from proxide._proxider import PyDcdWriter  # ty: ignore[unresolved-import]
 
   return PyDcdWriter(str(file_path), n_atoms, delta, has_unit_cell)
 
@@ -847,7 +847,14 @@ def parse_xtc_rust(file_path: str | Path) -> dict[str, ArrayLike]:
   return parse_xtc(str(file_path))
 
 
-@register_parser(["mdc"])
+# NOTE: this parser's signature/return type do not conform to ParserFunc
+# (Callable[..., ProteinStream]) — dispatch.py's generic call site invokes
+# every registered parser as parser(file_path, chain_id=..., return_type=...,
+# **kwargs), which this function does not accept, and returns a raw dict
+# rather than a ProteinStream. Untested and has no other call sites — real,
+# pre-existing gap surfaced by ty, not something this fix should paper over
+# by guessing at the intended contract.
+@register_parser(["mdc"])  # ty: ignore[invalid-argument-type]
 def parse_mdc_rust(file_path: str | Path) -> dict[str, ArrayLike]:
   """Parse an MDC trajectory file using the Rust extension.
 

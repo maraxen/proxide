@@ -220,7 +220,7 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[Protein]) -> Protein:
   tries = 0
   while not all(isinstance(p, Protein) for p in elements):
     if any(isinstance(p, Sequence) for p in elements):
-      elements = [p[0] if isinstance(p, Sequence) else p for p in elements]  # type: ignore[invalid-assignment]
+      elements = [p[0] if isinstance(p, Sequence) else p for p in elements]  # ty: ignore[invalid-assignment]
       tries += 1
     if tries > _MAX_TRIES:
       msg = "Too many nested sequences in elements; cannot collate."
@@ -273,7 +273,7 @@ def _validate_and_flatten_elements(
   tries = 0
   while not all(isinstance(p, Protein) for p in elements):
     if any(isinstance(p, Sequence) for p in elements):
-      elements = [p[0] if isinstance(p, Sequence) else p for p in elements]  # type: ignore[invalid-assignment]
+      elements = [p[0] if isinstance(p, Sequence) else p for p in elements]  # ty: ignore[invalid-assignment]
       tries += 1
     if tries > _MAX_TRIES:
       msg = "Too many nested sequences in elements; cannot collate."
@@ -319,7 +319,7 @@ def _apply_electrostatics_if_needed(
   for p in elements:
     feat = compute_electrostatic_node_features(
       p,
-      noise_scale=noise_val,
+      noise_scale=noise_val,  # ty: ignore[invalid-argument-type]
       noise_mode=estat_noise_mode,
     )
     phys_feats.append(np.array(feat))

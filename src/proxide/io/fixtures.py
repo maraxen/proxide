@@ -95,7 +95,7 @@ def save_tensor_bundle(
   flat = flatten_tensor_dict(tensors, prefix=prefix) if flatten else {
     k: _to_numpy(v) for k, v in tensors.items()
   }
-  np.savez_compressed(path, **flat)
+  np.savez_compressed(path, **flat)  # ty: ignore[invalid-argument-type]
 
   if meta is not None:
     mpath = Path(meta_path) if meta_path is not None else path.with_suffix(".meta.json")
