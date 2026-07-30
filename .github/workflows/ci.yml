@@ -101,6 +101,12 @@ jobs:
         # don't exist on wasm32-unknown-unknown) and was never meant to be
         # wasm-compatible; exclude it from this check.
         run: cargo hack check --target wasm32-unknown-unknown --no-default-features --exclude proxide_py
+      - name: Set up Python (for numpy, used by xtc_tests' MDA fixture)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install numpy
+        run: pip install numpy
       - name: Run Workspace Tests
         run: cargo test --workspace
       - name: Run Serial Fallback Tests
