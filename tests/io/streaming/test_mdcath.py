@@ -1,8 +1,9 @@
 import pathlib
 
-import h5py
 import numpy as np
 import pytest
+
+h5py = pytest.importorskip("h5py")
 
 from proxide.io.parsing.structures import ProcessedStructure
 from proxide.io.parsing.types import TrajectoryStaticFeatures

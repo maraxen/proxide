@@ -8,6 +8,8 @@ import numpy as np
 import pytest
 from biotite.structure import AtomArray
 
+h5py = pytest.importorskip("h5py")
+
 from proxide.io.parsing.types import TrajectoryStaticFeatures
 from proxide.io.streaming import mdcath
 
