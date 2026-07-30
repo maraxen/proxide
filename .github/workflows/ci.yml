@@ -89,7 +89,7 @@ jobs:
       - name: Feature Powerset Check (Native)
         run: cargo hack check --feature-powerset
       - name: WASM Compatibility Check
-        run: cargo hack --target wasm32-unknown-unknown --no-default-features check
+        run: cargo hack check --target wasm32-unknown-unknown --no-default-features
       - name: Run Workspace Tests
         run: cargo test --workspace
       - name: Run Serial Fallback Tests

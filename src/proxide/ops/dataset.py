@@ -253,6 +253,6 @@ def create_protein_dataset(  # noqa: PLR0913
   )
 
   if hasattr(source, "skipped_frames"):
-    iter_ds.skipped_frames = source.skipped_frames  # ty: ignore[unresolved-attribute]
+    iter_ds.skipped_frames = source.skipped_frames
 
   return iter_ds

@@ -101,10 +101,10 @@ def get_protein_structures(
     )
     database = "afdb_rep_v4"
   _setup_foldcomp_database(database)
-  with foldcomp.open(database, ids=protein_ids, decompress=False) as proteins:  # type: ignore[unresolved-attribute]
+  with foldcomp.open(database, ids=protein_ids, decompress=False) as proteins:
     for _name, fcz in proteins:
       try:
-        fcz_data = foldcomp.get_data(fcz)  # type: ignore[unresolved-attribute]
+        fcz_data = foldcomp.get_data(fcz)
 
         phi = np.array(fcz_data["phi"], dtype=np.float64)
         psi = np.array(fcz_data["psi"], dtype=np.float64)

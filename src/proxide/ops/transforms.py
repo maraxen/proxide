@@ -102,7 +102,7 @@ def compute_rbf_features_rust(
     )
 
     # Update protein with RBF features
-    return protein.replace(  # type: ignore[attr-defined]
+    return protein.replace(
       rbf_features=result.get("rbf_features"),
       neighbor_indices=result.get("neighbor_indices"),
       physics_features=result.get("physics_features")
@@ -158,7 +158,7 @@ def truncate_protein(
       return arr[start:end]
     return arr
 
-  return protein.replace(  # type: ignore[attr-defined]
+  return protein.replace(
     coordinates=slice_array(protein.coordinates),
     aatype=slice_array(protein.aatype),
     mask=slice_array(protein.mask),
@@ -246,7 +246,7 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[Protein]) -> Protein:
 
   chain_ids = np.concatenate(remapped_chain_ids, axis=0)
   concatenated = jax.tree_util.tree_map(lambda *x: np.concatenate(x, axis=0), *proteins)
-  concatenated = concatenated.replace(chain_index=chain_ids, mapping=structure_mapping)  # type: ignore[attr-defined]
+  concatenated = concatenated.replace(chain_index=chain_ids, mapping=structure_mapping)
   return jax.tree_util.tree_map(lambda x: x[None, ...], concatenated)
 
 
@@ -325,7 +325,7 @@ def _apply_electrostatics_if_needed(
     phys_feats.append(np.array(feat))
 
   return [
-    p.replace(physics_features=feat)  # type: ignore[attr-defined]
+    p.replace(physics_features=feat)
     for p, feat in zip(elements, phys_feats, strict=False)
   ]
 
@@ -451,7 +451,7 @@ def _pad_protein(  # noqa: C901
   padded_epsilons = pad_atomic_array(protein.epsilons)
 
   # Create the base padded protein
-  padded_protein = protein.replace(  # type: ignore[attr-defined]
+  padded_protein = protein.replace(
     coordinates=padded_coordinates,
     aatype=padded_aatype,
     mask=padded_mask,
@@ -491,7 +491,7 @@ def _pad_protein(  # noqa: C901
       if bonds_pad > 0:
         p_bonds = pad_md_array(padded_protein.bonds, bonds_pad)
         p_params = pad_md_array(padded_protein.bond_params, bonds_pad)
-        padded_protein = padded_protein.replace(bonds=p_bonds, bond_params=p_params)  # type: ignore[attr-defined]
+        padded_protein = padded_protein.replace(bonds=p_bonds, bond_params=p_params)
 
     # Angles
     if padded_protein.angles is not None:
@@ -499,7 +499,7 @@ def _pad_protein(  # noqa: C901
       if angles_pad > 0:
         p_angles = pad_md_array(padded_protein.angles, angles_pad)
         p_params = pad_md_array(padded_protein.angle_params, angles_pad)
-        padded_protein = padded_protein.replace(angles=p_angles, angle_params=p_params)  # type: ignore[attr-defined]
+        padded_protein = padded_protein.replace(angles=p_angles, angle_params=p_params)
 
     # Exclusion mask (N_atoms, N_atoms) - special 2D padding
     if padded_protein.exclusion_mask is not None:
@@ -512,7 +512,7 @@ def _pad_protein(  # noqa: C901
           ((0, amt), (0, amt)),
           constant_values=False,
         )
-        padded_protein = padded_protein.replace(exclusion_mask=mask)  # type: ignore[attr-defined]
+        padded_protein = padded_protein.replace(exclusion_mask=mask)
 
   return padded_protein
 

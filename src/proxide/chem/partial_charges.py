@@ -42,7 +42,7 @@ def assign_espaloma_charges_rdkit(
         ImportError: If the chosen backend's dependencies (expaloma for JAX) are not installed.
         ValueError: If an invalid backend is specified.
     """
-    from rdkit import Chem  # ty: ignore[unresolved-import]
+    from rdkit import Chem
 
     # Deep copy and sanitize to ensure consistent featurization
     mol = Chem.Mol(mol)
@@ -50,7 +50,7 @@ def assign_espaloma_charges_rdkit(
 
     if backend == "jax":
         try:
-            from expaloma.infer import charges_for_rdkit_mol  # ty: ignore[unresolved-import]
+            from expaloma.infer import charges_for_rdkit_mol
         except ImportError as e:
             raise ImportError(
                 "expaloma is not installed. Install proxide with [espaloma] extra."
@@ -59,10 +59,10 @@ def assign_espaloma_charges_rdkit(
         return np.asarray(out, dtype=np.float64)
 
     elif backend == "rust":
-        from proxide._proxider import assign_espaloma_charges  # ty: ignore[unresolved-import]
+        from proxide._proxider import assign_espaloma_charges
 
         try:
-            from expaloma.featurize import from_rdkit_mol  # ty: ignore[unresolved-import]
+            from expaloma.featurize import from_rdkit_mol
         except ImportError as e:
             raise ImportError(
                 "expaloma (for featurization) is not installed. "
@@ -138,7 +138,7 @@ def assign_espaloma_charges_openff(molecule: Any) -> np.ndarray:
       ImportError: If ``openff-toolkit`` or ``espaloma_charge`` is missing.
   """
   try:
-    from espaloma_charge.openff_wrapper import (  # ty: ignore[unresolved-import]
+    from espaloma_charge.openff_wrapper import (
       EspalomaChargeToolkitWrapper,
     )
   except ImportError as e:
