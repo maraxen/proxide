@@ -76,8 +76,17 @@ fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
 /// transform, and the binary parser — all exercised on real non-trivial backbone geometry
 /// with a diverse set of multi-chi residues (ARG, MET, LYS, GLN, LEU, GLU, ASP).
 #[test]
+#[ignore] // Run only when Mosaist is available
 fn test_distogram_chain_a_small_pdb() {
-    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    let rotlib_path = real_rotlib_path();
+    if !rotlib_path.exists() {
+        eprintln!(
+            "Skipping: ROTLIB_PATH not available at {}",
+            rotlib_path.display()
+        );
+        return;
+    }
+    let lib = RotamerLibrary::load(&rotlib_path).unwrap();
 
     let all_residues = parse_pdb_backbone(&real_pdb_path());
     let chain_a: Vec<_> = all_residues.iter().filter(|r| r.chain == 'A').collect();
@@ -178,8 +187,17 @@ const REF_DISTOGRAM_CHAIN_B: [f64; 49] = [
 /// so the distances should differ from chain A. This verifies that residue-specific backbone
 /// geometry is correctly handled.
 #[test]
+#[ignore] // Run only when Mosaist is available
 fn test_distogram_chain_b_small_pdb() {
-    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    let rotlib_path = real_rotlib_path();
+    if !rotlib_path.exists() {
+        eprintln!(
+            "Skipping: ROTLIB_PATH not available at {}",
+            rotlib_path.display()
+        );
+        return;
+    }
+    let lib = RotamerLibrary::load(&rotlib_path).unwrap();
 
     let all_residues = parse_pdb_backbone(&real_pdb_path());
     let chain_b: Vec<_> = all_residues.iter().filter(|r| r.chain == 'B').collect();
@@ -222,8 +240,17 @@ fn test_distogram_chain_b_small_pdb() {
 /// an empty atom list. This test verifies that placing GLY and PRO (with distinct CD atom
 /// in rotlib) are correctly handled on a real PDB.
 #[test]
+#[ignore] // Run only when Mosaist is available
 fn test_distogram_with_gly_and_pro() {
-    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    let rotlib_path = real_rotlib_path();
+    if !rotlib_path.exists() {
+        eprintln!(
+            "Skipping: ROTLIB_PATH not available at {}",
+            rotlib_path.display()
+        );
+        return;
+    }
+    let lib = RotamerLibrary::load(&rotlib_path).unwrap();
 
     let pdb_path = real_pdb_path_1dc7();
     if !pdb_path.exists() {
@@ -1198,8 +1225,17 @@ const REF_DISTOGRAM_2ZTA_A: [f64; 900] = [
 /// Cross-check: the upper-left 7×7 block of this matrix matches REF_DISTOGRAM exactly, since
 /// 2ZTA residues 1-7 (ARG MET LYS GLN LEU GLU ASP) are the same structure used in small.pdb.
 #[test]
+#[ignore] // Run only when Mosaist is available
 fn test_distogram_2zta_chain_a() {
-    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    let rotlib_path = real_rotlib_path();
+    if !rotlib_path.exists() {
+        eprintln!(
+            "Skipping: ROTLIB_PATH not available at {}",
+            rotlib_path.display()
+        );
+        return;
+    }
+    let lib = RotamerLibrary::load(&rotlib_path).unwrap();
 
     let pdb_path = real_pdb_path_2zta();
     if !pdb_path.exists() {
