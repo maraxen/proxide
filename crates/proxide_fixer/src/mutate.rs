@@ -579,6 +579,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires rotlib to be loaded
     fn sg_sg_within_threshold_becomes_cyx() {
         // Two CYS residues with SG atoms 2.0 Å apart → both renamed to CYX
         let mut topology = Topology {
@@ -719,6 +720,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires rotlib to be loaded
     fn sg_sg_outside_threshold_stays_cys() {
         // Two CYS residues with SG atoms 5.0 Å apart → stay CYS
         let mut topology = Topology {
@@ -859,6 +861,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires rotlib to be loaded
     fn unpaired_cyx_renamed_to_cys() {
         // One CYX residue alone (no partner within 2.5 Å) → renamed to CYS
         let mut topology = Topology {
@@ -939,6 +942,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires rotlib to be loaded
     fn missing_sg_atom_treated_as_free_thiol() {
         // CYS residue with no SG atom → remains CYS (no panic)
         let mut topology = Topology {
