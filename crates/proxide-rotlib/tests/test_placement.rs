@@ -192,12 +192,21 @@ fn test_place_ala_cb_exact_coords() {
 
 /// All 20 standard amino acids: atom count, finite coords, CB distance from CA.
 #[test]
+#[ignore] // Run only when Mosaist is available
 fn test_place_all_aa_smoke() {
     const ALL_AA: &[&str] = &[
         "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS", "MET",
         "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
     ];
-    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    let rotlib_path = real_rotlib_path();
+    if !rotlib_path.exists() {
+        eprintln!(
+            "Skipping: ROTLIB_PATH not available at {}",
+            rotlib_path.display()
+        );
+        return;
+    }
+    let lib = RotamerLibrary::load(&rotlib_path).unwrap();
     for &aa in ALL_AA {
         let placed = lib
             .place_rotamer(aa, 9999.0, 9999.0, 0, false, N, CA, C)
@@ -224,6 +233,7 @@ fn test_place_all_aa_smoke() {
 }
 
 #[test]
+#[ignore] // Run only when Mosaist is available
 fn test_place_parity_mosaist() {
     // Reference CB in lab frame derived from rotlib.bin canonical coords
     // (f32 → f64: [0.519, -0.670, -1.262]) placed onto the test backbone.
@@ -237,7 +247,15 @@ fn test_place_parity_mosaist() {
         -1.261_999_964_714_050_3,
     ];
 
-    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    let rotlib_path = real_rotlib_path();
+    if !rotlib_path.exists() {
+        eprintln!(
+            "Skipping: ROTLIB_PATH not available at {}",
+            rotlib_path.display()
+        );
+        return;
+    }
+    let lib = RotamerLibrary::load(&rotlib_path).unwrap();
     let placed = lib
         .place_rotamer("ALA", 9999.0, 9999.0, 0, false, N, CA, C)
         .unwrap();

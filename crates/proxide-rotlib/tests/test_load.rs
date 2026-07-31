@@ -9,16 +9,34 @@ const AA_NAMES: &[&str] = &[
 ];
 
 #[test]
+#[ignore] // Run only when Mosaist is available
 fn test_load_all_aa_names_present() {
-    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    let rotlib_path = real_rotlib_path();
+    if !rotlib_path.exists() {
+        eprintln!(
+            "Skipping: ROTLIB_PATH not available at {}",
+            rotlib_path.display()
+        );
+        return;
+    }
+    let lib = RotamerLibrary::load(&rotlib_path).unwrap();
     for &aa in AA_NAMES {
         assert!(lib.contains_aa(aa), "missing AA: {aa}");
     }
 }
 
 #[test]
+#[ignore] // Run only when Mosaist is available
 fn test_num_rotamers_sentinel_positive() {
-    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    let rotlib_path = real_rotlib_path();
+    if !rotlib_path.exists() {
+        eprintln!(
+            "Skipping: ROTLIB_PATH not available at {}",
+            rotlib_path.display()
+        );
+        return;
+    }
+    let lib = RotamerLibrary::load(&rotlib_path).unwrap();
     for &aa in AA_NAMES {
         let n = lib.num_rotamers(aa, 9999.0, 9999.0, false).unwrap();
         assert!(n > 0, "{aa}: sentinel bin has 0 rotamers");
