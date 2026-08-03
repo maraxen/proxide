@@ -26,6 +26,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -51,8 +52,20 @@ FIXTURE_PAIRS = [
     ("PDB1.pdb", "PDB1.pdb", "usalign_repo", "self_alignment", False),
     ("lysozyme_6lyz_A.pdb", "lysozyme_1lyz_A.pdb", "curated", "easy", False),
     ("myoglobin_1mbn_A.pdb", "hemoglobin_beta_2dhb_B.pdb", "curated", "hard", False),
-    ("triosephosphate_1ypi_A.pdb", "myoglobin_1mbn_A.pdb", "curated", "different_length_negative_control", False),
-    ("ubiquitin_1ubq_A.pdb", "lysozyme_6lyz_A.pdb", "curated", "different_length_negative_control", True),
+    (
+        "triosephosphate_1ypi_A.pdb",
+        "myoglobin_1mbn_A.pdb",
+        "curated",
+        "different_length_negative_control",
+        False,
+    ),
+    (
+        "ubiquitin_1ubq_A.pdb",
+        "lysozyme_6lyz_A.pdb",
+        "curated",
+        "different_length_negative_control",
+        True,
+    ),
 ]
 
 
@@ -82,26 +95,31 @@ def run_rust_tmalign(rust_binary: Path, pdb1: Path, pdb2: Path) -> dict:
 
 @app.command()
 def main(
-    dry_run: bool = typer.Option(False, "--dry-run"),
-    usalign_repo: Path = typer.Option(DEFAULT_USALIGN_REPO, "--usalign-repo"),
-    out: Path | None = typer.Option(
-        None,
-        "--out",
-        help="Path to write the result JSON — must match the path passed to `bth run --out`, "
-        "which is how bathos reads back the result to evaluate the sidecar's outcome conditions. "
-        "Required unless --dry-run.",
-    ),
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    usalign_repo: Annotated[Path, typer.Option("--usalign-repo")] = DEFAULT_USALIGN_REPO,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            help="Path to write the result JSON — must match the path passed to `bth run --out`, "
+            "which is how bathos reads back the result to evaluate the sidecar's outcome "
+            "conditions. Required unless --dry-run.",
+        ),
+    ] = None,
 ):
     rust_binary = REPO_ROOT / "target" / "debug" / "tmalign"
     reference_binary = usalign_repo / "TMalign"
 
     if dry_run:
+        usalign_found = reference_binary.exists()
+        rust_found = rust_binary.exists()
+        fixtures_found = CURATED_FIXTURES_DIR.is_dir()
         print(json.dumps({
             "dry_run": True,
-            "usalign_binary_found": reference_binary.exists(),
-            "rust_binary_found": rust_binary.exists(),
-            "curated_fixtures_found": CURATED_FIXTURES_DIR.is_dir(),
-            "ready": reference_binary.exists() and rust_binary.exists() and CURATED_FIXTURES_DIR.is_dir(),
+            "usalign_binary_found": usalign_found,
+            "rust_binary_found": rust_found,
+            "curated_fixtures_found": fixtures_found,
+            "ready": usalign_found and rust_found and fixtures_found,
         }))
         return
 
@@ -140,8 +158,12 @@ def main(
             any_hard_pair_exceeds_tolerance = any_hard_pair_exceeds_tolerance or exceeds_tolerance
         else:
             max_abs_tm_diff_standard = max(max_abs_tm_diff_standard, diff_tm1, diff_tm2)
-            max_abs_n_aligned_diff_standard = max(max_abs_n_aligned_diff_standard, abs(n_aligned_diff))
-            any_standard_pair_exceeds_tolerance = any_standard_pair_exceeds_tolerance or exceeds_tolerance
+            max_abs_n_aligned_diff_standard = max(
+                max_abs_n_aligned_diff_standard, abs(n_aligned_diff)
+            )
+            any_standard_pair_exceeds_tolerance = (
+                any_standard_pair_exceeds_tolerance or exceeds_tolerance
+            )
 
         pair_results.append({
             "pair": f"{name1}_vs_{name2}",
