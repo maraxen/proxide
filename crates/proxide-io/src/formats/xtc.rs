@@ -55,8 +55,11 @@ pub struct XtcTrajectory {
     pub boxes: Vec<[[f32; 3]; 3]>,
 }
 
+/// Coordinates (flat, Angstrom-scale) + 3x3 box vectors for one frame.
+type AngstromFrame = (Vec<f32>, [[f32; 3]; 3]);
+
 /// Convert a decoded molly [`MollyFrame`] into Angstrom-scale coordinates and box vectors.
-fn frame_to_angstroms(frame: &MollyFrame) -> (Vec<f32>, [[f32; 3]; 3]) {
+fn frame_to_angstroms(frame: &MollyFrame) -> AngstromFrame {
     let coords: Vec<f32> = frame.positions.iter().map(|x| x * 10.0).collect();
     let mut box_ang = frame.boxvec_cols_2d();
     for row in &mut box_ang {
@@ -161,11 +164,7 @@ impl OffsetCache {
 
     /// Best-effort import of an MDAnalysis offset npz. Any failure returns
     /// `None` so the caller falls through to `determine_offsets`.
-    fn try_load_mda_npz(
-        traj_path: &Path,
-        meta: &std::fs::Metadata,
-        natoms: usize,
-    ) -> Option<Self> {
+    fn try_load_mda_npz(traj_path: &Path, meta: &std::fs::Metadata, natoms: usize) -> Option<Self> {
         let mda_path = Self::mda_sidecar_path(traj_path);
         let file = File::open(&mda_path).ok()?;
         let mut npz = ndarray_npy::NpzReader::new(file).ok()?;
@@ -494,7 +493,7 @@ pub mod molly_impl {
     pub fn read_frame_at<P: AsRef<Path>>(
         path: P,
         frame_index: usize,
-    ) -> Result<Option<(Vec<f32>, [[f32; 3]; 3])>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<AngstromFrame>, Box<dyn std::error::Error>> {
         let mut reader = XtcReader::open(path)?;
         let n_frames = reader.frame_count()?;
         if frame_index >= n_frames {

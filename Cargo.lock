@@ -2740,6 +2740,7 @@ name = "proxide-core"
 version = "0.1.0-alpha.15"
 dependencies = [
  "bytemuck",
+ "getrandom 0.2.17",
  "log",
  "nalgebra",
  "prost",

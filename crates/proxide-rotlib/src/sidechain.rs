@@ -11,8 +11,12 @@ pub fn is_backbone_or_hydrogen(name: &str) -> bool {
 ///
 /// See also: GLY and ALA edge-case notes on [`RotamerLibrary::backbone_bin`].
 pub fn counts_as_sidechain(atom_name: &str, aa: &str) -> bool {
-    if is_backbone_or_hydrogen(atom_name) { return false; }
-    if atom_name == "CB" && aa != "ALA" { return false; }
+    if is_backbone_or_hydrogen(atom_name) {
+        return false;
+    }
+    if atom_name == "CB" && aa != "ALA" {
+        return false;
+    }
     true
 }
 

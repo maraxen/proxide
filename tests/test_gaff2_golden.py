@@ -9,7 +9,9 @@ These values are reference standards from established sources:
 These can be used to validate any GAFF2 implementation.
 """
 
-from rdkit import Chem
+import pytest
+
+Chem = pytest.importorskip("rdkit.Chem")
 from rdkit.Chem import AllChem
 
 # Test molecules with expected atom types (from GAFF2 ATOMTYPE_GFF2.DEF)

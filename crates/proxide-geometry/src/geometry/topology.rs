@@ -24,30 +24,43 @@ pub fn assign_template_hydrogens(
     // Build template bond adjacency: heavy_atom_name -> [H_atom_names bonded to it]
     let mut template_h_by_parent: HashMap<&str, Vec<&str>> = HashMap::new();
     for (name1, name2) in &template.bonds {
-        let a1_is_h = template.atoms.iter()
+        let a1_is_h = template
+            .atoms
+            .iter()
             .find(|a| &a.name == name1)
             .and_then(|ta| ff.get_atom_type(&ta.atom_type))
             .map(|at| at.element.eq_ignore_ascii_case("H"))
             .unwrap_or(name1.starts_with('H') && name1 != "HG");
-        
-        let a2_is_h = template.atoms.iter()
+
+        let a2_is_h = template
+            .atoms
+            .iter()
             .find(|a| &a.name == name2)
             .and_then(|ta| ff.get_atom_type(&ta.atom_type))
             .map(|at| at.element.eq_ignore_ascii_case("H"))
             .unwrap_or(name2.starts_with('H'));
 
         if a1_is_h && !a2_is_h {
-            template_h_by_parent.entry(name2.as_str()).or_default().push(name1.as_str());
+            template_h_by_parent
+                .entry(name2.as_str())
+                .or_default()
+                .push(name1.as_str());
         } else if a2_is_h && !a1_is_h {
-            template_h_by_parent.entry(name1.as_str()).or_default().push(name2.as_str());
+            template_h_by_parent
+                .entry(name1.as_str())
+                .or_default()
+                .push(name2.as_str());
         }
     }
 
     // Collect matched heavy atoms in this residue: (global_idx, template_name)
     // We need to find which residue these hydrogens belong to.
     // For simplicity, we assume all unmatched_h_indices are in the same residue passed in 'template'.
-    let res_info = processed.residue_info.iter().find(|r| r.res_name == template.name && r.res_id == res_start);
-    
+    let res_info = processed
+        .residue_info
+        .iter()
+        .find(|r| r.res_name == template.name && r.res_id == res_start);
+
     if let Some(res_info) = res_info {
         let res_heavy_atoms: Vec<(usize, &str)> = local_to_global
             .iter()

@@ -63,12 +63,7 @@ pub struct LoopModelReport {
 /// schemes.  We try them in order and return the first one found.
 pub fn find_modeller() -> Result<String, LoopModellingError> {
     let candidates = [
-        "mod10.1",
-        "mod10.0",
-        "mod9.25",
-        "mod9.24",
-        "modpy.sh",
-        "modeller",
+        "mod10.1", "mod10.0", "mod9.25", "mod9.24", "modpy.sh", "modeller",
     ];
 
     for name in &candidates {
@@ -171,8 +166,7 @@ impl<'a> LoopModeller<'a> {
         }
 
         let modeller = find_modeller()?;
-        let _ = std::env::var("MODELLER_KEY")
-            .map_err(|_| LoopModellingError::MissingLicenseKey)?;
+        let _ = std::env::var("MODELLER_KEY").map_err(|_| LoopModellingError::MissingLicenseKey)?;
 
         // Build an isolated temp directory for this invocation.
         static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -228,7 +222,9 @@ impl<'a> LoopModeller<'a> {
 
         let (geometry_warnings, hard_failures) = validate_loop_geometry(self.topology, loops);
         if !hard_failures.is_empty() {
-            return Err(LoopModellingError::GeometryInvalid(hard_failures.join("; ")));
+            return Err(LoopModellingError::GeometryInvalid(
+                hard_failures.join("; "),
+            ));
         }
 
         Ok(LoopModelReport {
@@ -294,11 +290,7 @@ fn write_topology_to_pdb(topology: &Topology, path: &Path) -> Result<(), LoopMod
 /// Generate the Modeller `loopmodel` Python driver script.
 ///
 /// The script targets the first loop in `loops` (single-loop simplification).
-fn generate_modeller_script(
-    input_pdb: &Path,
-    output_pdb: &Path,
-    loops: &[MissingLoop],
-) -> String {
+fn generate_modeller_script(input_pdb: &Path, output_pdb: &Path, loops: &[MissingLoop]) -> String {
     // Use the first loop for the single-loop script.
     let first = &loops[0];
     let chain = &first.chain_id;
@@ -349,8 +341,8 @@ type ParsedLoops = Vec<(String, Vec<Residue>)>;
 ///
 /// Returns a list of `(chain_id, residues)` pairs, one per loop in `loops`.
 fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedLoops, String> {
-    let content = std::fs::read_to_string(pdb_path)
-        .map_err(|e| format!("cannot read output PDB: {e}"))?;
+    let content =
+        std::fs::read_to_string(pdb_path).map_err(|e| format!("cannot read output PDB: {e}"))?;
 
     // Build a temporary topology from the ATOM/HETATM lines, then extract loop
     // residues by range.
@@ -365,7 +357,12 @@ fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedL
         // PDB fixed-column fields.
         let is_hetatm = record == "HETATM";
         let atom_name = line.get(12..16).unwrap_or("    ").trim().to_string();
-        let alt_loc = line.get(16..17).unwrap_or(" ").chars().next().unwrap_or(' ');
+        let alt_loc = line
+            .get(16..17)
+            .unwrap_or(" ")
+            .chars()
+            .next()
+            .unwrap_or(' ');
         let res_name = line.get(17..20).unwrap_or("   ").trim().to_string();
         let chain_id = line.get(21..22).unwrap_or(" ").trim().to_string();
         let res_id: i32 = line
@@ -374,11 +371,36 @@ fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedL
             .trim()
             .parse()
             .unwrap_or(0);
-        let x: f32 = line.get(30..38).unwrap_or("        ").trim().parse().unwrap_or(0.0);
-        let y: f32 = line.get(38..46).unwrap_or("        ").trim().parse().unwrap_or(0.0);
-        let z: f32 = line.get(46..54).unwrap_or("        ").trim().parse().unwrap_or(0.0);
-        let occupancy: f32 = line.get(54..60).unwrap_or("      ").trim().parse().unwrap_or(1.0);
-        let b_factor: f32 = line.get(60..66).unwrap_or("      ").trim().parse().unwrap_or(0.0);
+        let x: f32 = line
+            .get(30..38)
+            .unwrap_or("        ")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let y: f32 = line
+            .get(38..46)
+            .unwrap_or("        ")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let z: f32 = line
+            .get(46..54)
+            .unwrap_or("        ")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let occupancy: f32 = line
+            .get(54..60)
+            .unwrap_or("      ")
+            .trim()
+            .parse()
+            .unwrap_or(1.0);
+        let b_factor: f32 = line
+            .get(60..66)
+            .unwrap_or("      ")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
         let element = line.get(76..78).unwrap_or("  ").trim().to_string();
         // Fall back: derive element from atom name if the column is blank.
         let element = if element.is_empty() {
@@ -388,7 +410,12 @@ fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedL
         };
 
         // Serial number (best-effort).
-        let serial: i32 = line.get(6..11).unwrap_or("     ").trim().parse().unwrap_or(0);
+        let serial: i32 = line
+            .get(6..11)
+            .unwrap_or("     ")
+            .trim()
+            .parse()
+            .unwrap_or(0);
 
         let atom = Atom {
             name: atom_name,
@@ -410,7 +437,12 @@ fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedL
             &mut chains_map.last_mut().unwrap().1
         };
 
-        let ins_code = line.get(26..27).unwrap_or(" ").chars().next().unwrap_or(' ');
+        let ins_code = line
+            .get(26..27)
+            .unwrap_or(" ")
+            .chars()
+            .next()
+            .unwrap_or(' ');
         let res_entry = residues
             .iter_mut()
             .rev()
@@ -630,9 +662,7 @@ fn validate_loop_geometry(
             }
 
             // N–CA–C angle
-            if let (Some(n), Some(ca), Some(c)) =
-                (get_atom("N"), get_atom("CA"), get_atom("C"))
-            {
+            if let (Some(n), Some(ca), Some(c)) = (get_atom("N"), get_atom("CA"), get_atom("C")) {
                 let angle = atom_bond_angle(n, ca, c);
                 check_angle(
                     &mut warnings,
@@ -760,10 +790,7 @@ mod tests {
     }
 
     fn make_topology(chain_id: &str, res_ids: &[i32]) -> Topology {
-        let residues = res_ids
-            .iter()
-            .map(|&id| make_residue("ALA", id))
-            .collect();
+        let residues = res_ids.iter().map(|&id| make_residue("ALA", id)).collect();
         Topology {
             chains: vec![Chain {
                 id: chain_id.to_string(),
@@ -778,7 +805,10 @@ mod tests {
     fn detect_no_gaps() {
         let topo = make_topology("A", &[1, 2, 3, 4]);
         let loops = detect_missing_loops(&topo);
-        assert!(loops.is_empty(), "consecutive residues should produce no gaps");
+        assert!(
+            loops.is_empty(),
+            "consecutive residues should produce no gaps"
+        );
     }
 
     #[test]
@@ -829,7 +859,9 @@ mod tests {
     fn build_loops_empty_is_noop() {
         let mut topo = make_topology("A", &[1, 2, 3]);
         let mut modeller = LoopModeller::new(&mut topo);
-        let report = modeller.build_loops(&[]).expect("empty loops should return Ok");
+        let report = modeller
+            .build_loops(&[])
+            .expect("empty loops should return Ok");
         assert!(report.loops_built.is_empty());
         assert!(report.geometry_warnings.is_empty());
     }
@@ -874,9 +906,18 @@ mod tests {
             Path::new("/tmp/output.pdb"),
             &[lp],
         );
-        assert!(script.contains("10:A"), "script should reference start residue");
-        assert!(script.contains("20:A"), "script should reference end residue");
-        assert!(script.contains("LoopModel"), "script should use LoopModel class");
+        assert!(
+            script.contains("10:A"),
+            "script should reference start residue"
+        );
+        assert!(
+            script.contains("20:A"),
+            "script should reference end residue"
+        );
+        assert!(
+            script.contains("LoopModel"),
+            "script should use LoopModel class"
+        );
     }
 
     // ── write_topology_to_pdb ────────────────────────────────────────────────
@@ -884,10 +925,8 @@ mod tests {
     #[test]
     fn write_pdb_produces_atom_records() {
         let topo = make_topology("A", &[1, 2, 3]);
-        let tmp = std::env::temp_dir().join(format!(
-            "proxide_test_write_{}.pdb",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("proxide_test_write_{}.pdb", std::process::id()));
         write_topology_to_pdb(&topo, &tmp).expect("write_topology_to_pdb failed");
         let content = std::fs::read_to_string(&tmp).expect("read temp PDB failed");
         std::fs::remove_file(&tmp).ok();
@@ -896,7 +935,10 @@ mod tests {
             content.contains("ATOM"),
             "PDB output should contain ATOM records"
         );
-        assert!(content.contains("TER"), "PDB output should contain TER record");
+        assert!(
+            content.contains("TER"),
+            "PDB output should contain TER record"
+        );
         assert!(content.contains("END"), "PDB output should end with END");
     }
 
@@ -920,7 +962,11 @@ mod tests {
         splice_loops_into_topology(&mut topo, &parsed, &[lp]);
 
         let res_ids: Vec<i32> = topo.chains[0].residues.iter().map(|r| r.res_id).collect();
-        assert_eq!(res_ids, vec![1, 2, 3, 4, 5], "residues should be ordered 1-5");
+        assert_eq!(
+            res_ids,
+            vec![1, 2, 3, 4, 5],
+            "residues should be ordered 1-5"
+        );
     }
 
     #[test]
@@ -955,10 +1001,8 @@ mod tests {
     fn parse_loop_residues_round_trip() {
         // Write a topology, parse it back, and verify the loop range is extracted.
         let topo = make_topology("A", &[1, 2, 3, 4, 5]);
-        let tmp = std::env::temp_dir().join(format!(
-            "proxide_test_parse_{}.pdb",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("proxide_test_parse_{}.pdb", std::process::id()));
         write_topology_to_pdb(&topo, &tmp).expect("write failed");
 
         let lp = MissingLoop {
@@ -993,10 +1037,46 @@ mod tests {
             res_id,
             insertion_code: ' ',
             atoms: vec![
-                Atom { name: "N".to_string(),  element: "N".to_string(), coords: n,  alt_loc: ' ', serial: 1, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
-                Atom { name: "CA".to_string(), element: "C".to_string(), coords: ca, alt_loc: ' ', serial: 2, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
-                Atom { name: "C".to_string(),  element: "C".to_string(), coords: c,  alt_loc: ' ', serial: 3, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
-                Atom { name: "O".to_string(),  element: "O".to_string(), coords: o,  alt_loc: ' ', serial: 4, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
+                Atom {
+                    name: "N".to_string(),
+                    element: "N".to_string(),
+                    coords: n,
+                    alt_loc: ' ',
+                    serial: 1,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
+                Atom {
+                    name: "CA".to_string(),
+                    element: "C".to_string(),
+                    coords: ca,
+                    alt_loc: ' ',
+                    serial: 2,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
+                Atom {
+                    name: "C".to_string(),
+                    element: "C".to_string(),
+                    coords: c,
+                    alt_loc: ' ',
+                    serial: 3,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
+                Atom {
+                    name: "O".to_string(),
+                    element: "O".to_string(),
+                    coords: o,
+                    alt_loc: ' ',
+                    serial: 4,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
             ],
         }
     }
@@ -1015,15 +1095,15 @@ mod tests {
         // C  = (1.46 + 1.52*cos(111°), 1.52*sin(111°), 0)
         //     ≈ (1.46 - 0.545, 1.420, 0) = (0.915, 1.420, 0)
         // O  = C + (0, 0, 1.23) for simplicity (C-O not angle-checked)
-        let n_coords  = [0.0_f32, 0.0, 0.0];
+        let n_coords = [0.0_f32, 0.0, 0.0];
         let ca_coords = [1.46_f32, 0.0, 0.0];
         let angle_rad = 111.2_f32.to_radians();
-        let c_coords  = [
+        let c_coords = [
             1.46 + 1.52 * (-angle_rad.cos()), // cos(111.2°) is negative
             1.52 * angle_rad.sin(),
             0.0,
         ];
-        let o_coords  = [c_coords[0], c_coords[1], c_coords[2] + 1.23];
+        let o_coords = [c_coords[0], c_coords[1], c_coords[2] + 1.23];
 
         let inner_res = make_residue_with_backbone(2, n_coords, ca_coords, c_coords, o_coords);
         let topo = Topology {
@@ -1036,7 +1116,11 @@ mod tests {
                 ],
             }],
         };
-        let ml = MissingLoop { chain_id: "A".to_string(), start_res: 1, end_res: 4 };
+        let ml = MissingLoop {
+            chain_id: "A".to_string(),
+            start_res: 1,
+            end_res: 4,
+        };
 
         let (warnings, hard_failures) = validate_loop_geometry(&topo, &[ml]);
         assert!(
@@ -1052,24 +1136,24 @@ mod tests {
     #[test]
     fn geometry_validation_bad_bond_surfaces_hard_failure() {
         // N–CA at 2.5 Å is 1.04 Å off the expected 1.46 Å — well beyond HARD_TOL=0.15.
-        let n_coords  = [0.0_f32, 0.0, 0.0];
+        let n_coords = [0.0_f32, 0.0, 0.0];
         let ca_coords = [2.5_f32, 0.0, 0.0]; // bad: 2.5 Å instead of 1.46
-        // CA–C and C–O at nominal distances to isolate the N-CA failure.
-        let c_coords  = [2.5 + 1.52_f32, 0.0, 0.0];
-        let o_coords  = [c_coords[0], 1.23_f32, 0.0];
+                                             // CA–C and C–O at nominal distances to isolate the N-CA failure.
+        let c_coords = [2.5 + 1.52_f32, 0.0, 0.0];
+        let o_coords = [c_coords[0], 1.23_f32, 0.0];
 
         let inner_res = make_residue_with_backbone(2, n_coords, ca_coords, c_coords, o_coords);
         let topo = Topology {
             chains: vec![Chain {
                 id: "A".to_string(),
-                residues: vec![
-                    make_residue("ALA", 1),
-                    inner_res,
-                    make_residue("ALA", 4),
-                ],
+                residues: vec![make_residue("ALA", 1), inner_res, make_residue("ALA", 4)],
             }],
         };
-        let ml = MissingLoop { chain_id: "A".to_string(), start_res: 1, end_res: 4 };
+        let ml = MissingLoop {
+            chain_id: "A".to_string(),
+            start_res: 1,
+            end_res: 4,
+        };
 
         let (_warnings, hard_failures) = validate_loop_geometry(&topo, &[ml]);
         assert!(
@@ -1088,28 +1172,28 @@ mod tests {
         // N–CA at 1.50 Å — 0.04 Å off the expected 1.46 Å, within HARD_TOL but
         // just under SOFT_TOL=0.05.  Should produce no warning (delta < soft).
         // N–CA at 1.52 Å — 0.06 Å off → soft warning only.
-        let n_coords  = [0.0_f32, 0.0, 0.0];
+        let n_coords = [0.0_f32, 0.0, 0.0];
         let ca_coords = [1.52_f32, 0.0, 0.0]; // 0.06 off → soft warning
         let angle_rad = 111.2_f32.to_radians();
-        let c_coords  = [
+        let c_coords = [
             1.52 + 1.52 * (-angle_rad.cos()),
             1.52 * angle_rad.sin(),
             0.0,
         ];
-        let o_coords  = [c_coords[0], c_coords[1], c_coords[2] + 1.23];
+        let o_coords = [c_coords[0], c_coords[1], c_coords[2] + 1.23];
 
         let inner_res = make_residue_with_backbone(2, n_coords, ca_coords, c_coords, o_coords);
         let topo = Topology {
             chains: vec![Chain {
                 id: "A".to_string(),
-                residues: vec![
-                    make_residue("ALA", 1),
-                    inner_res,
-                    make_residue("ALA", 4),
-                ],
+                residues: vec![make_residue("ALA", 1), inner_res, make_residue("ALA", 4)],
             }],
         };
-        let ml = MissingLoop { chain_id: "A".to_string(), start_res: 1, end_res: 4 };
+        let ml = MissingLoop {
+            chain_id: "A".to_string(),
+            start_res: 1,
+            end_res: 4,
+        };
 
         let (warnings, hard_failures) = validate_loop_geometry(&topo, &[ml]);
         assert!(
@@ -1135,27 +1219,23 @@ mod tests {
         // the ca→n vector is (-1,0,0).  We want the angle between ca→n and ca→c
         // to be 30°, so ca→c = 1.52·(cos(30°)·(-1,0,0) + sin(30°)·(0,1,0))
         //                      = 1.52·(-√3/2, 0.5, 0).
-        let n_coords  = [0.0_f32, 0.0, 0.0];
+        let n_coords = [0.0_f32, 0.0, 0.0];
         let ca_coords = [1.46_f32, 0.0, 0.0];
-        let c_coords  = [
-            1.46 + 1.52 * (-(3.0_f32.sqrt() / 2.0)),
-            1.52 * 0.5,
-            0.0,
-        ];
-        let o_coords  = [c_coords[0], c_coords[1] + 1.23, 0.0];
+        let c_coords = [1.46 + 1.52 * (-(3.0_f32.sqrt() / 2.0)), 1.52 * 0.5, 0.0];
+        let o_coords = [c_coords[0], c_coords[1] + 1.23, 0.0];
 
         let inner_res = make_residue_with_backbone(2, n_coords, ca_coords, c_coords, o_coords);
         let topo = Topology {
             chains: vec![Chain {
                 id: "A".to_string(),
-                residues: vec![
-                    make_residue("ALA", 1),
-                    inner_res,
-                    make_residue("ALA", 4),
-                ],
+                residues: vec![make_residue("ALA", 1), inner_res, make_residue("ALA", 4)],
             }],
         };
-        let ml = MissingLoop { chain_id: "A".to_string(), start_res: 1, end_res: 4 };
+        let ml = MissingLoop {
+            chain_id: "A".to_string(),
+            start_res: 1,
+            end_res: 4,
+        };
 
         let (_warnings, hard_failures) = validate_loop_geometry(&topo, &[ml]);
         assert!(
@@ -1179,17 +1259,42 @@ mod tests {
             res_id: 1,
             insertion_code: ' ',
             atoms: vec![
-                Atom { name: "N".to_string(),  element: "N".to_string(), coords: bad_coords, alt_loc: ' ', serial: 1, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
-                Atom { name: "CA".to_string(), element: "C".to_string(), coords: bad_coords, alt_loc: ' ', serial: 2, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
+                Atom {
+                    name: "N".to_string(),
+                    element: "N".to_string(),
+                    coords: bad_coords,
+                    alt_loc: ' ',
+                    serial: 1,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
+                Atom {
+                    name: "CA".to_string(),
+                    element: "C".to_string(),
+                    coords: bad_coords,
+                    alt_loc: ' ',
+                    serial: 2,
+                    b_factor: 0.0,
+                    occupancy: 1.0,
+                    is_hetatm: false,
+                },
             ],
         };
         let anchor2 = Residue {
             name: "ALA".to_string(),
             res_id: 4,
             insertion_code: ' ',
-            atoms: vec![
-                Atom { name: "N".to_string(),  element: "N".to_string(), coords: bad_coords, alt_loc: ' ', serial: 5, b_factor: 0.0, occupancy: 1.0, is_hetatm: false },
-            ],
+            atoms: vec![Atom {
+                name: "N".to_string(),
+                element: "N".to_string(),
+                coords: bad_coords,
+                alt_loc: ' ',
+                serial: 5,
+                b_factor: 0.0,
+                occupancy: 1.0,
+                is_hetatm: false,
+            }],
         };
         let topo = Topology {
             chains: vec![Chain {
@@ -1197,12 +1302,19 @@ mod tests {
                 residues: vec![anchor1, anchor2],
             }],
         };
-        let ml = MissingLoop { chain_id: "A".to_string(), start_res: 1, end_res: 4 };
+        let ml = MissingLoop {
+            chain_id: "A".to_string(),
+            start_res: 1,
+            end_res: 4,
+        };
 
         // No interior residues → nothing to validate.
         let (warnings, hard_failures) = validate_loop_geometry(&topo, &[ml]);
         assert!(warnings.is_empty(), "no interior residues → no warnings");
-        assert!(hard_failures.is_empty(), "no interior residues → no hard failures");
+        assert!(
+            hard_failures.is_empty(),
+            "no interior residues → no hard failures"
+        );
     }
 
     #[test]
@@ -1217,29 +1329,35 @@ mod tests {
     #[test]
     fn atom_bond_angle_right_angle() {
         // Vertex at origin; A along +x; C along +y → 90°.
-        let a      = [1.0_f32, 0.0, 0.0];
+        let a = [1.0_f32, 0.0, 0.0];
         let vertex = [0.0_f32, 0.0, 0.0];
-        let c      = [0.0_f32, 1.0, 0.0];
+        let c = [0.0_f32, 1.0, 0.0];
         let angle = atom_bond_angle(a, vertex, c);
-        assert!((angle - 90.0).abs() < 1e-4, "angle should be 90°, got {angle}");
+        assert!(
+            (angle - 90.0).abs() < 1e-4,
+            "angle should be 90°, got {angle}"
+        );
     }
 
     #[test]
     fn atom_bond_angle_180_degrees() {
         // Collinear: A at -x, vertex at origin, C at +x → 180°.
-        let a      = [-1.0_f32, 0.0, 0.0];
-        let vertex = [0.0_f32,  0.0, 0.0];
-        let c      = [1.0_f32,  0.0, 0.0];
+        let a = [-1.0_f32, 0.0, 0.0];
+        let vertex = [0.0_f32, 0.0, 0.0];
+        let c = [1.0_f32, 0.0, 0.0];
         let angle = atom_bond_angle(a, vertex, c);
-        assert!((angle - 180.0).abs() < 1e-4, "angle should be 180°, got {angle}");
+        assert!(
+            (angle - 180.0).abs() < 1e-4,
+            "angle should be 180°, got {angle}"
+        );
     }
 
     #[test]
     fn atom_bond_angle_degenerate_zero_length() {
         // Zero-length vector → should return 0.0 without panic.
-        let a      = [0.0_f32, 0.0, 0.0];
+        let a = [0.0_f32, 0.0, 0.0];
         let vertex = [0.0_f32, 0.0, 0.0]; // same as a → zero vector
-        let c      = [1.0_f32, 0.0, 0.0];
+        let c = [1.0_f32, 0.0, 0.0];
         let angle = atom_bond_angle(a, vertex, c);
         assert_eq!(angle, 0.0, "degenerate case should return 0.0");
     }

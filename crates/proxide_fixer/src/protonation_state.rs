@@ -1,7 +1,7 @@
 use crate::models::Topology;
 use crate::propka_wrap::{self, PropkaError};
-use thiserror::Error;
 use log::warn;
+use thiserror::Error;
 
 /// Error type for protonation state assignment.
 #[derive(Error, Debug)]
@@ -222,9 +222,7 @@ impl<'a> ProtonationStateSanitizer<'a> {
     }
 
     /// Assign protonation states using fixed pH-7.4 rules.
-    fn assign_fixed_ph_7_4(
-        &mut self,
-    ) -> Result<Vec<(String, i32, String)>, ProtonationStateError> {
+    fn assign_fixed_ph_7_4(&mut self) -> Result<Vec<(String, i32, String)>, ProtonationStateError> {
         let mut renamed = Vec::new();
 
         for chain in &mut self.topology.chains {
@@ -322,7 +320,10 @@ mod tests {
 
         // Should succeed (fallback)
         let report = result.expect("fallback should not error");
-        assert_eq!(report.used_propka, false, "Should use fallback, not PROPKA3");
+        assert_eq!(
+            report.used_propka, false,
+            "Should use fallback, not PROPKA3"
+        );
 
         // Verify state changes were applied
         // HIS -> HIE, ASP stays ASP (deprot), LYS stays LYS (prot)
@@ -346,7 +347,10 @@ mod tests {
 
         // HIS should be renamed to HIE
         assert_eq!(
-            renamed.iter().find(|r| r.0 == "A" && r.1 == 1).map(|r| &r.2),
+            renamed
+                .iter()
+                .find(|r| r.0 == "A" && r.1 == 1)
+                .map(|r| &r.2),
             Some(&"HIE".to_string()),
             "HIS at res 1 should map to HIE"
         );
@@ -387,7 +391,9 @@ mod tests {
         let renamed = sanitizer.assign_fixed_ph_7_4().expect("assign failed");
 
         assert!(
-            renamed.iter().any(|r| r.0 == "X" && r.1 == 42 && r.2 == "HIE"),
+            renamed
+                .iter()
+                .any(|r| r.0 == "X" && r.1 == 42 && r.2 == "HIE"),
             "HIS should be canonicalized to HIE"
         );
     }
@@ -398,8 +404,18 @@ mod tests {
             chains: vec![Chain {
                 id: "A".to_string(),
                 residues: vec![
-                    Residue { name: "HIS".to_string(), res_id: 1, insertion_code: ' ', atoms: vec![] },
-                    Residue { name: "HIS".to_string(), res_id: 2, insertion_code: ' ', atoms: vec![] },
+                    Residue {
+                        name: "HIS".to_string(),
+                        res_id: 1,
+                        insertion_code: ' ',
+                        atoms: vec![],
+                    },
+                    Residue {
+                        name: "HIS".to_string(),
+                        res_id: 2,
+                        insertion_code: ' ',
+                        atoms: vec![],
+                    },
                 ],
             }],
         };
@@ -407,8 +423,16 @@ mod tests {
         table.insert(("A".to_string(), 1), 8.0); // pKa 8.0 > pH 7.4 => protonated => HIP
         table.insert(("A".to_string(), 2), 5.0); // pKa 5.0 < pH 7.4 => neutral  => HIE
         let mut sanitizer = ProtonationStateSanitizer::new(&mut topology, 7.4);
-        let renamed = sanitizer.assign_by_pka(&table).expect("assign_by_pka failed");
-        assert!(renamed.iter().any(|r| r.1 == 1 && r.2 == "HIP"), "pH<pKa HIS -> HIP");
-        assert!(renamed.iter().any(|r| r.1 == 2 && r.2 == "HIE"), "pH>pKa HIS -> HIE");
+        let renamed = sanitizer
+            .assign_by_pka(&table)
+            .expect("assign_by_pka failed");
+        assert!(
+            renamed.iter().any(|r| r.1 == 1 && r.2 == "HIP"),
+            "pH<pKa HIS -> HIP"
+        );
+        assert!(
+            renamed.iter().any(|r| r.1 == 2 && r.2 == "HIE"),
+            "pH>pKa HIS -> HIE"
+        );
     }
 }

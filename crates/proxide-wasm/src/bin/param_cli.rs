@@ -1,17 +1,14 @@
-use std::env;
-use proxide_wasm::smiles;
 use proxide_wasm::gaff2;
+use proxide_wasm::smiles;
+use std::env;
 
 fn main() {
-    let smiles_str = env::args()
-        .nth(1)
-        .expect("usage: param_cli <smiles>");
+    let smiles_str = env::args().nth(1).expect("usage: param_cli <smiles>");
 
-    let mol = smiles::parse(&smiles_str)
-        .unwrap_or_else(|e| {
-            eprintln!("Parse error: {}", e);
-            std::process::exit(1);
-        });
+    let mol = smiles::parse(&smiles_str).unwrap_or_else(|e| {
+        eprintln!("Parse error: {}", e);
+        std::process::exit(1);
+    });
 
     let params = gaff2::assign_params(&mol);
 

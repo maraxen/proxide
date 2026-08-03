@@ -1,9 +1,10 @@
 
 import pathlib
 
-import mdtraj as md
 import numpy as np
 import pytest
+
+md = pytest.importorskip("mdtraj")
 
 from proxide.chem import residues as rc
 from proxide.io.parsing import mdtraj

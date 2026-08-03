@@ -1,16 +1,16 @@
+use crate::binning::{angle_to_standard, find_closest_angle};
+use crate::error::RotlibError;
+use crate::rotamer_id::RotamerId;
+use prost::Message;
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::path::Path;
-use crate::error::RotlibError;
-use crate::rotamer_id::RotamerId;
-use crate::binning::{angle_to_standard, find_closest_angle};
-use prost::Message;
 
 /// Per-rotamer data within a single phi/psi bin.
 #[derive(Clone, Debug)]
 pub(crate) struct BinData {
     /// Rotamer probabilities (len = nr).
-    pub(crate) probs:  Vec<f64>,
+    pub(crate) probs: Vec<f64>,
     /// Atom coordinates in canonical backbone-relative frame, indexed [rot_index][atom_index].
     pub(crate) coords: Vec<Vec<[f64; 3]>>,
 }
@@ -19,15 +19,15 @@ pub(crate) struct BinData {
 #[derive(Clone, Debug)]
 pub(crate) struct AaEntry {
     /// Sidechain heavy-atom names in library order.
-    pub(crate) atom_names:      Vec<String>,
+    pub(crate) atom_names: Vec<String>,
     /// Sorted unique phi bin centers (degrees, ascending).
     pub(crate) bin_phi_centers: Vec<f64>,
     /// Sorted unique psi bin centers (degrees, ascending).
     pub(crate) bin_psi_centers: Vec<f64>,
     /// Index of the bin with the highest frequency (first-maximum wins).
-    pub(crate) default_bin:     u32,
+    pub(crate) default_bin: u32,
     /// Rotamer data indexed by linear bin index (phi-major: phi_ind * n_psi + psi_ind).
-    pub(crate) rotamers:        Vec<BinData>,
+    pub(crate) rotamers: Vec<BinData>,
 }
 
 /// Map key for the cis-proline rotamer entry. The Dunbrack 2010 backbone-
@@ -58,7 +58,9 @@ fn read_cstring(r: &mut impl Read) -> std::io::Result<String> {
     loop {
         let mut b = [0u8; 1];
         r.read_exact(&mut b)?;
-        if b[0] == 0 { break; }
+        if b[0] == 0 {
+            break;
+        }
         bytes.push(b[0]);
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
@@ -72,9 +74,9 @@ fn validate_grid(bins: &[(f64, f64, f64)]) -> Result<(Vec<f64>, Vec<f64>), Rotli
     for &(phi, psi, _) in bins {
         let pk = (phi.to_bits(), psi.to_bits());
         if !pair_set.insert(pk) {
-            return Err(RotlibError::InvalidFormat(
-                format!("duplicate (phi, psi) pair ({phi:.2}, {psi:.2})")
-            ));
+            return Err(RotlibError::InvalidFormat(format!(
+                "duplicate (phi, psi) pair ({phi:.2}, {psi:.2})"
+            )));
         }
         phi_set.insert(phi.to_bits());
         psi_set.insert(psi.to_bits());
@@ -82,8 +84,10 @@ fn validate_grid(bins: &[(f64, f64, f64)]) -> Result<(Vec<f64>, Vec<f64>), Rotli
     if phi_set.len() * psi_set.len() != bins.len() {
         return Err(RotlibError::InvalidFormat(format!(
             "non-rectangular grid: {}φ × {}ψ = {} ≠ {} bins",
-            phi_set.len(), psi_set.len(),
-            phi_set.len() * psi_set.len(), bins.len()
+            phi_set.len(),
+            psi_set.len(),
+            phi_set.len() * psi_set.len(),
+            bins.len()
         )));
     }
     let mut phi_centers: Vec<f64> = phi_set.iter().map(|&b| f64::from_bits(b)).collect();
@@ -115,12 +119,16 @@ impl RotamerLibrary {
 
             // chi definitions — 4 strings each, discard
             for _ in 0..nc {
-                for _ in 0..4 { read_cstring(&mut reader)?; }
+                for _ in 0..4 {
+                    read_cstring(&mut reader)?;
+                }
             }
 
             // atom names
             let mut atom_names = Vec::with_capacity(na);
-            for _ in 0..na { atom_names.push(read_cstring(&mut reader)?); }
+            for _ in 0..na {
+                atom_names.push(read_cstring(&mut reader)?);
+            }
 
             // bin descriptors
             let mut bin_descriptors: Vec<(f64, f64, f64)> = Vec::with_capacity(nb);
@@ -134,10 +142,19 @@ impl RotamerLibrary {
             let (bin_phi_centers, bin_psi_centers) = validate_grid(&bin_descriptors)?;
 
             // default_bin: argmax frequency, first-maximum wins
-            let default_bin = bin_descriptors.iter().enumerate()
-                .fold((0usize, f64::NEG_INFINITY), |(best_i, best_f), (i, &(_, _, f))| {
-                    if f > best_f { (i, f) } else { (best_i, best_f) }
-                })
+            let default_bin = bin_descriptors
+                .iter()
+                .enumerate()
+                .fold(
+                    (0usize, f64::NEG_INFINITY),
+                    |(best_i, best_f), (i, &(_, _, f))| {
+                        if f > best_f {
+                            (i, f)
+                        } else {
+                            (best_i, best_f)
+                        }
+                    },
+                )
                 .0 as u32;
 
             // rotamer data
@@ -164,13 +181,16 @@ impl RotamerLibrary {
                 rotamers.push(BinData { probs, coords });
             }
 
-            entries.insert(aa_name, AaEntry {
-                atom_names,
-                bin_phi_centers,
-                bin_psi_centers,
-                default_bin,
-                rotamers,
-            });
+            entries.insert(
+                aa_name,
+                AaEntry {
+                    atom_names,
+                    bin_phi_centers,
+                    bin_psi_centers,
+                    default_bin,
+                    rotamers,
+                },
+            );
         }
 
         Ok(RotamerLibrary { entries })
@@ -233,7 +253,11 @@ impl RotamerLibrary {
             if residue.bins.len() != expected_grid_size {
                 return Err(RotlibError::InvalidFormat(format!(
                     "residue '{}': non-rectangular grid: {}φ × {}ψ = {} ≠ {} bins",
-                    residue.code, n_phi, n_psi, expected_grid_size, residue.bins.len()
+                    residue.code,
+                    n_phi,
+                    n_psi,
+                    expected_grid_size,
+                    residue.bins.len()
                 )));
             }
 
@@ -249,23 +273,25 @@ impl RotamerLibrary {
             // Place bins in linear array
             for bin in &residue.bins {
                 // Find indices of this bin's phi and psi in the sorted centers
-                let phi_ind = bin_phi_centers.iter().position(|&p| {
-                    (p - bin.phi).abs() < 1e-9
-                }).ok_or_else(|| {
-                    RotlibError::InvalidFormat(format!(
-                        "residue '{}': bin phi {} not in phi_centers",
-                        residue.code, bin.phi
-                    ))
-                })?;
+                let phi_ind = bin_phi_centers
+                    .iter()
+                    .position(|&p| (p - bin.phi).abs() < 1e-9)
+                    .ok_or_else(|| {
+                        RotlibError::InvalidFormat(format!(
+                            "residue '{}': bin phi {} not in phi_centers",
+                            residue.code, bin.phi
+                        ))
+                    })?;
 
-                let psi_ind = bin_psi_centers.iter().position(|&p| {
-                    (p - bin.psi).abs() < 1e-9
-                }).ok_or_else(|| {
-                    RotlibError::InvalidFormat(format!(
-                        "residue '{}': bin psi {} not in psi_centers",
-                        residue.code, bin.psi
-                    ))
-                })?;
+                let psi_ind = bin_psi_centers
+                    .iter()
+                    .position(|&p| (p - bin.psi).abs() < 1e-9)
+                    .ok_or_else(|| {
+                        RotlibError::InvalidFormat(format!(
+                            "residue '{}': bin psi {} not in psi_centers",
+                            residue.code, bin.psi
+                        ))
+                    })?;
 
                 let linear_index = phi_ind * n_psi + psi_ind;
 
@@ -288,12 +314,16 @@ impl RotamerLibrary {
                     if rotamer.coords.len() != residue.atom_names.len() {
                         return Err(RotlibError::InvalidFormat(format!(
                             "residue '{}': rotamer has {} coords but {} atom names",
-                            residue.code, rotamer.coords.len(), residue.atom_names.len()
+                            residue.code,
+                            rotamer.coords.len(),
+                            residue.atom_names.len()
                         )));
                     }
 
                     // Convert Vec3 to [f64; 3]
-                    let coord_array: Vec<[f64; 3]> = rotamer.coords.iter()
+                    let coord_array: Vec<[f64; 3]> = rotamer
+                        .coords
+                        .iter()
                         .map(|v| [v.x as f64, v.y as f64, v.z as f64])
                         .collect();
 
@@ -335,9 +365,13 @@ impl RotamerLibrary {
     /// # Errors
     ///
     /// Returns `RotlibError::UnknownAa` if the effective amino acid is not in the library.
-    fn resolve_entry_bin(&self, aa: &str, phi: f64, psi: f64, cis_proline: bool)
-        -> Result<(&AaEntry, usize), RotlibError>
-    {
+    fn resolve_entry_bin(
+        &self,
+        aa: &str,
+        phi: f64,
+        psi: f64,
+        cis_proline: bool,
+    ) -> Result<(&AaEntry, usize), RotlibError> {
         // Determine effective key: use CPR if cis-PRO is requested and available
         let effective_aa = if cis_proline && aa == "PRO" {
             if self.entries.contains_key(CIS_PRO_KEY) {
@@ -352,7 +386,9 @@ impl RotamerLibrary {
             aa
         };
 
-        let entry = self.entries.get(effective_aa)
+        let entry = self
+            .entries
+            .get(effective_aa)
             .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
 
         // Compute bin from entry's OWN grid
@@ -368,7 +404,13 @@ impl RotamerLibrary {
     }
 
     /// Number of rotamers in the φ/ψ bin closest to `(phi, psi)` for amino acid `aa`.
-    pub fn num_rotamers(&self, aa: &str, phi: f64, psi: f64, cis_proline: bool) -> Result<usize, RotlibError> {
+    pub fn num_rotamers(
+        &self,
+        aa: &str,
+        phi: f64,
+        psi: f64,
+        cis_proline: bool,
+    ) -> Result<usize, RotlibError> {
         let (entry, bin) = self.resolve_entry_bin(aa, phi, psi, cis_proline)?;
         Ok(entry.rotamers[bin].probs.len())
     }
@@ -376,8 +418,17 @@ impl RotamerLibrary {
     /// Probability of rotamer `rot_index` in the φ/ψ bin closest to `(phi, psi)`.
     ///
     /// Returns `Err(RotIndexOob)` if `rot_index ≥ num_rotamers`.
-    pub fn rotamer_probability(&self, aa: &str, rot_index: usize, phi: f64, psi: f64) -> Result<f64, RotlibError> {
-        let entry = self.entries.get(aa).ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
+    pub fn rotamer_probability(
+        &self,
+        aa: &str,
+        rot_index: usize,
+        phi: f64,
+        psi: f64,
+    ) -> Result<f64, RotlibError> {
+        let entry = self
+            .entries
+            .get(aa)
+            .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
         let bin = self.backbone_bin(aa, phi, psi, false)? as usize;
         let nr = entry.rotamers[bin].probs.len();
         if rot_index >= nr {
@@ -387,7 +438,10 @@ impl RotamerLibrary {
     }
 
     pub fn rotamer_probability_by_id(&self, id: &RotamerId) -> Result<f64, RotlibError> {
-        let entry = self.entries.get(&id.aa).ok_or_else(|| RotlibError::UnknownAa(id.aa.clone()))?;
+        let entry = self
+            .entries
+            .get(&id.aa)
+            .ok_or_else(|| RotlibError::UnknownAa(id.aa.clone()))?;
         // bin_index must be library-derived; OOB panics by documented precondition
         let bin = id.bin_index as usize;
         let nr = entry.rotamers[bin].probs.len();
@@ -409,7 +463,17 @@ impl RotamerLibrary {
     /// Returns a [`PlacedRotamer`](crate::rotamer_id::PlacedRotamer) whose
     /// `atoms` field lists every sidechain heavy atom (excluding backbone).
     #[allow(clippy::too_many_arguments)]
-    pub fn place_rotamer(&self, aa: &str, phi: f64, psi: f64, rot_index: usize, cis_proline: bool, n: [f64; 3], ca: [f64; 3], c: [f64; 3]) -> Result<crate::rotamer_id::PlacedRotamer, RotlibError> {
+    pub fn place_rotamer(
+        &self,
+        aa: &str,
+        phi: f64,
+        psi: f64,
+        rot_index: usize,
+        cis_proline: bool,
+        n: [f64; 3],
+        ca: [f64; 3],
+        c: [f64; 3],
+    ) -> Result<crate::rotamer_id::PlacedRotamer, RotlibError> {
         use crate::frame::{backbone_frame, Frame, Transform};
         use crate::rotamer_id::{PlacedAtom, PlacedRotamer, RotamerId};
 
@@ -424,13 +488,21 @@ impl RotamerLibrary {
         let lab_frame = Frame::identity();
         let xform = Transform::switch_frames(&res_frame, &lab_frame);
 
-        let atoms = bin_data.coords[rot_index].iter()
+        let atoms = bin_data.coords[rot_index]
+            .iter()
             .zip(&entry.atom_names)
-            .map(|(&xyz, name)| PlacedAtom { name: name.clone(), xyz: xform.apply(xyz) })
+            .map(|(&xyz, name)| PlacedAtom {
+                name: name.clone(),
+                xyz: xform.apply(xyz),
+            })
             .collect();
 
         Ok(PlacedRotamer {
-            id: RotamerId { aa: aa.to_string(), bin_index: bin as u32, rot_index: rot_index as u32 },
+            id: RotamerId {
+                aa: aa.to_string(),
+                bin_index: bin as u32,
+                rot_index: rot_index as u32,
+            },
             atoms,
         })
     }
@@ -440,7 +512,8 @@ impl RotamerLibrary {
     /// The slice order matches the coordinate vectors returned by
     /// [`place_rotamer`](RotamerLibrary::place_rotamer).
     pub fn sidechain_atom_names(&self, aa: &str) -> Result<&[String], RotlibError> {
-        self.entries.get(aa)
+        self.entries
+            .get(aa)
             .map(|e| e.atom_names.as_slice())
             .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))
     }
@@ -465,7 +538,13 @@ impl RotamerLibrary {
     /// in the Dunbrack library. Nearest-neighbor lookup is still correct but rotamer
     /// probabilities in this region have poor statistical support. Placement in this
     /// region should be treated as a low-confidence estimate.
-    pub fn backbone_bin(&self, aa: &str, phi: f64, psi: f64, cis_proline: bool) -> Result<u32, RotlibError> {
+    pub fn backbone_bin(
+        &self,
+        aa: &str,
+        phi: f64,
+        psi: f64,
+        cis_proline: bool,
+    ) -> Result<u32, RotlibError> {
         let (_, bin) = self.resolve_entry_bin(aa, phi, psi, cis_proline)?;
         Ok(bin as u32)
     }
@@ -476,7 +555,11 @@ impl RotamerLibrary {
     }
 
     /// Convert MASTER library to protobuf format. Used by parse_master binary.
-    pub fn to_protobuf(&self, geometry_source: String, geometry_license: String) -> crate::pb::rotlib_v1::RotamerLibrary {
+    pub fn to_protobuf(
+        &self,
+        geometry_source: String,
+        geometry_license: String,
+    ) -> crate::pb::rotlib_v1::RotamerLibrary {
         let mut residues = Vec::new();
 
         for (code, entry) in &self.entries {
@@ -562,7 +645,9 @@ mod tests {
 
     #[test]
     fn test_backbone_bin_unknown_aa() {
-        let lib = RotamerLibrary { entries: std::collections::HashMap::new() };
+        let lib = RotamerLibrary {
+            entries: std::collections::HashMap::new(),
+        };
         let result = lib.backbone_bin("UNK", -60.0, -45.0, false);
         assert!(result.is_err());
         match result {
@@ -580,7 +665,10 @@ mod tests {
             bin_psi_centers: vec![-45.0, -20.0, 20.0, 45.0],
             default_bin: 5,
             rotamers: vec![
-                BinData { probs: vec![0.5], coords: vec![vec![[1.0, 2.0, 3.0]]] };
+                BinData {
+                    probs: vec![0.5],
+                    coords: vec![vec![[1.0, 2.0, 3.0]]]
+                };
                 12
             ],
         };
@@ -601,7 +689,10 @@ mod tests {
             bin_psi_centers: vec![-45.0, -20.0, 20.0, 45.0],
             default_bin: 7,
             rotamers: vec![
-                BinData { probs: vec![0.5], coords: vec![vec![[1.0, 2.0, 3.0]]] };
+                BinData {
+                    probs: vec![0.5],
+                    coords: vec![vec![[1.0, 2.0, 3.0]]]
+                };
                 12
             ],
         };
@@ -615,8 +706,19 @@ mod tests {
 
     #[test]
     fn test_place_rotamer_unknown_aa() {
-        let lib = RotamerLibrary { entries: std::collections::HashMap::new() };
-        let result = lib.place_rotamer("UNK", -60.0, -45.0, 0, false, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
+        let lib = RotamerLibrary {
+            entries: std::collections::HashMap::new(),
+        };
+        let result = lib.place_rotamer(
+            "UNK",
+            -60.0,
+            -45.0,
+            0,
+            false,
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+            [7.0, 8.0, 9.0],
+        );
         assert!(result.is_err());
         match result {
             Err(RotlibError::UnknownAa(aa)) => assert_eq!(aa, "UNK"),
@@ -644,14 +746,23 @@ mod tests {
         entries.insert("ALA".to_string(), entry);
         let lib = RotamerLibrary { entries };
 
-        let result = lib.place_rotamer("ALA", -120.0, -45.0, 5, false, [1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
+        let result = lib.place_rotamer(
+            "ALA",
+            -120.0,
+            -45.0,
+            5,
+            false,
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+            [7.0, 8.0, 9.0],
+        );
         assert!(result.is_err());
         match result {
             Err(RotlibError::RotIndexOob(aa, idx, nr)) => {
                 assert_eq!(aa, "ALA");
                 assert_eq!(idx, 5);
                 assert_eq!(nr, 1);
-            },
+            }
             _ => panic!("Expected RotIndexOob error"),
         }
     }
@@ -704,7 +815,10 @@ mod tests {
             bin_psi_centers: vec![-45.0, -20.0, 20.0, 45.0],
             default_bin: 0,
             rotamers: vec![
-                BinData { probs: vec![0.5], coords: vec![vec![[1.0, 2.0, 3.0]]] };
+                BinData {
+                    probs: vec![0.5],
+                    coords: vec![vec![[1.0, 2.0, 3.0]]]
+                };
                 12
             ],
         };
@@ -716,7 +830,10 @@ mod tests {
             bin_psi_centers: vec![-30.0, 0.0, 30.0, 60.0],
             default_bin: 1,
             rotamers: vec![
-                BinData { probs: vec![0.6], coords: vec![vec![[4.0, 5.0, 6.0]]] };
+                BinData {
+                    probs: vec![0.6],
+                    coords: vec![vec![[4.0, 5.0, 6.0]]]
+                };
                 12
             ],
         };
@@ -746,7 +863,9 @@ mod tests {
         // Test 3: cis_proline=true without CPR entry falls back and logs warning
         let mut entries_no_cpro = HashMap::new();
         entries_no_cpro.insert("PRO".to_string(), pro_entry);
-        let lib_no_cpro = RotamerLibrary { entries: entries_no_cpro };
+        let lib_no_cpro = RotamerLibrary {
+            entries: entries_no_cpro,
+        };
 
         let result_fallback = lib_no_cpro.backbone_bin("PRO", -120.0, -45.0, true);
         assert!(result_fallback.is_ok());

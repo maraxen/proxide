@@ -1,16 +1,13 @@
 """Public API for chi angle atom tables and symmetry classification."""
 
-from typing import Dict, List, Tuple
 
-import numpy as np
 
 from proxide.chem import residues as rc
-
 
 # ==============================================================================
 # CHI_ANGLES_ATOMS: Public dict mirror of chi_angles_atoms (wraps residues.py)
 # ==============================================================================
-CHI_ANGLES_ATOMS: Dict[str, List[List[str]]] = rc.chi_angles_atoms
+CHI_ANGLES_ATOMS: dict[str, list[list[str]]] = rc.chi_angles_atoms
 
 
 # ==============================================================================
@@ -22,7 +19,7 @@ CHI_ANGLES_ATOMS: Dict[str, List[List[str]]] = rc.chi_angles_atoms
 #   'aromatic_180'      — Ring 2-fold symmetry (Phe χ2, Tyr χ2)
 #   'non_rotameric_sp2' — Continuous, not discretized (Asn χ2, Gln χ3, His χ2)
 
-CHI_SYMMETRY_CLASS: Dict[Tuple[str, int], str] = {
+CHI_SYMMETRY_CLASS: dict[tuple[str, int], str] = {
     # ALA, GLY: no chi angles
 
     # ARG: chi1-4 all have no symmetry
@@ -126,8 +123,8 @@ def get_chi_symmetry_class(restype_3: str, chi_index: int) -> str:
 # ==============================================================================
 
 def verify_four_distinct_atoms(
-    chi_angles_atoms_dict: Dict[str, List[List[str]]]
-) -> Tuple[bool, Dict[str, List[Tuple[int, int, str]]]]:
+    chi_angles_atoms_dict: dict[str, list[list[str]]]
+) -> tuple[bool, dict[str, list[tuple[int, int, str]]]]:
     """
     Verify that every chi angle has exactly 4 distinct atom names.
 
@@ -140,7 +137,7 @@ def verify_four_distinct_atoms(
           - violations_dict: Maps residue names to list of (chi_idx, num_atoms, resname)
                             for violations (empty dict = all pass)
     """
-    violations: Dict[str, List[Tuple[int, int, str]]] = {}
+    violations: dict[str, list[tuple[int, int, str]]] = {}
 
     for resname, chi_atoms_list in chi_angles_atoms_dict.items():
         for chi_idx, atom_quad in enumerate(chi_atoms_list):

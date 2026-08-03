@@ -83,10 +83,7 @@ pub fn get_mdcath_replicas(
     let replicas = py
         .allow_threads(|| formats::mdcath_h5::get_replicas(&path, &domain_id, &temperature))
         .map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "Failed to get MDCATH replicas: {}",
-                e
-            ))
+            pyo3::exceptions::PyValueError::new_err(format!("Failed to get MDCATH replicas: {}", e))
         })?;
 
     Ok(replicas.into_py(py))

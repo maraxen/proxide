@@ -13,16 +13,14 @@ pub use smiles::{BondOrder, WasmAtom, WasmBond, WasmMol};
 #[wasm_bindgen]
 pub fn parse_smiles(smiles: &str) -> Result<JsValue, JsValue> {
     let mol = smiles::parse(smiles).map_err(|e| JsValue::from_str(&e))?;
-    serde_wasm_bindgen::to_value(&mol)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    serde_wasm_bindgen::to_value(&mol).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Parse PDB text (as a string) into a molecular graph.
 #[wasm_bindgen]
 pub fn parse_pdb(text: &str) -> Result<JsValue, JsValue> {
     let mol = pdb::parse_pdb(text).map_err(|e| JsValue::from_str(&e))?;
-    serde_wasm_bindgen::to_value(&mol)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    serde_wasm_bindgen::to_value(&mol).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Assign GAFF2 bonded parameters to a molecule (previously parsed by parse_smiles or parse_pdb).
@@ -30,8 +28,8 @@ pub fn parse_pdb(text: &str) -> Result<JsValue, JsValue> {
 /// Returns ParamSet as a JSON string.
 #[wasm_bindgen]
 pub fn assign_params_js(mol_js: JsValue) -> Result<String, JsValue> {
-    let mol: WasmMol = serde_wasm_bindgen::from_value(mol_js)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let mol: WasmMol =
+        serde_wasm_bindgen::from_value(mol_js).map_err(|e| JsValue::from_str(&e.to_string()))?;
     let params = gaff2::assign_params(&mol);
     serde_json::to_string(&params).map_err(|e| JsValue::from_str(&e.to_string()))
 }

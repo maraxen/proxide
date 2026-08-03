@@ -155,35 +155,55 @@ const REF_INTERFERENCE: &[(&str, i32, &str, i32, f64)] = &[
 
 const TOLERANCE: f64 = 5e-4;
 
-fn load_or_skip() -> Option<(Arc<proxide_rotlib::RotamerLibrary>, Arc<proxide_confind::ProteinBackbone>)> {
+fn load_or_skip() -> Option<(
+    Arc<proxide_rotlib::RotamerLibrary>,
+    Arc<proxide_confind::ProteinBackbone>,
+)> {
     let rotlib_path = common::real_rotlib_path();
-    let rlib = proxide_rotlib::RotamerLibrary::load(&rotlib_path).ok().map(Arc::new)?;
+    let rlib = proxide_rotlib::RotamerLibrary::load(&rotlib_path)
+        .ok()
+        .map(Arc::new)?;
     let bb = load_real_backbone()?;
     Some((rlib, bb))
 }
 
 fn all_res(cf: &ConFind) -> Vec<proxide_confind::ResidueIndex> {
-    (0..cf.n_residues() as u32).map(proxide_confind::ResidueIndex).collect()
+    (0..cf.n_residues() as u32)
+        .map(proxide_confind::ResidueIndex)
+        .collect()
 }
 
 #[test]
 fn test_contacts_parity_small_pdb() {
-    let (rlib, bb) = match load_or_skip() { Some(v) => v, None => return };
+    let (rlib, bb) = match load_or_skip() {
+        Some(v) => v,
+        None => return,
+    };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
-    let contact_list = cf.contacts(&all_res(&cf), 0.0).expect("contacts should succeed");
+    let contact_list = cf
+        .contacts(&all_res(&cf), 0.0)
+        .expect("contacts should succeed");
 
     // Build expected map: canonical key (chain_a, res_a, chain_b, res_b) → cd
-    let expected: HashMap<(String, i32, String, i32), f64> = REF_CONTACTS.iter()
+    let expected: HashMap<(String, i32, String, i32), f64> = REF_CONTACTS
+        .iter()
         .map(|&(ca, ra, cb, rb, cd)| ((ca.to_string(), ra, cb.to_string(), rb), cd))
         .collect();
 
     // Build actual pair set for symmetric lookup
-    let actual_pairs: std::collections::HashSet<(String, i32, String, i32)> = contact_list.pairs.iter()
+    let actual_pairs: std::collections::HashSet<(String, i32, String, i32)> = contact_list
+        .pairs
+        .iter()
         .map(|&(ri_a, ri_b)| {
             let id_a = cf.residue_id(ri_a);
             let id_b = cf.residue_id(ri_b);
-            (id_a.chain_id.clone(), id_a.res_id, id_b.chain_id.clone(), id_b.res_id)
+            (
+                id_a.chain_id.clone(),
+                id_a.res_id,
+                id_b.chain_id.clone(),
+                id_b.res_id,
+            )
         })
         .collect();
 
@@ -196,68 +216,102 @@ fn test_contacts_parity_small_pdb() {
     }
 
     assert_eq!(
-        contact_list.pairs.len(), REF_CONTACTS.len(),
+        contact_list.pairs.len(),
+        REF_CONTACTS.len(),
         "contact pair count: got {}, expected {}",
-        contact_list.pairs.len(), REF_CONTACTS.len()
+        contact_list.pairs.len(),
+        REF_CONTACTS.len()
     );
 
     for (&(ri_a, ri_b), &actual) in contact_list.pairs.iter().zip(&contact_list.degrees) {
         let id_a = cf.residue_id(ri_a);
         let id_b = cf.residue_id(ri_b);
-        let key = (id_a.chain_id.clone(), id_a.res_id, id_b.chain_id.clone(), id_b.res_id);
+        let key = (
+            id_a.chain_id.clone(),
+            id_a.res_id,
+            id_b.chain_id.clone(),
+            id_b.res_id,
+        );
         // Also report unexpected pairs before asserting
         if !expected.contains_key(&key) {
-            eprintln!("UNEXPECTED contact: {},{} → {},{} cd={:.6}", id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id, actual);
+            eprintln!(
+                "UNEXPECTED contact: {},{} → {},{} cd={:.6}",
+                id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id, actual
+            );
             continue;
         }
         let &reference = expected.get(&key).unwrap();
         assert!(
             (actual - reference).abs() < TOLERANCE,
             "contact {},{} → {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
-            id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id,
-            actual, reference, (actual - reference).abs()
+            id_a.chain_id,
+            id_a.res_id,
+            id_b.chain_id,
+            id_b.res_id,
+            actual,
+            reference,
+            (actual - reference).abs()
         );
     }
 }
 
 #[test]
 fn test_crowdedness_parity_small_pdb() {
-    let (rlib, bb) = match load_or_skip() { Some(v) => v, None => return };
+    let (rlib, bb) = match load_or_skip() {
+        Some(v) => v,
+        None => return,
+    };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
     for ri in all_res(&cf) {
         cf.cache_residue(ri).expect("cache_residue should succeed");
     }
 
-    let expected: HashMap<(String, i32), f64> = REF_CROWDEDNESS.iter()
+    let expected: HashMap<(String, i32), f64> = REF_CROWDEDNESS
+        .iter()
         .map(|&(chain, res, val)| ((chain.to_string(), res), val))
         .collect();
 
-    assert_eq!(cf.n_residues(), REF_CROWDEDNESS.len(), "residue count mismatch");
+    assert_eq!(
+        cf.n_residues(),
+        REF_CROWDEDNESS.len(),
+        "residue count mismatch"
+    );
 
     for ri in all_res(&cf) {
         let id = cf.residue_id(ri);
-        let actual = cf.crowdedness(ri).expect("crowdedness should succeed after cache");
+        let actual = cf
+            .crowdedness(ri)
+            .expect("crowdedness should succeed after cache");
         let key = (id.chain_id.clone(), id.res_id);
-        let &reference = expected.get(&key).unwrap_or_else(|| {
-            panic!("unexpected residue {},{}", id.chain_id, id.res_id)
-        });
+        let &reference = expected
+            .get(&key)
+            .unwrap_or_else(|| panic!("unexpected residue {},{}", id.chain_id, id.res_id));
         assert!(
             (actual - reference).abs() < TOLERANCE,
             "crowdedness {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
-            id.chain_id, id.res_id, actual, reference, (actual - reference).abs()
+            id.chain_id,
+            id.res_id,
+            actual,
+            reference,
+            (actual - reference).abs()
         );
     }
 }
 
 #[test]
 fn test_freedom_parity_small_pdb() {
-    let (rlib, bb) = match load_or_skip() { Some(v) => v, None => return };
+    let (rlib, bb) = match load_or_skip() {
+        Some(v) => v,
+        None => return,
+    };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
-    cf.contacts(&all_res(&cf), 0.0).expect("contacts should succeed");
+    cf.contacts(&all_res(&cf), 0.0)
+        .expect("contacts should succeed");
 
-    let expected: HashMap<(String, i32), f64> = REF_FREEDOM.iter()
+    let expected: HashMap<(String, i32), f64> = REF_FREEDOM
+        .iter()
         .map(|&(chain, res, val)| ((chain.to_string(), res), val))
         .collect();
 
@@ -265,51 +319,83 @@ fn test_freedom_parity_small_pdb() {
 
     for ri in all_res(&cf) {
         let id = cf.residue_id(ri);
-        let actual = cf.freedom(ri).expect("freedom should succeed after contacts");
+        let actual = cf
+            .freedom(ri)
+            .expect("freedom should succeed after contacts");
         let key = (id.chain_id.clone(), id.res_id);
-        let &reference = expected.get(&key).unwrap_or_else(|| {
-            panic!("unexpected residue {},{}", id.chain_id, id.res_id)
-        });
+        let &reference = expected
+            .get(&key)
+            .unwrap_or_else(|| panic!("unexpected residue {},{}", id.chain_id, id.res_id));
         assert!(
             (actual - reference).abs() < TOLERANCE,
             "freedom {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
-            id.chain_id, id.res_id, actual, reference, (actual - reference).abs()
+            id.chain_id,
+            id.res_id,
+            actual,
+            reference,
+            (actual - reference).abs()
         );
     }
 }
 
 #[test]
 fn test_interference_parity_small_pdb() {
-    let (rlib, bb) = match load_or_skip() { Some(v) => v, None => return };
+    let (rlib, bb) = match load_or_skip() {
+        Some(v) => v,
+        None => return,
+    };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
     // contacts() populates the rotamer cache required by interference()
-    cf.contacts(&all_res(&cf), 0.0).expect("contacts should succeed");
-    let interference_list = cf.interference(&all_res(&cf), 0.0).expect("interference should succeed");
+    cf.contacts(&all_res(&cf), 0.0)
+        .expect("contacts should succeed");
+    let interference_list = cf
+        .interference(&all_res(&cf), 0.0)
+        .expect("interference should succeed");
 
     // Interference is directional: (A→B) ≠ (B→A). Key is ordered exactly as returned.
-    let expected: HashMap<(String, i32, String, i32), f64> = REF_INTERFERENCE.iter()
+    let expected: HashMap<(String, i32, String, i32), f64> = REF_INTERFERENCE
+        .iter()
         .map(|&(ca, ra, cb, rb, deg)| ((ca.to_string(), ra, cb.to_string(), rb), deg))
         .collect();
 
     assert_eq!(
-        interference_list.pairs.len(), REF_INTERFERENCE.len(),
+        interference_list.pairs.len(),
+        REF_INTERFERENCE.len(),
         "interference pair count: got {}, expected {}",
-        interference_list.pairs.len(), REF_INTERFERENCE.len()
+        interference_list.pairs.len(),
+        REF_INTERFERENCE.len()
     );
 
-    for (&(ri_a, ri_b), &actual) in interference_list.pairs.iter().zip(&interference_list.degrees) {
+    for (&(ri_a, ri_b), &actual) in interference_list
+        .pairs
+        .iter()
+        .zip(&interference_list.degrees)
+    {
         let id_a = cf.residue_id(ri_a);
         let id_b = cf.residue_id(ri_b);
-        let key = (id_a.chain_id.clone(), id_a.res_id, id_b.chain_id.clone(), id_b.res_id);
+        let key = (
+            id_a.chain_id.clone(),
+            id_a.res_id,
+            id_b.chain_id.clone(),
+            id_b.res_id,
+        );
         let &reference = expected.get(&key).unwrap_or_else(|| {
-            panic!("unexpected interference pair {},{} → {},{}", id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id)
+            panic!(
+                "unexpected interference pair {},{} → {},{}",
+                id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id
+            )
         });
         assert!(
             (actual - reference).abs() < TOLERANCE,
             "interference {},{} → {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
-            id_a.chain_id, id_a.res_id, id_b.chain_id, id_b.res_id,
-            actual, reference, (actual - reference).abs()
+            id_a.chain_id,
+            id_a.res_id,
+            id_b.chain_id,
+            id_b.res_id,
+            actual,
+            reference,
+            (actual - reference).abs()
         );
     }
 }
@@ -1652,7 +1738,10 @@ const REF_SEQ_CONST: &[(&str, i32, &str, i32, &str, f64)] = &[
 
 #[test]
 fn test_seq_const_contacts_small_pdb() {
-    let (rlib, bb) = match load_or_skip() { Some(v) => v, None => return };
+    let (rlib, bb) = match load_or_skip() {
+        Some(v) => v,
+        None => return,
+    };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
 
@@ -1679,14 +1768,22 @@ fn test_seq_const_contacts_small_pdb() {
             .unwrap_or_else(|| panic!("residue {},{} not found", cb, rb));
         let (actual_cd, _) = cf
             .contact_degree_with_clashes(ri_a, ri_b, Some(&[constrained_aa]), None)
-            .unwrap_or_else(|e| panic!(
-                "contact_degree_with_clashes {},{}->{},{}/{}: {:?}",
-                ca, ra, cb, rb, constrained_aa, e
-            ));
+            .unwrap_or_else(|e| {
+                panic!(
+                    "contact_degree_with_clashes {},{}->{},{}/{}: {:?}",
+                    ca, ra, cb, rb, constrained_aa, e
+                )
+            });
         assert!(
             (actual_cd - expected_cd).abs() < TOLERANCE,
             "seq_const {},{}->{},{}/{}: got {:.6}, expected {:.6} (diff {:.2e})",
-            ca, ra, cb, rb, constrained_aa, actual_cd, expected_cd,
+            ca,
+            ra,
+            cb,
+            rb,
+            constrained_aa,
+            actual_cd,
+            expected_cd,
             (actual_cd - expected_cd).abs()
         );
     }

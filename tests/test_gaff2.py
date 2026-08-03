@@ -11,7 +11,8 @@ Reference values from GAFF2 ATOMTYPE_GFF2.DEF and gaff-2.2.20.dat
 
 import pytest
 import numpy as np
-from rdkit import Chem
+
+Chem = pytest.importorskip("rdkit.Chem")
 from rdkit.Chem import AllChem
 
 from proxide.chem.gaff2 import (

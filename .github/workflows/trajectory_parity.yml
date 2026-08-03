@@ -18,21 +18,28 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           
+      - name: Create virtual environment
+        run: uv venv
+
       - name: Install dependencies
         run: |
-          uv pip install --system mdtraj numpy pytest maturin
-          
+          source .venv/bin/activate
+          uv pip install -e ".[dev,trajectories]"
+
       - name: Build Rust extension
         run: |
+          source .venv/bin/activate
           cd crates/proxide_py
           # Build with new pure-Rust features enabled
           maturin develop --release --features full
-          
+
       - name: Fetch test data
         run: |
-          uv run python scripts/fetch_test_data.py
-          
+          source .venv/bin/activate
+          python scripts/fetch_test_data.py
+
       - name: Run parity tests
         run: |
+          source .venv/bin/activate
           # Use -k to select specific trajectory tests if needed, or run all validation
-          uv run pytest tests/validation/test_trajectory_parity.py -v
+          pytest tests/validation/test_trajectory_parity.py -v

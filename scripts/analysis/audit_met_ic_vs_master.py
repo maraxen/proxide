@@ -139,7 +139,9 @@ def audit_met_rotamers(entry: dict, rotlib_path: Path, n_rotamers: int = 5) -> d
                 "angle_deg":        round(cb_angle, 2),
                 "angle_delta_deg":  round(cb_angle - TEMPLATE_GEOMETRY["CB"]["angle_deg"], 2),
                 "improper_nerf_deg":   round(cb_imp, 2),
-                "improper_delta_deg":  round(cb_imp - TEMPLATE_GEOMETRY["CB"]["improper_nerf_deg"], 2),
+                "improper_delta_deg":  round(
+                    cb_imp - TEMPLATE_GEOMETRY["CB"]["improper_nerf_deg"], 2
+                ),
             },
             "CG": {
                 "bond_len_A":       round(cg_bond, 4),
@@ -155,7 +157,9 @@ def audit_met_rotamers(entry: dict, rotlib_path: Path, n_rotamers: int = 5) -> d
                 "angle_deg":        round(sd_angle, 2),
                 "angle_delta_deg":  round(sd_angle - TEMPLATE_GEOMETRY["SD"]["angle_deg"], 2),
                 "torsion_nerf_deg": round(sd_tor, 2),
-                "torsion_vs_chi2_deg": round(sd_tor - chi_vals[1], 2) if len(chi_vals) > 1 else None,
+                "torsion_vs_chi2_deg": (
+                    round(sd_tor - chi_vals[1], 2) if len(chi_vals) > 1 else None
+                ),
             },
             "CE": {
                 "bond_len_A":       round(ce_bond, 4),
@@ -163,7 +167,9 @@ def audit_met_rotamers(entry: dict, rotlib_path: Path, n_rotamers: int = 5) -> d
                 "angle_deg":        round(ce_angle, 2),
                 "angle_delta_deg":  round(ce_angle - TEMPLATE_GEOMETRY["CE"]["angle_deg"], 2),
                 "torsion_nerf_deg": round(ce_tor, 2),
-                "torsion_vs_chi3_deg": round(ce_tor - chi_vals[2], 2) if len(chi_vals) > 2 else None,
+                "torsion_vs_chi3_deg": (
+                    round(ce_tor - chi_vals[2], 2) if len(chi_vals) > 2 else None
+                ),
             },
         })
 
@@ -240,8 +246,10 @@ def main(argv=None) -> int:
                 report["summary"]["n_rotamers_audited"], report["phi_deg"], report["psi_deg"])
     logger.info("Max |delta| bonds (A):   CB=%.4f  CG=%.4f  SD=%.4f  CE=%.4f",
                 *[report["summary"]["max_abs_delta"]["bonds_A"][a] for a in ("CB","CG","SD","CE")])
-    logger.info("Max |delta| angles (deg): CB=%.2f  CG=%.2f  SD=%.2f  CE=%.2f",
-                *[report["summary"]["max_abs_delta"]["angles_deg"][a] for a in ("CB","CG","SD","CE")])
+    logger.info(
+        "Max |delta| angles (deg): CB=%.2f  CG=%.2f  SD=%.2f  CE=%.2f",
+        *[report["summary"]["max_abs_delta"]["angles_deg"][a] for a in ("CB", "CG", "SD", "CE")],
+    )
 
     logger.info("=== PER-ROTAMER MEASUREMENTS ===")
     for m in report["measurements"]:

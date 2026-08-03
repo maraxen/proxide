@@ -25,14 +25,12 @@ END
     let temp_path = temp_file.path().to_path_buf();
 
     // Parse with proxide_io
-    let (raw, _) = proxide_io::formats::pdb::parse_pdb_file(&temp_path)
-        .expect("failed to parse PDB");
-    let processed = ProcessedStructure::from_raw(raw)
-        .expect("failed to create ProcessedStructure");
+    let (raw, _) =
+        proxide_io::formats::pdb::parse_pdb_file(&temp_path).expect("failed to parse PDB");
+    let processed = ProcessedStructure::from_raw(raw).expect("failed to create ProcessedStructure");
 
     // Extract backbone
-    let backbone = extract_f64_backbone(&processed)
-        .expect("failed to extract backbone");
+    let backbone = extract_f64_backbone(&processed).expect("failed to extract backbone");
 
     // Assertions
     assert_eq!(backbone.bb.len(), 2, "should have 2 residues");
@@ -40,12 +38,18 @@ END
     // Check residue 0 (ALA)
     assert_eq!(backbone.bb[0].res_name, "ALA");
     assert!(backbone.bb[0].ca.is_some());
-    assert_eq!(backbone.bb[0].phi, 9999.0, "N-terminus should have phi=9999");
+    assert_eq!(
+        backbone.bb[0].phi, 9999.0,
+        "N-terminus should have phi=9999"
+    );
 
     // Check residue 1 (GLY)
     assert_eq!(backbone.bb[1].res_name, "GLY");
     assert!(backbone.bb[1].ca.is_some());
-    assert_eq!(backbone.bb[1].psi, 9999.0, "C-terminus should have psi=9999");
+    assert_eq!(
+        backbone.bb[1].psi, 9999.0,
+        "C-terminus should have psi=9999"
+    );
 
     // Check that CA coords are present
     let ca0 = backbone.bb[0].ca.unwrap();
@@ -70,13 +74,11 @@ END
         .expect("failed to write PDB content");
     let temp_path = temp_file.path().to_path_buf();
 
-    let (raw, _) = proxide_io::formats::pdb::parse_pdb_file(&temp_path)
-        .expect("failed to parse PDB");
-    let processed = ProcessedStructure::from_raw(raw)
-        .expect("failed to create ProcessedStructure");
+    let (raw, _) =
+        proxide_io::formats::pdb::parse_pdb_file(&temp_path).expect("failed to parse PDB");
+    let processed = ProcessedStructure::from_raw(raw).expect("failed to create ProcessedStructure");
 
-    let backbone = extract_f64_backbone(&processed)
-        .expect("failed to extract backbone");
+    let backbone = extract_f64_backbone(&processed).expect("failed to extract backbone");
 
     assert_eq!(backbone.bb.len(), 1);
     assert_eq!(backbone.ids.len(), 1);

@@ -56,7 +56,10 @@ const IDENTITY: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.
 /// comparing many frames against the same pre-centered reference).
 pub fn kabsch_rmsd(a: &[[f32; 3]], b: &[[f32; 3]]) -> RmsdResult {
     if a.is_empty() || a.len() != b.len() {
-        return RmsdResult { rmsd: f32::INFINITY, rotation: IDENTITY };
+        return RmsdResult {
+            rmsd: f32::INFINITY,
+            rotation: IDENTITY,
+        };
     }
     let n = a.len() as f32;
 
@@ -71,7 +74,12 @@ pub fn kabsch_rmsd(a: &[[f32; 3]], b: &[[f32; 3]]) -> RmsdResult {
     let svd = nalgebra::linalg::SVD::new(h, true, true);
     let (u, v_t) = match (svd.u, svd.v_t) {
         (Some(u), Some(v_t)) => (u, v_t),
-        _ => return RmsdResult { rmsd: f32::INFINITY, rotation: IDENTITY },
+        _ => {
+            return RmsdResult {
+                rmsd: f32::INFINITY,
+                rotation: IDENTITY,
+            }
+        }
     };
 
     // Reflection guard: if det(V U^T) < 0, the unconstrained SVD solution is
@@ -139,10 +147,19 @@ mod tests {
         // catastrophic cancellation), unlike the algebraic-identity form
         // this replaced (see module doc) which was measured to give ~4e-3
         // for an equivalent case.
-        let a = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.5, 0.5, 0.0], [2.0, -1.0, 1.0]];
+        let a = [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.5, 0.5, 0.0],
+            [2.0, -1.0, 1.0],
+        ];
         let b: Vec<[f32; 3]> = a.iter().map(|p| [-p[1], p[0], p[2]]).collect();
         let result = rmsd_with_centering(&a, &b);
-        assert!(result.rmsd < 1e-5, "expected ~0 rmsd for a pure rotation, got {}", result.rmsd);
+        assert!(
+            result.rmsd < 1e-5,
+            "expected ~0 rmsd for a pure rotation, got {}",
+            result.rmsd
+        );
     }
 
     #[test]
@@ -150,7 +167,10 @@ mod tests {
         // Same shape, offset by a large translation -- centering should
         // remove the translation entirely, giving zero RMSD.
         let a = [[1.0, 2.0, 3.0], [-1.0, 0.5, 2.0], [0.0, 0.0, 0.0]];
-        let b: Vec<[f32; 3]> = a.iter().map(|p| [p[0] + 50.0, p[1] - 30.0, p[2] + 10.0]).collect();
+        let b: Vec<[f32; 3]> = a
+            .iter()
+            .map(|p| [p[0] + 50.0, p[1] - 30.0, p[2] + 10.0])
+            .collect();
         let result = rmsd_with_centering(&a, &b);
         assert!(result.rmsd < 1e-4, "rmsd={}", result.rmsd);
     }
@@ -169,7 +189,11 @@ mod tests {
         let b = [[1.0, 1.0, 0.0], [-1.0, -1.0, 0.0]];
         let result = kabsch_rmsd(&a, &b);
         let expected = 0.41421356_f32; // sqrt(3 - 2*sqrt(2)), confirmed via numpy SVD
-        assert!((result.rmsd - expected).abs() < 1e-3, "rmsd={}", result.rmsd);
+        assert!(
+            (result.rmsd - expected).abs() < 1e-3,
+            "rmsd={}",
+            result.rmsd
+        );
     }
 
     #[test]
@@ -220,8 +244,18 @@ mod tests {
         // exercising the reflection-correction branch. The constrained
         // (proper-rotation-only) optimum is a known, numpy-cross-checked
         // value, not a hand guess.
-        let a = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]];
-        let b = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0], [0.0, 0.0, 0.0]];
+        let a = [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0],
+        ];
+        let b = [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, 0.0],
+        ];
         // Note: rmsd_with_centering, not the low-level kabsch_rmsd -- a/b
         // above are NOT pre-centered (centroid is (0.25,0.25,0.25), not the
         // origin), matching how the numpy verification centered first too.
@@ -237,7 +271,11 @@ mod tests {
         let det = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
             - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
             + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
-        assert!((det - 1.0).abs() < 1e-4, "expected a proper rotation (det=1), got det={}", det);
+        assert!(
+            (det - 1.0).abs() < 1e-4,
+            "expected a proper rotation (det=1), got det={}",
+            det
+        );
     }
 
     #[test]
@@ -245,6 +283,10 @@ mod tests {
         let a = [[f32::NAN, 0.0, 0.0], [1.0, 0.0, 0.0]];
         let b = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
         let result = rmsd_with_centering(&a, &b);
-        assert!(result.rmsd.is_nan(), "expected NaN to propagate, got {}", result.rmsd);
+        assert!(
+            result.rmsd.is_nan(),
+            "expected NaN to propagate, got {}",
+            result.rmsd
+        );
     }
 }

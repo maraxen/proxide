@@ -329,7 +329,9 @@ def audit_leu_rotamers(entry: dict, rotlib_path: Path, n_rotamers: int = 5) -> d
                 "CB_improper": round(max_abs_delta(["CB", "improper_delta_deg"]), 2),
                 "CG_vs_chi1": round(max_abs_delta(["CG", "torsion_vs_chi1_deg"]), 2),
                 "CD1_vs_chi2": round(max_abs_delta(["CD1", "torsion_vs_chi2_deg"]), 2),
-                "CD2_vs_chi2_plus_120": round(max_abs_delta(["CD2", "torsion_vs_chi2_plus_120_deg"]), 2),
+                "CD2_vs_chi2_plus_120": round(
+                    max_abs_delta(["CD2", "torsion_vs_chi2_plus_120_deg"]), 2
+                ),
             },
         },
     }

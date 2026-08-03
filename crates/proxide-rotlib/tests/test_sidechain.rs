@@ -18,10 +18,7 @@ fn test_counts_cb_arg_false() {
 #[test]
 fn test_counts_cb_all_non_ala_false() {
     for &aa in NON_ALA {
-        assert!(
-            !counts_as_sidechain("CB", aa),
-            "CB/{aa} should be false"
-        );
+        assert!(!counts_as_sidechain("CB", aa), "CB/{aa} should be false");
     }
 }
 

@@ -15,7 +15,7 @@ __version__ = "0.1.0"
 # Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.
 # `proxide.io` is importable without JAX (fixtures / FASTA); parsing is lazy.
 from proxide import io, jaccard, tmalign  # noqa: E402
-from proxide._proxider import (  # type: ignore[unresolved-import]
+from proxide._proxider import (  # ty: ignore[unresolved-import]
   AtomicSystem,
   CoordFormat,
   ErrorMode,

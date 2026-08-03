@@ -113,7 +113,9 @@ pub struct FragmentDbBuilder<const N: usize> {
 impl<const N: usize> FragmentDbBuilder<N> {
     /// Create an empty builder.
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Add a raw fragment to the database.
@@ -138,7 +140,9 @@ impl<const N: usize> FragmentDbBuilder<N> {
 
     /// Consume the builder and produce an immutable [`FragmentDb<N>`].
     pub fn build(self) -> FragmentDb<N> {
-        FragmentDb { entries: self.entries }
+        FragmentDb {
+            entries: self.entries,
+        }
     }
 }
 

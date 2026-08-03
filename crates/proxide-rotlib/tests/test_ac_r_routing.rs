@@ -13,23 +13,18 @@
 
 use prost::Message;
 use proxide_rotlib::pb::rotlib_v1::{
-    RotamerLibrary as PbLib, ResidueEntry, Bin, Rotamer, Vec3, GeometryMode,
+    Bin, GeometryMode, ResidueEntry, Rotamer, RotamerLibrary as PbLib, Vec3,
 };
 use proxide_rotlib::RotamerLibrary;
 
 /// Standard attribution string used by the Dunbrack library.
-const ATTRIBUTION: &str =
-    "Contains information from the 2010 Backbone-Dependent Rotamer Library \
+const ATTRIBUTION: &str = "Contains information from the 2010 Backbone-Dependent Rotamer Library \
      (http://dunbrack.fccc.edu/bbdep2010), made available under the ODC Attribution License.";
 
 /// Write a pb RotamerLibrary to a temp .pb.zst file, returning the path.
 /// The file is named using process ID + a suffix to avoid per-test collisions.
 fn write_pb_lib(lib: &PbLib, suffix: &str) -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "acr_{}_{}.pb.zst",
-        std::process::id(),
-        suffix
-    ));
+    let path = std::env::temp_dir().join(format!("acr_{}_{}.pb.zst", std::process::id(), suffix));
     let encoded = lib.encode_to_vec();
     let compressed = zstd::encode_all(encoded.as_slice(), 3).expect("zstd compress failed");
     std::fs::write(&path, &compressed).expect("write temp pb.zst failed");
@@ -59,27 +54,63 @@ fn build_pro_cpr_library() -> PbLib {
                     prob: 0.5,
                     chi: vec![],
                     coords: vec![
-                        Vec3 { x: 10.0, y: 1.0, z: 0.5 },
-                        Vec3 { x: 11.0, y: 1.5, z: 0.3 },
-                        Vec3 { x: 12.0, y: 0.8, z: 0.7 },
+                        Vec3 {
+                            x: 10.0,
+                            y: 1.0,
+                            z: 0.5,
+                        },
+                        Vec3 {
+                            x: 11.0,
+                            y: 1.5,
+                            z: 0.3,
+                        },
+                        Vec3 {
+                            x: 12.0,
+                            y: 0.8,
+                            z: 0.7,
+                        },
                     ],
                 },
                 Rotamer {
                     prob: 0.3,
                     chi: vec![],
                     coords: vec![
-                        Vec3 { x: 10.0, y: -1.0, z: 0.5 },
-                        Vec3 { x: 11.0, y: -1.5, z: 0.3 },
-                        Vec3 { x: 12.0, y: -0.8, z: 0.7 },
+                        Vec3 {
+                            x: 10.0,
+                            y: -1.0,
+                            z: 0.5,
+                        },
+                        Vec3 {
+                            x: 11.0,
+                            y: -1.5,
+                            z: 0.3,
+                        },
+                        Vec3 {
+                            x: 12.0,
+                            y: -0.8,
+                            z: 0.7,
+                        },
                     ],
                 },
                 Rotamer {
                     prob: 0.2,
                     chi: vec![],
                     coords: vec![
-                        Vec3 { x: 10.0, y: 0.0, z: 1.0 },
-                        Vec3 { x: 11.0, y: 0.5, z: 1.3 },
-                        Vec3 { x: 12.0, y: 0.2, z: 1.5 },
+                        Vec3 {
+                            x: 10.0,
+                            y: 0.0,
+                            z: 1.0,
+                        },
+                        Vec3 {
+                            x: 11.0,
+                            y: 0.5,
+                            z: 1.3,
+                        },
+                        Vec3 {
+                            x: 12.0,
+                            y: 0.2,
+                            z: 1.5,
+                        },
                     ],
                 },
             ],
@@ -103,18 +134,42 @@ fn build_pro_cpr_library() -> PbLib {
                     prob: 0.6,
                     chi: vec![],
                     coords: vec![
-                        Vec3 { x: 20.0, y: 2.0, z: 0.5 },
-                        Vec3 { x: 21.0, y: 2.5, z: 0.3 },
-                        Vec3 { x: 22.0, y: 1.8, z: 0.7 },
+                        Vec3 {
+                            x: 20.0,
+                            y: 2.0,
+                            z: 0.5,
+                        },
+                        Vec3 {
+                            x: 21.0,
+                            y: 2.5,
+                            z: 0.3,
+                        },
+                        Vec3 {
+                            x: 22.0,
+                            y: 1.8,
+                            z: 0.7,
+                        },
                     ],
                 },
                 Rotamer {
                     prob: 0.4,
                     chi: vec![],
                     coords: vec![
-                        Vec3 { x: 20.0, y: -2.0, z: 0.5 },
-                        Vec3 { x: 21.0, y: -2.5, z: 0.3 },
-                        Vec3 { x: 22.0, y: -1.8, z: 0.7 },
+                        Vec3 {
+                            x: 20.0,
+                            y: -2.0,
+                            z: 0.5,
+                        },
+                        Vec3 {
+                            x: 21.0,
+                            y: -2.5,
+                            z: 0.3,
+                        },
+                        Vec3 {
+                            x: 22.0,
+                            y: -1.8,
+                            z: 0.7,
+                        },
                     ],
                 },
             ],
@@ -151,18 +206,42 @@ fn build_pro_only_library() -> PbLib {
                     prob: 0.7,
                     chi: vec![],
                     coords: vec![
-                        Vec3 { x: 10.0, y: 1.0, z: 0.5 },
-                        Vec3 { x: 11.0, y: 1.5, z: 0.3 },
-                        Vec3 { x: 12.0, y: 0.8, z: 0.7 },
+                        Vec3 {
+                            x: 10.0,
+                            y: 1.0,
+                            z: 0.5,
+                        },
+                        Vec3 {
+                            x: 11.0,
+                            y: 1.5,
+                            z: 0.3,
+                        },
+                        Vec3 {
+                            x: 12.0,
+                            y: 0.8,
+                            z: 0.7,
+                        },
                     ],
                 },
                 Rotamer {
                     prob: 0.3,
                     chi: vec![],
                     coords: vec![
-                        Vec3 { x: 10.0, y: -1.0, z: 0.5 },
-                        Vec3 { x: 11.0, y: -1.5, z: 0.3 },
-                        Vec3 { x: 12.0, y: -0.8, z: 0.7 },
+                        Vec3 {
+                            x: 10.0,
+                            y: -1.0,
+                            z: 0.5,
+                        },
+                        Vec3 {
+                            x: 11.0,
+                            y: -1.5,
+                            z: 0.3,
+                        },
+                        Vec3 {
+                            x: 12.0,
+                            y: -0.8,
+                            z: 0.7,
+                        },
                     ],
                 },
             ],
@@ -205,12 +284,13 @@ fn test_ac_r_smoke_load_pb_round_trip() {
     // N=[-1,0,0], CA=[0,0,0], C=[0,1,0]
     // x_raw = CA - N = [1,0,0]; z_raw = x × (C-CA) = [1,0,0]×[0,1,0]=[0,0,1]
     // y_raw = z × x = [0,0,1]×[1,0,0]=[0,1,0]  → frame = identity ✓
-    let n  = [-1.0_f64, 0.0, 0.0];
-    let ca = [ 0.0_f64, 0.0, 0.0];
-    let c  = [ 0.0_f64, 1.0, 0.0];
+    let n = [-1.0_f64, 0.0, 0.0];
+    let ca = [0.0_f64, 0.0, 0.0];
+    let c = [0.0_f64, 1.0, 0.0];
 
     // CPR rotamer 0, CB stored at (20.0, 2.0, 0.5) — should survive round-trip
-    let placed = lib.place_rotamer("CPR", -180.0, -180.0, 0, false, n, ca, c)
+    let placed = lib
+        .place_rotamer("CPR", -180.0, -180.0, 0, false, n, ca, c)
         .expect("place_rotamer CPR failed");
     let cb_xyz = placed.atoms[0].xyz;
 
@@ -220,7 +300,9 @@ fn test_ac_r_smoke_load_pb_round_trip() {
         assert!(
             (cb_xyz[i] - expected[i]).abs() < 1e-6,
             "CPR CB coord[{i}]: stored {:.6}, got {:.6}, diff {:.2e}",
-            expected[i], cb_xyz[i], (cb_xyz[i] - expected[i]).abs()
+            expected[i],
+            cb_xyz[i],
+            (cb_xyz[i] - expected[i]).abs()
         );
     }
 }
@@ -239,7 +321,8 @@ fn test_ac_r2_num_rotamers_routing() {
     std::fs::remove_file(&path).ok();
 
     // cis=true on PRO must route to CPR → 2 rotamers
-    let cis_count = lib.num_rotamers("PRO", -180.0, -180.0, true)
+    let cis_count = lib
+        .num_rotamers("PRO", -180.0, -180.0, true)
         .expect("num_rotamers PRO cis=true failed");
     assert_eq!(
         cis_count, 2,
@@ -248,7 +331,8 @@ fn test_ac_r2_num_rotamers_routing() {
     );
 
     // cis=false on PRO stays in PRO → 3 rotamers
-    let trans_count = lib.num_rotamers("PRO", -180.0, -180.0, false)
+    let trans_count = lib
+        .num_rotamers("PRO", -180.0, -180.0, false)
         .expect("num_rotamers PRO cis=false failed");
     assert_eq!(
         trans_count, 3,
@@ -257,7 +341,8 @@ fn test_ac_r2_num_rotamers_routing() {
     );
 
     // Direct CPR lookup → 2 rotamers
-    let direct_cpr_count = lib.num_rotamers("CPR", -180.0, -180.0, false)
+    let direct_cpr_count = lib
+        .num_rotamers("CPR", -180.0, -180.0, false)
         .expect("num_rotamers CPR direct failed");
     assert_eq!(
         direct_cpr_count, 2,
@@ -285,20 +370,23 @@ fn test_ac_r1_place_rotamer_routing_identity() {
 
     // Identity backbone (see smoke test comment for derivation):
     // N=[-1,0,0], CA=[0,0,0], C=[0,1,0] → backbone_frame = lab identity
-    let n  = [-1.0_f64, 0.0, 0.0];
-    let ca = [ 0.0_f64, 0.0, 0.0];
-    let c  = [ 0.0_f64, 1.0, 0.0];
+    let n = [-1.0_f64, 0.0, 0.0];
+    let ca = [0.0_f64, 0.0, 0.0];
+    let c = [0.0_f64, 1.0, 0.0];
 
     // p_cis: PRO + cis=true → should use CPR coords
-    let p_cis = lib.place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
+    let p_cis = lib
+        .place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
         .expect("place_rotamer PRO cis=true failed");
 
     // p_cpr: direct CPR lookup → CPR coords
-    let p_cpr = lib.place_rotamer("CPR", -180.0, -180.0, 0, false, n, ca, c)
+    let p_cpr = lib
+        .place_rotamer("CPR", -180.0, -180.0, 0, false, n, ca, c)
         .expect("place_rotamer CPR direct failed");
 
     // p_pro: PRO + cis=false → PRO coords
-    let p_pro = lib.place_rotamer("PRO", -180.0, -180.0, 0, false, n, ca, c)
+    let p_pro = lib
+        .place_rotamer("PRO", -180.0, -180.0, 0, false, n, ca, c)
         .expect("place_rotamer PRO cis=false failed");
 
     // Check: p_cis.id.aa must be "PRO" (the queried aa code is preserved even when routed)
@@ -329,9 +417,13 @@ fn test_ac_r1_place_rotamer_routing_identity() {
     // Check: p_cis differs from p_pro by >0.1 on at least one atom component
     // (proves routing actually switched entries, not a no-op)
     // PRO CB x-marker=10.0, CPR CB x-marker=20.0 → difference ≥ 10.0
-    let differs_enough = p_cis.atoms.iter().zip(p_pro.atoms.iter()).any(|(atom_cis, atom_pro)| {
-        (0..3).any(|i| (atom_cis.xyz[i] - atom_pro.xyz[i]).abs() > 0.1)
-    });
+    let differs_enough = p_cis
+        .atoms
+        .iter()
+        .zip(p_pro.atoms.iter())
+        .any(|(atom_cis, atom_pro)| {
+            (0..3).any(|i| (atom_cis.xyz[i] - atom_pro.xyz[i]).abs() > 0.1)
+        });
     assert!(
         differs_enough,
         "AC-R(1): p_cis (routed PRO+cis) must differ from p_pro (trans PRO) by >0.1 Å on at \
@@ -354,9 +446,11 @@ fn test_ac_r_fallback_no_cpr_entry() {
     assert!(!lib.contains_aa("CPR"), "precondition: no CPR entry");
 
     // Must not panic; must return the PRO count (2 rotamers in pro_only)
-    let fallback_count = lib.num_rotamers("PRO", -180.0, -180.0, true)
+    let fallback_count = lib
+        .num_rotamers("PRO", -180.0, -180.0, true)
         .expect("num_rotamers PRO cis=true with no CPR must not error");
-    let pro_count = lib.num_rotamers("PRO", -180.0, -180.0, false)
+    let pro_count = lib
+        .num_rotamers("PRO", -180.0, -180.0, false)
         .expect("num_rotamers PRO cis=false failed");
 
     assert_eq!(
@@ -380,16 +474,18 @@ fn test_cpr_fallback_when_cpro_absent() {
     assert!(!lib.contains_aa("CPR"), "precondition: no CPR entry");
 
     // Identity backbone: N=[-1,0,0], CA=[0,0,0], C=[0,1,0]
-    let n  = [-1.0_f64, 0.0, 0.0];
-    let ca = [ 0.0_f64, 0.0, 0.0];
-    let c  = [ 0.0_f64, 1.0, 0.0];
+    let n = [-1.0_f64, 0.0, 0.0];
+    let ca = [0.0_f64, 0.0, 0.0];
+    let c = [0.0_f64, 1.0, 0.0];
 
     // place_rotamer with cis=false (trans PRO)
-    let p_normal = lib.place_rotamer("PRO", -180.0, -180.0, 0, false, n, ca, c)
+    let p_normal = lib
+        .place_rotamer("PRO", -180.0, -180.0, 0, false, n, ca, c)
         .expect("place_rotamer PRO cis=false failed");
 
     // place_rotamer with cis=true (fallback: no CPR, so uses PRO)
-    let p_cis = lib.place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
+    let p_cis = lib
+        .place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
         .expect("place_rotamer PRO cis=true with no CPR must not panic");
 
     // Verify atom counts match
@@ -434,8 +530,7 @@ fn test_cpr_fallback_when_cpro_absent() {
 #[ignore = "artifact-gated: requires data/rotlibs/proxide-rotlib-bbdep2010.pb.zst"]
 fn test_ac_r3_real_data_cis_chi1() {
     // Locate the artifact relative to the crate's CARGO_MANIFEST_DIR.
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let pb_path = std::path::PathBuf::from(&manifest_dir)
         .join("data")
         .join("rotlibs")
@@ -454,23 +549,33 @@ fn test_ac_r3_real_data_cis_chi1() {
 
     // Verify the library has both PRO and CPR entries.
     assert!(lib.contains_aa("PRO"), "real library must contain PRO");
-    assert!(lib.contains_aa("CPR"), "real library must contain CPR (cis-proline)");
+    assert!(
+        lib.contains_aa("CPR"),
+        "real library must contain CPR (cis-proline)"
+    );
 
     // Identity backbone (N-CA-CB-CG dihedral is χ1, must survive frame transform intact):
     // N=[-1,0,0], CA=[0,0,0], C=[0,1,0]
-    let n  = [-1.0_f64, 0.0, 0.0];
-    let ca = [ 0.0_f64, 0.0, 0.0];
-    let c  = [ 0.0_f64, 1.0, 0.0];
+    let n = [-1.0_f64, 0.0, 0.0];
+    let ca = [0.0_f64, 0.0, 0.0];
+    let c = [0.0_f64, 1.0, 0.0];
 
     // Place cis-PRO rotamer 0 at phi=-180, psi=-180 onto the identity backbone.
     // cis=true → routes to CPR entry.
-    let placed = lib.place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
+    let placed = lib
+        .place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
         .expect("place_rotamer cis-PRO rot=0 failed");
 
     // Find the CB and CG atoms in the placed result.
-    let cb = placed.atoms.iter().find(|a| a.name == "CB")
+    let cb = placed
+        .atoms
+        .iter()
+        .find(|a| a.name == "CB")
         .expect("placed cis-PRO must have a CB atom");
-    let cg = placed.atoms.iter().find(|a| a.name == "CG")
+    let cg = placed
+        .atoms
+        .iter()
+        .find(|a| a.name == "CG")
         .expect("placed cis-PRO must have a CG atom");
 
     // Compute χ1 = N-CA-CB-CG dihedral.
@@ -488,24 +593,33 @@ fn test_ac_r3_real_data_cis_chi1() {
         "AC-R(3): cis-PRO χ1 {:.2}° must be closer to 32.5° (endo CPR) than to 27.3° \
          (trans PRO). dist_to_32.5={:.2}°, dist_to_27.3={:.2}°. \
          If this fails, cis routing may not be using the CPR entry.",
-        chi1_deg, dist_to_32_5, dist_to_27_3
+        chi1_deg,
+        dist_to_32_5,
+        dist_to_27_3
     );
 }
 
 /// Compute the signed dihedral angle (radians) for atoms p1-p2-p3-p4.
 fn dihedral_angle_rad(p1: [f64; 3], p2: [f64; 3], p3: [f64; 3], p4: [f64; 3]) -> f64 {
-    let sub  = |a: [f64; 3], b: [f64; 3]| [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
-        [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
     };
-    let dot  = |a: [f64; 3], b: [f64; 3]| a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     let norm = |a: [f64; 3]| dot(a, a).sqrt();
     let b1 = sub(p2, p1);
     let b2 = sub(p3, p2);
     let b3 = sub(p4, p3);
     let n1 = cross(b1, b2);
     let n2 = cross(b2, b3);
-    let b2n = { let s = 1.0 / norm(b2); [b2[0]*s, b2[1]*s, b2[2]*s] };
+    let b2n = {
+        let s = 1.0 / norm(b2);
+        [b2[0] * s, b2[1] * s, b2[2] * s]
+    };
     let m1 = cross(n1, b2n);
     f64::atan2(dot(m1, n2), dot(n1, n2))
 }

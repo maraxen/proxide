@@ -11,8 +11,8 @@ mod bindings {
 
 mod py_chemistry;
 mod py_confind;
-mod py_frag;
 mod py_forcefield;
+mod py_frag;
 mod py_geometry;
 mod py_hdf5;
 mod py_jaccard;

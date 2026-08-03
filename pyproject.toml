@@ -71,11 +71,19 @@ openmm = [
     "openmm",
     # "openmmforcefields", # TODO: Fix resolution
 ]
+# `ty` is exact-pinned (kept in sync with [dependency-groups].dev below) because
+# CI's `uv pip install .[dev]` ignores uv.lock and always resolves the latest
+# PyPI release — while local `uv run`/`uv sync` used the locked version. That
+# split let the two environments silently diverge onto different ty releases
+# with different diagnostics, which is the actual root cause behind this
+# file's several "flips between real error and unused ignore" override
+# comments below. Bump both pins together and re-verify diagnostics when
+# upgrading.
 dev = [
     "ruff",
     "pytest",
     "pytest-cov",
-    "ty",
+    "ty==0.0.65",
     "chex",
     "sphinx",
     "sphinx-book-theme",
@@ -135,8 +143,107 @@ pylint.max-args = 15
 [tool.ty.environment]
 root = ["src/proxide"]
 
+[tool.ty.src]
+# None of these are part of the shippable package surface: tests/ is
+# excluded from ruff for the same reason (see [tool.ruff]); scripts/ and
+# benchmarks/ are one-off research/debug scripts (not installed, frequently
+# import sibling scripts by bare name assuming a specific run context ty's
+# static resolution can't follow, or use optional heavy deps not in the
+# checked venv); docs/ is Sphinx configuration, not application code.
+exclude = ["tests", "scripts", "benchmarks", "docs"]
+
 [tool.ty.rules]
 invalid-type-form = "ignore"
+
+# openmm is an optional dependency (the "openmm" extra) so CI's minimal
+# `.[dev]` install never has it, hence unresolved-import throughout this
+# file's `try: from openmm import ... except ImportError:` guards. Its
+# unit.Quantity/Unit system (mass * u.amu, cutoff * u.nanometer, etc.) also
+# relies on __mul__/__rmul__ operator overloads and dynamically-set module
+# attributes openmm's type stubs don't declare — verified at runtime that
+# `openmm.unit.nanometer` and the multiplication both work correctly when
+# openmm is installed; both gaps are stub/dependency completeness issues in
+# openmm, not bugs here.
+[[tool.ty.overrides]]
+include = ["src/proxide/core/projector.py"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+unresolved-attribute = "ignore"
+unsupported-operator = "ignore"
+
+# `Protein` (proxide.core.containers) is a flax.struct.dataclass whose
+# coulomb14scale/lj14scale fields have `default=None` via
+# struct.field(default=None, pytree_node=False) — ty doesn't recognize
+# flax.struct's dataclass-transform the way it does stdlib dataclasses, so
+# it sometimes treats these as required. Observed to flip between "real
+# error" and "unused ignore comment" across separate `uv pip install .[dev]`
+# runs (uv.lock isn't consulted by `uv pip install`, so exact transitive
+# versions of flax/etc. aren't pinned) — a file-level rule override doesn't
+# have an "unused" state the way an inline comment does, so it's robust to
+# that drift where a per-line ignore isn't.
+[[tool.ty.overrides]]
+include = [
+  "src/proxide/io/parsing/foldcomp.py",
+  "src/proxide/io/parsing/utils.py",
+  "src/proxide/io/streaming/array_record.py",
+]
+
+[tool.ty.overrides.rules]
+missing-argument = "ignore"
+
+# Same drift-sensitivity as above, for three more patterns:
+# - __getitem__ overrides narrowing grain's RandomAccessDataSource base
+#   signature (SupportsIndex -> Protein) — a deliberate, accepted narrowing.
+# - biotite.structure.connect_via_residue_names/connect_via_distances —
+#   real, standard biotite APIs (verified to exist and work at runtime);
+#   whether ty can see them through biotite's compiled backend has varied
+#   across separate dependency resolutions.
+# - AtomArray/AtomArrayStack.__getitem__ with a `(slice, bool_mask)` tuple
+#   key (e.g. `atom_array[:, chain_mask]`) — a standard biotite indexing
+#   idiom (verified to work at runtime) that biotite's overload stubs don't
+#   model correctly, so ty resolves the wrong overload arm and rejects the
+#   boolean-mask argument.
+[[tool.ty.overrides]]
+include = [
+  "src/proxide/ops/dataset.py",
+  "src/proxide/io/streaming/array_record.py",
+  "src/proxide/io/parsing/mdtraj.py",
+  "src/proxide/io/streaming/mdcath.py",
+  "src/proxide/io/parsing/utils.py",
+]
+
+[tool.ty.overrides.rules]
+invalid-method-override = "ignore"
+unresolved-attribute = "ignore"
+unsupported-operator = "ignore"
+invalid-argument-type = "ignore"
+
+# rdkit is an optional dependency (the "molecules"/"espaloma" extras) so
+# CI's minimal `.[dev]` install never has it; expaloma (JAX charge model,
+# "espaloma" extra) is likewise absent. Same drift-sensitivity as above —
+# a per-line ignore on these rdkit/expaloma imports observably flips
+# between "real error" and "unused ignore comment" across separate
+# `uv pip install .[dev]` resolutions, so it's handled file-wide instead.
+# unresolved-attribute follows from the same root cause: once the import
+# is Unknown-typed, `Chem.Mol`/`Chem.X` attribute access on it would
+# otherwise need its own per-line ignore. invalid-assignment covers the
+# `except ImportError: Chem = None` / `from_rdkit_mol = None` fallback
+# pattern — whether ty narrows the `if TYPE_CHECKING:` import to a
+# concrete module/function type (making `= None` a real mismatch) or to
+# Unknown (making it fine) has been observed to depend on the exact
+# resolved Python/dependency versions, not just whether rdkit is present.
+[[tool.ty.overrides]]
+include = [
+  "src/proxide/chem/gaff2.py",
+  "src/proxide/chem/partial_charges.py",
+  "src/proxide/io/parsing/molecule.py",
+]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+invalid-assignment = "ignore"
+unresolved-attribute = "ignore"
 
 [dependency-groups]
 dev = [
@@ -148,7 +255,7 @@ dev = [
     "openmm>=8.4.0.post2",
     "openmmforcefields>=0.15.1",
     "ruff>=0.14.8",
-    "ty>=0.0.1a31",
+    "ty==0.0.65",
 ]
 
 [tool.uv]

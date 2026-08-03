@@ -73,7 +73,12 @@ mod tests {
     fn test_radius_of_gyration_unit_cross() {
         // Four points at unit distance from the origin on the x/y axes.
         // Centroid is exactly the origin, so Rg = sqrt(mean(1^2,1^2,1^2,1^2)) = 1.0.
-        let coords = [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0]];
+        let coords = [
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+        ];
         let rg = radius_of_gyration(&coords);
         assert!((rg - 1.0).abs() < 1e-6);
     }
@@ -102,7 +107,12 @@ mod tests {
 
     #[test]
     fn test_weighted_radius_of_gyration_matches_unweighted_when_uniform() {
-        let coords = [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0]];
+        let coords = [
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+        ];
         let weights = [1.0, 1.0, 1.0, 1.0];
         let rg = radius_of_gyration(&coords);
         let rg_w = weighted_radius_of_gyration(&coords, &weights);
