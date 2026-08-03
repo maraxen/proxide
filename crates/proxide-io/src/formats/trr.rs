@@ -374,9 +374,8 @@ pub fn build_trr_frame_offsets(path: &str) -> Result<Vec<u64>, TrrError> {
             xdr.skip(f_size as usize)?;
         }
 
-        // XdrReader is now positioned at the end of this frame.
-        // Reconstruct buf_reader by dropping the xdr reference so buf_reader is usable again.
-        drop(xdr);
+        // XdrReader is now positioned at the end of this frame; buf_reader
+        // becomes usable again once xdr goes out of scope here.
     }
 
     Ok(offsets)

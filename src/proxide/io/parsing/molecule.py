@@ -261,8 +261,8 @@ class Molecule:
 
     """
     try:
-      from rdkit import Chem  # type: ignore[unresolved-import]
-      from rdkit.Chem import AllChem  # type: ignore[unresolved-import]
+      from rdkit import Chem
+      from rdkit.Chem import AllChem
     except ImportError as e:
       raise ImportError(
         "RDKit is required for SMILES parsing. Install with: pip install rdkit",
@@ -276,8 +276,8 @@ class Molecule:
     mol = Chem.AddHs(mol)
 
     # Generate 3D coordinates
-    AllChem.EmbedMolecule(mol, randomSeed=42)  # type: ignore[attr-defined]
-    AllChem.MMFFOptimizeMolecule(mol)  # type: ignore[attr-defined]
+    AllChem.EmbedMolecule(mol, randomSeed=42)
+    AllChem.MMFFOptimizeMolecule(mol)
 
     conf = mol.GetConformer()
 
@@ -351,7 +351,7 @@ class Molecule:
     Requires RDKit.
     """
     try:
-      from rdkit import Chem  # type: ignore[unresolved-import]
+      from rdkit import Chem
     except ImportError as e:
       raise ImportError(
         "RDKit is required for this operation. Install with: pip install rdkit",

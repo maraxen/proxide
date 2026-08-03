@@ -146,7 +146,11 @@ def charmm_pro_params(xml_path: Path) -> dict:
     # index bond/angle params by frozenset/tuple of classes
     bonds = {}
     for b in root.iter("Bond"):
-        c1, c2, length = b.get("class1") or b.get("type1"), b.get("class2") or b.get("type2"), b.get("length")
+        c1, c2, length = (
+            b.get("class1") or b.get("type1"),
+            b.get("class2") or b.get("type2"),
+            b.get("length"),
+        )
         if c1 and c2 and length is not None:
             bonds[frozenset((c1, c2))] = float(length) * 10.0  # nm -> Å
     angles = {}
@@ -246,7 +250,8 @@ def main(argv=None) -> int:
                     help="residue codes to measure")
     ap.add_argument("--charmm-xml", type=Path,
                     default=Path("src/proxide/assets/charmm/charmm36_protein.xml"),
-                    help="OpenMM CHARMM36 FFXML to cross-check PRO ideals against (proxide-bundled)")
+                    help="OpenMM CHARMM36 FFXML to cross-check PRO ideals against "
+                         "(proxide-bundled)")
     ap.add_argument("--out", type=Path, default=None, help="write JSON report here")
     ap.add_argument("--log-level", default="INFO")
     ap.add_argument("--dry-run", action="store_true",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from proxide._proxider import read_fasta, read_newick  # type: ignore[unresolved-import]
+from proxide._proxider import read_fasta, read_newick  # ty: ignore[unresolved-import]
 from proxide.io.fetching import (
   fetch_afdb,
   fetch_md_cath,

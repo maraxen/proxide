@@ -101,10 +101,7 @@ impl<T: Clone + Send + Sync> ProximityGrid<T> {
                     {
                         continue;
                     }
-                    let fi = flat_idx(
-                        &[ix as usize, iy as usize, iz as usize],
-                        &self.dims,
-                    );
+                    let fi = flat_idx(&[ix as usize, iy as usize, iz as usize], &self.dims);
                     for &pi in &self.cells[fi] {
                         let p = &self.points[pi];
                         let d2 = (p[0] - center[0]).powi(2)
@@ -202,11 +199,17 @@ mod tests {
         let mut pts: Vec<[f64; 3]> = Vec::new();
         let mut seed: u64 = 12345;
         for _ in 0..200 {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let x = (seed >> 33) as f64 / u32::MAX as f64 * 20.0 - 10.0;
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let y = (seed >> 33) as f64 / u32::MAX as f64 * 20.0 - 10.0;
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let z = (seed >> 33) as f64 / u32::MAX as f64 * 20.0 - 10.0;
             pts.push([x, y, z]);
         }

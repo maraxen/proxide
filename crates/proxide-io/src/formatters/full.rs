@@ -10,7 +10,7 @@ use proxide_core::processing::ProcessedStructure;
 use proxide_core::spec::OutputSpec;
 
 #[cfg(feature = "parallel")]
-use orx_parallel::{ParallelizableCollection, ParIter};
+use orx_parallel::{ParIter, ParallelizableCollection};
 
 /// Maximum atoms per residue for padding
 /// Set to 27 which covers most amino acids with hydrogens
@@ -87,7 +87,10 @@ impl FullFormatter {
         // Chain indices
         #[cfg(feature = "parallel")]
         let chain_index: Vec<i32> = {
-            let par = processed.residue_info.par().map(|r| *processed.chain_indices.get(&r.chain_id).unwrap_or(&0) as i32);
+            let par = processed
+                .residue_info
+                .par()
+                .map(|r| *processed.chain_indices.get(&r.chain_id).unwrap_or(&0) as i32);
             #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
             let par = par.num_threads(proxide_parallel_rt::num_threads());
             par.collect()

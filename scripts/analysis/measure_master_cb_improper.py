@@ -30,7 +30,7 @@ IDENTITY_C = [0.0, 1.0, 0.0]
 
 def dihedral_iupac(a, b, c, d):
     """Compute dihedral angle A-B-C-D using IUPAC standard convention.
-    
+
     Uses the atan2-based formula from proxide-geometry/src/geometry/angles.rs.
     Returns angle in radians in range [-π, π].
     """
@@ -74,7 +74,7 @@ def dihedral_iupac_deg(a, b, c, d):
 
 def dihedral_nerf_deg(a, b, c, d):
     """Compute dihedral angle A-B-C-D in degrees (NeRF/torsion convention).
-    
+
     NeRF uses phi directly in cos(phi) and sin(phi), so the sign is opposite
     to the IUPAC standard formula.
     """
@@ -279,12 +279,20 @@ def main(argv=None) -> int:
         logger.info("wrote -> %s", args.out)
     else:
         print("\n=== CB Improper Measurement ===")
-        print(f"{'Residue':<10} {'IUPAC (deg)':<20} {'NeRF (deg)':<20} {'IUPAC Δ':<15} {'NeRF Δ':<15}")
+        print(
+            f"{'Residue':<10} {'IUPAC (deg)':<20} {'NeRF (deg)':<20} "
+            f"{'IUPAC Δ':<15} {'NeRF Δ':<15}"
+        )
         print("-" * 80)
         for aa in args.residues:
             if aa in report["measurements"]:
                 m = report["measurements"][aa]
-                print(f"{aa:<10} {m['cb_improper_iupac_deg']:<20.2f} {m['cb_improper_nerf_deg']:<20.2f} {m['delta_vs_placeholder_iupac']:<15.2f} {m['delta_vs_placeholder_nerf']:<15.2f}")
+                print(
+                    f"{aa:<10} {m['cb_improper_iupac_deg']:<20.2f} "
+                    f"{m['cb_improper_nerf_deg']:<20.2f} "
+                    f"{m['delta_vs_placeholder_iupac']:<15.2f} "
+                    f"{m['delta_vs_placeholder_nerf']:<15.2f}"
+                )
         print()
 
     return 0

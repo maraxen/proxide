@@ -1,7 +1,6 @@
 // TODO: Review allow attributes at a later point
 #![allow(clippy::useless_conversion, clippy::too_many_arguments)]
 
-use std::str::FromStr;
 use crate::bindings::atomic_system::PyAtomicSystem;
 use crate::bindings::conversion::ToPyDict;
 use crate::bindings::spec::PyOutputSpec;
@@ -12,6 +11,7 @@ use numpy::PyArray1;
 use numpy::PyArrayMethods;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::str::FromStr;
 
 // Column indices for parameterizer output arrays
 const COL_BOND_LENGTH: usize = 0;
@@ -51,7 +51,9 @@ fn scale_all(flat: &mut [f32], factor: f32) {
 pub fn parse_pdb(py: Python<'_>, path: String) -> PyResult<PyObject> {
     let (raw_data, model_ids) = py
         .allow_threads(|| formats::pdb::parse_pdb_file(&path).map_err(|e| e.to_string()))
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("PDB parsing failed: {}", e)))?;
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("PDB parsing failed: {}", e))
+        })?;
 
     // Filter to first model only (legacy behavior)
     let first_model = model_ids.first().copied().unwrap_or(1);
@@ -77,7 +79,9 @@ pub fn parse_mmcif(py: Python<'_>, path: String) -> PyResult<PyObject> {
 pub fn parse_pqr(py: Python<'_>, path: String) -> PyResult<PyObject> {
     let raw_data = py
         .allow_threads(|| formats::pqr::parse_pqr_file(&path).map_err(|e| e.to_string()))
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("PQR parsing failed: {}", e)))?;
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("PQR parsing failed: {}", e))
+        })?;
 
     raw_data.to_py_dict(py).map(|dict| dict.into_py(py))
 }
@@ -139,7 +143,10 @@ pub fn read_newick(py: Python<'_>, path: String) -> PyResult<PyObject> {
     let adj = PyArray1::from_slice_bound(py, &flat).reshape((n, n))?;
     dict.set_item("adjacency", adj)?;
     dict.set_item("parents", PyArray1::from_slice_bound(py, &tree.parents))?;
-    dict.set_item("post_order", PyArray1::from_slice_bound(py, &tree.post_order))?;
+    dict.set_item(
+        "post_order",
+        PyArray1::from_slice_bound(py, &tree.post_order),
+    )?;
     dict.set_item("leaf_names", tree.leaf_names)?;
     dict.set_item("n_leaves", tree.n_leaves)?;
     Ok(dict.into_py(py))
@@ -340,14 +347,15 @@ pub fn parse_structure(
                 1.3, // default bond tolerance
             );
 
-            let params =
-                physics::md_params::parameterize_structure(&processed, &topology, &ff, &param_options)
-                    .map_err(|e| {
-                        pyo3::exceptions::PyValueError::new_err(format!(
-                            "Parameterization failed: {}",
-                            e
-                        ))
-                    })?;
+            let params = physics::md_params::parameterize_structure(
+                &processed,
+                &topology,
+                &ff,
+                &param_options,
+            )
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Parameterization failed: {}", e))
+            })?;
 
             processed.raw_atoms.charges = Some(params.charges.clone());
             processed.raw_atoms.sigmas = Some(params.sigmas.clone());
@@ -626,7 +634,8 @@ pub fn parse_structure(
         let all_elements = &processed.raw_atoms.elements;
 
         // Generate full topology with default tolerance 1.3
-        let topology = proxide_geometry::geometry::topology::generate_topology(&all_coords, all_elements, 1.3);
+        let topology =
+            proxide_geometry::geometry::topology::generate_topology(&all_coords, all_elements, 1.3);
 
         // Bonds (N_bonds, 2)
         if !topology.bonds.is_empty() {
@@ -964,7 +973,8 @@ pub fn parse_structure(
             let arr = PyArray1::from_slice_bound(py, &flat);
             dict_bound.set_item(
                 "exception_14_params",
-                arr.reshape((params.resolved_nonbonded_14_params.len(), 3)).unwrap(),
+                arr.reshape((params.resolved_nonbonded_14_params.len(), 3))
+                    .unwrap(),
             )?;
         }
 
@@ -1017,8 +1027,11 @@ pub fn parse_structure(
             let all_coords = processed.extract_all_coords();
             let all_elements = &processed.raw_atoms.elements;
             // Infer topology for typing
-            let topology =
-                proxide_geometry::geometry::topology::generate_topology(&all_coords, all_elements, 1.3);
+            let topology = proxide_geometry::geometry::topology::generate_topology(
+                &all_coords,
+                all_elements,
+                1.3,
+            );
             let gaff = proxide_gaff::gaff::GaffParameters::new();
             let types = proxide_gaff::gaff::assign_gaff_types(all_elements, &topology, &gaff);
             dict_bound.set_item("atom_types", types)?;
@@ -1057,9 +1070,12 @@ pub fn project_to_mpnn_batch(
         })?
     } else if path.ends_with(".fcz") {
         // FoldComp
-        let _system = formats::foldcomp::read_foldcomp(&path).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!("FoldComp parsing failed: {}", e))
-        })?;
+        #[cfg(feature = "foldcomp")]
+        {
+            let _system = formats::foldcomp::read_foldcomp(&path).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("FoldComp parsing failed: {}", e))
+            })?;
+        }
         // Convert AtomicSystem to RawAtomData
         return Err(pyo3::exceptions::PyValueError::new_err(
             "FoldComp projection not yet implemented - use parse_structure instead",
@@ -1151,6 +1167,7 @@ pub struct FoldCompDatabase {
 }
 
 #[pymethods]
+#[cfg(feature = "foldcomp")]
 impl FoldCompDatabase {
     #[new]
     pub fn new(path: String) -> PyResult<Self> {

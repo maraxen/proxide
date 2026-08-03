@@ -9,11 +9,11 @@ Reference: Dunbrack 2010 BBDEP library (ODC-BY licensed).
 """
 
 import argparse
+import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import TypedDict, Optional
-import hashlib
+from typing import TypedDict
 
 
 class ChiData(TypedDict):
@@ -88,7 +88,7 @@ def parse_dunbrack_lib(
     # Accumulate data per residue
     residue_data = {}
 
-    with open(lib_path, "r") as f:
+    with open(lib_path) as f:
         for line_num, line in enumerate(f, start=1):
             # Skip comments and empty lines
             if line.startswith("#") or not line.strip():
@@ -175,8 +175,8 @@ def parse_dunbrack_lib(
         bins_list = []
         freq_tuples = []  # (freq, bin_index) for computing default_bin
 
-        for i, phi in enumerate(phi_centers):
-            for j, psi in enumerate(psi_centers):
+        for _i, phi in enumerate(phi_centers):
+            for _j, psi in enumerate(psi_centers):
                 bin_key = (phi, psi)
                 if bin_key in data["bins"]:
                     freq = data["bin_freqs"][bin_key]
@@ -199,7 +199,6 @@ def parse_dunbrack_lib(
 
         # Validate probability sums
         prob_sums = []
-        prob_sum_ok = True
         for bin_idx, bin_data in enumerate(bins_list):
             psum = sum(r["prob"] for r in bin_data["rotamers"])
             prob_sums.append({
@@ -210,7 +209,7 @@ def parse_dunbrack_lib(
                 "ok": 0.997 <= psum <= 1.003  # 1.0 ± 1e-3
             })
             if not prob_sums[-1]["ok"]:
-                prob_sum_ok = False
+                pass
 
         # Determine CPR rotamers per bin if applicable
         cpr_rotamers_per_bin = 0

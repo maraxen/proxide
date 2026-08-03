@@ -96,8 +96,8 @@ pub fn cache_residue_impl(
     ri: ResidueIndex,
     backbone: &ProteinBackbone,
     rotlib: &RotamerLibrary,
-    bb_grid: &ProximityGrid<usize>,    // tag = index into bb_atoms
-    bb_atom_res: &[ResidueIndex],      // maps bb_atom_idx → owning ResidueIndex
+    bb_grid: &ProximityGrid<usize>, // tag = index into bb_atoms
+    bb_atom_res: &[ResidueIndex],   // maps bb_atom_idx → owning ResidueIndex
 ) -> Result<ResidueCache, ConFindError> {
     let rb = &backbone.bb[ri.0 as usize];
     let phi = rb.phi;
@@ -108,8 +108,7 @@ pub fn cache_residue_impl(
     let c = rb.c.ok_or(ConFindError::MissingBackbone(ri, "C"))?;
 
     let mut surviving: Vec<Arc<RotamerId>> = Vec::new();
-    let mut rotamer_grids: HashMap<String, Option<ProximityGrid<Arc<RotamerId>>>> =
-        HashMap::new();
+    let mut rotamer_grids: HashMap<String, Option<ProximityGrid<Arc<RotamerId>>>> = HashMap::new();
     let mut interference: HashMap<ResidueIndex, HashMap<String, f64>> = HashMap::new();
     let mut permanent_contacts_set: HashSet<usize> = HashSet::new();
     let mut total_rotamers: usize = 0;
@@ -133,9 +132,7 @@ pub fn cache_residue_impl(
                 .map_err(ConFindError::RotlibError)?;
 
             let rot_id = Arc::new(placed.id.clone());
-            let rot_prob = rotlib
-                .rotamer_probability_by_id(&placed.id)
-                .unwrap_or(0.0);
+            let rot_prob = rotlib.rotamer_probability_by_id(&placed.id).unwrap_or(0.0);
 
             // Accumulate interference for this rotamer across all its SC heavy atoms.
             // Track which resB values we've already accumulated for this rotamer (first-win).

@@ -2,7 +2,7 @@
 //!
 //! Reads backbone-dependent rotamer data from a Dunbrack text file (*.bbdep.rotamers.lib format).
 
-use super::{RotlibSource, RotamerEntry, BinData};
+use super::{BinData, RotamerEntry, RotlibSource};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -59,7 +59,7 @@ impl DunbrackSource {
                 .iter()
                 .map(|(&key, rots)| (key, rots.iter().map(|r| r.count as u64).sum()))
                 .collect();
-            bin_counts.sort_by(|a, b| b.1.cmp(&a.1)); // descending
+            bin_counts.sort_by_key(|b| std::cmp::Reverse(b.1)); // descending
             let best_bin_key = bin_counts.first().map(|&(k, _)| k).unwrap_or((0, 0));
 
             for (&(phi_bin, psi_bin), rots) in bins.iter() {
@@ -87,7 +87,10 @@ impl DunbrackSource {
             // Find the index of the default bin (matching best_bin_key)
             let default_idx = bin_data_vec
                 .iter()
-                .position(|b| (b.phi - best_bin_key.0 as f64).abs() < 1.0 && (b.psi - best_bin_key.1 as f64).abs() < 1.0)
+                .position(|b| {
+                    (b.phi - best_bin_key.0 as f64).abs() < 1.0
+                        && (b.psi - best_bin_key.1 as f64).abs() < 1.0
+                })
                 .unwrap_or(0);
 
             default_bin_indices.insert(res_code.clone(), default_idx);
@@ -109,10 +112,7 @@ impl RotlibSource for DunbrackSource {
     }
 
     fn bins(&self, code: &str) -> Vec<BinData> {
-        self.data
-            .get(code)
-            .cloned()
-            .unwrap_or_default()
+        self.data.get(code).cloned().unwrap_or_default()
     }
 
     fn default_bin_index(&self, code: &str) -> usize {
@@ -227,7 +227,8 @@ mod tests {
                       ALA -120.0 -120.0 50 1.0 1.0 1.0 1.0 0.2 -173.0 67.0 0.0 0.0 20.0 25.0 0.0 0.0\n\
                       GLY 0.0 0.0 200 0.0 0.0 0.0 0.0 0.9 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\n";
 
-        file.write_all(content.as_bytes()).expect("Failed to write to temp file");
+        file.write_all(content.as_bytes())
+            .expect("Failed to write to temp file");
         file.flush().expect("Failed to flush temp file");
         file
     }
@@ -239,7 +240,10 @@ mod tests {
 
         let codes = source.residue_codes();
         assert!(!codes.is_empty(), "Expected non-empty residue codes");
-        assert!(codes.contains(&"ALA".to_string()), "Expected ALA in residue codes");
+        assert!(
+            codes.contains(&"ALA".to_string()),
+            "Expected ALA in residue codes"
+        );
     }
 
     #[test]
@@ -251,7 +255,10 @@ mod tests {
         // Verify sorted order
         let mut sorted_codes = codes.clone();
         sorted_codes.sort();
-        assert_eq!(codes, sorted_codes, "residue_codes() should return sorted codes");
+        assert_eq!(
+            codes, sorted_codes,
+            "residue_codes() should return sorted codes"
+        );
     }
 
     #[test]
@@ -272,7 +279,10 @@ mod tests {
         let source = DunbrackSource::from_file(file.path()).expect("Failed to load DunbrackSource");
 
         let unknown_bins = source.bins("UNKNOWN");
-        assert!(unknown_bins.is_empty(), "Expected empty vec for unknown residue");
+        assert!(
+            unknown_bins.is_empty(),
+            "Expected empty vec for unknown residue"
+        );
     }
 
     #[test]
@@ -282,7 +292,10 @@ mod tests {
 
         let idx = source.default_bin_index("ALA");
         let ala_bins = source.bins("ALA");
-        assert!(idx < ala_bins.len(), "default_bin_index should return valid index");
+        assert!(
+            idx < ala_bins.len(),
+            "default_bin_index should return valid index"
+        );
     }
 
     #[test]
@@ -309,8 +322,14 @@ mod tests {
 
         let attr = source.attribution();
         assert!(!attr.is_empty(), "attribution should not be empty");
-        assert!(attr.contains("Shapovalov"), "attribution should mention Shapovalov");
-        assert!(attr.contains("Dunbrack"), "attribution should mention Dunbrack");
+        assert!(
+            attr.contains("Shapovalov"),
+            "attribution should mention Shapovalov"
+        );
+        assert!(
+            attr.contains("Dunbrack"),
+            "attribution should mention Dunbrack"
+        );
     }
 
     #[test]
@@ -336,7 +355,10 @@ mod tests {
         for rot in &first_bin.rotamers {
             assert!(!rot.chi_values.is_empty(), "Rotamer should have chi_values");
             assert!(!rot.chi_sigmas.is_empty(), "Rotamer should have chi_sigmas");
-            assert!(rot.probability >= 0.0 && rot.probability <= 1.0, "Probability should be 0-1");
+            assert!(
+                rot.probability >= 0.0 && rot.probability <= 1.0,
+                "Probability should be 0-1"
+            );
             assert!(rot.count > 0, "Count should be positive");
         }
     }

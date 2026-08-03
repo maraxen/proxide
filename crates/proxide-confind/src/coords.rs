@@ -139,8 +139,7 @@ pub fn load_pdb_f64<P: AsRef<Path>>(path: P) -> Result<ProteinBackbone, ConFindE
     // Second pass: use standard parser for residue grouping.
     let (raw, _) = proxide_io::formats::pdb::parse_pdb_file(path.as_ref())
         .map_err(|e| std::io::Error::other(e.to_string()))?;
-    let processed = ProcessedStructure::from_raw(raw)
-        .map_err(std::io::Error::other)?;
+    let processed = ProcessedStructure::from_raw(raw).map_err(std::io::Error::other)?;
 
     let mut bb: Vec<ResidueBackbone> = Vec::new();
     let mut ids: Vec<ResidueId> = Vec::new();

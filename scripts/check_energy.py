@@ -70,18 +70,34 @@ print(f"\nTotal energy: {float(e_total):.2f} kcal/mol")
 r = padded.positions
 N = len(padded.atom_mask)
 
-e_bond = _bond_energy_masked(r, padded.bonds, padded.bond_params, padded.bond_mask, displacement_fn)
-e_angle = _angle_energy_masked(r, padded.angles, padded.angle_params, padded.angle_mask, displacement_fn)
-e_dih = _dihedral_energy_masked(r, padded.dihedrals, padded.dihedral_params, padded.dihedral_mask, displacement_fn)
-e_imp = _dihedral_energy_masked(r, padded.impropers, padded.improper_params, padded.improper_mask, displacement_fn)
-e_cmap = _cmap_energy_masked(r, padded.cmap_torsions, padded.cmap_mask, padded.cmap_coeffs, displacement_fn)
+e_bond = _bond_energy_masked(
+    r, padded.bonds, padded.bond_params, padded.bond_mask, displacement_fn
+)
+e_angle = _angle_energy_masked(
+    r, padded.angles, padded.angle_params, padded.angle_mask, displacement_fn
+)
+e_dih = _dihedral_energy_masked(
+    r, padded.dihedrals, padded.dihedral_params, padded.dihedral_mask, displacement_fn
+)
+e_imp = _dihedral_energy_masked(
+    r, padded.impropers, padded.improper_params, padded.improper_mask, displacement_fn
+)
+e_cmap = _cmap_energy_masked(
+    r, padded.cmap_torsions, padded.cmap_mask, padded.cmap_coeffs, displacement_fn
+)
 
-excl_vdw = jax.lax.stop_gradient(_build_dense_exclusion_scales(padded.excl_indices, padded.excl_scales_vdw, N))
-excl_elec = jax.lax.stop_gradient(_build_dense_exclusion_scales(padded.excl_indices, padded.excl_scales_elec, N))
+excl_vdw = jax.lax.stop_gradient(
+    _build_dense_exclusion_scales(padded.excl_indices, padded.excl_scales_vdw, N)
+)
+excl_elec = jax.lax.stop_gradient(
+    _build_dense_exclusion_scales(padded.excl_indices, padded.excl_scales_elec, N)
+)
 
 e_lj = _lj_energy_masked(r, padded.sigmas, padded.epsilons, padded.atom_mask, displacement_fn,
                           soft_core_lambda=jnp.float32(1.0), excl_scale_vdw=excl_vdw)
-e_elec = _coulomb_energy_masked(r, padded.charges, padded.atom_mask, displacement_fn, excl_scale_elec=excl_elec)
+e_elec = _coulomb_energy_masked(
+    r, padded.charges, padded.atom_mask, displacement_fn, excl_scale_elec=excl_elec
+)
 
 # GB
 mask_ij = padded.atom_mask[:, None] & padded.atom_mask[None, :]

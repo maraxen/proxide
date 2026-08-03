@@ -6,7 +6,7 @@ from collections.abc import Iterator, Sequence
 from typing import IO, Any
 
 import hydride
-import mdtraj as md
+import mdtraj as md  # ty: ignore[unresolved-import]
 import numpy as np
 from biotite import structure
 from biotite.structure import AtomArray, AtomArrayStack, filter_solvent
@@ -224,10 +224,10 @@ def _add_hydrogens_if_needed(atom_array: AtomArray) -> AtomArray:
     # Infer bonds for hydride
     if not atom_array.bonds:
       try:
-        atom_array.bonds = structure.connect_via_residue_names(atom_array)  # type: ignore[unresolved-attribute]
+        atom_array.bonds = structure.connect_via_residue_names(atom_array)
       except Exception as e:  # noqa: BLE001
         logger.warning("Failed to infer bonds: %s", e)
-        atom_array.bonds = structure.connect_via_distances(atom_array)  # type: ignore[unresolved-attribute]
+        atom_array.bonds = structure.connect_via_distances(atom_array)
 
     # Add charge annotation
     if "charge" not in atom_array.get_annotation_categories():
@@ -301,7 +301,7 @@ def parse_mdtraj_to_processed_structure(  # noqa: C901
     # (missing coordinates/topology at root)
     import warnings
 
-    import h5py
+    import h5py  # ty: ignore[unresolved-import]
 
     if isinstance(source, (str, pathlib.Path)) and str(source).endswith((".h5", ".hdf5")):
       try:

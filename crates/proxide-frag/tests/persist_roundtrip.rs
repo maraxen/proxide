@@ -42,7 +42,9 @@ fn test_persist_roundtrip() {
 
     let frag = Fragment::new(coords);
     let label = SourceLabel::new("1abc", 'A', 1, ' ', 5, ' ');
-    builder.add_fragment(frag, label.clone()).expect("Failed to add fragment");
+    builder
+        .add_fragment(frag, label.clone())
+        .expect("Failed to add fragment");
 
     let db = builder.build();
     assert_eq!(db.len(), 1, "Database should have 1 entry");
@@ -99,7 +101,9 @@ fn test_persist_arity_mismatch() {
 
     let frag = Fragment::new(coords);
     let label = SourceLabel::new("1abc", 'A', 1, ' ', 5, ' ');
-    builder.add_fragment(frag, label).expect("Failed to add fragment");
+    builder
+        .add_fragment(frag, label)
+        .expect("Failed to add fragment");
 
     let db = builder.build();
 

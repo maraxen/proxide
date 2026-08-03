@@ -130,8 +130,7 @@ mod tests {
 
     #[test]
     fn identical_sequences_align_gaplessly() {
-        let path =
-            needleman_wunsch_affine(4, 4, |i, j| if i == j { 1.0 } else { -1.0 }, -2.0, 0.0);
+        let path = needleman_wunsch_affine(4, 4, |i, j| if i == j { 1.0 } else { -1.0 }, -2.0, 0.0);
         assert_eq!(path.len(), 4);
         for (k, (a, b)) in path.iter().enumerate() {
             assert_eq!(*a, Some(k));
@@ -167,7 +166,13 @@ mod tests {
     fn path_covers_full_length_with_gaps() {
         // Every A residue and every B residue appears exactly once across
         // the path (global alignment property), regardless of gaps.
-        let path = needleman_wunsch_affine(2, 3, |i, j| if (i, j) == (0, 0) { 1.0 } else { -1.0 }, -1.0, 0.0);
+        let path = needleman_wunsch_affine(
+            2,
+            3,
+            |i, j| if (i, j) == (0, 0) { 1.0 } else { -1.0 },
+            -1.0,
+            0.0,
+        );
         let a_seen: Vec<_> = path.iter().filter_map(|&(a, _)| a).collect();
         let b_seen: Vec<_> = path.iter().filter_map(|&(_, b)| b).collect();
         assert_eq!(a_seen, vec![0, 1]);

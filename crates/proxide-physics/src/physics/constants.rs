@@ -27,7 +27,7 @@ pub const MIN_DISTANCE: f32 = 1e-7;
 pub const MAX_FORCE: f32 = 1e6;
 
 // Unit conversions (re-exported from proxide-units — single source of truth)
-pub use proxide_units::constants::{KCAL_TO_KJ, KJ_TO_KCAL, NM_TO_ANGSTROM, ANGSTROM_TO_NM};
+pub use proxide_units::constants::{ANGSTROM_TO_NM, KCAL_TO_KJ, KJ_TO_KCAL, NM_TO_ANGSTROM};
 
 // Lennard-Jones defaults
 

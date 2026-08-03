@@ -1,4 +1,4 @@
-use crate::constants::{KJ_TO_KCAL, NM_TO_ANGSTROM, BOND_K_FACTOR};
+use crate::constants::{BOND_K_FACTOR, KJ_TO_KCAL, NM_TO_ANGSTROM};
 
 /// Conversion factors from GROMACS-internal units (nm, kJ/mol) to a target unit system.
 ///
@@ -33,7 +33,12 @@ impl UnitConversionSpec {
     /// Create conversion spec for GROMACS units (nm + kJ/mol).
     /// This is the identity conversion (no-op).
     pub fn gromacs() -> Self {
-        Self { length: 1.0, energy: 1.0, bond_k: 1.0, angle_k: 1.0 }
+        Self {
+            length: 1.0,
+            energy: 1.0,
+            bond_k: 1.0,
+            angle_k: 1.0,
+        }
     }
 
     /// Create conversion spec for OpenMM units (nm + kJ/mol).
@@ -90,7 +95,11 @@ mod tests {
         let spec = UnitConversionSpec::amber();
         let expected = KJ_TO_KCAL;
         let diff = (spec.energy - expected).abs();
-        assert!(diff < 1e-8, "AMBER energy should be KJ_TO_KCAL; got {}", spec.energy);
+        assert!(
+            diff < 1e-8,
+            "AMBER energy should be KJ_TO_KCAL; got {}",
+            spec.energy
+        );
     }
 
     #[test]

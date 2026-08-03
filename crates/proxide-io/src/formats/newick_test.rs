@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::formats::newick::parse_newick;
+    use std::fs::{remove_file, File};
     use std::io::Write;
-    use std::fs::{File, remove_file};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 

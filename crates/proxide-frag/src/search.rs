@@ -3,7 +3,7 @@
 use crate::db::{FragmentDb, SourceLabel};
 use crate::fragment::{Centered, Fragment};
 use crate::kabsch::kabsch_rmsd;
-use orx_parallel::{ParallelizableCollection, ParIter};
+use orx_parallel::{ParIter, ParallelizableCollection};
 
 // ---------------------------------------------------------------------------
 // SearchResult
@@ -96,7 +96,11 @@ impl<const N: usize> FragmentDb<N> {
     ///
     /// **Pre-filter criterion:** If `(||A|| - ||B||)² > ε² · M`, where M = N*4,
     /// then RMSD > ε, so the entry is pruned.
-    pub fn search_prefiltered(&self, query: &Fragment<N, Centered>, epsilon: f32) -> Vec<SearchResult> {
+    pub fn search_prefiltered(
+        &self,
+        query: &Fragment<N, Centered>,
+        epsilon: f32,
+    ) -> Vec<SearchResult> {
         let query_norm_sq = query.norm_sq();
         let query_norm = query_norm_sq.sqrt();
         let epsilon_sq_m = epsilon * epsilon * ((N * 4) as f32);
@@ -207,7 +211,14 @@ mod tests {
                     }
                 }
                 let prune_rate = pruned_count as f32 / db.len() as f32 * 100.0;
-                eprintln!("{}\t\t{}\t{}\t{}\t{:.1}", size, epsilon, pruned_count, db.len(), prune_rate);
+                eprintln!(
+                    "{}\t\t{}\t{}\t{}\t{:.1}",
+                    size,
+                    epsilon,
+                    pruned_count,
+                    db.len(),
+                    prune_rate
+                );
             }
         }
     }

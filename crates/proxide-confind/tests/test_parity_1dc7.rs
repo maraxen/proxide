@@ -265,9 +265,14 @@ const REF_CONTACTS_1DC7_GLY_PRO: &[(&str, i32, &str, i32, f64)] = &[
     ("A", 105, "A", 111, 0.000003),
 ];
 
-fn load_or_skip_1dc7() -> Option<(Arc<proxide_rotlib::RotamerLibrary>, Arc<proxide_confind::ProteinBackbone>)> {
+fn load_or_skip_1dc7() -> Option<(
+    Arc<proxide_rotlib::RotamerLibrary>,
+    Arc<proxide_confind::ProteinBackbone>,
+)> {
     let rotlib_path = real_rotlib_path();
-    let rlib = proxide_rotlib::RotamerLibrary::load(&rotlib_path).ok().map(Arc::new)?;
+    let rlib = proxide_rotlib::RotamerLibrary::load(&rotlib_path)
+        .ok()
+        .map(Arc::new)?;
     let bb = load_1dc7_backbone()?;
     Some((rlib, bb))
 }
@@ -280,7 +285,10 @@ fn all_res(cf: &ConFind) -> Vec<proxide_confind::ResidueIndex> {
 
 #[test]
 fn test_crowdedness_parity_1dc7_gly_pro() {
-    let (rlib, bb) = match load_or_skip_1dc7() { Some(v) => v, None => return };
+    let (rlib, bb) = match load_or_skip_1dc7() {
+        Some(v) => v,
+        None => return,
+    };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
     for ri in all_res(&cf) {
@@ -296,11 +304,16 @@ fn test_crowdedness_parity_1dc7_gly_pro() {
         let id = cf.residue_id(ri);
         let key = (id.chain_id.clone(), id.res_id);
         if let Some(&reference) = expected.get(&key) {
-            let actual = cf.crowdedness(ri).expect("crowdedness should succeed after cache");
+            let actual = cf
+                .crowdedness(ri)
+                .expect("crowdedness should succeed after cache");
             assert!(
                 (actual - reference).abs() < TOLERANCE,
                 "crowdedness GLY/PRO {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
-                id.chain_id, id.res_id, actual, reference,
+                id.chain_id,
+                id.res_id,
+                actual,
+                reference,
                 (actual - reference).abs()
             );
         }
@@ -309,10 +322,14 @@ fn test_crowdedness_parity_1dc7_gly_pro() {
 
 #[test]
 fn test_freedom_parity_1dc7_gly_pro() {
-    let (rlib, bb) = match load_or_skip_1dc7() { Some(v) => v, None => return };
+    let (rlib, bb) = match load_or_skip_1dc7() {
+        Some(v) => v,
+        None => return,
+    };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
-    cf.contacts(&all_res(&cf), 0.0).expect("contacts should succeed");
+    cf.contacts(&all_res(&cf), 0.0)
+        .expect("contacts should succeed");
 
     let expected: HashMap<(String, i32), f64> = REF_FREEDOM_1DC7_GLY_PRO
         .iter()
@@ -323,11 +340,16 @@ fn test_freedom_parity_1dc7_gly_pro() {
         let id = cf.residue_id(ri);
         let key = (id.chain_id.clone(), id.res_id);
         if let Some(&reference) = expected.get(&key) {
-            let actual = cf.freedom(ri).expect("freedom should succeed after contacts");
+            let actual = cf
+                .freedom(ri)
+                .expect("freedom should succeed after contacts");
             assert!(
                 (actual - reference).abs() < TOLERANCE,
                 "freedom GLY/PRO {},{}: got {:.6}, expected {:.6} (diff {:.2e})",
-                id.chain_id, id.res_id, actual, reference,
+                id.chain_id,
+                id.res_id,
+                actual,
+                reference,
                 (actual - reference).abs()
             );
         }
@@ -336,10 +358,15 @@ fn test_freedom_parity_1dc7_gly_pro() {
 
 #[test]
 fn test_contacts_parity_1dc7_gly_pro() {
-    let (rlib, bb) = match load_or_skip_1dc7() { Some(v) => v, None => return };
+    let (rlib, bb) = match load_or_skip_1dc7() {
+        Some(v) => v,
+        None => return,
+    };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
-    let contact_list = cf.contacts(&all_res(&cf), 0.0).expect("contacts should succeed");
+    let contact_list = cf
+        .contacts(&all_res(&cf), 0.0)
+        .expect("contacts should succeed");
 
     let expected: HashMap<(String, i32, String, i32), f64> = REF_CONTACTS_1DC7_GLY_PRO
         .iter()
@@ -354,20 +381,33 @@ fn test_contacts_parity_1dc7_gly_pro() {
         .map(|(&(ri_a, ri_b), &cd)| {
             let id_a = cf.residue_id(ri_a);
             let id_b = cf.residue_id(ri_b);
-            ((id_a.chain_id.clone(), id_a.res_id, id_b.chain_id.clone(), id_b.res_id), cd)
+            (
+                (
+                    id_a.chain_id.clone(),
+                    id_a.res_id,
+                    id_b.chain_id.clone(),
+                    id_b.res_id,
+                ),
+                cd,
+            )
         })
         .collect();
 
     // Verify all expected GLY/PRO pairs are present with correct values
     for &(ca, ra, cb, rb, expected_cd) in REF_CONTACTS_1DC7_GLY_PRO {
         let key = (ca.to_string(), ra, cb.to_string(), rb);
-        let &actual_cd = actual_map.get(&key).unwrap_or_else(|| {
-            panic!("missing contact {},{}->{},{}", ca, ra, cb, rb)
-        });
+        let &actual_cd = actual_map
+            .get(&key)
+            .unwrap_or_else(|| panic!("missing contact {},{}->{},{}", ca, ra, cb, rb));
         assert!(
             (actual_cd - expected_cd).abs() < TOLERANCE,
             "contact GLY/PRO {},{}->{},{}: got {:.6}, expected {:.6} (diff {:.2e})",
-            ca, ra, cb, rb, actual_cd, expected_cd,
+            ca,
+            ra,
+            cb,
+            rb,
+            actual_cd,
+            expected_cd,
             (actual_cd - expected_cd).abs()
         );
     }

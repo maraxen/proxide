@@ -1,7 +1,7 @@
-use crate::models::{Topology, Atom, Residue};
+use crate::models::{Atom, Residue, Topology};
 use proxide_geometry::geometry::nerf::Nerf;
-use thiserror::Error;
 use std::f32::consts::PI;
+use thiserror::Error;
 
 /// Constant threshold for detecting chain breaks (same as proxide-confind)
 const CHAIN_BREAK_CA_ANGSTROM: f32 = 4.5;
@@ -422,8 +422,12 @@ mod tests {
         let termini = sanitizer.detect_termini();
 
         assert_eq!(termini.len(), 2);
-        assert!(termini.iter().any(|t| t.kind == TerminusKind::NTerm && t.res_id == 1));
-        assert!(termini.iter().any(|t| t.kind == TerminusKind::CTerm && t.res_id == 1));
+        assert!(termini
+            .iter()
+            .any(|t| t.kind == TerminusKind::NTerm && t.res_id == 1));
+        assert!(termini
+            .iter()
+            .any(|t| t.kind == TerminusKind::CTerm && t.res_id == 1));
     }
 
     #[test]
@@ -443,8 +447,14 @@ mod tests {
         let termini = sanitizer.detect_termini();
 
         assert_eq!(termini.len(), 2);
-        let nterm = termini.iter().find(|t| t.kind == TerminusKind::NTerm).unwrap();
-        let cterm = termini.iter().find(|t| t.kind == TerminusKind::CTerm).unwrap();
+        let nterm = termini
+            .iter()
+            .find(|t| t.kind == TerminusKind::NTerm)
+            .unwrap();
+        let cterm = termini
+            .iter()
+            .find(|t| t.kind == TerminusKind::CTerm)
+            .unwrap();
         assert_eq!(nterm.res_id, 1);
         assert_eq!(cterm.res_id, 3);
     }
@@ -589,14 +599,23 @@ mod tests {
         let oxt = residue.atoms.iter().find(|a| a.name == "OXT").unwrap();
 
         // Compute O-C-OXT angle
-        let oc = [o_atom.coords[0] - c_atom.coords[0], o_atom.coords[1] - c_atom.coords[1], o_atom.coords[2] - c_atom.coords[2]];
-        let oxt_c = [oxt.coords[0] - c_atom.coords[0], oxt.coords[1] - c_atom.coords[1], oxt.coords[2] - c_atom.coords[2]];
+        let oc = [
+            o_atom.coords[0] - c_atom.coords[0],
+            o_atom.coords[1] - c_atom.coords[1],
+            o_atom.coords[2] - c_atom.coords[2],
+        ];
+        let oxt_c = [
+            oxt.coords[0] - c_atom.coords[0],
+            oxt.coords[1] - c_atom.coords[1],
+            oxt.coords[2] - c_atom.coords[2],
+        ];
 
         let oc_len = (oc[0] * oc[0] + oc[1] * oc[1] + oc[2] * oc[2]).sqrt();
         let oxt_c_len = (oxt_c[0] * oxt_c[0] + oxt_c[1] * oxt_c[1] + oxt_c[2] * oxt_c[2]).sqrt();
 
         if oc_len > 0.0 && oxt_c_len > 0.0 {
-            let dot = (oc[0] * oxt_c[0] + oc[1] * oxt_c[1] + oc[2] * oxt_c[2]) / (oc_len * oxt_c_len);
+            let dot =
+                (oc[0] * oxt_c[0] + oc[1] * oxt_c[1] + oc[2] * oxt_c[2]) / (oc_len * oxt_c_len);
             let clamped_dot = dot.clamp(-1.0, 1.0);
             let angle_rad = clamped_dot.acos();
             let angle_deg = angle_rad * 180.0 / PI;
@@ -654,7 +673,8 @@ mod tests {
         for atom in &residue.atoms {
             if atom.name == "H1" || atom.name == "H2" || atom.name == "H3" || atom.name == "OXT" {
                 assert_ne!(
-                    atom.coords, [0.0, 0.0, 0.0],
+                    atom.coords,
+                    [0.0, 0.0, 0.0],
                     "Added atom {} has placeholder [0,0,0] coords",
                     atom.name
                 );
@@ -744,13 +764,21 @@ mod tests {
 
         // Chain A should have both N and C caps
         let chain_a = &topology.chains[0];
-        let chain_a_names: Vec<_> = chain_a.residues[0].atoms.iter().map(|a| a.name.clone()).collect();
+        let chain_a_names: Vec<_> = chain_a.residues[0]
+            .atoms
+            .iter()
+            .map(|a| a.name.clone())
+            .collect();
         assert!(chain_a_names.contains(&"H1".to_string()));
         assert!(chain_a_names.contains(&"OXT".to_string()));
 
         // Chain B should also have both
         let chain_b = &topology.chains[1];
-        let chain_b_names: Vec<_> = chain_b.residues[0].atoms.iter().map(|a| a.name.clone()).collect();
+        let chain_b_names: Vec<_> = chain_b.residues[0]
+            .atoms
+            .iter()
+            .map(|a| a.name.clone())
+            .collect();
         assert!(chain_b_names.contains(&"H1".to_string()));
         assert!(chain_b_names.contains(&"OXT".to_string()));
     }

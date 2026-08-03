@@ -65,8 +65,16 @@ pub fn make_synthetic_backbone_partial_atoms(
 
         let n_pos = Some([x - 0.5, 0.0, 0.0]);
         let ca_pos = Some([x, 0.0, 0.0]);
-        let c_pos = if skip_indices.contains(&i) { None } else { Some([x + 1.0, 0.0, 0.0]) };
-        let o_pos = if skip_indices.contains(&i) { None } else { Some([x + 1.1, 1.0, 0.0]) };
+        let c_pos = if skip_indices.contains(&i) {
+            None
+        } else {
+            Some([x + 1.0, 0.0, 0.0])
+        };
+        let o_pos = if skip_indices.contains(&i) {
+            None
+        } else {
+            Some([x + 1.1, 1.0, 0.0])
+        };
 
         let phi = if i == 0 { 9999.0 } else { -60.0 };
         let psi = if i == n_res - 1 { 9999.0 } else { -45.0 };
@@ -129,7 +137,11 @@ pub fn make_synthetic_backbone_no_atoms(n_res: usize) -> Arc<ProteinBackbone> {
 /// Build a synthetic ProteinBackbone with two chains.
 /// Chain A: n_res residues on chain 0, spacing `spacing`.
 /// Chain B: n_res residues on chain 1, at offset position.
-pub fn make_two_chain_backbone(n_res: usize, spacing: f64, chain_b_offset: [f64; 3]) -> Arc<ProteinBackbone> {
+pub fn make_two_chain_backbone(
+    n_res: usize,
+    spacing: f64,
+    chain_b_offset: [f64; 3],
+) -> Arc<ProteinBackbone> {
     let mut bb = Vec::new();
     let mut ids = Vec::new();
     let mut chain_map = Vec::new();
@@ -257,8 +269,13 @@ pub fn load_1dc7_backbone() -> Option<Arc<ProteinBackbone>> {
 }
 
 /// Find the ResidueIndex for a given chain_id + res_id in a backbone.
-pub fn res_idx(bb: &ProteinBackbone, chain: &str, res_id: i32) -> proxide_confind::coords::ResidueIndex {
-    let i = bb.ids
+pub fn res_idx(
+    bb: &ProteinBackbone,
+    chain: &str,
+    res_id: i32,
+) -> proxide_confind::coords::ResidueIndex {
+    let i = bb
+        .ids
         .iter()
         .position(|id| id.chain_id == chain && id.res_id == res_id)
         .unwrap_or_else(|| panic!("residue {},{} not found", chain, res_id));

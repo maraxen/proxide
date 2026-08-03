@@ -82,10 +82,7 @@ pub fn kabsch_superpose(a: &[Vector3<f32>], b: &[Vector3<f32>]) -> KabschResult 
 
     // Step 5 — RMSD via the inner-product form (no need to explicitly
     // rotate every point first).
-    let rmsd_sq = f32::max(
-        0.0,
-        (norm_sq_a + norm_sq_b) / n_f - 2.0 * max_trace / n_f,
-    );
+    let rmsd_sq = f32::max(0.0, (norm_sq_a + norm_sq_b) / n_f - 2.0 * max_trace / n_f);
     let rmsd = rmsd_sq.sqrt();
 
     // Step 6 — rotation R = V Uᵀ (row-major); translation t = centroid_b - R·centroid_a.

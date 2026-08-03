@@ -38,20 +38,20 @@
 //!   derived from adaptive kernel density estimates and regressions."
 //!   *Structure* 19(6):844–858 (2011).
 
-pub mod error;
-pub mod rotamer_id;
-pub mod frame;
-pub mod rotlib;
 pub mod binning;
-pub mod sidechain;
+pub mod error;
+pub mod frame;
 pub mod geometry;
 pub mod pb;
+pub mod rotamer_id;
+pub mod rotlib;
 pub mod rotlib_source;
+pub mod sidechain;
 
 pub use error::RotlibError;
-pub use rotamer_id::{RotamerId, PlacedRotamer, PlacedAtom};
-pub use rotlib::RotamerLibrary;
-pub use frame::{Frame, Transform, backbone_frame};
-pub use sidechain::{counts_as_sidechain, is_backbone_or_hydrogen};
-pub use geometry::{ResidueTemplate, ProlineBuilder};
+pub use frame::{backbone_frame, Frame, Transform};
+pub use geometry::{ProlineBuilder, ResidueTemplate};
 pub use pb::rotlib_v1;
+pub use rotamer_id::{PlacedAtom, PlacedRotamer, RotamerId};
+pub use rotlib::RotamerLibrary;
+pub use sidechain::{counts_as_sidechain, is_backbone_or_hydrogen};

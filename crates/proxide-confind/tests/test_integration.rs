@@ -1,8 +1,8 @@
 mod common;
 
-use common::{make_synthetic_backbone, load_rotlib_or_skip};
-use proxide_confind::ConFind;
+use common::{load_rotlib_or_skip, make_synthetic_backbone};
 use proxide_confind::coords::ResidueIndex;
+use proxide_confind::ConFind;
 
 #[test]
 #[ignore = "requires rotamer library — set RLIB env var to run"]
@@ -101,7 +101,7 @@ fn neighbors_excludes_self() {
 
     let ri = ResidueIndex(1);
     let neighbors = confind.neighbors(ri);
-    
+
     // neighbors should not contain ri itself
     assert!(!neighbors.contains(&ri), "neighbors should exclude self");
 }
@@ -125,7 +125,11 @@ fn neighbors_respects_dcut() {
     for i in 0..4 {
         let ri = ResidueIndex(i as u32);
         let neighbors = confind.neighbors(ri);
-        assert_eq!(neighbors.len(), 0, "Residue at 30 Å spacing should have no neighbors (DCUT=25)");
+        assert_eq!(
+            neighbors.len(),
+            0,
+            "Residue at 30 Å spacing should have no neighbors (DCUT=25)"
+        );
     }
 }
 
@@ -164,7 +168,11 @@ fn n_residues_matches_backbone() {
     let backbone = make_synthetic_backbone(5, 3.8);
     let confind = ConFind::new(rotlib, backbone.clone(), false);
 
-    assert_eq!(confind.n_residues(), 5, "n_residues should match backbone length");
+    assert_eq!(
+        confind.n_residues(),
+        5,
+        "n_residues should match backbone length"
+    );
 }
 
 #[test]
@@ -193,7 +201,10 @@ fn constrained_contacts_returns_vec() {
     // Verify the vec is sorted
     if contacts.len() > 1 {
         for i in 0..contacts.len() - 1 {
-            assert!(contacts[i] < contacts[i + 1], "constrained_contacts should return sorted results");
+            assert!(
+                contacts[i] < contacts[i + 1],
+                "constrained_contacts should return sorted results"
+            );
         }
     }
 }
@@ -217,5 +228,8 @@ fn constrained_contacts_uncached_returns_empty() {
 
     // constrained_contacts should return empty vec for uncached residue
     let contacts = confind.constrained_contacts(ri);
-    assert!(contacts.is_empty(), "constrained_contacts should return empty vec for uncached residue");
+    assert!(
+        contacts.is_empty(),
+        "constrained_contacts should return empty vec for uncached residue"
+    );
 }

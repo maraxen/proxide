@@ -1,6 +1,6 @@
+use proxide_rotlib::RotamerId;
 use std::collections::HashMap;
 use std::sync::Arc;
-use proxide_rotlib::RotamerId;
 
 /// Compute rotamer freedom score: the fraction of conformational space uncontested by backbone or neighbors.
 ///
@@ -21,15 +21,14 @@ pub fn compute_freedom(
 
     match freedom_type {
         1 => {
-            let n = n_uncontested
-                + coll_prob.values().filter(|&&v| v / 100.0 < 0.5).count() as f64;
+            let n = n_uncontested + coll_prob.values().filter(|&&v| v / 100.0 < 0.5).count() as f64;
             n / n_library as f64
         }
         2 => {
-            let n1 = n_uncontested
-                + coll_prob.values().filter(|&&v| v / 100.0 < lo_cut).count() as f64;
-            let n2 = n_uncontested
-                + coll_prob.values().filter(|&&v| v / 100.0 < hi_cut).count() as f64;
+            let n1 =
+                n_uncontested + coll_prob.values().filter(|&&v| v / 100.0 < lo_cut).count() as f64;
+            let n2 =
+                n_uncontested + coll_prob.values().filter(|&&v| v / 100.0 < hi_cut).count() as f64;
             ((n1 * n1 + n2 * n2) / 2.0).sqrt() / n_library as f64
         }
         3 => {

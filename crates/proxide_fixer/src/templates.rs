@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TemplateAtom {
@@ -36,16 +36,36 @@ impl ResidueLibrary {
 
     pub fn new_standard() -> Self {
         let mut lib = Self::new();
-        
+
         // Define ALA template
         let ala = ResidueTemplate {
             name: "ALA".to_string(),
             atoms: vec![
-                TemplateAtom { name: "N".to_string(), element: "N".to_string(), coords: [-1.444, -0.596, 0.968] },
-                TemplateAtom { name: "CA".to_string(), element: "C".to_string(), coords: [-0.194, -0.546, 0.198] },
-                TemplateAtom { name: "CB".to_string(), element: "C".to_string(), coords: [-0.584, -0.626, -1.282] },
-                TemplateAtom { name: "C".to_string(), element: "C".to_string(), coords: [0.716, 0.684, 0.478] },
-                TemplateAtom { name: "O".to_string(), element: "O".to_string(), coords: [1.506, 1.084, -0.362] },
+                TemplateAtom {
+                    name: "N".to_string(),
+                    element: "N".to_string(),
+                    coords: [-1.444, -0.596, 0.968],
+                },
+                TemplateAtom {
+                    name: "CA".to_string(),
+                    element: "C".to_string(),
+                    coords: [-0.194, -0.546, 0.198],
+                },
+                TemplateAtom {
+                    name: "CB".to_string(),
+                    element: "C".to_string(),
+                    coords: [-0.584, -0.626, -1.282],
+                },
+                TemplateAtom {
+                    name: "C".to_string(),
+                    element: "C".to_string(),
+                    coords: [0.716, 0.684, 0.478],
+                },
+                TemplateAtom {
+                    name: "O".to_string(),
+                    element: "O".to_string(),
+                    coords: [1.506, 1.084, -0.362],
+                },
             ],
             bonds: vec![
                 ("N".to_string(), "CA".to_string()),
@@ -54,7 +74,7 @@ impl ResidueLibrary {
                 ("C".to_string(), "O".to_string()),
             ],
         };
-        
+
         lib.insert(ala);
         lib
     }

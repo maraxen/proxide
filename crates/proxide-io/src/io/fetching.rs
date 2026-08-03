@@ -1,5 +1,4 @@
 #![cfg(feature = "fetching")]
-
 // TODO: Review allow attributes at a later point
 #![allow(clippy::useless_conversion)]
 // ...
@@ -18,7 +17,7 @@ const AFDB_URL_BASE: &str = "https://alphafold.ebi.ac.uk/files/";
 
 /// Validates that an ID contains only safe characters for URL and path construction.
 fn validate_id(id: &str) -> Result<(), String> {
-    // TODO: For WASM targets, consider using Origin Private File System (OPFS) 
+    // TODO: For WASM targets, consider using Origin Private File System (OPFS)
     // to store and retrieve these downloaded files for high-performance synchronous access.
     if id.is_empty() {
         return Err("ID cannot be empty".to_string());
@@ -319,8 +318,14 @@ mod tests {
 
         let output_dir = tempfile::tempdir().unwrap();
         let base_url = format!("{}/", server.base_url());
-        let path = _fetch_rcsb_with_base(pdb_id, output_dir.path().to_str().unwrap(), "pdb", &base_url).unwrap();
-        
+        let path = _fetch_rcsb_with_base(
+            pdb_id,
+            output_dir.path().to_str().unwrap(),
+            "pdb",
+            &base_url,
+        )
+        .unwrap();
+
         assert!(Path::new(&path).exists());
         assert!(path.ends_with("1ABC.pdb"));
         mock.assert();
@@ -330,7 +335,7 @@ mod tests {
     fn test_fetch_rcsb_pdb_fallback_to_cif() {
         let server = MockServer::start();
         let pdb_id = "1ABC";
-        
+
         // Mock 404 for PDB, 200 for CIF
         let mock_pdb = server.mock(|when, then| {
             when.method(GET).path(format!("/{}.pdb", pdb_id));
@@ -343,9 +348,15 @@ mod tests {
 
         let output_dir = tempfile::tempdir().unwrap();
         let base_url = format!("{}/", server.base_url());
-        
-        let path = _fetch_rcsb_with_base(pdb_id, output_dir.path().to_str().unwrap(), "pdb", &base_url).unwrap();
-        
+
+        let path = _fetch_rcsb_with_base(
+            pdb_id,
+            output_dir.path().to_str().unwrap(),
+            "pdb",
+            &base_url,
+        )
+        .unwrap();
+
         assert!(path.ends_with("1ABC.cif"));
         assert!(Path::new(&path).exists());
         mock_pdb.assert();
@@ -357,13 +368,20 @@ mod tests {
         let server = MockServer::start();
         let uniprot_id = "P12345";
         let mock = server.mock(|when, then| {
-            when.method(GET).path(format!("/AF-{}-F1-model_v1.pdb", uniprot_id));
+            when.method(GET)
+                .path(format!("/AF-{}-F1-model_v1.pdb", uniprot_id));
             then.status(200).body("AFDB CONTENT");
         });
 
         let output_dir = tempfile::tempdir().unwrap();
         let base_url = format!("{}/", server.base_url());
-        let path = _fetch_afdb_with_base(uniprot_id, output_dir.path().to_str().unwrap(), 1, &base_url).unwrap();
+        let path = _fetch_afdb_with_base(
+            uniprot_id,
+            output_dir.path().to_str().unwrap(),
+            1,
+            &base_url,
+        )
+        .unwrap();
         assert!(Path::new(&path).exists());
         mock.assert();
     }
@@ -384,10 +402,19 @@ mod tests {
 
         let output_dir = tempfile::tempdir().unwrap();
         let base_url = format!("{}/", server.base_url());
-        let _path = _fetch_foldcomp_database_with_base(db_name, output_dir.path().to_str().unwrap(), 0, &base_url).unwrap();
-        
+        let _path = _fetch_foldcomp_database_with_base(
+            db_name,
+            output_dir.path().to_str().unwrap(),
+            0,
+            &base_url,
+        )
+        .unwrap();
+
         for ext in vec!["", ".index", ".lookup", ".dbtype", ".source"] {
-            assert!(output_dir.path().join(format!("{}{}", db_name, ext)).exists());
+            assert!(output_dir
+                .path()
+                .join(format!("{}{}", db_name, ext))
+                .exists());
         }
         for mock in mocks {
             mock.assert();

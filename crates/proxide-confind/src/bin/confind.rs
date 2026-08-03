@@ -1,6 +1,4 @@
-use proxide_confind::{
-    load_pdb_f64, ConFind, ResidueIndex,
-};
+use proxide_confind::{load_pdb_f64, ConFind, ResidueIndex};
 use proxide_rotlib::RotamerLibrary;
 use std::fs;
 use std::io::{BufWriter, Write};
@@ -102,7 +100,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         )?;
     }
 
-    for (&(ri, rj), &val) in interference_list.pairs.iter().zip(&interference_list.degrees) {
+    for (&(ri, rj), &val) in interference_list
+        .pairs
+        .iter()
+        .zip(&interference_list.degrees)
+    {
         let id_a = cf.residue_id(ri);
         let id_b = cf.residue_id(rj);
         writeln!(
@@ -140,7 +142,10 @@ fn parse_selection(sel: &str, backbone: &proxide_confind::ProteinBackbone) -> Ve
         let part = part.trim();
         if let Some((chain, range)) = part.split_once(':') {
             let (start, end) = if let Some((s, e)) = range.split_once('-') {
-                (s.parse::<i32>().unwrap_or(i32::MIN), e.parse::<i32>().unwrap_or(i32::MAX))
+                (
+                    s.parse::<i32>().unwrap_or(i32::MIN),
+                    e.parse::<i32>().unwrap_or(i32::MAX),
+                )
             } else {
                 let v = range.parse::<i32>().unwrap_or(0);
                 (v, v)

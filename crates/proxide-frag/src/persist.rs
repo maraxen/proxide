@@ -122,7 +122,9 @@ impl<const N: usize> FragmentDb<N> {
 
         // Validate magic number.
         if persisted.magic != MAGIC {
-            return Err(PersistError::BadMagic { found: persisted.magic });
+            return Err(PersistError::BadMagic {
+                found: persisted.magic,
+            });
         }
 
         // Validate version.

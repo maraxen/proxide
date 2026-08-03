@@ -5,6 +5,6 @@ Thin re-export of the Rust `_proxider.jaccard_distance_matrix` binding
 the `metric` options, and the returned dict shape.
 """
 
-from proxide._proxider import jaccard_distance_matrix  # type: ignore[unresolved-import]
+from proxide._proxider import jaccard_distance_matrix  # ty: ignore[unresolved-import]
 
 __all__ = ["jaccard_distance_matrix"]

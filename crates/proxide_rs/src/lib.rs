@@ -13,11 +13,11 @@ pub use proxide_units::UnitSystem;
 
 // Re-export algorithm and physics modules
 pub use proxide_geometry::geometry as algo_geometry;
-pub use proxide_physics::physics;
 pub use proxide_io::formats;
 pub use proxide_io::formatters;
 #[cfg(feature = "fetching")]
 pub use proxide_io::io;
+pub use proxide_physics::physics;
 
 /// Force field and topology modules
 pub mod forcefield {
