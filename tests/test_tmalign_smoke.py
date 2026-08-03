@@ -64,3 +64,18 @@ def test_tm_align_rejects_non_nx3_arrays():
     pass
   else:
     raise AssertionError("expected a ValueError for a non-(N, 3) coordinate array")
+
+
+def test_tm_align_rejects_non_finite_coords():
+  good = _helix(5, 0.0)
+
+  for bad_value in (np.nan, np.inf, -np.inf):
+    bad = _helix(5, 0.0)
+    bad[2, 1] = bad_value
+
+    try:
+      proxide.tmalign.tm_align(bad, good)
+    except ValueError:
+      pass
+    else:
+      raise AssertionError(f"expected a ValueError for a coordinate array containing {bad_value}")

@@ -55,21 +55,20 @@ pub fn pairwise_tm_scores(traces: &[CaTrace]) -> Result<Array2<f32>, TmAlignErro
         return Ok(mat);
     }
 
-    let par = (0..n).into_par().map(|i| {
+    let par = (0..n).into_par().map(|i| -> Result<Vec<(f32, f32)>, TmAlignError> {
         ((i + 1)..n)
             .map(|j| {
-                let result = tmalign_pair_serial(&traces[i].coords, &traces[j].coords)
-                    .expect("emptiness checked for all traces up front");
-                (result.tm_score_norm1, result.tm_score_norm2)
+                tmalign_pair_serial(&traces[i].coords, &traces[j].coords)
+                    .map(|result| (result.tm_score_norm1, result.tm_score_norm2))
             })
-            .collect::<Vec<(f32, f32)>>()
+            .collect()
     });
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let par = par.num_threads(proxide_parallel_rt::num_threads());
-    let rows: Vec<Vec<(f32, f32)>> = par.collect();
+    let rows: Vec<Result<Vec<(f32, f32)>, TmAlignError>> = par.collect();
 
     for (i, row) in rows.into_iter().enumerate() {
-        for (offset, (norm1, norm2)) in row.into_iter().enumerate() {
+        for (offset, (norm1, norm2)) in row?.into_iter().enumerate() {
             let j = i + 1 + offset;
             mat[[i, j]] = norm1;
             mat[[j, i]] = norm2;

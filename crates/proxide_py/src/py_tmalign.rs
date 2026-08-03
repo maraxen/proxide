@@ -16,6 +16,12 @@ fn to_vector3_coords(arr: &PyReadonlyArray2<'_, f32>) -> PyResult<Vec<Vector3<f3
             view.shape()
         )));
     }
+    if let Some(bad) = view.iter().find(|v| !v.is_finite()) {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "coordinate array contains a non-finite value ({bad}); NaN/Inf coordinates would \
+             silently corrupt the alignment instead of erroring"
+        )));
+    }
     Ok(view.rows().into_iter().map(|r| Vector3::new(r[0], r[1], r[2])).collect())
 }
 
