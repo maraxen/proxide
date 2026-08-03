@@ -44,9 +44,7 @@ pub fn get_initial_ss(
 
     // Validate lengths
     if len1 == 0 || len2 == 0 {
-        return Err(TmAlignError::Parse(
-            "Structure has no residues".to_string(),
-        ));
+        return Err(TmAlignError::Parse("Structure has no residues".to_string()));
     }
 
     // Compute secondary structure for both structures
@@ -78,11 +76,7 @@ pub fn get_initial_ss(
 /// # Returns
 ///
 /// A complete global alignment map or an empty map if either input is empty.
-fn nwdp_tm_char(
-    sec1: &[u8],
-    sec2: &[u8],
-    gap_open: f32,
-) -> Result<AlignmentMap, TmAlignError> {
+fn nwdp_tm_char(sec1: &[u8], sec2: &[u8], gap_open: f32) -> Result<AlignmentMap, TmAlignError> {
     // Delegates to the shared simplified-Gotoh core (`crate::nwdp_tm`), which
     // also backs `ss_plus.rs`'s precomputed-matrix overload and
     // `local_structure.rs`'s rotation-aware overload — one implementation
@@ -109,8 +103,22 @@ mod tests {
 
         // Verify all are diagonal matches (i, i)
         for (k, (a, b)) in alignment.iter().enumerate() {
-            assert_eq!(*a, Some(k), "Position {}: expected a=Some({}), got {:?}", k, k, a);
-            assert_eq!(*b, Some(k), "Position {}: expected b=Some({}), got {:?}", k, k, b);
+            assert_eq!(
+                *a,
+                Some(k),
+                "Position {}: expected a=Some({}), got {:?}",
+                k,
+                k,
+                a
+            );
+            assert_eq!(
+                *b,
+                Some(k),
+                "Position {}: expected b=Some({}), got {:?}",
+                k,
+                k,
+                b
+            );
         }
     }
 
@@ -134,7 +142,11 @@ mod tests {
             .collect();
 
         // We expect 2 gaps for the extra EE in sequence 2
-        assert_eq!(gaps_in_seq1.len(), 2, "Expected 2 gaps in seq1 for extra EE");
+        assert_eq!(
+            gaps_in_seq1.len(),
+            2,
+            "Expected 2 gaps in seq1 for extra EE"
+        );
 
         // Count paired residues
         let paired: Vec<_> = alignment
@@ -238,7 +250,10 @@ mod tests {
         }
 
         let result = get_initial_ss(&coords1, &coords2);
-        assert!(result.is_ok(), "get_initial_ss should succeed for identical helices");
+        assert!(
+            result.is_ok(),
+            "get_initial_ss should succeed for identical helices"
+        );
 
         let alignment = result.unwrap();
         assert!(!alignment.is_empty(), "Alignment should not be empty");
@@ -249,7 +264,10 @@ mod tests {
             .filter(|(a, b)| a.is_some() && b.is_some())
             .collect();
 
-        assert!(!paired.is_empty(), "Should have at least some paired residues");
+        assert!(
+            !paired.is_empty(),
+            "Should have at least some paired residues"
+        );
     }
 
     /// Test get_initial_ss with short sequences (minimal coordinates).
@@ -296,20 +314,22 @@ mod tests {
         let alignment = result.unwrap();
 
         // Collect all residues seen from seq1 (0..4)
-        let seq1_seen: Vec<_> = alignment
-            .iter()
-            .filter_map(|(a, _)| *a)
-            .collect();
+        let seq1_seen: Vec<_> = alignment.iter().filter_map(|(a, _)| *a).collect();
 
         // Collect all residues seen from seq2 (0..5)
-        let seq2_seen: Vec<_> = alignment
-            .iter()
-            .filter_map(|(_, b)| *b)
-            .collect();
+        let seq2_seen: Vec<_> = alignment.iter().filter_map(|(_, b)| *b).collect();
 
         // Verify we see all residues (in order)
-        assert_eq!(seq1_seen, vec![0, 1, 2, 3, 4], "seq1: expected all 5 residues in order");
-        assert_eq!(seq2_seen, vec![0, 1, 2, 3, 4, 5], "seq2: expected all 6 residues in order");
+        assert_eq!(
+            seq1_seen,
+            vec![0, 1, 2, 3, 4],
+            "seq1: expected all 5 residues in order"
+        );
+        assert_eq!(
+            seq2_seen,
+            vec![0, 1, 2, 3, 4, 5],
+            "seq2: expected all 6 residues in order"
+        );
     }
 
     /// Test tie-breaking: when v==h, we should step vertically (j--).

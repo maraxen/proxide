@@ -158,7 +158,14 @@ pub(crate) fn tmscore8_search(
                 .map(|&p| apply_transform(&kabsch_result, p))
                 .collect();
 
-            let (_aligned_indices, score) = score_fun8(&rotated, coords2_aligned, d0, d0_search - 1.0, l_norm, score_d8);
+            let (_aligned_indices, score) = score_fun8(
+                &rotated,
+                coords2_aligned,
+                d0,
+                d0_search - 1.0,
+                l_norm,
+                score_d8,
+            );
             if score > best_score {
                 best_score = score;
                 best_result = kabsch_result.clone();
@@ -189,7 +196,14 @@ pub(crate) fn tmscore8_search(
                     .iter()
                     .map(|&p| apply_transform(&new_result, p))
                     .collect();
-                let (new_indices, score_new) = score_fun8(&rotated_new, coords2_aligned, d0, d0_search + 1.0, l_norm, score_d8);
+                let (new_indices, score_new) = score_fun8(
+                    &rotated_new,
+                    coords2_aligned,
+                    d0,
+                    d0_search + 1.0,
+                    l_norm,
+                    score_d8,
+                );
 
                 if score_new > best_score {
                     best_score = score_new;
@@ -293,7 +307,10 @@ pub fn dp_iter(
             _ => None,
         })
         .collect();
-    let identity_transform = ([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [0.0_f32; 3]);
+    let identity_transform = (
+        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        [0.0_f32; 3],
+    );
 
     // Rotation/translation state carried forward across BOTH the outer
     // gap_open loop AND every inner iteration — updated from
@@ -330,7 +347,8 @@ pub fn dp_iter(
         for iteration in 0..max_iterations {
             // Run NWDP_TM with rotation-aware scoring against the carried-forward rotation.
             let alignment = nwdp_tm(coords1.len(), coords2.len(), gap_open, |i, j| {
-                let p1_rot = apply_transform_inline(coords1[i], &current_rotation, &current_translation);
+                let p1_rot =
+                    apply_transform_inline(coords1[i], &current_rotation, &current_translation);
                 let diff = p1_rot - coords2[j];
                 let dist_sq = diff.norm_squared();
                 // Score as: 1/(1 + dist²/d0²)
@@ -355,8 +373,13 @@ pub fn dp_iter(
             }
 
             // Refine rotation via tmscore8_search.
-            let (refined_result, refined_score) =
-                tmscore8_search(&new_aligned_coords1, &new_aligned_coords2, d0, d0_search, l_norm);
+            let (refined_result, refined_score) = tmscore8_search(
+                &new_aligned_coords1,
+                &new_aligned_coords2,
+                d0,
+                d0_search,
+                l_norm,
+            );
 
             // Carry the refined rotation/translation into the next iteration's
             // NWDP_TM call — unconditionally, not only on improvement.
@@ -398,7 +421,11 @@ mod tests {
 
         let (_rotation, score) = tmscore8_search(&coords, &coords, d0, d0_search, l_norm);
         // For identical coordinates, score should be close to 1.0.
-        assert!(score > 0.8, "Score for identical coords should be high, got {}", score);
+        assert!(
+            score > 0.8,
+            "Score for identical coords should be high, got {}",
+            score
+        );
     }
 
     #[test]
@@ -418,7 +445,11 @@ mod tests {
 
         let (_rotation, score) = tmscore8_search(&coords1, &coords2, d0, d0_search, l_norm);
         // After recovery of translation, should get high score.
-        assert!(score > 0.8, "Score for translated coords should recover, got {}", score);
+        assert!(
+            score > 0.8,
+            "Score for translated coords should recover, got {}",
+            score
+        );
     }
 
     #[test]
@@ -442,11 +473,23 @@ mod tests {
         let d0_search = 8.0;
         let l_norm = 4;
 
-        let (_refined_alignment, score) =
-            dp_iter(&coords, &coords, &initial_alignment, d0, d0_search, l_norm, (0, 2), 5);
+        let (_refined_alignment, score) = dp_iter(
+            &coords,
+            &coords,
+            &initial_alignment,
+            d0,
+            d0_search,
+            l_norm,
+            (0, 2),
+            5,
+        );
 
         // Score should be very high for identical structures.
-        assert!(score > 0.8, "DP_iter score for identical coords should be high, got {}", score);
+        assert!(
+            score > 0.8,
+            "DP_iter score for identical coords should be high, got {}",
+            score
+        );
     }
 
     #[test]
@@ -475,7 +518,12 @@ mod tests {
         let (indices, _score) = score_fun8(&coords1, &coords2, d0, d_cutoff, l_norm, f32::INFINITY);
 
         // Should collect the two close pairs, not the far one.
-        assert_eq!(indices.len(), 2, "Expected 2 close pairs, got {}", indices.len());
+        assert_eq!(
+            indices.len(),
+            2,
+            "Expected 2 close pairs, got {}",
+            indices.len()
+        );
     }
 
     #[test]

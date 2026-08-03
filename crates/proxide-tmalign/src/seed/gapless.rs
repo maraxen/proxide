@@ -53,9 +53,7 @@ pub fn thread_gapless(
 
     let min_len = xlen.min(ylen);
     if min_len < 3 {
-        return Err(TmAlignError::Parse(
-            "Sequence is too short < 3".to_string(),
-        ));
+        return Err(TmAlignError::Parse("Sequence is too short < 3".to_string()));
     }
 
     // Compute offset range: k from n1 to n2, inclusive.
@@ -132,9 +130,7 @@ pub fn get_initial(
 
     let min_len = xlen.min(ylen);
     if min_len < 3 {
-        return Err(TmAlignError::Parse(
-            "Sequence is too short < 3".to_string(),
-        ));
+        return Err(TmAlignError::Parse("Sequence is too short < 3".to_string()));
     }
 
     // Compute default min_ali: max(5, min_len / 2) using integer division.

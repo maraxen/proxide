@@ -60,9 +60,7 @@ pub fn get_initial5(
     let ylen = coords2.len();
 
     if xlen < 3 || ylen < 3 {
-        return Err(TmAlignError::Parse(
-            "Sequence is too short < 3".to_string(),
-        ));
+        return Err(TmAlignError::Parse("Sequence is too short < 3".to_string()));
     }
 
     // Hardcoded parameters (matched to USalign defaults):
@@ -78,10 +76,7 @@ pub fn get_initial5(
     let al = xlen.min(ylen);
 
     // Fragment lengths: cap 20 at aL/3 and 100 at aL/2.
-    let n_frag = [
-        20.min(al / 3),
-        100.min(al / 2),
-    ];
+    let n_frag = [20.min(al / 3), 100.min(al / 2)];
 
     // Jump steps based on chain length, capped at len/3.
     let n_jump1 = compute_jump_step(xlen);
@@ -245,7 +240,10 @@ mod tests {
         let l_norm = coords.len();
 
         let result = get_initial5(&coords, &coords, d0, d0_search, l_norm);
-        assert!(result.is_ok(), "Should produce an alignment for identical structures");
+        assert!(
+            result.is_ok(),
+            "Should produce an alignment for identical structures"
+        );
 
         let alignment = result.unwrap();
         assert!(!alignment.is_empty(), "Alignment should not be empty");
@@ -259,7 +257,10 @@ mod tests {
             })
             .collect();
 
-        assert!(!diagonal_pairs.is_empty(), "Should have some diagonal pairs");
+        assert!(
+            !diagonal_pairs.is_empty(),
+            "Should have some diagonal pairs"
+        );
     }
 
     /// Test that very short sequences return an error.
@@ -346,7 +347,10 @@ mod tests {
             Vector3::new(4.0, 0.0, 0.0),
             Vector3::new(5.0, 0.0, 0.0),
         ];
-        let coords2: Vec<_> = coords1.iter().map(|p| p + Vector3::new(10.0, 0.0, 0.0)).collect();
+        let coords2: Vec<_> = coords1
+            .iter()
+            .map(|p| p + Vector3::new(10.0, 0.0, 0.0))
+            .collect();
 
         let d0 = 2.0;
         let d0_search = 8.0;
@@ -375,7 +379,8 @@ mod tests {
         // Create two offset linear structures. aL=9 so n_frag[0]=min(20,9/3=3)=3
         // survives the seed's `frag_len < 3` skip (see `d01_clamping`'s comment).
         let coords1: Vec<Vector3<f32>> = (0..9).map(|i| Vector3::new(i as f32, 0.0, 0.0)).collect();
-        let coords2: Vec<Vector3<f32>> = (1..10).map(|i| Vector3::new(i as f32, 0.0, 0.0)).collect();
+        let coords2: Vec<Vector3<f32>> =
+            (1..10).map(|i| Vector3::new(i as f32, 0.0, 0.0)).collect();
 
         let d0 = 2.0;
         let d0_search = 8.0;

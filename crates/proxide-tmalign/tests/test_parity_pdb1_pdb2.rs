@@ -134,9 +134,18 @@ fn tmalign_pair_matches_serial_exactly_on_pdb1_vs_pdb2() {
         .expect("tmalign_pair should succeed on the USalign sample pair");
 
     assert_eq!(serial.n_aligned, parallel.n_aligned, "n_aligned mismatch");
-    assert_eq!(serial.tm_score_norm1, parallel.tm_score_norm1, "tm_score_norm1 mismatch");
-    assert_eq!(serial.tm_score_norm2, parallel.tm_score_norm2, "tm_score_norm2 mismatch");
+    assert_eq!(
+        serial.tm_score_norm1, parallel.tm_score_norm1,
+        "tm_score_norm1 mismatch"
+    );
+    assert_eq!(
+        serial.tm_score_norm2, parallel.tm_score_norm2,
+        "tm_score_norm2 mismatch"
+    );
     assert_eq!(serial.rotation, parallel.rotation, "rotation mismatch");
-    assert_eq!(serial.translation, parallel.translation, "translation mismatch");
+    assert_eq!(
+        serial.translation, parallel.translation,
+        "translation mismatch"
+    );
     assert_eq!(serial.alignment, parallel.alignment, "alignment mismatch");
 }

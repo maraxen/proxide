@@ -54,8 +54,8 @@
 //!   anticipates, not a numerics bug like the (now-fixed) `n_aligned`/
 //!   `score_d8` gap was.
 
-use proxide_tmalign::pipeline::tmalign_pair_serial;
 use proxide_tmalign::load_pdb_ca_trace;
+use proxide_tmalign::pipeline::tmalign_pair_serial;
 
 const TOLERANCE: f32 = 0.01;
 /// Looser, explicitly-documented tolerance for the ubiquitin/lysozyme pair
@@ -63,7 +63,9 @@ const TOLERANCE: f32 = 0.01;
 const LOW_HOMOLOGY_TOLERANCE: f32 = 0.03;
 
 fn fixture(name: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data").join(name)
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data")
+        .join(name)
 }
 
 #[test]
@@ -77,15 +79,27 @@ fn lysozyme_crystal_forms_are_near_identical() {
     const REF_TM2: f32 = 0.9900;
     const REF_N_ALIGNED: usize = 129;
 
-    assert!((result.tm_score_norm1 - REF_TM1).abs() < TOLERANCE, "tm_score_norm1: got {:.4}", result.tm_score_norm1);
-    assert!((result.tm_score_norm2 - REF_TM2).abs() < TOLERANCE, "tm_score_norm2: got {:.4}", result.tm_score_norm2);
-    assert_eq!(result.n_aligned, REF_N_ALIGNED, "n_aligned should exactly match reference Lali");
+    assert!(
+        (result.tm_score_norm1 - REF_TM1).abs() < TOLERANCE,
+        "tm_score_norm1: got {:.4}",
+        result.tm_score_norm1
+    );
+    assert!(
+        (result.tm_score_norm2 - REF_TM2).abs() < TOLERANCE,
+        "tm_score_norm2: got {:.4}",
+        result.tm_score_norm2
+    );
+    assert_eq!(
+        result.n_aligned, REF_N_ALIGNED,
+        "n_aligned should exactly match reference Lali"
+    );
 }
 
 #[test]
 fn myoglobin_vs_hemoglobin_beta_conserved_fold_low_identity() {
     let p1 = load_pdb_ca_trace(fixture("myoglobin_1mbn_A.pdb")).expect("committed fixture parses");
-    let p2 = load_pdb_ca_trace(fixture("hemoglobin_beta_2dhb_B.pdb")).expect("committed fixture parses");
+    let p2 =
+        load_pdb_ca_trace(fixture("hemoglobin_beta_2dhb_B.pdb")).expect("committed fixture parses");
 
     let result = tmalign_pair_serial(&p1.coords, &p2.coords).expect("tmalign_pair_serial succeeds");
 
@@ -93,14 +107,26 @@ fn myoglobin_vs_hemoglobin_beta_conserved_fold_low_identity() {
     const REF_TM2: f32 = 0.8940;
     const REF_N_ALIGNED: usize = 145;
 
-    assert!((result.tm_score_norm1 - REF_TM1).abs() < TOLERANCE, "tm_score_norm1: got {:.4}", result.tm_score_norm1);
-    assert!((result.tm_score_norm2 - REF_TM2).abs() < TOLERANCE, "tm_score_norm2: got {:.4}", result.tm_score_norm2);
-    assert_eq!(result.n_aligned, REF_N_ALIGNED, "n_aligned should exactly match reference Lali");
+    assert!(
+        (result.tm_score_norm1 - REF_TM1).abs() < TOLERANCE,
+        "tm_score_norm1: got {:.4}",
+        result.tm_score_norm1
+    );
+    assert!(
+        (result.tm_score_norm2 - REF_TM2).abs() < TOLERANCE,
+        "tm_score_norm2: got {:.4}",
+        result.tm_score_norm2
+    );
+    assert_eq!(
+        result.n_aligned, REF_N_ALIGNED,
+        "n_aligned should exactly match reference Lali"
+    );
 }
 
 #[test]
 fn triosephosphate_isomerase_vs_myoglobin_different_length_unrelated_fold() {
-    let p1 = load_pdb_ca_trace(fixture("triosephosphate_1ypi_A.pdb")).expect("committed fixture parses");
+    let p1 =
+        load_pdb_ca_trace(fixture("triosephosphate_1ypi_A.pdb")).expect("committed fixture parses");
     let p2 = load_pdb_ca_trace(fixture("myoglobin_1mbn_A.pdb")).expect("committed fixture parses");
 
     assert_eq!(p1.len(), 247);
@@ -112,9 +138,20 @@ fn triosephosphate_isomerase_vs_myoglobin_different_length_unrelated_fold() {
     const REF_TM2: f32 = 0.3676;
     const REF_N_ALIGNED: usize = 107;
 
-    assert!((result.tm_score_norm1 - REF_TM1).abs() < TOLERANCE, "tm_score_norm1: got {:.4}", result.tm_score_norm1);
-    assert!((result.tm_score_norm2 - REF_TM2).abs() < TOLERANCE, "tm_score_norm2: got {:.4}", result.tm_score_norm2);
-    assert_eq!(result.n_aligned, REF_N_ALIGNED, "n_aligned should exactly match reference Lali");
+    assert!(
+        (result.tm_score_norm1 - REF_TM1).abs() < TOLERANCE,
+        "tm_score_norm1: got {:.4}",
+        result.tm_score_norm1
+    );
+    assert!(
+        (result.tm_score_norm2 - REF_TM2).abs() < TOLERANCE,
+        "tm_score_norm2: got {:.4}",
+        result.tm_score_norm2
+    );
+    assert_eq!(
+        result.n_aligned, REF_N_ALIGNED,
+        "n_aligned should exactly match reference Lali"
+    );
 }
 
 /// Informational, not a numerics regression gate — see the module doc's
@@ -135,12 +172,16 @@ fn ubiquitin_vs_lysozyme_unrelated_fold_near_random_floor() {
     assert!(
         (result.tm_score_norm1 - REF_TM1).abs() < LOW_HOMOLOGY_TOLERANCE,
         "tm_score_norm1: got {:.4}, reference {:.4} (documented low-homology tolerance {})",
-        result.tm_score_norm1, REF_TM1, LOW_HOMOLOGY_TOLERANCE
+        result.tm_score_norm1,
+        REF_TM1,
+        LOW_HOMOLOGY_TOLERANCE
     );
     assert!(
         (result.tm_score_norm2 - REF_TM2).abs() < LOW_HOMOLOGY_TOLERANCE,
         "tm_score_norm2: got {:.4}, reference {:.4} (documented low-homology tolerance {})",
-        result.tm_score_norm2, REF_TM2, LOW_HOMOLOGY_TOLERANCE
+        result.tm_score_norm2,
+        REF_TM2,
+        LOW_HOMOLOGY_TOLERANCE
     );
     // n_aligned deliberately NOT exact-match-asserted here: observed 48 vs
     // reference 44, a documented seed-selection edge case at near-floor

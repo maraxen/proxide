@@ -55,14 +55,16 @@ pub fn pairwise_tm_scores(traces: &[CaTrace]) -> Result<Array2<f32>, TmAlignErro
         return Ok(mat);
     }
 
-    let par = (0..n).into_par().map(|i| -> Result<Vec<(f32, f32)>, TmAlignError> {
-        ((i + 1)..n)
-            .map(|j| {
-                tmalign_pair_serial(&traces[i].coords, &traces[j].coords)
-                    .map(|result| (result.tm_score_norm1, result.tm_score_norm2))
-            })
-            .collect()
-    });
+    let par = (0..n)
+        .into_par()
+        .map(|i| -> Result<Vec<(f32, f32)>, TmAlignError> {
+            ((i + 1)..n)
+                .map(|j| {
+                    tmalign_pair_serial(&traces[i].coords, &traces[j].coords)
+                        .map(|result| (result.tm_score_norm1, result.tm_score_norm2))
+                })
+                .collect()
+        });
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let par = par.num_threads(proxide_parallel_rt::num_threads());
     let rows: Vec<Result<Vec<(f32, f32)>, TmAlignError>> = par.collect();
@@ -127,15 +129,28 @@ mod tests {
 
     #[test]
     fn matches_direct_serial_calls() {
-        let traces = vec![helix(8, 0.0), helix(6, 30.0), helix(10, 60.0), helix(7, 90.0)];
+        let traces = vec![
+            helix(8, 0.0),
+            helix(6, 30.0),
+            helix(10, 60.0),
+            helix(7, 90.0),
+        ];
         let mat = pairwise_tm_scores(&traces).expect("non-empty traces");
 
         for i in 0..traces.len() {
             for j in (i + 1)..traces.len() {
                 let direct = tmalign_pair_serial(&traces[i].coords, &traces[j].coords)
                     .expect("non-empty traces");
-                assert_eq!(mat[[i, j]], direct.tm_score_norm1, "mat[{i},{j}] vs tm_score_norm1");
-                assert_eq!(mat[[j, i]], direct.tm_score_norm2, "mat[{j},{i}] vs tm_score_norm2");
+                assert_eq!(
+                    mat[[i, j]],
+                    direct.tm_score_norm1,
+                    "mat[{i},{j}] vs tm_score_norm1"
+                );
+                assert_eq!(
+                    mat[[j, i]],
+                    direct.tm_score_norm2,
+                    "mat[{j},{i}] vs tm_score_norm2"
+                );
             }
         }
     }
@@ -177,6 +192,9 @@ mod tests {
     #[test]
     fn any_empty_structure_is_an_error() {
         let traces = vec![helix(8, 0.0), make_trace(vec![])];
-        assert!(matches!(pairwise_tm_scores(&traces), Err(TmAlignError::EmptyStructure)));
+        assert!(matches!(
+            pairwise_tm_scores(&traces),
+            Err(TmAlignError::EmptyStructure)
+        ));
     }
 }

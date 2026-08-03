@@ -22,7 +22,11 @@ fn to_vector3_coords(arr: &PyReadonlyArray2<'_, f32>) -> PyResult<Vec<Vector3<f3
              silently corrupt the alignment instead of erroring"
         )));
     }
-    Ok(view.rows().into_iter().map(|r| Vector3::new(r[0], r[1], r[2])).collect())
+    Ok(view
+        .rows()
+        .into_iter()
+        .map(|r| Vector3::new(r[0], r[1], r[2]))
+        .collect())
 }
 
 /// Compute the TM-align structural alignment between two Cα traces.

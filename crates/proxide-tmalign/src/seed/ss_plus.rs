@@ -251,11 +251,7 @@ mod tests {
         ];
 
         // Previous alignment has only gaps (no actual matches).
-        let previous_alignment = vec![
-            (Some(0), None),
-            (None, Some(0)),
-            (Some(1), None),
-        ];
+        let previous_alignment = vec![(Some(0), None), (None, Some(0)), (Some(1), None)];
         let d0 = 2.0;
 
         let result = get_initial_ssplus(&coords, &coords, &previous_alignment, d0);
@@ -271,11 +267,7 @@ mod tests {
             Vector3::new(2.0, 0.0, 0.0),
         ];
 
-        let previous_alignment = vec![
-            (Some(0), Some(0)),
-            (Some(1), Some(1)),
-            (Some(2), Some(2)),
-        ];
+        let previous_alignment = vec![(Some(0), Some(0)), (Some(1), Some(1)), (Some(2), Some(2))];
 
         let d0 = 2.0;
 

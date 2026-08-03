@@ -165,9 +165,9 @@ mod tests {
         let a = b"CCHHHH"; // 2 leading mismatches vs b, then 4 matches
         let b = b"HHHH";
         let alignment = nwdp_tm_char(a, b, -100.0); // harsh gap_open
-        // With free leading gaps, the optimal alignment shifts b to align
-        // with a's trailing HHHH via 2 leading gaps in b, not by paying the
-        // harsh gap_open on a mismatch-laden diagonal run.
+                                                    // With free leading gaps, the optimal alignment shifts b to align
+                                                    // with a's trailing HHHH via 2 leading gaps in b, not by paying the
+                                                    // harsh gap_open on a mismatch-laden diagonal run.
         let matched: Vec<_> = alignment
             .iter()
             .filter_map(|&(i, j)| match (i, j) {
@@ -182,7 +182,11 @@ mod tests {
     fn precomputed_matrix_style_closure_works() {
         // Exercise the generic `nwdp_tm` (not just the char wrapper) with an
         // arbitrary closure, as ss_plus.rs's precomputed score matrix does.
-        let matrix = [vec![0.0, 0.0, 0.0], vec![0.0, 1.0, 0.2], vec![0.0, 0.2, 1.0]];
+        let matrix = [
+            vec![0.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.2],
+            vec![0.0, 0.2, 1.0],
+        ];
         let alignment = nwdp_tm(2, 2, -1.0, |i, j| matrix[i + 1][j + 1]);
         assert_eq!(alignment.len(), 2);
         assert_eq!(alignment[0], (Some(0), Some(0)));

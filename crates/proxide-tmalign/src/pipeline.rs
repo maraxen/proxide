@@ -29,11 +29,11 @@
 
 use crate::d0;
 use crate::error::TmAlignError;
+use crate::kabsch::kabsch_superpose;
+use crate::nw::AlignedPair;
 use crate::refine::dp_iter;
 use crate::score::{apply_transform_with_matrix, evaluate_tm_score};
 use crate::seed::{run_seed, AlignmentMap, SeedKind};
-use crate::kabsch::kabsch_superpose;
-use crate::nw::AlignedPair;
 use nalgebra::Vector3;
 use orx_parallel::{IntoParIter, ParIter};
 
@@ -114,12 +114,54 @@ pub fn tmalign_pair_serial(
     let l_norm = coords1.len().min(coords2.len());
     let (d0_search_phase, d0_search) = d0::d0_search(l_norm);
 
-    let seed_a = run_seed(SeedKind::GaplessThreading, coords1, coords2, d0_search_phase, d0_search, l_norm, None);
-    let seed_b = run_seed(SeedKind::SecondaryStructure, coords1, coords2, d0_search_phase, d0_search, l_norm, None);
-    let seed_c = run_seed(SeedKind::LocalStructure, coords1, coords2, d0_search_phase, d0_search, l_norm, None);
-    let seed_e = run_seed(SeedKind::FragmentGapless, coords1, coords2, d0_search_phase, d0_search, l_norm, None);
+    let seed_a = run_seed(
+        SeedKind::GaplessThreading,
+        coords1,
+        coords2,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+        None,
+    );
+    let seed_b = run_seed(
+        SeedKind::SecondaryStructure,
+        coords1,
+        coords2,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+        None,
+    );
+    let seed_c = run_seed(
+        SeedKind::LocalStructure,
+        coords1,
+        coords2,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+        None,
+    );
+    let seed_e = run_seed(
+        SeedKind::FragmentGapless,
+        coords1,
+        coords2,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+        None,
+    );
 
-    tmalign_pair_from_seeds(coords1, coords2, l_norm, d0_search_phase, d0_search, seed_a, seed_b, seed_c, seed_e)
+    tmalign_pair_from_seeds(
+        coords1,
+        coords2,
+        l_norm,
+        d0_search_phase,
+        d0_search,
+        seed_a,
+        seed_b,
+        seed_c,
+        seed_e,
+    )
 }
 
 /// Parallel twin of [`tmalign_pair_serial`]: seeds (a)/(b)/(c)/(e)'s raw
@@ -167,9 +209,17 @@ pub fn tmalign_pair(
     // orx-parallel's default IterationOrder is `Ordered`, so `collect()` below
     // preserves seed_kinds' input order -- essential since the pop()s after it
     // rely on positional a/b/c/e correspondence.
-    let par = seed_kinds
-        .into_par()
-        .map(|kind| run_seed(kind, coords1, coords2, d0_search_phase, d0_search, l_norm, None));
+    let par = seed_kinds.into_par().map(|kind| {
+        run_seed(
+            kind,
+            coords1,
+            coords2,
+            d0_search_phase,
+            d0_search,
+            l_norm,
+            None,
+        )
+    });
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let par = par.num_threads(proxide_parallel_rt::num_threads());
     let mut seed_results: Vec<Result<AlignmentMap, TmAlignError>> = par.collect();
@@ -179,7 +229,17 @@ pub fn tmalign_pair(
     let seed_b = seed_results.pop().expect("4 seeds dispatched");
     let seed_a = seed_results.pop().expect("4 seeds dispatched");
 
-    tmalign_pair_from_seeds(coords1, coords2, l_norm, d0_search_phase, d0_search, seed_a, seed_b, seed_c, seed_e)
+    tmalign_pair_from_seeds(
+        coords1,
+        coords2,
+        l_norm,
+        d0_search_phase,
+        d0_search,
+        seed_a,
+        seed_b,
+        seed_c,
+        seed_e,
+    )
 }
 
 /// Shared sequential core for both [`tmalign_pair_serial`] and
@@ -355,16 +415,15 @@ fn tmalign_pair_from_seeds(
         .ok_or_else(|| TmAlignError::Parse("No seed produced a usable alignment".to_string()))?;
 
     // Extract aligned pair coordinates for final Kabsch fit.
-    let (coords1_aligned, coords2_aligned): (Vec<Vector3<f32>>, Vec<Vector3<f32>>) =
-        alignment
-            .iter()
-            .filter_map(|&(i_opt, j_opt)| match (i_opt, j_opt) {
-                (Some(i), Some(j)) if i < coords1.len() && j < coords2.len() => {
-                    Some((coords1[i], coords2[j]))
-                }
-                _ => None,
-            })
-            .unzip();
+    let (coords1_aligned, coords2_aligned): (Vec<Vector3<f32>>, Vec<Vector3<f32>>) = alignment
+        .iter()
+        .filter_map(|&(i_opt, j_opt)| match (i_opt, j_opt) {
+            (Some(i), Some(j)) if i < coords1.len() && j < coords2.len() => {
+                Some((coords1[i], coords2[j]))
+            }
+            _ => None,
+        })
+        .unzip();
 
     let n_aligned_raw = coords1_aligned.len();
     if n_aligned_raw == 0 {
@@ -411,8 +470,11 @@ fn tmalign_pair_from_seeds(
         .copied()
         .filter(|&(i_opt, j_opt)| match (i_opt, j_opt) {
             (Some(i), Some(j)) if i < coords1.len() && j < coords2.len() => {
-                let rotated =
-                    apply_transform_with_matrix(coords1[i], &final_result.rotation, &final_result.translation);
+                let rotated = apply_transform_with_matrix(
+                    coords1[i],
+                    &final_result.rotation,
+                    &final_result.translation,
+                );
                 (rotated - coords2[j]).norm() <= score_d8_cutoff
             }
             _ => false,
@@ -488,7 +550,15 @@ fn score_alignment(
 
     // Single Kabsch fit + naive TM-score (no distance filtering at this gate stage).
     let result = kabsch_superpose(&r1, &r2);
-    evaluate_tm_score(coords1, coords2, alignment, &result.rotation, &result.translation, d0, l_norm)
+    evaluate_tm_score(
+        coords1,
+        coords2,
+        alignment,
+        &result.rotation,
+        &result.translation,
+        d0,
+        l_norm,
+    )
 }
 
 #[cfg(test)]
@@ -509,8 +579,16 @@ mod tests {
         assert!(result.is_ok());
         let res = result.unwrap();
         // Both should be near 1.0 since structures are identical.
-        assert!(res.tm_score_norm1 > 0.9, "norm1 score too low: {}", res.tm_score_norm1);
-        assert!(res.tm_score_norm2 > 0.9, "norm2 score too low: {}", res.tm_score_norm2);
+        assert!(
+            res.tm_score_norm1 > 0.9,
+            "norm1 score too low: {}",
+            res.tm_score_norm1
+        );
+        assert!(
+            res.tm_score_norm2 > 0.9,
+            "norm2 score too low: {}",
+            res.tm_score_norm2
+        );
         assert!(res.n_aligned >= 5);
     }
 
@@ -599,8 +677,14 @@ mod tests {
         match (serial, parallel) {
             (Ok(s), Ok(p)) => {
                 assert_eq!(s.n_aligned, p.n_aligned, "n_aligned mismatch");
-                assert_eq!(s.tm_score_norm1, p.tm_score_norm1, "tm_score_norm1 mismatch");
-                assert_eq!(s.tm_score_norm2, p.tm_score_norm2, "tm_score_norm2 mismatch");
+                assert_eq!(
+                    s.tm_score_norm1, p.tm_score_norm1,
+                    "tm_score_norm1 mismatch"
+                );
+                assert_eq!(
+                    s.tm_score_norm2, p.tm_score_norm2,
+                    "tm_score_norm2 mismatch"
+                );
                 assert_eq!(s.rotation, p.rotation, "rotation mismatch");
                 assert_eq!(s.translation, p.translation, "translation mismatch");
                 assert_eq!(s.alignment, p.alignment, "alignment mismatch");

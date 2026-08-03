@@ -135,7 +135,15 @@ pub fn get_score_fast(
 
     // Iteration 1: Initial Kabsch fit over all aligned pairs.
     let result1 = kabsch_superpose(&r1, &r2);
-    let tmscore = evaluate_tm_score(coords1, coords2, alignment, &result1.rotation, &result1.translation, d0, l_norm);
+    let tmscore = evaluate_tm_score(
+        coords1,
+        coords2,
+        alignment,
+        &result1.rotation,
+        &result1.translation,
+        d0,
+        l_norm,
+    );
 
     // Iteration 2: Distance-filtered re-fit.
     let mut squared_distances = Vec::new();
@@ -181,7 +189,15 @@ pub fn get_score_fast(
     } else {
         kabsch_superpose(&r1_filtered, &r2_filtered)
     };
-    let tmscore1 = evaluate_tm_score(coords1, coords2, alignment, &result2.rotation, &result2.translation, d0, l_norm);
+    let tmscore1 = evaluate_tm_score(
+        coords1,
+        coords2,
+        alignment,
+        &result2.rotation,
+        &result2.translation,
+        d0,
+        l_norm,
+    );
 
     // Iteration 3: Re-fit with tighter cutoff, same repeated-escalation loop.
     let mut d002t_iter3_esc = d0_search_sq + 1.0;
@@ -208,7 +224,15 @@ pub fn get_score_fast(
     } else {
         kabsch_superpose(&r1_filtered3, &r2_filtered3)
     };
-    let tmscore2 = evaluate_tm_score(coords1, coords2, alignment, &result3.rotation, &result3.translation, d0, l_norm);
+    let tmscore2 = evaluate_tm_score(
+        coords1,
+        coords2,
+        alignment,
+        &result3.rotation,
+        &result3.translation,
+        d0,
+        l_norm,
+    );
 
     tmscore.max(tmscore1).max(tmscore2)
 }
@@ -230,23 +254,37 @@ mod tests {
         let zero_translation = [0.0; 3];
 
         let d0 = 5.85; // From d0_final(250)
-        let tm = evaluate_tm_score(&coords, &coords, &alignment, &identity_rotation, &zero_translation, d0, 3);
+        let tm = evaluate_tm_score(
+            &coords,
+            &coords,
+            &alignment,
+            &identity_rotation,
+            &zero_translation,
+            d0,
+            3,
+        );
         assert_relative_eq!(tm, 1.0, epsilon = 1e-4);
     }
 
     #[test]
     fn evaluate_tm_score_with_gaps_is_zero_for_gapped_residues() {
-        let coords: Vec<Vector3<f32>> = vec![
-            Vector3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        ];
+        let coords: Vec<Vector3<f32>> =
+            vec![Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)];
         // Only first residue is aligned.
         let alignment = vec![(Some(0), Some(0)), (None, Some(1))];
         let identity_rotation = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
         let zero_translation = [0.0; 3];
 
         let d0 = 5.85;
-        let tm = evaluate_tm_score(&coords, &coords, &alignment, &identity_rotation, &zero_translation, d0, 2);
+        let tm = evaluate_tm_score(
+            &coords,
+            &coords,
+            &alignment,
+            &identity_rotation,
+            &zero_translation,
+            d0,
+            2,
+        );
         // Only 1 pair is aligned, so TM = 1.0 / 2 = 0.5
         assert_relative_eq!(tm, 0.5, epsilon = 1e-4);
     }

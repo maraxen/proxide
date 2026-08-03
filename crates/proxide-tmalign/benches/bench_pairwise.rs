@@ -31,7 +31,11 @@ fn synthetic_trace(n: usize, seed: u64) -> CaTrace {
     CaTrace {
         seq: vec![b'A'; n],
         res_ids: (0..n as i32)
-            .map(|i| ResidueId { chain_id: "A".to_string(), res_id: i + 1, insertion_code: ' ' })
+            .map(|i| ResidueId {
+                chain_id: "A".to_string(),
+                res_id: i + 1,
+                insertion_code: ' ',
+            })
             .collect(),
         coords,
     }

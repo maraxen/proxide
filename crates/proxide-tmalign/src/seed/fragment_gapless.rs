@@ -128,9 +128,7 @@ pub fn get_initial_fgt(
     let ylen = coords2.len();
 
     if xlen < 3 || ylen < 3 {
-        return Err(TmAlignError::Parse(
-            "Sequence is too short < 3".to_string(),
-        ));
+        return Err(TmAlignError::Parse("Sequence is too short < 3".to_string()));
     }
 
     // Parameters
@@ -203,14 +201,8 @@ pub fn get_initial_fgt(
         // Compare both alignments and keep the one with better TM-score.
         // alignment1 is indexed as (coords1_idx, coords2_idx).
         // alignment2 is indexed as (coords2_idx, coords1_idx), so we need to flip it for comparison.
-        let score1 = crate::score::get_score_fast(
-            coords1,
-            coords2,
-            &alignment1,
-            d0,
-            d0_search,
-            l_norm,
-        );
+        let score1 =
+            crate::score::get_score_fast(coords1, coords2, &alignment1, d0, d0_search, l_norm);
 
         // For alignment2, we need to flip it: (y_idx, x_idx) -> (x_idx, y_idx)
         let alignment2_flipped: Vec<(Option<usize>, Option<usize>)> = alignment2
@@ -247,7 +239,7 @@ fn thread_fragment_against_other(
     d0: f32,
     d0_search: f32,
     l_norm: usize,
-    fragment_len: usize,  // original length before trimming
+    fragment_len: usize, // original length before trimming
     other_len: usize,
     fra_min1: usize,
     is_fragment_from_coords1: bool,
@@ -285,8 +277,16 @@ fn thread_fragment_against_other(
     // Note: thread_gapless returns an alignment directly indexed into its input coordinates,
     // so we need to map the results back to the original full-chain indices.
     let alignment_raw = gapless::thread_gapless(
-        if is_fragment_from_coords1 { &frag_coords } else { other },
-        if is_fragment_from_coords1 { other } else { &frag_coords },
+        if is_fragment_from_coords1 {
+            &frag_coords
+        } else {
+            other
+        },
+        if is_fragment_from_coords1 {
+            other
+        } else {
+            &frag_coords
+        },
         d0,
         d0_search,
         l_norm,
