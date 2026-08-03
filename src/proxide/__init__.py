@@ -14,7 +14,7 @@ __version__ = "0.1.0"
 # Re-export Rust extension functions for unified API (no JAX required).
 # Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.
 # `proxide.io` is importable without JAX (fixtures / FASTA); parsing is lazy.
-from proxide import io, jaccard  # noqa: E402
+from proxide import io, jaccard, tmalign  # noqa: E402
 from proxide._proxider import (  # ty: ignore[unresolved-import]
   AtomicSystem,
   CoordFormat,
@@ -63,6 +63,7 @@ from proxide.io.fetching import (
 __all__ = [
   "io",
   "jaccard",
+  "tmalign",
   # Structure parsing
   "parse_pdb",
   "parse_mmcif",

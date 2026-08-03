@@ -14,10 +14,13 @@ categories  = ["science", "algorithms"]
 [lib]
 crate-type = ["rlib"]
 
-# NOTE: the `tmalign` CLI bin ([[bin]]) and `bench_pairwise` criterion bench
-# ([[bench]]) are added in later phases once pipeline.rs/parallel.rs exist
-# (see .claude/plans/purring-seeking-beaver.md) — declaring them before
-# their source files exist would break `cargo check`.
+[[bin]]
+name = "tmalign"
+path = "src/bin/tmalign.rs"
+
+[[bench]]
+name = "bench_pairwise"
+harness = false
 
 [dependencies]
 proxide-core.workspace     = true
@@ -30,6 +33,8 @@ log              = { workspace = true }
 
 [dev-dependencies]
 approx    = { workspace = true }
+criterion = { workspace = true }
+rand      = { workspace = true }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 proxide-parallel-rt.workspace = true

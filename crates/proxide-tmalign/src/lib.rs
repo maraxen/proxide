@@ -28,7 +28,14 @@ pub mod d0;
 pub mod error;
 pub mod kabsch;
 pub mod nw;
+pub mod nwdp_tm;
+pub mod parallel;
+pub mod pipeline;
+pub mod refine;
+pub mod score;
+pub mod seed;
 pub mod seq;
+pub mod ss;
 pub mod structure;
 
 pub use error::TmAlignError;

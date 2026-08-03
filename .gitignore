@@ -77,3 +77,9 @@ scripts/coverage/cobertura.xml
 
 # MASTER-derived data — CC-BY-NC-SA 4.0; NOT for redistribution
 *.master.pb.zst
+
+# bathos per-run artifacts (catalog itself lives at ~/.bth/catalog, not here)
+outputs/
+scripts/**/*.bth.lock.toml
+scripts/slurm/_bth_env.sh
+scripts/scratch/

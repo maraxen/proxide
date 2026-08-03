@@ -1,0 +1,39 @@
+[experiment]
+hypothesis = "proxide-tmalign's tmalign_pair_serial reproduces the reference USalign TMalign binary's TM-score (normalized by both structure lengths) within a small absolute tolerance across the Phase-2 curated fixture pairs, even though the exact aligned-residue count (n_aligned) does not yet match bit-for-bit."
+stage_name = "exploration"
+novel = false
+
+[outcomes.pass]
+condition = "max_abs_tm_diff < 0.01"
+decision = "Phase 2's core algorithm (5 seeds + DP_iter + final refinement) is empirically parity-verified at the tolerance this Phase targets. Proceed to Phase 3 (orx-parallel) with confidence; track the n_aligned gap (backlog #3788) as a separate, non-blocking investigation."
+reasoning = "0.01 absolute TM-score tolerance is the empirically-achieved bound from tests/test_parity_pdb1_pdb2.rs (observed diff ~0.004 on the PDB1/PDB2 pair) -- not the stricter 1e-4 aspirational target in the phase plan, which requires closing the n_aligned discrepancy first."
+is_residual = false
+adversarial_check = "max_abs_tm_diff >= 0.01"
+
+[outcomes.marginal]
+condition = "max_abs_tm_diff >= 0.01 AND max_abs_tm_diff < 0.05"
+decision = "Investigate before proceeding to Phase 3 -- a 1-5% TM-score deviation suggests a real (if secondary) algorithmic gap, not just floating-point noise."
+reasoning = "Between the achieved-tolerance pass band and a systematic-deviation fail band."
+is_residual = false
+
+[outcomes.fail]
+condition = "max_abs_tm_diff >= 0.05"
+decision = "Do not proceed to Phase 3/4/5 until root-caused -- re-run the Sonnet-review-style verification pass (task_id 260729_tmalign_scaffold) against ~/repos/USalign/TMalign.h for a regression or a newly-introduced bug."
+reasoning = "A >=5% TM-score deviation indicates a systematic algorithmic divergence (e.g. a d0/DP-scoring/Kabsch-sign bug), not the residual n_aligned-count gap this Phase already knows about and tracks separately."
+is_residual = true
+
+[result_schema]
+max_abs_tm_diff = "float"
+max_abs_n_aligned_diff = "int"
+
+# Uncomment and fill in if this experiment reproduces a prior result:
+# [reproduction]
+# reproduces_paper = ""   # DOI or citation
+# reproduces_run = ""     # UUID of the run being reproduced
+# tolerance_pct = 5.0     # acceptable deviation (%)
+# requires_pass_stem = "" # script stem that must have outcome='pass' first
+
+# Uncomment if using control arms (outcome labels prefixed ctrl_ declared in [outcomes]):
+# [controls]
+# positive_outcome = ["ctrl_pass"]
+# negative_outcome = ["ctrl_fail"]
