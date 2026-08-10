@@ -22,6 +22,16 @@ fn large_xtc_path() -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+/// A well-characterized multi-frame fixture (501 frames), used for the
+/// truncated-trailing-frame test below — needs enough frames that chopping
+/// bytes off the end unambiguously lands inside the *last* frame's own
+/// compressed payload rather than accidentally landing exactly on a frame
+/// boundary.
+fn frame0_xtc_path() -> Option<PathBuf> {
+    let path = project_root().join("tests/data/trajectories/frame0.xtc");
+    path.exists().then_some(path)
+}
+
 /// Copy the checked-in fixture into a fresh tempdir so offset-cache sidecar
 /// writes never touch the real fixture (avoids races with other tests and
 /// leaving untracked `.offsets` files in the repo).
@@ -376,4 +386,47 @@ fn test_read_frames_parallel_matches_serial_large_fixture() {
     let parallel_positions: Vec<Vec<f32>> = parallel.into_iter().map(|f| f.positions).collect();
 
     assert_eq!(parallel_positions, serial);
+}
+
+/// A trajectory whose last frame's compressed payload is only partially
+/// flushed — the normal state of the tail of a file a live simulation is
+/// still appending to — must not be counted. `determine_offsets`'s
+/// header-only scan skips forward via `seek`, which succeeds past EOF, so
+/// without a decode-based guard the truncated last frame would silently
+/// count as complete.
+#[test]
+fn test_xtc_reader_excludes_truncated_trailing_frame() {
+    let Some(xtc_path) = frame0_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let full_count = {
+        let mut reader = XtcReader::open(&path).expect("open failed");
+        reader.frame_count().expect("frame_count failed")
+    };
+    assert!(full_count > 1, "fixture must have more than one frame");
+
+    // Chop 10 bytes off the end — well inside the last frame's own
+    // compressed-coordinate payload (not exactly on a frame boundary),
+    // simulating a header that's fully written but whose data isn't yet.
+    let full_size = std::fs::metadata(&path).unwrap().len();
+    let truncated = tempfile::tempdir().expect("tempdir failed");
+    let truncated_path = truncated.path().join("truncated.xtc");
+    let data = std::fs::read(&path).unwrap();
+    std::fs::write(&truncated_path, &data[..(full_size as usize - 10)]).unwrap();
+
+    let mut reader = XtcReader::open(&truncated_path).expect("open failed");
+    let truncated_count = reader.frame_count().expect("frame_count failed");
+    assert_eq!(
+        truncated_count,
+        full_count - 1,
+        "truncated last frame must be excluded from the count"
+    );
+
+    // The sidecar written for the truncated file must reflect the excluded
+    // count too, not the phantom pre-guard count — otherwise a later open
+    // would trust a stale cache built before the guard ran.
+    let mut reader2 = XtcReader::open(&truncated_path).expect("reopen failed");
+    assert_eq!(reader2.frame_count().unwrap(), full_count - 1);
 }

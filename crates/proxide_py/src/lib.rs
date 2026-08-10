@@ -111,6 +111,10 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_xtc_reader::read_xtc_lazy, m)?)?;
     #[cfg(feature = "xtc")]
     m.add_function(wrap_pyfunction!(py_xtc_reader::read_xtc_parallel, m)?)?;
+    #[cfg(feature = "xtc")]
+    m.add_function(wrap_pyfunction!(py_xtc_reader::frame_count, m)?)?;
+    #[cfg(feature = "xtc")]
+    m.add_function(wrap_pyfunction!(py_xtc_reader::n_atoms, m)?)?;
 
     // HDF5 parsing functions (from py_hdf5)
     #[cfg(feature = "hdf5")]

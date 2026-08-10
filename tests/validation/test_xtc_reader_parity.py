@@ -210,3 +210,43 @@ def test_out_of_range_atom_index_raises(synthetic_xtc, fn_name):
   fn = getattr(proxide, fn_name)
   with pytest.raises(ValueError, match="out of range"):
     fn(str(path), atom_indices=[0, N_ATOMS + 100])
+
+
+@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
+def test_frame_count_matches_mdtraj(synthetic_xtc):
+  """`proxide.frame_count` must agree with a full mdtraj load — and must not
+  materialize any coordinate data to get there (unlike read_xtc_lazy/
+  read_xtc_parallel, which decode every requested frame)."""
+  import proxide
+
+  path, _topology, true_total_frames = synthetic_xtc
+  assert proxide.frame_count(str(path)) == true_total_frames
+
+
+@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
+def test_n_atoms_matches_mdtraj(synthetic_xtc):
+  import proxide
+
+  path, topology, _true_total_frames = synthetic_xtc
+  assert proxide.n_atoms(str(path)) == topology.n_atoms
+
+
+@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
+def test_frame_count_excludes_truncated_trailing_frame(synthetic_xtc, tmp_path):
+  """A trajectory whose last frame is only partially flushed — the normal
+  state of the tail of a file a live simulation is still appending to — must
+  not be counted. Regression coverage for the same guard exercised at the
+  Rust level in `proxide-io`'s `test_xtc_reader_excludes_truncated_trailing_frame`,
+  here through the actual Python-facing binding.
+  """
+  import proxide
+
+  path, _topology, true_total_frames = synthetic_xtc
+
+  full_bytes = path.read_bytes()
+  truncated_path = tmp_path / "truncated.xtc"
+  # Chop well inside the last frame's own compressed payload, not exactly on
+  # a frame boundary.
+  truncated_path.write_bytes(full_bytes[:-10])
+
+  assert proxide.frame_count(str(truncated_path)) == true_total_frames - 1

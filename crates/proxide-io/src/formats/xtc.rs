@@ -314,7 +314,8 @@ impl XtcReader {
     fn scan_and_cache_offsets(&mut self) -> Result<(), XtcError> {
         let natoms = self.peek_natoms()?;
         self.reader.home()?;
-        let offsets = self.reader.determine_offsets(None)?.into_vec();
+        let mut offsets = self.reader.determine_offsets(None)?.into_vec();
+        self.drop_trailing_frame_if_truncated(&mut offsets)?;
         let meta = std::fs::metadata(&self.path)?;
         if let Ok(cache) = OffsetCache::from_metadata(&meta, natoms, offsets.clone()) {
             // Best-effort: a failure to persist (e.g. read-only directory)
@@ -323,6 +324,40 @@ impl XtcReader {
         }
         self.natoms = Some(natoms);
         self.offsets = Some(offsets);
+        Ok(())
+    }
+
+    /// Drop the last entry of `offsets` if it points to a frame that doesn't
+    /// actually decode.
+    ///
+    /// `determine_offsets`'s header-only scan finds each frame's start by
+    /// `seek`-ing forward past its *declared* compressed-coordinate length
+    /// (from the header's `nbytes` field) without ever reading that data.
+    /// POSIX `seek` past EOF succeeds silently, so a trailing frame whose
+    /// header is fully written but whose coordinate payload is only
+    /// partially flushed — the normal state of the last frame of a
+    /// trajectory a live simulation is still appending to — gets an offset
+    /// pushed for it exactly as if it were complete. The *next* iteration's
+    /// header read then hits real EOF and the scan stops, but by then the
+    /// phantom offset is already in the list.
+    ///
+    /// This does one real decode of just the last frame to confirm its data
+    /// is actually present on disk, and removes it if not. Cheap (one frame,
+    /// not the whole file) and reuses molly's own tested decode path rather
+    /// than re-deriving the frame-length arithmetic ourselves.
+    fn drop_trailing_frame_if_truncated(&mut self, offsets: &mut Vec<u64>) -> Result<(), XtcError> {
+        let Some(&last_offset) = offsets.last() else {
+            return Ok(());
+        };
+        let mut probe = MollyFrame::default();
+        let decodes = self
+            .reader
+            .read_frame_at_offset::<false>(&mut probe, last_offset, &AtomSelection::All)
+            .is_ok();
+        self.reader.home()?;
+        if !decodes {
+            offsets.pop();
+        }
         Ok(())
     }
 
