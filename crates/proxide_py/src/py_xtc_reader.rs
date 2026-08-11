@@ -208,19 +208,32 @@ pub fn read_xtc_parallel(
 
                 let indices = build_frame_indices(total_frames, stride);
                 let selected_natoms = atom_indices.as_ref().map_or(n_atoms, Vec::len);
-                let frames = read_frames_parallel(&path, &indices).map_err(|e| e.to_string())?;
+                // Atom selection now happens inside each parallel worker (see
+                // `read_frames_parallel`'s doc comment / praxia debt #1220):
+                // frames arrive here already reduced to `selected_natoms`
+                // atoms each, in atom_indices' exact order with duplicates
+                // preserved, so only Angstrom scaling and box-vector handling
+                // remain to be done in this loop.
+                let frames = read_frames_parallel(&path, &indices, atom_indices.as_deref())
+                    .map_err(|e| e.to_string())?;
 
                 let mut flat_coords = Vec::with_capacity(frames.len() * selected_natoms * 3);
                 let mut flat_boxes = Vec::with_capacity(frames.len() * 9);
                 let mut flat_times = Vec::with_capacity(frames.len());
                 let mut num_atoms = 0usize;
                 for frame in &frames {
-                    let (c, b) = frame_to_angstroms_selected(frame, &atom_indices);
+                    let c: Vec<f32> = frame.positions.iter().map(|x| x * 10.0).collect();
                     num_atoms = c.len() / 3;
                     flat_coords.extend_from_slice(&c);
-                    flat_boxes.extend_from_slice(&b[0]);
-                    flat_boxes.extend_from_slice(&b[1]);
-                    flat_boxes.extend_from_slice(&b[2]);
+                    let mut box_ang = frame.box_vectors;
+                    for row in &mut box_ang {
+                        for v in row {
+                            *v *= 10.0;
+                        }
+                    }
+                    flat_boxes.extend_from_slice(&box_ang[0]);
+                    flat_boxes.extend_from_slice(&box_ang[1]);
+                    flat_boxes.extend_from_slice(&box_ang[2]);
                     flat_times.push(frame.time);
                 }
                 Ok((

@@ -38,6 +38,8 @@ pub enum XtcError {
     Bincode(#[from] bincode::Error),
     #[error("frame index {index} out of bounds ({n_frames} frames)")]
     FrameOutOfBounds { index: usize, n_frames: usize },
+    #[error("atom index {index} out of bounds ({n_atoms} atoms)")]
+    AtomIndexOutOfBounds { index: usize, n_atoms: usize },
 }
 
 /// XTC trajectory data structure
@@ -516,15 +518,85 @@ impl Iterator for XtcFrameIter<'_> {
     }
 }
 
+/// A single decoded XTC frame, already reduced to the caller's requested
+/// atoms (or the full atom set, if no selection was requested). Coordinates
+/// remain nanometer-scale (matching [`MollyFrame::positions`]) — Angstrom
+/// conversion is a binding-layer concern, same as [`AngstromFrame`] elsewhere
+/// in this module.
+///
+/// Deliberately not just a re-exported [`MollyFrame`]: the whole point of
+/// this type is that it's sized to `atom_indices.len()` (or the full atom
+/// count when unselected), not the trajectory's full per-frame atom count —
+/// see [`read_frames_parallel`]'s doc comment for why that distinction is the
+/// entire fix for the OOM this type exists to prevent.
+#[derive(Debug, Clone)]
+pub struct SelectedFrame {
+    /// Flat (x, y, z)-per-atom positions in nanometers, in exactly the order
+    /// `atom_indices` specified (duplicates preserved) — or the full frame's
+    /// positions, unselected, when no `atom_indices` were given.
+    pub positions: Vec<f32>,
+    /// Column-major box vectors in nanometers (always the full 3x3 — never
+    /// atom-selected, and cheap regardless of atom count).
+    pub box_vectors: [[f32; 3]; 3],
+    /// Frame time in picoseconds.
+    pub time: f32,
+}
+
+/// Select atoms from a decoded frame's positions, preserving `atom_indices`'
+/// exact order and duplicates (mdtraj fancy-indexing semantics) rather than
+/// the ascending-order/deduped semantics of
+/// `molly::selection::AtomSelection::from_index_list`'s `Mask`. Mirrors
+/// `proxide_py::py_xtc_reader::frame_to_angstroms_selected`'s selection logic
+/// (that copy operates on already-Angstrom-scaled coordinates behind PyO3
+/// types, so it can't be reused directly from this crate).
+fn select_positions(
+    frame: &MollyFrame,
+    atom_indices: Option<&[usize]>,
+) -> Result<Vec<f32>, XtcError> {
+    match atom_indices {
+        Some(indices) => {
+            let n_atoms = frame.positions.len() / 3;
+            let mut out = Vec::with_capacity(indices.len() * 3);
+            for &i in indices {
+                if i >= n_atoms {
+                    return Err(XtcError::AtomIndexOutOfBounds { index: i, n_atoms });
+                }
+                let base = i * 3;
+                out.extend_from_slice(&frame.positions[base..base + 3]);
+            }
+            Ok(out)
+        }
+        None => Ok(frame.positions.clone()),
+    }
+}
+
 /// Decode a set of frames concurrently via `orx-parallel`. Each worker opens
 /// its own file handle and seeks directly to its assigned offset (the same
 /// per-worker-handle pattern MDAnalysis's multiprocessing/Dask analysis
 /// backends use); only already-computed offsets are shared across workers.
+///
+/// `atom_indices` is applied *inside* each worker, immediately after that
+/// worker's single [`MollyFrame`] is decoded and before it returns — the
+/// full-atom-count `MollyFrame` is dropped at the end of the worker closure,
+/// so the `Vec` this function ultimately collects and returns holds only
+/// [`SelectedFrame`]s sized to `atom_indices.len()` (or the full atom count,
+/// when `atom_indices` is `None`), never `n_requested_frames` full-atom-count
+/// frames all alive simultaneously. That "collect everything at full atom
+/// count, filter after the fact" pattern was the actual OOM bug this
+/// function existed to fix (praxia debt #1220): for a system with
+/// `n_full_atoms` in the hundreds of thousands, requesting a modest
+/// `atom_indices` subset of e.g. a few hundred atoms across many frames
+/// still allocated `n_requested_frames * n_full_atoms * 3 * 4` bytes at the
+/// old collection step, before any filtering ran at all.
+///
+/// Order and duplicates in `atom_indices` are preserved exactly as passed —
+/// see [`select_positions`].
 #[cfg(feature = "parallel")]
 pub fn read_frames_parallel<P: AsRef<Path>>(
     path: P,
     frame_indices: &[usize],
-) -> Result<Vec<MollyFrame>, XtcError> {
+    atom_indices: Option<&[usize]>,
+) -> Result<Vec<SelectedFrame>, XtcError> {
     let path = path.as_ref();
     let mut reader = XtcReader::open(path)?;
     let offsets = reader.ensure_offsets()?.clone();
@@ -533,14 +605,24 @@ pub fn read_frames_parallel<P: AsRef<Path>>(
     let indices = frame_indices.to_vec();
     let par = indices
         .into_par()
-        .map(|index| -> Result<MollyFrame, XtcError> {
+        .map(|index| -> Result<SelectedFrame, XtcError> {
             let offset = *offsets
                 .get(index)
                 .ok_or(XtcError::FrameOutOfBounds { index, n_frames })?;
             let mut worker_reader = XTCReader::open(path)?;
             let mut frame = MollyFrame::default();
             worker_reader.read_frame_at_offset::<false>(&mut frame, offset, &AtomSelection::All)?;
-            Ok(frame)
+            // `frame` (full atom count) is filtered here, inside the worker,
+            // and dropped at the end of this closure — it never travels back
+            // to the caller's collected Vec at full size.
+            let positions = select_positions(&frame, atom_indices)?;
+            let box_vectors = frame.boxvec_cols_2d();
+            let time = frame.time;
+            Ok(SelectedFrame {
+                positions,
+                box_vectors,
+                time,
+            })
         });
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let par = par.num_threads(proxide_parallel_rt::num_threads());
