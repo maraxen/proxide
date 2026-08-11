@@ -212,10 +212,97 @@ fn test_read_frames_parallel_matches_serial() {
         .map(|&i| reader.read_frame_at(i, &AtomSelection::All).unwrap().positions)
         .collect();
 
-    let parallel = read_frames_parallel(&path, &indices).expect("parallel read failed");
+    let parallel = read_frames_parallel(&path, &indices, None).expect("parallel read failed");
     let parallel_positions: Vec<Vec<f32>> = parallel.into_iter().map(|f| f.positions).collect();
 
     assert_eq!(parallel_positions, serial);
+}
+
+/// `read_frames_parallel` must apply `atom_indices` with the exact order and
+/// duplicates the caller passed — the same mdtraj fancy-indexing semantic
+/// `frame_to_angstroms_selected` documents at the PyO3-binding layer — not
+/// the ascending/deduped semantics of
+/// `molly::selection::AtomSelection::from_index_list`'s `Mask`. This is the
+/// regression most likely to silently break if a future change routes
+/// selection through that helper instead of the order-preserving logic in
+/// `select_positions`.
+#[cfg(feature = "parallel")]
+#[test]
+fn test_read_frames_parallel_preserves_atom_index_order_and_duplicates() {
+    use crate::formats::xtc::read_frames_parallel;
+
+    let Some(xtc_path) = test_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n = reader.frame_count().unwrap();
+    let n_atoms = reader.n_atoms().unwrap();
+    assert!(n_atoms >= 3, "fixture too small to exercise a real subset");
+    let indices: Vec<usize> = (0..n).collect();
+
+    // Deliberately unsorted, with a duplicate (index 1 appears twice) and not
+    // starting from 0 — a Mask-based selection would silently return this as
+    // ascending-deduped `[0, 1, 2]`.
+    let last = n_atoms - 1;
+    let atom_indices = vec![last, 0, 1, 1];
+
+    // Ground truth: manually select from the sequential per-frame decode, in
+    // the exact order/duplicates requested.
+    let expected: Vec<Vec<f32>> = indices
+        .iter()
+        .map(|&i| {
+            let frame = reader.read_frame_at(i, &AtomSelection::All).unwrap();
+            atom_indices
+                .iter()
+                .flat_map(|&a| {
+                    let base = a * 3;
+                    frame.positions[base..base + 3].to_vec()
+                })
+                .collect()
+        })
+        .collect();
+
+    let parallel = read_frames_parallel(&path, &indices, Some(&atom_indices))
+        .expect("parallel read failed");
+    assert_eq!(parallel.len(), n);
+    for (i, frame) in parallel.iter().enumerate() {
+        assert_eq!(
+            frame.positions.len(),
+            atom_indices.len() * 3,
+            "frame {i} not reduced to the selected atom count"
+        );
+        assert_eq!(
+            frame.positions, expected[i],
+            "frame {i} selected positions diverge from order/duplicate-preserving ground truth"
+        );
+    }
+}
+
+/// An out-of-range atom index must surface as a clean `XtcError`, not a
+/// panic from unchecked slice indexing inside a parallel worker.
+#[cfg(feature = "parallel")]
+#[test]
+fn test_read_frames_parallel_rejects_out_of_range_atom_index() {
+    use crate::formats::xtc::{read_frames_parallel, XtcError};
+
+    let Some(xtc_path) = test_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n = reader.frame_count().unwrap();
+    let n_atoms = reader.n_atoms().unwrap();
+    let indices: Vec<usize> = (0..n).collect();
+    let bad_atom_indices = vec![0, n_atoms + 100];
+
+    let result = read_frames_parallel(&path, &indices, Some(&bad_atom_indices));
+    assert!(
+        matches!(result, Err(XtcError::AtomIndexOutOfBounds { .. })),
+        "expected AtomIndexOutOfBounds, got {result:?}"
+    );
 }
 
 /// Write an MDAnalysis-shaped `.{name}_offsets.npz` via numpy (same keys/dtypes
@@ -382,10 +469,57 @@ fn test_read_frames_parallel_matches_serial_large_fixture() {
         .map(|&i| reader.read_frame_at(i, &AtomSelection::All).unwrap().positions)
         .collect();
 
-    let parallel = read_frames_parallel(&path, &indices).expect("parallel read failed");
+    let parallel = read_frames_parallel(&path, &indices, None).expect("parallel read failed");
     let parallel_positions: Vec<Vec<f32>> = parallel.into_iter().map(|f| f.positions).collect();
 
     assert_eq!(parallel_positions, serial);
+}
+
+/// Memory-scaling regression guard for the `read_frames_parallel` OOM fix
+/// (praxia debt #1220): peak memory for the collected result must scale
+/// with `atom_indices.len()`, not the trajectory's full per-frame atom
+/// count. `large.xtc` has 5000 frames at a tiny 4 atoms/frame, which can't
+/// demonstrate a *savings ratio* on its own — the point here is narrower and
+/// still meaningful without a real memory profiler: assert every returned
+/// `SelectedFrame.positions` is sized to exactly `atom_indices.len() * 3`
+/// floats, for a `atom_indices` subset smaller than the fixture's full atom
+/// count, across every one of many frames. Before the fix, `read_frames_parallel`
+/// returned full-atom-count `MollyFrame`s with no selection applied at all
+/// inside the worker — this would have failed immediately on the shape
+/// assertion, since the (then nonexistent) selection step was applied only
+/// by the caller, after collection, in `py_xtc_reader.rs`, not in this
+/// crate.
+#[cfg(feature = "parallel")]
+#[test]
+fn test_read_frames_parallel_result_size_scales_with_selection_not_full_atoms() {
+    use crate::formats::xtc::read_frames_parallel;
+
+    let Some(xtc_path) = large_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n = reader.frame_count().unwrap();
+    let n_atoms = reader.n_atoms().unwrap();
+    assert!(
+        n_atoms > 1,
+        "fixture needs more than 1 atom to exercise a real subset"
+    );
+    let indices: Vec<usize> = (0..n).step_by(50).collect();
+    let atom_indices = vec![0usize];
+
+    let parallel = read_frames_parallel(&path, &indices, Some(&atom_indices))
+        .expect("parallel read failed");
+    assert_eq!(parallel.len(), indices.len());
+    for frame in &parallel {
+        assert_eq!(
+            frame.positions.len(),
+            atom_indices.len() * 3,
+            "selected frame should be sized to the 1-atom selection, not the \
+             fixture's full {n_atoms}-atom frame"
+        );
+    }
 }
 
 /// A trajectory whose last frame's compressed payload is only partially

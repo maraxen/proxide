@@ -13,6 +13,8 @@ checked into git — see `scripts/generate_trajectory_test_data.py`'s
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -250,3 +252,177 @@ def test_frame_count_excludes_truncated_trailing_frame(synthetic_xtc, tmp_path):
   truncated_path.write_bytes(full_bytes[:-10])
 
   assert proxide.frame_count(str(truncated_path)) == true_total_frames - 1
+
+
+# ---------------------------------------------------------------------------
+# Memory-scaling regression for the read_frames_parallel OOM fix
+# (praxia debt #1220): before the fix, `read_frames_parallel` decoded every
+# requested frame at *full* atom count and collected all of them into one
+# Vec before any atom-index filtering happened (that filtering lived only in
+# the PyO3 binding layer, applied after collection). Peak memory was
+# therefore ~independent of how many atoms the caller actually asked for.
+# The fix filters inside each worker, immediately after that worker's single
+# frame is decoded, so the collected result — and its peak memory — scales
+# with `len(atom_indices)`, not the trajectory's full per-frame atom count.
+#
+# A large atom count with a modest frame count keeps fixture generation and
+# decode time reasonable while still making the old-vs-new memory gap large
+# enough to be unmistakable against ordinary Python/numpy/mdtraj process
+# overhead.
+MEMORY_TEST_N_ATOMS = 8_000
+MEMORY_TEST_N_FRAMES = 1_500
+# Selecting 5 atoms out of MEMORY_TEST_N_ATOMS should peak at roughly the
+# Python/mdtraj-import baseline (empirically ~40MB on the dev machine this
+# was calibrated on) — nowhere near the ~144MB that
+# `MEMORY_TEST_N_ATOMS * MEMORY_TEST_N_FRAMES * 3 * 4` bytes would cost if
+# the old bug's "collect every frame at full atom count, then filter" order
+# were still in effect (empirically ~180MB on the same machine, before this
+# fix). The ceiling below sits roughly in between — comfortably above the
+# fixed-code baseline, comfortably below the old-code floor — so it
+# discriminates the two rather than just confirming "some savings exist"
+# (an earlier version of this test asserted a *relative* full-vs-subset
+# delta instead of this absolute ceiling; that version passed even against
+# the unfixed code, because the unfixed code's *full* read pays for an
+# additional output-buffer copy on top of the same undischarged
+# full-atom-count intermediate buffer its *subset* read also retains — so
+# unfixed code shows a large full-vs-subset delta too, just for a different
+# reason. The absolute ceiling on the subset call specifically is what
+# actually catches the regression; verified by deliberately reverting the
+# fix locally and confirming this assertion fails).
+MEMORY_SUBSET_CEILING_KB = 100_000
+
+
+def _build_large_atom_count_xtc(path: Path, n_atoms: int, n_frames: int, seed: int = 2024) -> None:
+  """Write a synthetic XTC with many atoms but a single unbonded residue —
+  cheap to construct a `mdtraj.Topology` for (no per-atom bond bookkeeping),
+  since this fixture only needs a valid atom count, not realistic chemistry.
+  """
+  topology = mdtraj.Topology()
+  chain = topology.add_chain()
+  residue = topology.add_residue("XXX", chain)
+  for _ in range(n_atoms):
+    topology.add_atom("C", mdtraj.element.carbon, residue)
+
+  rng = np.random.default_rng(seed)
+  coords = (rng.standard_normal((n_frames, n_atoms, 3)) * 0.1).astype(np.float32)
+  unitcell_lengths = np.array([[50.0, 50.0, 50.0]] * n_frames, dtype=np.float32)
+  unitcell_angles = np.array([[90.0, 90.0, 90.0]] * n_frames, dtype=np.float32)
+
+  traj = mdtraj.Trajectory(
+    coords,
+    topology,
+    unitcell_lengths=unitcell_lengths,
+    unitcell_angles=unitcell_angles,
+  )
+  traj.save_xtc(str(path))
+
+
+@pytest.fixture(scope="module")
+def large_atom_count_xtc(tmp_path_factory):
+  if not MDTRAJ_AVAILABLE:
+    pytest.skip("MDTraj not installed")
+  path = tmp_path_factory.mktemp("xtc_memory_scaling") / "large_atom_count.xtc"
+  _build_large_atom_count_xtc(path, MEMORY_TEST_N_ATOMS, MEMORY_TEST_N_FRAMES)
+  return path
+
+
+# NOTE on the measurement approach: this deliberately reads `VmHWM` from
+# /proc/<pid>/status inside the *child* process itself, rather than the more
+# obvious `resource.getrusage(RUSAGE_SELF).ru_maxrss` after a
+# `subprocess.run(...)`. That more obvious approach was tried first and
+# empirically found to be broken on this platform (WSL2): a freshly
+# fork+exec'd child's own `ru_maxrss`, read immediately after `exec()`,
+# reflects the *parent* process's resident set size at fork time, not
+# anything the child itself allocated — confirmed by spawning a trivial
+# child that does nothing but read its own `ru_maxrss` from a parent that
+# had just touched a real ~300MB allocation, and seeing the child report
+# that same ~300MB. `/proc/self/status`'s `VmHWM` does not have this
+# problem (verified the same way): it reflects only the reading process's
+# own peak resident set, seeded fresh after `execve()`. Per the "verify your
+# measurement pipeline before trusting a research conclusion" discipline —
+# this is exactly the kind of gotcha that check exists to catch.
+_PEAK_VMHWM_CHILD_SCRIPT = """
+import sys
+
+import proxide
+
+path = sys.argv[1]
+raw_indices = sys.argv[2]
+atom_indices = None if raw_indices == "None" else [int(x) for x in raw_indices.split(",")]
+
+proxide.read_xtc_parallel(path, atom_indices=atom_indices)
+
+with open("/proc/self/status") as f:
+    for line in f:
+        if line.startswith("VmHWM:"):
+            print(int(line.split()[1]))
+            break
+""".strip()
+
+
+def _peak_vmhwm_kb_for_read(path: Path, atom_indices: list[int] | None) -> int:
+  """Run a single `proxide.read_xtc_parallel` call in a fresh subprocess and
+  return that subprocess's own peak resident-set size (`VmHWM`, KB) as seen
+  from inside the child itself.
+
+  A fresh subprocess per call (rather than measuring both calls in this test
+  process) is deliberate: `VmHWM` is a high-water mark that never decreases
+  within a process, so measuring two calls back-to-back in one process would
+  have the first call's allocation inflate the second call's reported peak
+  regardless of which one actually needs more memory.
+  """
+  raw_indices = "None" if atom_indices is None else ",".join(str(i) for i in atom_indices)
+  result = subprocess.run(
+    [sys.executable, "-c", _PEAK_VMHWM_CHILD_SCRIPT, str(path), raw_indices],
+    capture_output=True,
+    text=True,
+    check=True,
+  )
+  return int(result.stdout.strip().splitlines()[-1])
+
+
+@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
+@pytest.mark.skipif(
+  sys.platform != "linux",
+  reason="/proc/<pid>/status VmHWM is Linux-specific (this repo's CI is Linux-only)",
+)
+def test_read_xtc_parallel_peak_memory_scales_with_atom_selection(large_atom_count_xtc):
+  """Requesting a handful of atoms out of `MEMORY_TEST_N_ATOMS` must peak at
+  roughly process-baseline memory, not memory proportional to the full atom
+  count — the direct regression test for the OOM this fix addresses (praxia
+  debt #1220). Before the fix, `read_frames_parallel` collected every
+  requested frame's *full*-atom-count `MollyFrame` into one `Vec` — kept
+  alive for the rest of the call — before any atom-index filtering ran (that
+  filtering lived only in the PyO3 binding layer, applied after collection).
+  A tiny `atom_indices` subset therefore used to pay for the same
+  undiscarded full-atom-count buffer as an unselected read.
+
+  Deliberately asserts an absolute ceiling on the *subset* call alone,
+  rather than a full-vs-subset delta: the old, unfixed code also shows a
+  large full-vs-subset delta (its full read pays for an extra output-buffer
+  copy on top of the same undischarged full-atom-count buffer its subset
+  read also retains), so a delta-only assertion cannot tell old from fixed
+  behavior. This was caught empirically — by deliberately reverting the fix
+  locally and rerunning this test — before landing on the ceiling below;
+  see MEMORY_SUBSET_CEILING_KB's comment for the calibration.
+  """
+  path = large_atom_count_xtc
+
+  subset_kb = _peak_vmhwm_kb_for_read(path, [0, 1, 2, 3, 4])
+  assert subset_kb < MEMORY_SUBSET_CEILING_KB, (
+    f"selecting 5/{MEMORY_TEST_N_ATOMS} atoms peaked at {subset_kb}KB, at or "
+    f"above the {MEMORY_SUBSET_CEILING_KB}KB ceiling — peak memory for a "
+    "tiny atom_indices subset should stay near process-baseline, not scale "
+    "with the trajectory's full per-frame atom count"
+  )
+
+  # Sanity check that the full (unselected) read is still substantially
+  # larger — confirms the fixture and read path are actually exercising a
+  # real full-vs-subset size difference, not e.g. both calls degenerately
+  # returning near-zero data.
+  full_kb = _peak_vmhwm_kb_for_read(path, None)
+  assert full_kb > subset_kb, (
+    f"expected a full read (atom_indices=None) across {MEMORY_TEST_N_ATOMS} "
+    f"atoms to peak higher than a 5-atom subset; full={full_kb}KB "
+    f"subset={subset_kb}KB"
+  )
