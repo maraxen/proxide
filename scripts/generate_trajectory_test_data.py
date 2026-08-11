@@ -176,6 +176,106 @@ def generate_large_xtc_fixture(output_dir: Path, num_frames: int = 5000):
   return True
 
 
+def generate_box_drift_xtc_fixture(output_dir: Path, num_frames: int = 4000):
+  """Generate a many-frame XTC fixture with a per-frame VARYING, slightly
+  triclinic box, for regression-testing box-vector decode. Built while
+  investigating praxia debt #1237 / proxide#16, a reported box-vector
+  "corruption" that turned out on deep root-causing to be a representation
+  mismatch (mdtraj's high-level API reduces box vectors to lengths+angles
+  and reconstructs them in its own canonical orientation) rather than an
+  actual proxide decode bug — see the Rust test that consumes this fixture
+  for the full writeup. Kept as a general-purpose decode regression guard.
+
+  Unlike `generate_test_trajectories`/`generate_large_xtc_fixture` (both use a
+  constant [5,5,5] nm orthorhombic box every frame), the ground truth here
+  varies frame to frame — a static or purely-diagonal fixture can't catch a
+  drift bug (an accumulating byte-offset error only shows up once later
+  frames' bytes actually differ from frame 0's), and a purely-orthorhombic
+  fixture can't catch a row/column transpose bug either (transposing a
+  diagonal matrix is a no-op). This fixture varies box *lengths* linearly
+  across frames AND introduces small, deterministic, per-frame *tilt*
+  (off-diagonal) terms via `unitcell_vectors`, so both classes of bug are
+  visible at every frame past the first, not just statically.
+
+  Uses a larger (64-atom) topology than `generate_large_xtc_fixture`'s 4-atom
+  one so frames go through XTC's real compressed-coordinate path (used for
+  natoms > 9) as in a real MD trajectory, matching the conditions under which
+  the corruption was originally found.
+
+  Args:
+      output_dir: Directory to write the trajectory file
+      num_frames: Number of frames to generate
+
+  """
+  output_dir.mkdir(parents=True, exist_ok=True)
+
+  n_atoms = 64
+  topology = mdtraj.Topology()
+  chain = topology.add_chain()
+  for i in range(n_atoms):
+    residue = topology.add_residue("ALA", chain, resSeq=i)
+    topology.add_atom("CA", mdtraj.element.carbon, residue)
+
+  # Simple extended chain, 3.8 Å CA-CA spacing, in nm.
+  base_coords = np.zeros((n_atoms, 3), dtype=np.float32)
+  base_coords[:, 0] = np.arange(n_atoms, dtype=np.float32) * 0.38
+
+  np.random.seed(2026)
+  coords = np.zeros((num_frames, n_atoms, 3), dtype=np.float32)
+  for i in range(num_frames):
+    noise = np.random.randn(n_atoms, 3).astype(np.float32) * 0.02
+    coords[i] = base_coords + noise
+
+  # Ground-truth box: unitcell_vectors directly (nm), one 3x3 matrix per
+  # frame, row i = box vector i (mdtraj/GROMACS convention) — this is the
+  # exact quantity proxide's `box_vectors` output must match once converted
+  # to Angstroms.
+  #
+  # Lengths vary linearly over the trajectory (isotropic-NPT-like drift);
+  # a small deterministic sinusoidal tilt is added to the off-diagonal
+  # entries so every frame past 0 has nonzero off-diagonal ground truth,
+  # bounded well clear of mdtraj's cell-validity requirements.
+  t = np.arange(num_frames, dtype=np.float64) / max(num_frames - 1, 1)
+  a_len = 5.0 + 0.5 * t  # 5.0 -> 5.5 nm
+  b_len = 5.0 + 0.3 * t  # 5.0 -> 5.3 nm
+  c_len = 6.0 + 0.8 * t  # 6.0 -> 6.8 nm
+  tilt = 0.05 * np.sin(2 * np.pi * t * 7.0)  # nm, small deterministic wobble
+
+  unitcell_vectors = np.zeros((num_frames, 3, 3), dtype=np.float32)
+  unitcell_vectors[:, 0, 0] = a_len
+  unitcell_vectors[:, 1, 0] = tilt  # b vector's x-component (tilt)
+  unitcell_vectors[:, 1, 1] = b_len
+  unitcell_vectors[:, 2, 0] = tilt * 0.5  # c vector's x-component (tilt)
+  unitcell_vectors[:, 2, 1] = tilt * 0.5  # c vector's y-component (tilt)
+  unitcell_vectors[:, 2, 2] = c_len
+
+  traj = mdtraj.Trajectory(coords, topology)
+  traj.unitcell_vectors = unitcell_vectors
+
+  xtc_path = output_dir / "box_drift.xtc"
+  traj.save_xtc(str(xtc_path))
+  print(f"  ✓ Box-drift XTC ({num_frames} frames, {n_atoms} atoms): {xtc_path}")
+
+  # Also persist the ground-truth box vectors (Angstroms) as a flat
+  # little-endian f32 binary blob, shape (num_frames, 3, 3) row-major, that
+  # the Rust regression test reads directly with no crate beyond std — no
+  # need to re-derive or hardcode this array in Rust, and no .npy parsing
+  # dependency required at test time.
+  ground_truth_ang = (unitcell_vectors.astype(np.float64) * 10.0).astype("<f4")
+  bin_path = output_dir / "box_drift_ground_truth_angstrom.bin"
+  ground_truth_ang.tofile(bin_path)
+  print(f"  ✓ Ground-truth box vectors (Angstrom, f32 LE flat): {bin_path}")
+
+  # Sanity: round-trip through mdtraj itself must match what we asked for,
+  # to floating-point precision (XTC box storage is uncompressed f32).
+  reloaded = mdtraj.load(str(xtc_path), top=topology)
+  max_diff = np.abs(reloaded.unitcell_vectors - unitcell_vectors).max()
+  print(f"    mdtraj round-trip max abs diff (nm): {max_diff:.3e}")
+  assert max_diff < 1e-4, "mdtraj itself failed to round-trip the box vectors we asked for"
+
+  return True
+
+
 if __name__ == "__main__":
   script_dir = Path(__file__).parent
   project_root = script_dir.parent
@@ -183,3 +283,4 @@ if __name__ == "__main__":
 
   generate_test_trajectories(output_dir)
   generate_large_xtc_fixture(output_dir)
+  generate_box_drift_xtc_fixture(output_dir)
