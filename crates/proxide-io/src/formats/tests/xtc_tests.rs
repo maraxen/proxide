@@ -1,5 +1,5 @@
 use crate::formats::xtc::molly_impl::read_xtc_molly;
-use crate::formats::xtc::XtcReader;
+use crate::formats::xtc::{OffsetCache, XtcReader, OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX};
 use molly::selection::AtomSelection;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,16 @@ fn test_xtc_path() -> Option<PathBuf> {
 
 fn large_xtc_path() -> Option<PathBuf> {
     let path = project_root().join("tests/data/trajectories/large.xtc");
+    path.exists().then_some(path)
+}
+
+/// A well-characterized multi-frame fixture (501 frames), used for the
+/// truncated-trailing-frame test below — needs enough frames that chopping
+/// bytes off the end unambiguously lands inside the *last* frame's own
+/// compressed payload rather than accidentally landing exactly on a frame
+/// boundary.
+fn frame0_xtc_path() -> Option<PathBuf> {
+    let path = project_root().join("tests/data/trajectories/frame0.xtc");
     path.exists().then_some(path)
 }
 
@@ -376,4 +386,208 @@ fn test_read_frames_parallel_matches_serial_large_fixture() {
     let parallel_positions: Vec<Vec<f32>> = parallel.into_iter().map(|f| f.positions).collect();
 
     assert_eq!(parallel_positions, serial);
+}
+
+/// A trajectory whose last frame's compressed payload is only partially
+/// flushed — the normal state of the tail of a file a live simulation is
+/// still appending to — must not be counted. `determine_offsets`'s
+/// header-only scan skips forward via `seek`, which succeeds past EOF, so
+/// without a decode-based guard the truncated last frame would silently
+/// count as complete.
+#[test]
+fn test_xtc_reader_excludes_truncated_trailing_frame() {
+    let Some(xtc_path) = frame0_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let full_count = {
+        let mut reader = XtcReader::open(&path).expect("open failed");
+        reader.frame_count().expect("frame_count failed")
+    };
+    assert!(full_count > 1, "fixture must have more than one frame");
+
+    // Chop 10 bytes off the end — well inside the last frame's own
+    // compressed-coordinate payload (not exactly on a frame boundary),
+    // simulating a header that's fully written but whose data isn't yet.
+    let full_size = std::fs::metadata(&path).unwrap().len();
+    let truncated = tempfile::tempdir().expect("tempdir failed");
+    let truncated_path = truncated.path().join("truncated.xtc");
+    let data = std::fs::read(&path).unwrap();
+    std::fs::write(&truncated_path, &data[..(full_size as usize - 10)]).unwrap();
+
+    let mut reader = XtcReader::open(&truncated_path).expect("open failed");
+    let truncated_count = reader.frame_count().expect("frame_count failed");
+    assert_eq!(
+        truncated_count,
+        full_count - 1,
+        "truncated last frame must be excluded from the count"
+    );
+
+    // The sidecar written for the truncated file must reflect the excluded
+    // count too, not the phantom pre-guard count — otherwise a later open
+    // would trust a stale cache built before the guard ran.
+    let mut reader2 = XtcReader::open(&truncated_path).expect("reopen failed");
+    assert_eq!(reader2.frame_count().unwrap(), full_count - 1);
+}
+
+/// A crash landing inside the ~32-40 byte compression-metadata/`nbytes`
+/// window right after the *last* frame's header — rather than inside its
+/// compressed-coordinate payload, which the test above covers — must also
+/// be treated as a truncated trailing frame, not propagated as a hard I/O
+/// error. Before this fix, `skip_positions`'s `read_nbytes` call raised
+/// `UnexpectedEof` inside molly's own `determine_offsets_exclusive`, which
+/// propagated straight out of `determine_offsets` before
+/// `drop_trailing_frame_if_truncated` ever got a chance to run — so
+/// `frame_count()` failed hard instead of returning `full_count - 1` as
+/// documented ("safe to call on a trajectory a live simulation is still
+/// appending to").
+#[test]
+fn test_xtc_reader_tolerates_truncation_in_frame_metadata_region() {
+    let Some(xtc_path) = frame0_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let (offsets, natoms) = molly_offsets_and_natoms(&path);
+    assert!(
+        natoms > 9,
+        "fixture must use the compressed (nbytes-based) frame layout \
+         skip_positions takes for natoms > 9, not the uncompressed <=9-atom path"
+    );
+    let full_count = offsets.len();
+    assert!(full_count > 1, "fixture must have more than one frame");
+    let last_frame_start = offsets[full_count - 1];
+
+    // Cut 10 bytes into the 32-byte precision/minint/maxint/smallidx block
+    // that follows the 56-byte header (`molly::Header::SIZE`) and precedes
+    // the `nbytes` field — short of ever reaching `nbytes`, let alone the
+    // compressed payload itself.
+    let cut_at = last_frame_start + molly::Header::SIZE as u64 + 10;
+    let data = std::fs::read(&path).unwrap();
+    assert!(
+        (cut_at as usize) < data.len(),
+        "cut point must actually shorten the file"
+    );
+    let truncated_path = path.with_file_name("truncated_metadata.xtc");
+    std::fs::write(&truncated_path, &data[..cut_at as usize]).unwrap();
+
+    let mut reader = XtcReader::open(&truncated_path).expect("open failed");
+    let truncated_count = reader
+        .frame_count()
+        .expect("frame_count must tolerate metadata-region truncation, not error");
+    assert_eq!(
+        truncated_count,
+        full_count - 1,
+        "a frame truncated in its metadata region must be excluded from the count"
+    );
+}
+
+/// A `.offsets` sidecar written by a pre-fix build — correct mtime/size/
+/// natoms, but `version` stamped at the old pre-fix value and its offsets
+/// list still including the phantom offset for a truncated trailing frame —
+/// must not be trusted on the next open. `OffsetCache::matches` should
+/// reject it purely on the version mismatch, forcing a rescan through
+/// `scan_and_cache_offsets` (which now applies the truncation guard) rather
+/// than silently returning the old, wrong, truncation-unaware count forever.
+///
+/// Regresses the bug where `OFFSET_CACHE_VERSION` was not bumped alongside
+/// the truncation fix, which would have silently defeated it for every
+/// trajectory file that had already been opened (by `read_xtc_lazy`,
+/// `read_xtc_parallel`, or an earlier build of these bindings) before the
+/// fix shipped.
+#[test]
+fn test_stale_pre_fix_offset_cache_is_rescanned_not_trusted() {
+    let Some(xtc_path) = frame0_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let full_count = {
+        let mut reader = XtcReader::open(&path).expect("open failed");
+        reader.frame_count().expect("frame_count failed")
+    };
+    assert!(full_count > 1, "fixture must have more than one frame");
+
+    // Truncate 10 bytes off the end, same as the payload-truncation test
+    // above — this file's *true* frame count is `full_count - 1`.
+    let full_size = std::fs::metadata(&path).unwrap().len();
+    let data = std::fs::read(&path).unwrap();
+    std::fs::write(&path, &data[..(full_size as usize - 10)]).unwrap();
+
+    // Build the "phantom" pre-fix offset list directly via molly's raw,
+    // unguarded scan on the now-truncated file: it still includes an offset
+    // for the truncated last frame, exactly as pre-fix `scan_and_cache_offsets`
+    // would have cached it.
+    let (phantom_offsets, natoms) = molly_offsets_and_natoms(&path);
+    assert_eq!(
+        phantom_offsets.len(),
+        full_count,
+        "molly's raw scan (no truncation guard) must still count the phantom last frame"
+    );
+
+    let meta = std::fs::metadata(&path).unwrap();
+    let mut stale_cache = OffsetCache::from_metadata(&meta, natoms, phantom_offsets)
+        .expect("from_metadata failed");
+    // Downgrade to simulate a sidecar actually written by a pre-fix build —
+    // everything else about it (mtime/size/natoms) is genuinely valid for
+    // this file, isolating the version field as the only signal that should
+    // force a rescan. Uses the real historical constant (not a bare literal,
+    // and not derived from the current `OFFSET_CACHE_VERSION`) so this test
+    // proves the specific claim "a real pre-fix sidecar gets rescanned", not
+    // just "any version mismatch gets rescanned" (already true, and would
+    // prove nothing about whether the bump itself happened).
+    stale_cache.version = OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX;
+    stale_cache.store(&path).expect("failed to write stale sidecar");
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let count = reader
+        .frame_count()
+        .expect("frame_count failed on rescan");
+    assert_eq!(
+        count,
+        full_count - 1,
+        "a stale pre-fix sidecar must be rescanned, not trusted — trusting it \
+         would silently return the phantom truncated-frame count forever"
+    );
+}
+
+/// `determine_offsets_tolerant` reimplements molly's own header+skip loop
+/// (via its public `read_header`/`skip_positions`) instead of calling
+/// `molly::XTCReader::determine_offsets` directly, purely to add EOF
+/// tolerance around `skip_positions` — see that function's doc comment. All
+/// byte-level frame parsing still goes through molly's own code; only the
+/// loop's error handling is ours.
+///
+/// For any well-formed (non-truncated) file the two must therefore produce
+/// byte-identical offset lists. This is the test that catches it directly if
+/// a future `molly` upgrade changes `Header::SIZE`, the frame layout, or the
+/// `read_header`/`skip_positions` contract this reimplementation assumes —
+/// rather than relying on that drift to eventually surface as an unrelated
+/// failure in one of the other parity tests above.
+#[test]
+fn test_determine_offsets_tolerant_matches_molly_determine_offsets() {
+    let mut checked_any = false;
+    for maybe_path in [test_xtc_path(), frame0_xtc_path(), large_xtc_path()] {
+        let Some(xtc_path) = maybe_path else {
+            continue;
+        };
+        checked_any = true;
+        let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+        let (molly_offsets, _natoms) = molly_offsets_and_natoms(&path);
+
+        let mut reader = XtcReader::open(&path).expect("open failed");
+        let ours = reader
+            .determine_offsets_tolerant_for_test()
+            .expect("determine_offsets_tolerant_for_test failed");
+
+        assert_eq!(
+            ours, molly_offsets,
+            "determine_offsets_tolerant must match molly::XTCReader::determine_offsets \
+             byte-for-byte on well-formed fixture {}",
+            path.display()
+        );
+    }
+    assert!(checked_any, "no fixture files were available to check");
 }

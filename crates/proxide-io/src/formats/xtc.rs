@@ -75,7 +75,23 @@ fn frame_to_angstroms(frame: &MollyFrame) -> AngstromFrame {
 // ---------------------------------------------------------------------------
 
 const OFFSET_CACHE_MAGIC: u32 = 0x5058_5443; // "PXTC"
-const OFFSET_CACHE_VERSION: u16 = 1;
+
+/// v2: `scan_and_cache_offsets` gained `drop_trailing_frame_if_truncated` and
+/// `determine_offsets_tolerant`'s metadata-region EOF tolerance. Bumped so a
+/// sidecar written by a pre-v2 build — which may have a phantom offset for a
+/// truncated trailing frame baked in — is treated as a version mismatch by
+/// `OffsetCache::matches` and rescanned, instead of being trusted forever.
+const OFFSET_CACHE_VERSION: u16 = 2;
+
+/// The historical `OFFSET_CACHE_VERSION` value, before the bump to 2 above.
+/// Exists only so `test_stale_pre_fix_offset_cache_is_rescanned_not_trusted`
+/// can construct a byte-for-byte accurate "sidecar written by a pre-fix
+/// build". Never update this alongside a future `OFFSET_CACHE_VERSION` bump
+/// — it is a historical fact, not a second copy of the current value — and
+/// never delete it just because nothing but that test reads it; doing either
+/// would silently defang the regression test it exists for.
+#[cfg(test)]
+const OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX: u16 = 1;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct OffsetCache {
@@ -286,6 +302,21 @@ impl XtcReader {
         Ok(self.offsets.as_ref().map(Vec::len).unwrap_or(0))
     }
 
+    /// Test-only accessor for `determine_offsets_tolerant`'s raw output,
+    /// deliberately bypassing `drop_trailing_frame_if_truncated` (unlike
+    /// `ensure_offsets`/`frame_count`) so tests can assert byte-exact parity
+    /// against `molly::XTCReader::determine_offsets` on `determine_offsets_tolerant`
+    /// in isolation. Going through the full pipeline would let
+    /// `drop_trailing_frame_if_truncated`'s own probe-decode-and-pop mask an
+    /// off-by-one in `determine_offsets_tolerant` that happens to add
+    /// exactly one bogus trailing offset — indistinguishable, from that
+    /// guard's point of view, from a genuinely truncated last frame.
+    #[cfg(test)]
+    fn determine_offsets_tolerant_for_test(&mut self) -> Result<Vec<u64>, XtcError> {
+        self.reader.home()?;
+        self.determine_offsets_tolerant()
+    }
+
     fn ensure_offsets(&mut self) -> Result<&Vec<u64>, XtcError> {
         if self.offsets.is_none() {
             let natoms = self.peek_natoms()?;
@@ -313,7 +344,8 @@ impl XtcReader {
     fn scan_and_cache_offsets(&mut self) -> Result<(), XtcError> {
         let natoms = self.peek_natoms()?;
         self.reader.home()?;
-        let offsets = self.reader.determine_offsets(None)?.into_vec();
+        let mut offsets = self.determine_offsets_tolerant()?;
+        self.drop_trailing_frame_if_truncated(&mut offsets)?;
         let meta = std::fs::metadata(&self.path)?;
         if let Ok(cache) = OffsetCache::from_metadata(&meta, natoms, offsets.clone()) {
             // Best-effort: a failure to persist (e.g. read-only directory)
@@ -322,6 +354,87 @@ impl XtcReader {
         }
         self.natoms = Some(natoms);
         self.offsets = Some(offsets);
+        Ok(())
+    }
+
+    /// Header-only frame-offset scan, mirroring `molly::XTCReader::determine_offsets`
+    /// but tolerant of a truncated *last* frame's compression-metadata/`nbytes`
+    /// field, not just its header.
+    ///
+    /// molly's own `determine_offsets_exclusive` already tolerates
+    /// `UnexpectedEof` from `read_header` (a frame whose header itself was
+    /// never fully written stops the scan cleanly). But the very next call in
+    /// its loop, `skip_positions`, propagates any I/O error — including
+    /// `UnexpectedEof` from the `nbytes` read inside the ~32-40 byte
+    /// compression-metadata block that follows a fully-written header — via a
+    /// bare `?`. A crash landing in that narrow window (rather than inside
+    /// the bulk compressed-coordinate payload, which `read_frame_at_offset`
+    /// in [`Self::drop_trailing_frame_if_truncated`] already catches) made
+    /// the whole scan fail hard instead of simply stopping one frame short.
+    ///
+    /// This reimplements the same header+skip loop using molly's own public
+    /// `read_header`/`skip_positions` methods, treating `UnexpectedEof` from
+    /// either as "stop, that frame was never fully written" — the frame is
+    /// left out of the returned offsets rather than raising.
+    ///
+    /// Only the loop's error-tolerance is reimplemented; all byte-level
+    /// frame parsing still goes through molly's own `read_header`/
+    /// `skip_positions`. `test_determine_offsets_tolerant_matches_molly_determine_offsets`
+    /// asserts this produces byte-identical output to
+    /// `molly::XTCReader::determine_offsets` on every well-formed fixture —
+    /// if a future `molly` upgrade changes the header/skip_positions
+    /// contract this assumes, that is the test that catches it.
+    fn determine_offsets_tolerant(&mut self) -> Result<Vec<u64>, XtcError> {
+        let mut exclusive_offsets = Vec::new();
+        loop {
+            let header = match self.reader.read_header() {
+                Ok(header) => header,
+                Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(err) => return Err(err.into()),
+            };
+            match self.reader.skip_positions(&header) {
+                Ok(offset) => exclusive_offsets.push(offset),
+                Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(err) => return Err(err.into()),
+            }
+        }
+        let mut offsets = vec![0u64];
+        let complete = exclusive_offsets.len().saturating_sub(1);
+        offsets.extend_from_slice(&exclusive_offsets[..complete]);
+        Ok(offsets)
+    }
+
+    /// Drop the last entry of `offsets` if it points to a frame that doesn't
+    /// actually decode.
+    ///
+    /// `determine_offsets`'s header-only scan finds each frame's start by
+    /// `seek`-ing forward past its *declared* compressed-coordinate length
+    /// (from the header's `nbytes` field) without ever reading that data.
+    /// POSIX `seek` past EOF succeeds silently, so a trailing frame whose
+    /// header is fully written but whose coordinate payload is only
+    /// partially flushed — the normal state of the last frame of a
+    /// trajectory a live simulation is still appending to — gets an offset
+    /// pushed for it exactly as if it were complete. The *next* iteration's
+    /// header read then hits real EOF and the scan stops, but by then the
+    /// phantom offset is already in the list.
+    ///
+    /// This does one real decode of just the last frame to confirm its data
+    /// is actually present on disk, and removes it if not. Cheap (one frame,
+    /// not the whole file) and reuses molly's own tested decode path rather
+    /// than re-deriving the frame-length arithmetic ourselves.
+    fn drop_trailing_frame_if_truncated(&mut self, offsets: &mut Vec<u64>) -> Result<(), XtcError> {
+        let Some(&last_offset) = offsets.last() else {
+            return Ok(());
+        };
+        let mut probe = MollyFrame::default();
+        let decodes = self
+            .reader
+            .read_frame_at_offset::<false>(&mut probe, last_offset, &AtomSelection::All)
+            .is_ok();
+        self.reader.home()?;
+        if !decodes {
+            offsets.pop();
+        }
         Ok(())
     }
 

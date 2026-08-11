@@ -29,12 +29,14 @@ from proxide._proxider import (  # ty: ignore[unresolved-import]
   assign_mbondi2_radii,
   assign_obc2_scaling_factors,
   compute_bicubic_params,
+  frame_count,
   get_mdcath_replicas,
   get_water_model,
   # Geometry
   kabsch_rmsd,
   # Force fields
   load_forcefield,
+  n_atoms,
   parameterize_molecule,
   parse_dcd,
   parse_mdcath_frame,
@@ -77,6 +79,8 @@ __all__ = [
   "parse_trr",
   "read_xtc_lazy",
   "read_xtc_parallel",
+  "frame_count",
+  "n_atoms",
   "TrajectoryStream",
   # Geometry
   "radius_of_gyration",

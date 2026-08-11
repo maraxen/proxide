@@ -253,3 +253,58 @@ pub fn read_xtc_parallel(
         ))
     }
 }
+
+/// Number of frames in an XTC trajectory, from a header-only scan — never
+/// decodes coordinate data.
+///
+/// Backed by `XtcReader`'s on-disk `.offsets` sidecar cache, so repeat calls
+/// on an unchanged file are effectively free after the first scan. Safe to
+/// call on a trajectory a live simulation is still appending to: the last
+/// frame is excluded from the count unless it fully decodes (see
+/// `XtcReader::drop_trailing_frame_if_truncated`), rather than counting a
+/// partially-flushed in-flight frame as complete.
+#[pyfunction]
+pub fn frame_count(py: Python<'_>, path: String) -> PyResult<usize> {
+    #[cfg(feature = "xtc")]
+    {
+        use crate::formats::xtc::XtcReader;
+
+        py.allow_threads(|| -> Result<usize, String> {
+            let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
+            reader.frame_count().map_err(|e| e.to_string())
+        })
+        .map_err(pyo3::exceptions::PyValueError::new_err)
+    }
+
+    #[cfg(not(feature = "xtc"))]
+    {
+        let _ = (py, path);
+        Err(pyo3::exceptions::PyImportError::new_err(
+            "XTC support requires compiling with 'xtc' feature.",
+        ))
+    }
+}
+
+/// Number of atoms per frame in an XTC trajectory, from the first frame's
+/// header — never decodes coordinate data.
+#[pyfunction]
+pub fn n_atoms(py: Python<'_>, path: String) -> PyResult<usize> {
+    #[cfg(feature = "xtc")]
+    {
+        use crate::formats::xtc::XtcReader;
+
+        py.allow_threads(|| -> Result<usize, String> {
+            let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
+            reader.n_atoms().map_err(|e| e.to_string())
+        })
+        .map_err(pyo3::exceptions::PyValueError::new_err)
+    }
+
+    #[cfg(not(feature = "xtc"))]
+    {
+        let _ = (py, path);
+        Err(pyo3::exceptions::PyImportError::new_err(
+            "XTC support requires compiling with 'xtc' feature.",
+        ))
+    }
+}
