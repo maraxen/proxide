@@ -72,7 +72,13 @@ fn frame_to_angstroms(frame: &MollyFrame) -> (Vec<f32>, [[f32; 3]; 3]) {
 // ---------------------------------------------------------------------------
 
 const OFFSET_CACHE_MAGIC: u32 = 0x5058_5443; // "PXTC"
-const OFFSET_CACHE_VERSION: u16 = 1;
+
+/// v2: `scan_and_cache_offsets` gained `drop_trailing_frame_if_truncated` and
+/// `determine_offsets_tolerant`'s metadata-region EOF tolerance. Bumped so a
+/// sidecar written by a pre-v2 build — which may have a phantom offset for a
+/// truncated trailing frame baked in — is treated as a version mismatch by
+/// `OffsetCache::matches` and rescanned, instead of being trusted forever.
+const OFFSET_CACHE_VERSION: u16 = 2;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct OffsetCache {
@@ -314,7 +320,7 @@ impl XtcReader {
     fn scan_and_cache_offsets(&mut self) -> Result<(), XtcError> {
         let natoms = self.peek_natoms()?;
         self.reader.home()?;
-        let mut offsets = self.reader.determine_offsets(None)?.into_vec();
+        let mut offsets = self.determine_offsets_tolerant()?;
         self.drop_trailing_frame_if_truncated(&mut offsets)?;
         let meta = std::fs::metadata(&self.path)?;
         if let Ok(cache) = OffsetCache::from_metadata(&meta, natoms, offsets.clone()) {
@@ -325,6 +331,45 @@ impl XtcReader {
         self.natoms = Some(natoms);
         self.offsets = Some(offsets);
         Ok(())
+    }
+
+    /// Header-only frame-offset scan, mirroring `molly::XTCReader::determine_offsets`
+    /// but tolerant of a truncated *last* frame's compression-metadata/`nbytes`
+    /// field, not just its header.
+    ///
+    /// molly's own `determine_offsets_exclusive` already tolerates
+    /// `UnexpectedEof` from `read_header` (a frame whose header itself was
+    /// never fully written stops the scan cleanly). But the very next call in
+    /// its loop, `skip_positions`, propagates any I/O error — including
+    /// `UnexpectedEof` from the `nbytes` read inside the ~32-40 byte
+    /// compression-metadata block that follows a fully-written header — via a
+    /// bare `?`. A crash landing in that narrow window (rather than inside
+    /// the bulk compressed-coordinate payload, which `read_frame_at_offset`
+    /// in [`Self::drop_trailing_frame_if_truncated`] already catches) made
+    /// the whole scan fail hard instead of simply stopping one frame short.
+    ///
+    /// This reimplements the same header+skip loop using molly's own public
+    /// `read_header`/`skip_positions` methods, treating `UnexpectedEof` from
+    /// either as "stop, that frame was never fully written" — the frame is
+    /// left out of the returned offsets rather than raising.
+    fn determine_offsets_tolerant(&mut self) -> Result<Vec<u64>, XtcError> {
+        let mut exclusive_offsets = Vec::new();
+        loop {
+            let header = match self.reader.read_header() {
+                Ok(header) => header,
+                Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(err) => return Err(err.into()),
+            };
+            match self.reader.skip_positions(&header) {
+                Ok(offset) => exclusive_offsets.push(offset),
+                Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(err) => return Err(err.into()),
+            }
+        }
+        let mut offsets = vec![0u64];
+        let complete = exclusive_offsets.len().saturating_sub(1);
+        offsets.extend_from_slice(&exclusive_offsets[..complete]);
+        Ok(offsets)
     }
 
     /// Drop the last entry of `offsets` if it points to a frame that doesn't
