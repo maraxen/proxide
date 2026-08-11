@@ -1,5 +1,5 @@
 use crate::formats::xtc::molly_impl::read_xtc_molly;
-use crate::formats::xtc::{OffsetCache, XtcReader};
+use crate::formats::xtc::{OffsetCache, XtcReader, OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX};
 use molly::selection::AtomSelection;
 use std::path::{Path, PathBuf};
 
@@ -526,23 +526,18 @@ fn test_stale_pre_fix_offset_cache_is_rescanned_not_trusted() {
         "molly's raw scan (no truncation guard) must still count the phantom last frame"
     );
 
-    // The actual on-disk `OFFSET_CACHE_VERSION` before this fix bumped it —
-    // hardcoded (not derived from the current constant) so this test proves
-    // the specific claim "a real pre-fix sidecar gets rescanned", not just
-    // "any version mismatch gets rescanned" (which was already true and
-    // would prove nothing about whether the bump itself happened — if
-    // `OFFSET_CACHE_VERSION` regresses back to this value, `matches()` will
-    // wrongly accept the stale cache below and the final assertion catches it).
-    const PRE_FIX_OFFSET_CACHE_VERSION: u16 = 1;
-
     let meta = std::fs::metadata(&path).unwrap();
     let mut stale_cache = OffsetCache::from_metadata(&meta, natoms, phantom_offsets)
         .expect("from_metadata failed");
     // Downgrade to simulate a sidecar actually written by a pre-fix build —
     // everything else about it (mtime/size/natoms) is genuinely valid for
     // this file, isolating the version field as the only signal that should
-    // force a rescan.
-    stale_cache.version = PRE_FIX_OFFSET_CACHE_VERSION;
+    // force a rescan. Uses the real historical constant (not a bare literal,
+    // and not derived from the current `OFFSET_CACHE_VERSION`) so this test
+    // proves the specific claim "a real pre-fix sidecar gets rescanned", not
+    // just "any version mismatch gets rescanned" (already true, and would
+    // prove nothing about whether the bump itself happened).
+    stale_cache.version = OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX;
     stale_cache.store(&path).expect("failed to write stale sidecar");
 
     let mut reader = XtcReader::open(&path).expect("open failed");
@@ -555,4 +550,44 @@ fn test_stale_pre_fix_offset_cache_is_rescanned_not_trusted() {
         "a stale pre-fix sidecar must be rescanned, not trusted — trusting it \
          would silently return the phantom truncated-frame count forever"
     );
+}
+
+/// `determine_offsets_tolerant` reimplements molly's own header+skip loop
+/// (via its public `read_header`/`skip_positions`) instead of calling
+/// `molly::XTCReader::determine_offsets` directly, purely to add EOF
+/// tolerance around `skip_positions` — see that function's doc comment. All
+/// byte-level frame parsing still goes through molly's own code; only the
+/// loop's error handling is ours.
+///
+/// For any well-formed (non-truncated) file the two must therefore produce
+/// byte-identical offset lists. This is the test that catches it directly if
+/// a future `molly` upgrade changes `Header::SIZE`, the frame layout, or the
+/// `read_header`/`skip_positions` contract this reimplementation assumes —
+/// rather than relying on that drift to eventually surface as an unrelated
+/// failure in one of the other parity tests above.
+#[test]
+fn test_determine_offsets_tolerant_matches_molly_determine_offsets() {
+    let mut checked_any = false;
+    for maybe_path in [test_xtc_path(), frame0_xtc_path(), large_xtc_path()] {
+        let Some(xtc_path) = maybe_path else {
+            continue;
+        };
+        checked_any = true;
+        let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+        let (molly_offsets, _natoms) = molly_offsets_and_natoms(&path);
+
+        let mut reader = XtcReader::open(&path).expect("open failed");
+        let ours = reader
+            .determine_offsets_tolerant_for_test()
+            .expect("determine_offsets_tolerant_for_test failed");
+
+        assert_eq!(
+            ours, molly_offsets,
+            "determine_offsets_tolerant must match molly::XTCReader::determine_offsets \
+             byte-for-byte on well-formed fixture {}",
+            path.display()
+        );
+    }
+    assert!(checked_any, "no fixture files were available to check");
 }

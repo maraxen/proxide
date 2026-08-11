@@ -80,6 +80,16 @@ const OFFSET_CACHE_MAGIC: u32 = 0x5058_5443; // "PXTC"
 /// `OffsetCache::matches` and rescanned, instead of being trusted forever.
 const OFFSET_CACHE_VERSION: u16 = 2;
 
+/// The historical `OFFSET_CACHE_VERSION` value, before the bump to 2 above.
+/// Exists only so `test_stale_pre_fix_offset_cache_is_rescanned_not_trusted`
+/// can construct a byte-for-byte accurate "sidecar written by a pre-fix
+/// build". Never update this alongside a future `OFFSET_CACHE_VERSION` bump
+/// — it is a historical fact, not a second copy of the current value — and
+/// never delete it just because nothing but that test reads it; doing either
+/// would silently defang the regression test it exists for.
+#[cfg(test)]
+const OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX: u16 = 1;
+
 #[derive(serde::Serialize, serde::Deserialize)]
 struct OffsetCache {
     magic: u32,
@@ -293,6 +303,21 @@ impl XtcReader {
         Ok(self.offsets.as_ref().map(Vec::len).unwrap_or(0))
     }
 
+    /// Test-only accessor for `determine_offsets_tolerant`'s raw output,
+    /// deliberately bypassing `drop_trailing_frame_if_truncated` (unlike
+    /// `ensure_offsets`/`frame_count`) so tests can assert byte-exact parity
+    /// against `molly::XTCReader::determine_offsets` on `determine_offsets_tolerant`
+    /// in isolation. Going through the full pipeline would let
+    /// `drop_trailing_frame_if_truncated`'s own probe-decode-and-pop mask an
+    /// off-by-one in `determine_offsets_tolerant` that happens to add
+    /// exactly one bogus trailing offset — indistinguishable, from that
+    /// guard's point of view, from a genuinely truncated last frame.
+    #[cfg(test)]
+    fn determine_offsets_tolerant_for_test(&mut self) -> Result<Vec<u64>, XtcError> {
+        self.reader.home()?;
+        self.determine_offsets_tolerant()
+    }
+
     fn ensure_offsets(&mut self) -> Result<&Vec<u64>, XtcError> {
         if self.offsets.is_none() {
             let natoms = self.peek_natoms()?;
@@ -352,6 +377,14 @@ impl XtcReader {
     /// `read_header`/`skip_positions` methods, treating `UnexpectedEof` from
     /// either as "stop, that frame was never fully written" — the frame is
     /// left out of the returned offsets rather than raising.
+    ///
+    /// Only the loop's error-tolerance is reimplemented; all byte-level
+    /// frame parsing still goes through molly's own `read_header`/
+    /// `skip_positions`. `test_determine_offsets_tolerant_matches_molly_determine_offsets`
+    /// asserts this produces byte-identical output to
+    /// `molly::XTCReader::determine_offsets` on every well-formed fixture —
+    /// if a future `molly` upgrade changes the header/skip_positions
+    /// contract this assumes, that is the test that catches it.
     fn determine_offsets_tolerant(&mut self) -> Result<Vec<u64>, XtcError> {
         let mut exclusive_offsets = Vec::new();
         loop {
