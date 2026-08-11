@@ -209,13 +209,93 @@ fn test_read_frames_parallel_matches_serial() {
 
     let serial: Vec<Vec<f32>> = indices
         .iter()
-        .map(|&i| reader.read_frame_at(i, &AtomSelection::All).unwrap().positions)
+        .map(|&i| {
+            reader
+                .read_frame_at(i, &AtomSelection::All)
+                .unwrap()
+                .positions
+                .iter()
+                .map(|x| x * 10.0)
+                .collect()
+        })
         .collect();
 
-    let parallel = read_frames_parallel(&path, &indices).expect("parallel read failed");
-    let parallel_positions: Vec<Vec<f32>> = parallel.into_iter().map(|f| f.positions).collect();
+    let parallel =
+        read_frames_parallel(&path, &indices, None).expect("parallel read failed");
+    let parallel_positions: Vec<Vec<f32>> =
+        parallel.into_iter().map(|(coords, _, _)| coords).collect();
 
     assert_eq!(parallel_positions, serial);
+}
+
+/// `read_frames_parallel` must apply `atom_indices` inside the parallel decode
+/// itself -- order and duplicates preserved exactly (mdtraj `atom_indices`
+/// fancy-indexing semantics) -- and each returned frame's coordinate buffer
+/// must be sized to the selection, not the full atom count.
+///
+/// This is the regression test for the OOM this fixes: the previous
+/// implementation collected one full, unfiltered `MollyFrame` per requested
+/// frame into memory before any `atom_indices` filtering happened downstream
+/// (in the Python-binding aggregation loop) -- for a trajectory with hundreds
+/// of thousands of atoms per frame, that meant transiently holding the full
+/// atom set for *every* requested frame simultaneously.
+#[cfg(feature = "parallel")]
+#[test]
+fn test_read_frames_parallel_applies_atom_indices_inside_worker() {
+    use crate::formats::xtc::read_frames_parallel;
+
+    let Some(xtc_path) = test_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n = reader.frame_count().unwrap();
+    let n_atoms = reader.n_atoms().unwrap();
+    assert!(
+        n_atoms >= 2,
+        "fixture must have at least 2 atoms for this test"
+    );
+    let indices: Vec<usize> = (0..n).collect();
+
+    // Deliberately unsorted with a duplicate, to exercise mdtraj's
+    // order/duplicate-preserving `atom_indices` semantics (a boolean `Mask`
+    // selection could not represent this).
+    let atom_indices = vec![1usize, 0, 1];
+
+    let serial: Vec<Vec<f32>> = indices
+        .iter()
+        .map(|&i| {
+            let frame = reader.read_frame_at(i, &AtomSelection::All).unwrap();
+            atom_indices
+                .iter()
+                .flat_map(|&a| {
+                    let base = a * 3;
+                    [
+                        frame.positions[base] * 10.0,
+                        frame.positions[base + 1] * 10.0,
+                        frame.positions[base + 2] * 10.0,
+                    ]
+                })
+                .collect::<Vec<f32>>()
+        })
+        .collect();
+
+    let parallel = read_frames_parallel(&path, &indices, Some(&atom_indices))
+        .expect("parallel read failed");
+
+    assert_eq!(parallel.len(), serial.len());
+    for (i, (coords, _box_ang, _time)) in parallel.iter().enumerate() {
+        assert_eq!(
+            coords.len(),
+            atom_indices.len() * 3,
+            "frame {i} was not reduced to the requested atom_indices before being returned"
+        );
+        assert_eq!(
+            coords, &serial[i],
+            "atom_indices order/duplicates mismatch at frame {i}"
+        );
+    }
 }
 
 /// Write an MDAnalysis-shaped `.{name}_offsets.npz` via numpy (same keys/dtypes
@@ -379,11 +459,21 @@ fn test_read_frames_parallel_matches_serial_large_fixture() {
 
     let serial: Vec<Vec<f32>> = indices
         .iter()
-        .map(|&i| reader.read_frame_at(i, &AtomSelection::All).unwrap().positions)
+        .map(|&i| {
+            reader
+                .read_frame_at(i, &AtomSelection::All)
+                .unwrap()
+                .positions
+                .iter()
+                .map(|x| x * 10.0)
+                .collect()
+        })
         .collect();
 
-    let parallel = read_frames_parallel(&path, &indices).expect("parallel read failed");
-    let parallel_positions: Vec<Vec<f32>> = parallel.into_iter().map(|f| f.positions).collect();
+    let parallel =
+        read_frames_parallel(&path, &indices, None).expect("parallel read failed");
+    let parallel_positions: Vec<Vec<f32>> =
+        parallel.into_iter().map(|(coords, _, _)| coords).collect();
 
     assert_eq!(parallel_positions, serial);
 }

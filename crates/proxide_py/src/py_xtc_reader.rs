@@ -33,32 +33,17 @@ fn validate_atom_indices(atom_indices: &Option<Vec<usize>>, n_atoms: usize) -> R
 /// order and duplicates preserved, matching mdtraj's `atom_indices` fancy-
 /// indexing semantics.
 ///
-/// Deliberately does *not* use `molly::selection::AtomSelection::from_index_list`
-/// for this: that builds a boolean `Mask`, which silently returns atoms in
-/// ascending index order with duplicates collapsed — diverging from mdtraj
-/// (and from a caller's expectations) whenever `atom_indices` isn't already
-/// sorted and unique. Mirrors `proxide_io::formats::xtc`'s private
-/// `frame_to_angstroms` helper for the no-selection case (that helper isn't
-/// exported).
+/// Delegates to `proxide_io::formats::xtc::select_positions_angstroms` for the
+/// actual selection — see its docs for why a boolean `Mask` selection isn't
+/// used here.
 #[cfg(feature = "xtc")]
 fn frame_to_angstroms_selected(
     frame: &molly::Frame,
     atom_indices: &Option<Vec<usize>>,
 ) -> (Vec<f32>, [[f32; 3]; 3]) {
-    let coords: Vec<f32> = match atom_indices {
-        Some(indices) => indices
-            .iter()
-            .flat_map(|&i| {
-                let base = i * 3;
-                [
-                    frame.positions[base] * 10.0,
-                    frame.positions[base + 1] * 10.0,
-                    frame.positions[base + 2] * 10.0,
-                ]
-            })
-            .collect(),
-        None => frame.positions.iter().map(|x| x * 10.0).collect(),
-    };
+    use crate::formats::xtc::select_positions_angstroms;
+
+    let coords = select_positions_angstroms(frame, atom_indices.as_deref());
     let mut box_ang = frame.boxvec_cols_2d();
     for row in &mut box_ang {
         for v in row {
@@ -208,20 +193,20 @@ pub fn read_xtc_parallel(
 
                 let indices = build_frame_indices(total_frames, stride);
                 let selected_natoms = atom_indices.as_ref().map_or(n_atoms, Vec::len);
-                let frames = read_frames_parallel(&path, &indices).map_err(|e| e.to_string())?;
+                let frames = read_frames_parallel(&path, &indices, atom_indices.as_deref())
+                    .map_err(|e| e.to_string())?;
 
                 let mut flat_coords = Vec::with_capacity(frames.len() * selected_natoms * 3);
                 let mut flat_boxes = Vec::with_capacity(frames.len() * 9);
                 let mut flat_times = Vec::with_capacity(frames.len());
                 let mut num_atoms = 0usize;
-                for frame in &frames {
-                    let (c, b) = frame_to_angstroms_selected(frame, &atom_indices);
-                    num_atoms = c.len() / 3;
-                    flat_coords.extend_from_slice(&c);
-                    flat_boxes.extend_from_slice(&b[0]);
-                    flat_boxes.extend_from_slice(&b[1]);
-                    flat_boxes.extend_from_slice(&b[2]);
-                    flat_times.push(frame.time);
+                for (coords, box_ang, time) in &frames {
+                    num_atoms = coords.len() / 3;
+                    flat_coords.extend_from_slice(coords);
+                    flat_boxes.extend_from_slice(&box_ang[0]);
+                    flat_boxes.extend_from_slice(&box_ang[1]);
+                    flat_boxes.extend_from_slice(&box_ang[2]);
+                    flat_times.push(*time);
                 }
                 Ok((
                     frames.len(),

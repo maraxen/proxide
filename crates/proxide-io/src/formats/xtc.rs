@@ -516,15 +516,64 @@ impl Iterator for XtcFrameIter<'_> {
     }
 }
 
+/// Select and order positions from a decoded frame according to `atom_indices`
+/// (order and duplicates preserved, matching mdtraj's `atom_indices` fancy-
+/// indexing semantics), converting nm -> Angstrom. `None` returns all atoms.
+///
+/// Deliberately does not use `AtomSelection::from_index_list` for this: that
+/// builds a boolean `Mask`, which returns atoms in ascending index order with
+/// duplicates collapsed — diverging from mdtraj (and from a caller's
+/// expectations) whenever `atom_indices` isn't already sorted and unique.
+pub fn select_positions_angstroms(frame: &MollyFrame, atom_indices: Option<&[usize]>) -> Vec<f32> {
+    match atom_indices {
+        Some(indices) => indices
+            .iter()
+            .flat_map(|&i| {
+                let base = i * 3;
+                [
+                    frame.positions[base] * 10.0,
+                    frame.positions[base + 1] * 10.0,
+                    frame.positions[base + 2] * 10.0,
+                ]
+            })
+            .collect(),
+        None => frame.positions.iter().map(|x| x * 10.0).collect(),
+    }
+}
+
+fn boxvec_angstroms(frame: &MollyFrame) -> [[f32; 3]; 3] {
+    let mut box_ang = frame.boxvec_cols_2d();
+    for row in &mut box_ang {
+        for v in row {
+            *v *= 10.0;
+        }
+    }
+    box_ang
+}
+
+/// A single frame's data reduced to the atoms actually requested (already in
+/// Angstroms), as returned by [`read_frames_parallel`].
+pub type SelectedFrame = (Vec<f32>, [[f32; 3]; 3], f32);
+
 /// Decode a set of frames concurrently via `orx-parallel`. Each worker opens
 /// its own file handle and seeks directly to its assigned offset (the same
 /// per-worker-handle pattern MDAnalysis's multiprocessing/Dask analysis
 /// backends use); only already-computed offsets are shared across workers.
+///
+/// `atom_indices` is applied *inside* each worker, immediately after decode,
+/// before the frame's full-size buffer is handed back — so the accumulated
+/// result holds only the requested atoms, not every decoded atom for every
+/// requested frame. Without this, a caller selecting a small subset of atoms
+/// from a trajectory with hundreds of thousands of atoms per frame would
+/// transiently hold the full, unfiltered coordinate set for *every* requested
+/// frame simultaneously (`frame_indices.len() * full_natoms`), long before any
+/// downstream filtering had a chance to run.
 #[cfg(feature = "parallel")]
 pub fn read_frames_parallel<P: AsRef<Path>>(
     path: P,
     frame_indices: &[usize],
-) -> Result<Vec<MollyFrame>, XtcError> {
+    atom_indices: Option<&[usize]>,
+) -> Result<Vec<SelectedFrame>, XtcError> {
     let path = path.as_ref();
     let mut reader = XtcReader::open(path)?;
     let offsets = reader.ensure_offsets()?.clone();
@@ -533,14 +582,16 @@ pub fn read_frames_parallel<P: AsRef<Path>>(
     let indices = frame_indices.to_vec();
     let par = indices
         .into_par()
-        .map(|index| -> Result<MollyFrame, XtcError> {
+        .map(|index| -> Result<SelectedFrame, XtcError> {
             let offset = *offsets
                 .get(index)
                 .ok_or(XtcError::FrameOutOfBounds { index, n_frames })?;
             let mut worker_reader = XTCReader::open(path)?;
             let mut frame = MollyFrame::default();
             worker_reader.read_frame_at_offset::<false>(&mut frame, offset, &AtomSelection::All)?;
-            Ok(frame)
+            let coords = select_positions_angstroms(&frame, atom_indices);
+            let box_ang = boxvec_angstroms(&frame);
+            Ok((coords, box_ang, frame.time))
         });
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let par = par.num_threads(proxide_parallel_rt::num_threads());
