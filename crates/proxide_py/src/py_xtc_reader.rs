@@ -336,6 +336,25 @@ pub fn read_xtc_ca_distogram(
             ));
         }
 
+        // Pair count grows quadratically (n * (n - 1) / 2), so an unbounded
+        // `atom_indices` lets a single call demand an arbitrarily large
+        // per-frame allocation (e.g. 200_000 atoms => ~2e10 pairs => tens of
+        // GB per frame) without needing distinct/out-of-range indices — a
+        // repeated valid index still passes `validate_atom_indices` trivially.
+        // The real use case here is residue-level Cα selections, even for
+        // large multi-chain complexes (hundreds to low thousands of atoms;
+        // callers of this crate top out around ~1600), so 10_000 is generous
+        // headroom while ruling out the DoS-scale case.
+        const MAX_ATOM_INDICES: usize = 10_000;
+        if atom_indices.len() > MAX_ATOM_INDICES {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "atom_indices has {} entries, exceeding the maximum of {} \
+                 (n_pairs grows quadratically with atom count)",
+                atom_indices.len(),
+                MAX_ATOM_INDICES
+            )));
+        }
+
         let (n_frames, n_pairs, flat) = py
             .allow_threads(|| -> Result<_, String> {
                 let (total_frames, n_atoms) = {

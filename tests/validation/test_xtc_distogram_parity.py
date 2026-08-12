@@ -213,3 +213,185 @@ def test_read_xtc_ca_distogram_synthetic_ground_truth_and_pair_order(tmp_path):
   assert abs(got[0, 0] - raw_d01) > 1.0, (
     "fixture failed to distinguish MIC from naive Euclidean distance"
   )
+
+
+def _reference_mic_distance(a: np.ndarray, b: np.ndarray, box_length: float) -> float:
+  """Independent, textbook minimum-image-convention formula (per-axis
+  nearest-periodic-image subtraction), used only to build hand-verifiable
+  expected values for the multi-frame wrap test below — not a call into
+  proxide or any of its dependencies.
+  """
+  diff = a - b
+  diff = diff - box_length * np.round(diff / box_length)
+  return float(np.linalg.norm(diff))
+
+
+@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
+def test_read_xtc_ca_distogram_multiframe_forces_real_wrap_through_real_entry_point(tmp_path):
+  """Closes the gap the audit flagged: none of the existing "real fixture"
+  multi-frame integration tests (this file's
+  `test_read_xtc_ca_distogram_matches_unwrap_then_naive_mdtraj`, or
+  `proxide-io`'s `test_read_xtc_distogram_parallel_shape_and_sanity_real_fixture`
+  / `test_read_xtc_distogram_parallel_matches_manual_mic_computation`) ever
+  have an atom pair straddling a periodic boundary in any of `frame0.xtc`'s
+  501 frames — so the periodic-wrap branch of `pairwise_distances_mic` is a
+  complete no-op on all of that fixture's data, and those tests cannot tell
+  a correct wrap implementation from a silently broken/deleted one. The
+  single-frame synthetic fixture above forces a real wrap but never goes
+  through a multi-frame trajectory, so it can't catch a bug that only
+  manifests when wrapping has to happen on some frames but not others (e.g.
+  a wrap applied/skipped based on frame index instead of geometry).
+
+  Builds a small 4-atom, 3-frame synthetic XTC with the *same* known
+  10x10x10 A box every frame, where the middle frame reuses the single-frame
+  fixture's wrap-forcing geometry (atoms 0/1 near opposite faces along x)
+  and the other two frames deliberately do NOT need a wrap — so this test
+  also verifies MIC wrapping is applied per-frame based on actual geometry,
+  not unconditionally. Runs through the real `read_xtc_ca_distogram` PyO3
+  entry point (not the bare Rust primitive, already covered in
+  `proxide-geometry`'s unit tests).
+  """
+  import proxide
+
+  topology = mdtraj.Topology()
+  chain = topology.add_chain()
+  residue = topology.add_residue("XXX", chain)
+  for _ in range(4):
+    topology.add_atom("C", mdtraj.element.carbon, residue)
+
+  box_length_angstrom = 10.0
+
+  # Frame 0: compact cluster near the box center — no pair comes anywhere
+  # close to the half-box (5 A) threshold, so nothing should wrap.
+  frame0 = np.array(
+    [
+      [4.0, 5.0, 5.0],
+      [6.0, 5.0, 5.0],
+      [5.0, 5.0, 5.0],
+      [5.0, 6.0, 5.0],
+    ],
+    dtype=np.float32,
+  )
+  # Frame 1: identical geometry to the single-frame synthetic ground-truth
+  # test above — atoms 0/1 sit near opposite faces along x (raw separation
+  # 9.0 A; true minimum-image separation 1.0 A), forcing a real wrap.
+  frame1 = np.array(
+    [
+      [0.5, 5.0, 5.0],
+      [9.5, 5.0, 5.0],
+      [5.0, 5.0, 5.0],
+      [5.0, 7.0, 5.0],
+    ],
+    dtype=np.float32,
+  )
+  # Frame 2: a different compact, no-wrap arrangement — confirms the
+  # implementation doesn't just "always wrap" once triggered once.
+  frame2 = np.array(
+    [
+      [2.0, 2.0, 2.0],
+      [3.0, 2.0, 2.0],
+      [2.0, 3.0, 2.0],
+      [2.0, 2.0, 3.0],
+    ],
+    dtype=np.float32,
+  )
+  positions_angstrom = np.stack([frame0, frame1, frame2], axis=0)  # (3, 4, 3)
+  coords_nm = positions_angstrom / 10.0
+  n_frames = coords_nm.shape[0]
+
+  traj = mdtraj.Trajectory(
+    coords_nm,
+    topology,
+    unitcell_lengths=np.array([[box_length_angstrom / 10.0] * 3] * n_frames, dtype=np.float32),
+    unitcell_angles=np.array([[90.0, 90.0, 90.0]] * n_frames, dtype=np.float32),
+  )
+  xtc_path = tmp_path / "synthetic_mic_multiframe.xtc"
+  traj.save_xtc(str(xtc_path))
+
+  atom_indices = [0, 1, 2, 3]
+  got = proxide.read_xtc_ca_distogram(str(xtc_path), atom_indices, stride=1)
+  assert got.shape == (n_frames, 6)
+
+  iu, ju = np.triu_indices(4, k=1)
+  expected = np.array(
+    [
+      [_reference_mic_distance(frame[i], frame[j], box_length_angstrom) for i, j in zip(iu, ju)]
+      for frame in positions_angstrom
+    ],
+    dtype=np.float32,
+  )
+
+  np.testing.assert_allclose(
+    got,
+    expected,
+    atol=COORD_TOLERANCE_ANGSTROM * 3,  # a distance combines 2 lossy coords
+    err_msg="read_xtc_ca_distogram must match the independent per-axis MIC "
+    "reference across all 3 frames, in exact np.triu_indices(4, k=1) order",
+  )
+
+  # The (0,1) pair (index 0 in triu order) is the one that wraps, and only
+  # on the middle frame. Confirm the wrapped value differs meaningfully from
+  # the naive (non-PBC-aware) raw Euclidean distance on that frame...
+  raw_d01_frame1 = float(np.linalg.norm(frame1[0] - frame1[1]))
+  assert abs(raw_d01_frame1 - 9.0) < COORD_TOLERANCE_ANGSTROM
+  assert abs(got[1, 0] - raw_d01_frame1) > 1.0, (
+    "frame 1's (0,1) pair failed to distinguish MIC from naive Euclidean distance "
+    "— the wrap branch may not be firing through the real entry point"
+  )
+  # ...and confirm the neighboring no-wrap frames are NOT similarly displaced
+  # from their own naive raw distances, i.e. wrapping really is conditional
+  # on per-frame geometry rather than applied unconditionally to every frame.
+  raw_d01_frame0 = float(np.linalg.norm(frame0[0] - frame0[1]))
+  raw_d01_frame2 = float(np.linalg.norm(frame2[0] - frame2[1]))
+  assert abs(got[0, 0] - raw_d01_frame0) < 0.1, (
+    "frame 0 should not have wrapped, but its (0,1) distance diverges from "
+    "the naive raw distance"
+  )
+  assert abs(got[2, 0] - raw_d01_frame2) < 0.1, (
+    "frame 2 should not have wrapped, but its (0,1) distance diverges from "
+    "the naive raw distance"
+  )
+
+
+def test_read_xtc_ca_distogram_empty_atom_indices_raises():
+  """The `atom_indices.is_empty()` guard added alongside this binding was
+  previously untested. The empty-list check happens before the path is ever
+  opened, so a nonexistent path is fine here — this is purely testing input
+  validation, not trajectory I/O.
+  """
+  import proxide
+
+  with pytest.raises(ValueError, match="must not be empty"):
+    proxide.read_xtc_ca_distogram("/nonexistent/path/does/not/matter.xtc", [], stride=1)
+
+
+def test_read_xtc_ca_distogram_atom_indices_over_cap_raises():
+  """DoS guard: `atom_indices.len()` is capped (n_pairs grows quadratically,
+  so an unbounded count lets one call demand an arbitrarily large per-frame
+  allocation). The cap check happens before the path is ever opened, so a
+  nonexistent path is fine — this is purely testing input validation.
+  """
+  import proxide
+
+  too_many = list(range(10_001))
+  with pytest.raises(ValueError, match="exceeding the maximum"):
+    proxide.read_xtc_ca_distogram("/nonexistent/path/does/not/matter.xtc", too_many, stride=1)
+
+
+@pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
+def test_read_xtc_ca_distogram_stride_zero_matches_stride_one():
+  """`build_frame_indices` defends against `stride=0` via `.max(1)` — a
+  live bug was never possible here (confirmed by source inspection), but
+  this coverage gap should be closed and the safe behavior locked in: a
+  `stride=0` call must not panic and must compute frame indices as if
+  `stride=1`, on the real fixture through the real PyO3 entry point.
+  """
+  _skip_if_fixture_missing()
+  import proxide
+
+  atom_indices = [0, 5, 10, 15, 21]
+  got_stride_zero = proxide.read_xtc_ca_distogram(str(XTC_PATH), atom_indices, stride=0)
+  got_stride_one = proxide.read_xtc_ca_distogram(str(XTC_PATH), atom_indices, stride=1)
+
+  assert got_stride_zero.shape == got_stride_one.shape
+  np.testing.assert_array_equal(got_stride_zero, got_stride_one)
