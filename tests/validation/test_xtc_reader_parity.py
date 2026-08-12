@@ -203,9 +203,14 @@ def test_atom_indices_preserve_order_and_duplicates(synthetic_xtc, fn_name):
 
 
 @pytest.mark.skipif(not MDTRAJ_AVAILABLE, reason="MDTraj not installed")
-@pytest.mark.parametrize("fn_name", ["read_xtc_lazy", "read_xtc_parallel"])
+@pytest.mark.parametrize("fn_name", ["read_xtc_lazy", "read_xtc_parallel", "read_xtc_ca_distogram"])
 def test_out_of_range_atom_index_raises(synthetic_xtc, fn_name):
-  """An out-of-range atom index must raise a clean error, not panic."""
+  """An out-of-range atom index must raise a clean error, not panic.
+
+  Covers `read_xtc_ca_distogram` alongside the lazy/parallel readers — it
+  shares the same `validate_atom_indices` guard, but until this
+  parametrization it had no direct test of its own for this case.
+  """
   import proxide
 
   path, _topology, _true_total_frames = synthetic_xtc

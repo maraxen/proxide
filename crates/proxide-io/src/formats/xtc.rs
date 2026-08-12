@@ -24,6 +24,9 @@ use thiserror::Error;
 #[cfg(feature = "parallel")]
 use orx_parallel::{IntoParIter, ParIter};
 
+#[cfg(feature = "parallel")]
+use proxide_geometry::geometry::distances::{pairwise_distances_mic, BoxDims};
+
 #[cfg(test)]
 mod tests {
     include!("tests/xtc_tests.rs");
@@ -627,6 +630,59 @@ pub fn read_frames_parallel<P: AsRef<Path>>(
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let par = par.num_threads(proxide_parallel_rt::num_threads());
     par.collect::<Vec<_>>().into_iter().collect()
+}
+
+/// Compute per-frame pairwise-distance "distograms" for a caller-selected
+/// set of atoms (typically one representative atom per residue, e.g. Cα),
+/// using the minimum-image convention against each frame's own box.
+///
+/// A thin XTC-specific wrapper: it reuses [`read_frames_parallel`] for the
+/// actual decode + atom-filter-inside-worker step (the same OOM fix from
+/// praxia debt #1220 — atoms are filtered before frames are collected, so
+/// memory scales with `atom_indices.len()`, not the trajectory's full
+/// per-frame atom count), then hands each frame's selected positions and
+/// box to [`pairwise_distances_mic`] — a system-agnostic primitive that
+/// knows nothing about chains, residues, or XTC itself. A frame with no
+/// real periodic box (zero/degenerate box vectors — e.g. an implicit-
+/// solvent or in-vacuo trajectory) automatically falls back to plain
+/// Euclidean distance there; this function does not need its own special
+/// case for that.
+///
+/// Returns one `Vec<f32>` of length `n * (n - 1) / 2` per requested frame
+/// (`n = atom_indices.len()`), in Angstroms, with pair order matching
+/// `numpy.triu_indices(n, k=1)` (row-major over the upper triangle) — same
+/// convention as [`pairwise_distances_mic`]. Order and duplicates in
+/// `atom_indices` are preserved exactly as passed (mdtraj fancy-indexing
+/// semantics, same as [`read_frames_parallel`]) — duplicate indices would
+/// simply produce zero-distance pairs, not an error.
+#[cfg(feature = "parallel")]
+pub fn read_xtc_distogram_parallel<P: AsRef<Path>>(
+    path: P,
+    frame_indices: &[usize],
+    atom_indices: &[usize],
+) -> Result<Vec<Vec<f32>>, XtcError> {
+    let frames = read_frames_parallel(path, frame_indices, Some(atom_indices))?;
+
+    Ok(frames
+        .iter()
+        .map(|frame| {
+            let positions: Vec<[f32; 3]> = frame
+                .positions
+                .chunks_exact(3)
+                .map(|c| [c[0] * 10.0, c[1] * 10.0, c[2] * 10.0]) // nm -> Angstrom
+                .collect();
+
+            let mut box_ang = frame.box_vectors;
+            for row in &mut box_ang {
+                for v in row {
+                    *v *= 10.0; // nm -> Angstrom
+                }
+            }
+            let box_dims = BoxDims::from_diagonal_matrix(&box_ang);
+
+            pairwise_distances_mic(&positions, Some(&box_dims))
+        })
+        .collect())
 }
 
 pub mod molly_impl {

@@ -298,6 +298,104 @@ pub fn frame_count(py: Python<'_>, path: String) -> PyResult<usize> {
     }
 }
 
+/// Compute per-frame pairwise-distance "distograms" between a caller-chosen
+/// set of atoms (typically one representative atom per residue, e.g. Cα),
+/// using the minimum-image convention (MIC) against each frame's own box —
+/// a drop-in replacement for "unwrap the whole trajectory with
+/// `image_molecules`, then compute naive Euclidean pairwise distances",
+/// without the expensive physical-unwrap step: MIC needs only the box
+/// dimensions, not a bond graph or molecule/anchor detection.
+///
+/// `atom_indices` order defines pair order — no assumption about chain or
+/// residue topology, order and duplicates preserved exactly as passed (same
+/// mdtraj fancy-indexing convention as [`read_xtc_lazy`]/[`read_xtc_parallel`]).
+/// A frame with no real periodic box (zero/degenerate box vectors — e.g. an
+/// implicit-solvent or in-vacuo trajectory) automatically falls back to
+/// plain Euclidean distance for that frame; callers never need to know in
+/// advance whether their trajectory has PBC.
+///
+/// Returns a `(n_frames, n_pairs)` numpy array in Angstroms, where
+/// `n_pairs = len(atom_indices) * (len(atom_indices) - 1) / 2`. Pair order
+/// matches `numpy.triu_indices(len(atom_indices), k=1)` — row-major
+/// iteration over the upper triangle: `(0,1) (0,2) ... (0,n-1) (1,2) ...`.
+#[pyfunction]
+#[pyo3(signature = (path, atom_indices, stride=1))]
+pub fn read_xtc_ca_distogram(
+    py: Python<'_>,
+    path: String,
+    atom_indices: Vec<usize>,
+    stride: usize,
+) -> PyResult<PyObject> {
+    #[cfg(all(feature = "xtc", feature = "parallel"))]
+    {
+        use crate::formats::xtc::{read_xtc_distogram_parallel, XtcReader};
+
+        if atom_indices.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "atom_indices must not be empty",
+            ));
+        }
+
+        // Pair count grows quadratically (n * (n - 1) / 2), so an unbounded
+        // `atom_indices` lets a single call demand an arbitrarily large
+        // per-frame allocation (e.g. 200_000 atoms => ~2e10 pairs => tens of
+        // GB per frame) without needing distinct/out-of-range indices — a
+        // repeated valid index still passes `validate_atom_indices` trivially.
+        // The real use case here is residue-level Cα selections, even for
+        // large multi-chain complexes (hundreds to low thousands of atoms;
+        // callers of this crate top out around ~1600), so 10_000 is generous
+        // headroom while ruling out the DoS-scale case.
+        const MAX_ATOM_INDICES: usize = 10_000;
+        if atom_indices.len() > MAX_ATOM_INDICES {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "atom_indices has {} entries, exceeding the maximum of {} \
+                 (n_pairs grows quadratically with atom count)",
+                atom_indices.len(),
+                MAX_ATOM_INDICES
+            )));
+        }
+
+        let (n_frames, n_pairs, flat) = py
+            .allow_threads(|| -> Result<_, String> {
+                let (total_frames, n_atoms) = {
+                    let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
+                    let total_frames = reader.frame_count().map_err(|e| e.to_string())?;
+                    let n_atoms = reader.n_atoms().map_err(|e| e.to_string())?;
+                    (total_frames, n_atoms)
+                };
+                validate_atom_indices(&Some(atom_indices.clone()), n_atoms)?;
+
+                let frame_indices = build_frame_indices(total_frames, stride);
+                let n = atom_indices.len();
+                let n_pairs = n.saturating_sub(1) * n / 2;
+
+                let distograms = read_xtc_distogram_parallel(&path, &frame_indices, &atom_indices)
+                    .map_err(|e| e.to_string())?;
+
+                let mut flat = Vec::with_capacity(distograms.len() * n_pairs);
+                for row in &distograms {
+                    flat.extend_from_slice(row);
+                }
+                Ok((distograms.len(), n_pairs, flat))
+            })
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+
+        let arr = PyArray1::from_vec_bound(py, flat);
+        let reshaped = arr.reshape((n_frames, n_pairs)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Failed to reshape distogram: {}", e))
+        })?;
+        Ok(reshaped.into_py(py))
+    }
+
+    #[cfg(not(all(feature = "xtc", feature = "parallel")))]
+    {
+        let _ = (py, path, atom_indices, stride);
+        Err(pyo3::exceptions::PyImportError::new_err(
+            "CA distogram reading requires compiling with the 'xtc' and 'parallel' features.",
+        ))
+    }
+}
+
 /// Number of atoms per frame in an XTC trajectory, from the first frame's
 /// header — never decodes coordinate data.
 #[pyfunction]
