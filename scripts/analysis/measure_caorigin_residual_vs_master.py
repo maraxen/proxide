@@ -9,7 +9,8 @@ HYPOTHESIS: The residual contact-degree drift is caused by one of:
 
 MEASUREMENT PLAN:
 1. Atom-order sanity check: confirm pb and rotlib.bin have same atom order per residue
-2. N-CA-CB angle: compute from both pb and rotlib.bin coords (using N at [-1.458,0,0], CA at [0,0,0])
+2. N-CA-CB angle: compute from both pb and rotlib.bin coords
+   (using N at [-1.458,0,0], CA at [0,0,0])
 3. Per-residue Kabsch: top rotamer of most-populated shared (phi,psi) bin
 4. Global Kabsch: pool all matched atoms across residues/bins
 5. Lever-arm analysis: RMSD growth with distance from CA
@@ -22,11 +23,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
 import sys
 import tempfile
 from pathlib import Path
-from subprocess import run as subprocess_run
 from typing import Any
 
 import numpy as np
@@ -80,7 +79,6 @@ def import_rotlib_pb2(proto_py_path: str):
 def parse_rotlib(path: Path) -> dict[str, dict]:
     """Parse the MSL binary rotamer library (from extract_rotlib_geometry.py)."""
     def _read_cstr(fp) -> str:
-        import struct
         out = bytearray()
         while True:
             b = fp.read(1)
@@ -256,7 +254,9 @@ def self_test_kabsch() -> bool:
 
     # Tolerance: recovered angle should match within 0.01 degrees
     if abs(angle_deg_recovered - theta_deg) > 0.01:
-        logger.error(f"Kabsch test FAILED: angle mismatch {angle_deg_recovered:.2f}° vs {theta_deg:.2f}°")
+        logger.error(
+            f"Kabsch test FAILED: angle mismatch {angle_deg_recovered:.2f}° vs {theta_deg:.2f}°"
+        )
         return False
 
     if rmsd > 1e-6:
@@ -483,7 +483,7 @@ def measure_global_kabsch(
         master_rot_bins = master_entry["rot_bins"]
 
         # All shared bins, all rotamers
-        for master_idx, (phi, psi, freq) in enumerate(master_bins_list):
+        for master_idx, (phi, psi, _freq) in enumerate(master_bins_list):
             key = (phi, psi)
             if key not in pb_bins_dict:
                 continue
@@ -554,7 +554,7 @@ def measure_lever_arm(
         master_bins_list = master_entry["bins"]
         master_rot_bins = master_entry["rot_bins"]
 
-        for master_idx, (phi, psi, freq) in enumerate(master_bins_list):
+        for master_idx, (phi, psi, _freq) in enumerate(master_bins_list):
             key = (phi, psi)
             if key not in pb_bins_dict:
                 continue
@@ -571,9 +571,9 @@ def measure_lever_arm(
 
             # CB is first atom, at index 0
             cb_pb = np.array(pb_coords[0], dtype=float)
-            cb_master = np.array(master_coords[0], dtype=float)
+            np.array(master_coords[0], dtype=float)
 
-            for i, (pb_c, master_c) in enumerate(zip(pb_coords, master_coords)):
+            for _i, (pb_c, master_c) in enumerate(zip(pb_coords, master_coords, strict=False)):
                 pb_a = np.array(pb_c, dtype=float)
                 master_a = np.array(master_c, dtype=float)
 
@@ -696,7 +696,9 @@ def main(argv=None) -> int:
                 master_lib = parse_rotlib(args.rotlib_bin)
                 master_codes = set(master_lib.keys())
                 measure_codes = sorted(pb_codes & master_codes)
-                logger.info(f"Measuring {len(measure_codes)} residues in both libraries: {measure_codes}")
+                logger.info(
+                    f"Measuring {len(measure_codes)} residues in both libraries: {measure_codes}"
+                )
             else:
                 measure_codes = args.residues
 
@@ -737,7 +739,9 @@ def main(argv=None) -> int:
                 report["ncacb_analysis"] = {
                     "mean_delta_deg": round(mean_delta, 3),
                     "std_delta_deg": round(std_delta, 3),
-                    "interpretation": "uniform offset" if std_delta < 0.5 else "per-residue scatter",
+                    "interpretation": (
+                        "uniform offset" if std_delta < 0.5 else "per-residue scatter"
+                    ),
                 }
 
             # Check global rotation
@@ -758,10 +762,15 @@ def main(argv=None) -> int:
             if "rotation_analysis" in report and report["rotation_analysis"]["is_significant"]:
                 rot_angle = report["rotation_analysis"]["global_rotation_deg"]
                 rot_axis = global_kabsch.get("rotation_axis", [0, 0, 0])
-                conclusions.append(f"Global rotation of {rot_angle:.2f}° about axis {rot_axis} detected")
+                conclusions.append(
+                    f"Global rotation of {rot_angle:.2f}° about axis {rot_axis} detected"
+                )
 
             if not conclusions:
-                conclusions.append("Residual is per-residue scatter or other (not simple uniform offset/rotation)")
+                conclusions.append(
+                    "Residual is per-residue scatter or other "
+                    "(not simple uniform offset/rotation)"
+                )
 
             report["conclusion"] = " | ".join(conclusions)
 

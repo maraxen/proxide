@@ -179,7 +179,7 @@ mod tests {
         header[9] = b'A';
         for i in 0..6 {
             let start = 48 + i * 4;
-            header[start..start+4].copy_from_slice(&1.0f32.to_le_bytes());
+            header[start..start + 4].copy_from_slice(&1.0f32.to_le_bytes());
         }
         data.extend_from_slice(&header);
         data.extend_from_slice(&[0u8; 8]); // anchors
@@ -218,7 +218,7 @@ mod tests {
         writeln!(lookup_file, "10\tPROT_A").unwrap();
 
         let db = FoldCompDb::open(&base_path).expect("Failed to open mock DB");
-        
+
         // Test get by ID
         let sys1 = db.get(10).expect("Failed to get by ID");
         assert_eq!(sys1.coordinates.len(), 9);

@@ -3,9 +3,9 @@ mod common;
 use common::load_real_backbone;
 use proxide_confind::ConFind;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::sync::Arc;
 
 // Reference contact degrees from Mosaist testConFind on small.pdb + rotlib.bin
 // Format: (chain_a, res_a, chain_b, res_b, contact_degree)
@@ -71,14 +71,17 @@ const REF_CONTACTS: &[(&str, i32, &str, i32, f64)] = &[
 const TOLERANCE: f64 = 1e-4;
 
 fn all_res(cf: &ConFind) -> Vec<proxide_confind::ResidueIndex> {
-    (0..cf.n_residues() as u32).map(proxide_confind::ResidueIndex).collect()
+    (0..cf.n_residues() as u32)
+        .map(proxide_confind::ResidueIndex)
+        .collect()
 }
 
 #[test]
 #[ignore]
 fn measure_loadpb_drift_vs_master() {
-    let pb_path = std::env::var("PROXIDE_ROTLIB_PB")
-        .unwrap_or_else(|_| "/home/marielle/projects/proxide/data/rotlibs/proxide-rotlib-bbdep2010.pb.zst".to_string());
+    let pb_path = std::env::var("PROXIDE_ROTLIB_PB").unwrap_or_else(|_| {
+        "/home/marielle/projects/proxide/data/rotlibs/proxide-rotlib-bbdep2010.pb.zst".to_string()
+    });
 
     let pb_path_obj = std::path::Path::new(&pb_path);
     if !pb_path_obj.exists() {
@@ -102,12 +105,18 @@ fn measure_loadpb_drift_vs_master() {
     };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
-    let contact_list = cf.contacts(&all_res(&cf), 0.0).expect("contacts should succeed");
+    let contact_list = cf
+        .contacts(&all_res(&cf), 0.0)
+        .expect("contacts should succeed");
 
-    assert!(!contact_list.pairs.is_empty(), "contact list must not be empty");
+    assert!(
+        !contact_list.pairs.is_empty(),
+        "contact list must not be empty"
+    );
 
     // Build expected map: canonical key (chain_a, res_a, chain_b, res_b) → cd
-    let expected: HashMap<(String, i32, String, i32), f64> = REF_CONTACTS.iter()
+    let expected: HashMap<(String, i32, String, i32), f64> = REF_CONTACTS
+        .iter()
         .map(|&(ca, ra, cb, rb, cd)| ((ca.to_string(), ra, cb.to_string(), rb), cd))
         .collect();
 
@@ -123,7 +132,12 @@ fn measure_loadpb_drift_vs_master() {
     for (&(ri_a, ri_b), &actual) in contact_list.pairs.iter().zip(&contact_list.degrees) {
         let id_a = cf.residue_id(ri_a);
         let id_b = cf.residue_id(ri_b);
-        let key = (id_a.chain_id.clone(), id_a.res_id, id_b.chain_id.clone(), id_b.res_id);
+        let key = (
+            id_a.chain_id.clone(),
+            id_a.res_id,
+            id_b.chain_id.clone(),
+            id_b.res_id,
+        );
 
         if let Some(&reference) = expected.get(&key) {
             let delta = (actual - reference).abs();
@@ -149,12 +163,18 @@ fn measure_loadpb_drift_vs_master() {
     }
 
     // Check for missing pairs
-    let actual_pairs: std::collections::HashSet<(String, i32, String, i32)> = contact_list.pairs
+    let actual_pairs: std::collections::HashSet<(String, i32, String, i32)> = contact_list
+        .pairs
         .iter()
         .map(|&(ri_a, ri_b)| {
             let id_a = cf.residue_id(ri_a);
             let id_b = cf.residue_id(ri_b);
-            (id_a.chain_id.clone(), id_a.res_id, id_b.chain_id.clone(), id_b.res_id)
+            (
+                id_a.chain_id.clone(),
+                id_a.res_id,
+                id_b.chain_id.clone(),
+                id_b.res_id,
+            )
         })
         .collect();
 
@@ -196,21 +216,42 @@ fn measure_loadpb_drift_vs_master() {
     // Build drift report
     let mut report = String::new();
     report.push_str("\n");
-    report.push_str("================================================================================\n");
+    report.push_str(
+        "================================================================================\n",
+    );
     report.push_str("DRIFT REPORT: load_pb vs. MASTER rotlib.bin\n");
-    report.push_str("================================================================================\n");
+    report.push_str(
+        "================================================================================\n",
+    );
     report.push_str("\n");
     report.push_str(&format!("Matched pairs:              {}\n", matched_count));
-    report.push_str(&format!("Missing from actual (PB):   {}\n", missing_from_actual));
-    report.push_str(&format!("Unexpected in actual (PB):  {}\n", unexpected_in_actual));
+    report.push_str(&format!(
+        "Missing from actual (PB):   {}\n",
+        missing_from_actual
+    ));
+    report.push_str(&format!(
+        "Unexpected in actual (PB):  {}\n",
+        unexpected_in_actual
+    ));
     report.push_str("\n");
-    report.push_str(&format!("Drift statistics (across {} matched pairs):\n", matched_count));
+    report.push_str(&format!(
+        "Drift statistics (across {} matched pairs):\n",
+        matched_count
+    ));
     report.push_str(&format!("  Max |Δ|:                  {:.6}\n", max_delta));
     report.push_str(&format!("  Mean |Δ|:                 {:.6}\n", mean_delta));
-    report.push_str(&format!("  Median |Δ|:               {:.6}\n", median_delta));
-    report.push_str(&format!("  Count exceeding 5e-4:     {} ({}%)\n",
+    report.push_str(&format!(
+        "  Median |Δ|:               {:.6}\n",
+        median_delta
+    ));
+    report.push_str(&format!(
+        "  Count exceeding 5e-4:     {} ({}%)\n",
         exceeding_tolerance,
-        if matched_count > 0 { (exceeding_tolerance * 100) / matched_count } else { 0 }
+        if matched_count > 0 {
+            (exceeding_tolerance * 100) / matched_count
+        } else {
+            0
+        }
     ));
     report.push_str("\n");
     // Classify terminal residues: residue 1 (N-terminal) or max res_id per chain (C-terminal).
@@ -219,52 +260,88 @@ fn measure_loadpb_drift_vs_master() {
         let mut m = std::collections::HashMap::<String, (i32, i32)>::new();
         for &(ca, ra, cb, rb, _) in REF_CONTACTS {
             let e = m.entry(ca.to_string()).or_insert((i32::MAX, i32::MIN));
-            e.0 = e.0.min(ra); e.1 = e.1.max(ra);
+            e.0 = e.0.min(ra);
+            e.1 = e.1.max(ra);
             let e = m.entry(cb.to_string()).or_insert((i32::MAX, i32::MIN));
-            e.0 = e.0.min(rb); e.1 = e.1.max(rb);
+            e.0 = e.0.min(rb);
+            e.1 = e.1.max(rb);
         }
-        m.iter().flat_map(|(ch, &(mn, mx))| {
-            [ch.clone(), ch.clone()].into_iter().zip([mn, mx])
-        }).collect()
+        m.iter()
+            .flat_map(|(ch, &(mn, mx))| [ch.clone(), ch.clone()].into_iter().zip([mn, mx]))
+            .collect()
     };
 
     let is_terminal = |chain: &str, res: i32| terminal_res_ids.contains(&(chain.to_string(), res));
 
-    let above_threshold: Vec<_> = largest_drift.iter()
+    let above_threshold: Vec<_> = largest_drift
+        .iter()
         .filter(|(_, _, _, _, _, _, d)| *d >= TOLERANCE)
         .collect();
 
-    let terminal_involved = above_threshold.iter()
+    let terminal_involved = above_threshold
+        .iter()
         .filter(|(ca, ra, cb, rb, _, _, _)| is_terminal(ca, *ra) || is_terminal(cb, *rb))
         .count();
     let interior_only = above_threshold.len() - terminal_involved;
 
-    report.push_str(&format!("All {} pairs above threshold ({:.0e}):\n", above_threshold.len(), TOLERANCE));
-    report.push_str(&format!("  Terminal-residue involved: {}\n", terminal_involved));
-    report.push_str(&format!("  Interior-only:             {}\n\n", interior_only));
+    report.push_str(&format!(
+        "All {} pairs above threshold ({:.0e}):\n",
+        above_threshold.len(),
+        TOLERANCE
+    ));
+    report.push_str(&format!(
+        "  Terminal-residue involved: {}\n",
+        terminal_involved
+    ));
+    report.push_str(&format!(
+        "  Interior-only:             {}\n\n",
+        interior_only
+    ));
 
     for (i, (ca, ra, cb, rb, actual, reference, delta)) in above_threshold.iter().enumerate() {
-        let flag = if is_terminal(ca, *ra) || is_terminal(cb, *rb) { " [TERMINAL]" } else { "" };
-        report.push_str(&format!("  {}. {},{} → {},{}{}\n", i + 1, ca, ra, cb, rb, flag));
-        report.push_str(&format!("     Actual:    {:.6}  Reference: {:.6}  Δ: {:.6}\n", actual, reference, delta));
+        let flag = if is_terminal(ca, *ra) || is_terminal(cb, *rb) {
+            " [TERMINAL]"
+        } else {
+            ""
+        };
+        report.push_str(&format!(
+            "  {}. {},{} → {},{}{}\n",
+            i + 1,
+            ca,
+            ra,
+            cb,
+            rb,
+            flag
+        ));
+        report.push_str(&format!(
+            "     Actual:    {:.6}  Reference: {:.6}  Δ: {:.6}\n",
+            actual, reference, delta
+        ));
     }
     report.push_str("\n");
     report.push_str("Top 10 largest-drift contacts:\n");
     report.push_str("\n");
 
-    for (i, (ca, ra, cb, rb, actual, reference, delta)) in largest_drift.iter().take(10).enumerate() {
+    for (i, (ca, ra, cb, rb, actual, reference, delta)) in largest_drift.iter().take(10).enumerate()
+    {
         report.push_str(&format!("  {}. {},{} → {},{}\n", i + 1, ca, ra, cb, rb));
         report.push_str(&format!("     Actual:    {:.6}\n", actual));
         report.push_str(&format!("     Reference: {:.6}\n", reference));
         report.push_str(&format!("     Delta:     {:.6} ({:.2e})\n", delta, delta));
         report.push_str("\n");
     }
-    report.push_str("================================================================================\n");
+    report.push_str(
+        "================================================================================\n",
+    );
     report.push_str("\n");
 
     // Print to stderr and to a file
     eprint!("{}", report);
-    if let Ok(mut file) = OpenOptions::new().create(true).write(true).open("/tmp/drift_report.txt") {
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open("/tmp/drift_report.txt")
+    {
         let _ = file.write_all(report.as_bytes());
     }
 }

@@ -63,7 +63,9 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
 
     #[cfg(feature = "parallel")]
     let results: Vec<(String, Vec<i8>, Vec<bool>)> = {
-        let par = raw_records.into_par().map(|(header, seq_lines)| tokenize_record(header, seq_lines, &aa_to_id));
+        let par = raw_records
+            .into_par()
+            .map(|(header, seq_lines)| tokenize_record(header, seq_lines, &aa_to_id));
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         let par = par.num_threads(proxide_parallel_rt::num_threads());
         par.collect()
@@ -94,7 +96,11 @@ pub fn parse_a3m<P: AsRef<Path>>(path: P) -> Result<TokenizedMSA, FastaError> {
     })
 }
 
-fn tokenize_record(header: String, seq_lines: Vec<String>, aa_to_id: &HashMap<char, i8>) -> (String, Vec<i8>, Vec<bool>) {
+fn tokenize_record(
+    header: String,
+    seq_lines: Vec<String>,
+    aa_to_id: &HashMap<char, i8>,
+) -> (String, Vec<i8>, Vec<bool>) {
     let full_seq = seq_lines.join("");
     let mut tokenized = Vec::new();
     let mut mask = Vec::new();
@@ -114,9 +120,9 @@ fn tokenize_record(header: String, seq_lines: Vec<String>, aa_to_id: &HashMap<ch
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use std::fs::File;
     use std::env;
+    use std::fs::File;
+    use std::io::Write;
 
     fn temp_file(name: &str) -> std::path::PathBuf {
         let mut path = env::temp_dir();
@@ -144,7 +150,7 @@ mod tests {
         let path = temp_file("test_multiline.fasta");
         let mut file = File::create(&path).unwrap();
         writeln!(file, ">seq1\nACD\nEF").unwrap();
-        
+
         let msa = parse_a3m(&path).unwrap();
         assert_eq!(msa.sequences[0], vec![0, 1, 2, 3, 4]);
         std::fs::remove_file(path).unwrap();
@@ -155,7 +161,7 @@ mod tests {
         let path = temp_file("test_a3m.fasta");
         let mut file = File::create(&path).unwrap();
         writeln!(file, ">seq1\nACaDEF").unwrap();
-        
+
         let msa = parse_a3m(&path).unwrap();
         assert_eq!(msa.sequences[0].len(), 5);
         assert_eq!(msa.sequences[0], vec![0, 1, 2, 3, 4]);

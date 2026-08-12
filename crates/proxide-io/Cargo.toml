@@ -32,6 +32,10 @@ molly = { workspace = true, optional = true }
 hdf5 = { workspace = true, optional = true }
 orx-parallel = { workspace = true, optional = true }
 proxide-parallel-rt = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+bincode = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
+ndarray-npy = { workspace = true, optional = true }
 
 [features]
 default = ["pdb", "cif", "xtc", "parallel"]
@@ -41,7 +45,7 @@ ssbond = []
 fetching = ["dep:reqwest"]
 hdf5 = ["dep:hdf5"]
 foldcomp = ["dep:flate2"]
-xtc = ["dep:molly"]
+xtc = ["dep:molly", "dep:serde", "dep:bincode", "dep:ndarray", "dep:ndarray-npy"]
 parallel = ["dep:orx-parallel", "dep:proxide-parallel-rt"]
 mmap = ["dep:memmap2"]
 full = ["fetching", "hdf5", "foldcomp", "xtc", "parallel", "mmap", "pdb", "cif", "ssbond"]

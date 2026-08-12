@@ -20,8 +20,6 @@ gives the opposite sign — confirmed fixed here.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 
 from proxide.chem.chi import CHI_ANGLES_ATOMS
@@ -84,7 +82,7 @@ def measure_chi(
     residue_positions: np.ndarray,
     restype3: str,
     atom_name_to_index: dict[str, int] | None = None,
-) -> dict[str, Optional[float]]:
+) -> dict[str, float | None]:
     """Measure all χ angles for a single residue.
 
     Parameters
@@ -115,7 +113,7 @@ def measure_chi(
         atom_name_to_index = atom_order
 
     chi_quads = CHI_ANGLES_ATOMS.get(restype3, [])
-    result: dict[str, Optional[float]] = {}
+    result: dict[str, float | None] = {}
     positions = np.asarray(residue_positions, dtype=np.float64)
 
     for chi_idx, quad in enumerate(chi_quads):
@@ -153,7 +151,7 @@ def measure_chi_vectorized(
     restypes: np.ndarray | list[str],
     atom_mask: np.ndarray | None = None,
     atom_name_to_index: dict[str, int] | None = None,
-) -> list[dict[str, Optional[float]]]:
+) -> list[dict[str, float | None]]:
     """Measure χ angles for every residue in a protein.
 
     Parameters

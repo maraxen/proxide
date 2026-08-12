@@ -3,22 +3,24 @@
 //! Builds sidechain coordinates from dihedral angles using internal coordinates (nerf).
 //! Proline ring closure keeps χ exact and relaxes the CB-CG-CD angle (P3 v2).
 
-pub mod template;
-pub mod proline;
+pub mod ccd_parser;
 pub mod charmm_ic;
 pub mod ic_validate;
+pub mod proline;
 pub mod rtf_parser;
-pub mod ccd_parser;
+pub mod template;
 
-pub use template::{ResidueTemplate, proline_template, standard_residue_template};
-pub use proline::{ProlineBuilder, ProlineCoords};
-pub use charmm_ic::{CharmmIdeals, load_charmm_ideals, apply_charmm_ideals, map_template_to_charmm_name};
-pub use ic_validate::{ICSource, ICCoverage, ICValidationReport, validate_and_fill_ic};
-pub use rtf_parser::parse_rtf_ic_table;
 pub use ccd_parser::parse_ccd_ic_table;
+pub use charmm_ic::{
+    apply_charmm_ideals, load_charmm_ideals, map_template_to_charmm_name, CharmmIdeals,
+};
+pub use ic_validate::{validate_and_fill_ic, ICCoverage, ICSource, ICValidationReport};
+pub use proline::{ProlineBuilder, ProlineCoords};
+pub use rtf_parser::parse_rtf_ic_table;
+pub use template::{proline_template, standard_residue_template, ResidueTemplate};
 
-use proxide_geometry::geometry::nerf::Nerf;
 use crate::pb::proxide::rotlib::v1::ResidueGeometryTable;
+use proxide_geometry::geometry::nerf::Nerf;
 use std::collections::HashMap;
 
 /// Apply IC geometry from a ResidueGeometryTable to a ResidueTemplate.
@@ -38,7 +40,9 @@ use std::collections::HashMap;
 pub fn apply_ic_table(template: &mut ResidueTemplate, table: &ResidueGeometryTable) {
     // Find the ResidueGeometry matching this template's code.
     // Try exact match first, then CHARMM name alias (HIS->HSD, CYS/CYH/CYD->CYS, etc.).
-    let residue_geom = table.residues.iter()
+    let residue_geom = table
+        .residues
+        .iter()
         .find(|r| r.name == template.code)
         .or_else(|| {
             let charmm = charmm_ic::map_template_to_charmm_name(&template.code);
@@ -68,44 +72,58 @@ pub fn apply_ic_table(template: &mut ResidueTemplate, table: &ResidueGeometryTab
     type IcRef<'a> = &'a crate::pb::proxide::rotlib::v1::IcRecord;
 
     // by_atom_l: last atom → record  (for bond lengths)
-    let by_atom_l: HashMap<&str, IcRef<'_>> = residue_geom.ic.iter()
+    let by_atom_l: HashMap<&str, IcRef<'_>> = residue_geom
+        .ic
+        .iter()
         .map(|rec| (rec.atom_l.as_str(), rec))
         .collect();
 
     // by_atom_k: (parent, atom) → record  (for bond angles via theta_ijk)
-    let by_atom_k: HashMap<(&str, &str), IcRef<'_>> = residue_geom.ic.iter()
+    let by_atom_k: HashMap<(&str, &str), IcRef<'_>> = residue_geom
+        .ic
+        .iter()
         .map(|rec| ((rec.atom_j.as_str(), rec.atom_k.as_str()), rec))
         .collect();
 
     for atom_idx in 3..template.num_atoms() {
         let atom_name = &template.atom_names[atom_idx].clone();
-        let Some(bond_def) = template.bonds[atom_idx] else { continue };
+        let Some(bond_def) = template.bonds[atom_idx] else {
+            continue;
+        };
         let parent_name = &template.atom_names[bond_def.parent_idx].clone();
 
         // Bond length: from record placing this atom as atom_l; verify parent matches atom_k.
-        let bond_length = by_atom_l.get(atom_name.as_str())
+        let bond_length = by_atom_l
+            .get(atom_name.as_str())
             .filter(|r| r.atom_k == *parent_name)
             .map(|r| r.b_kl);
 
         // Bond angle: theta_ijk from record where atom_k == this_atom, atom_j == parent.
         // Fallback: theta_jkl from atom_l record (works for terminal atoms with no atom_k record).
-        let bond_angle = by_atom_k.get(&(parent_name.as_str(), atom_name.as_str()))
+        let bond_angle = by_atom_k
+            .get(&(parent_name.as_str(), atom_name.as_str()))
             .map(|r| r.theta_ijk)
-            .or_else(|| by_atom_l.get(atom_name.as_str())
-                .filter(|r| r.atom_k == *parent_name)
-                .map(|r| r.theta_jkl));
+            .or_else(|| {
+                by_atom_l
+                    .get(atom_name.as_str())
+                    .filter(|r| r.atom_k == *parent_name)
+                    .map(|r| r.theta_jkl)
+            });
 
         match (bond_length, bond_angle) {
             (Some(bl), Some(ba)) => {
                 if let Some(bond) = &mut template.bonds[atom_idx] {
-                    bond.bond_length    = bl;
+                    bond.bond_length = bl;
                     bond.bond_angle_deg = ba;
                 }
             }
             _ => {
                 tracing::debug!(
                     "{}.{}: IC table miss (bond_length={}, bond_angle={}); geometry unchanged",
-                    template.code, atom_name, bond_length.is_some(), bond_angle.is_some()
+                    template.code,
+                    atom_name,
+                    bond_length.is_some(),
+                    bond_angle.is_some()
                 );
             }
         }
@@ -136,7 +154,7 @@ pub fn build_standard_sidechain(
     // O atom (idx 3, parent=backbone_C=idx 2): dihedral N-CA-C-O
     let o_bond = template.bonds[3].expect("O bond missing");
     let o = Nerf::place_atom(
-        &[backbone_n, backbone_ca, backbone_c],  // A=N, B=CA, C=C
+        &[backbone_n, backbone_ca, backbone_c], // A=N, B=CA, C=C
         o_bond.bond_length,
         o_bond.bond_angle_deg,
         o_bond.torsion_deg,
@@ -179,12 +197,10 @@ fn resolve_parent_chain(template: &ResidueTemplate, c_idx: usize) -> (usize, usi
             let b_bond = template.bonds[c_idx].expect("parent bond missing");
             let b_idx = b_bond.parent_idx;
             let a_idx = match b_idx {
-                0 => 2,  // B=N: A=backbone_C (rare; treat as improper)
-                1 => 0,  // B=CA: A=N  (e.g. CG: N-CA-CB-CG)
-                2 => 1,  // B=backbone_C: A=CA
-                _ => template.bonds[b_idx]
-                    .map(|bb| bb.parent_idx)
-                    .unwrap_or(0),
+                0 => 2, // B=N: A=backbone_C (rare; treat as improper)
+                1 => 0, // B=CA: A=N  (e.g. CG: N-CA-CB-CG)
+                2 => 1, // B=backbone_C: A=CA
+                _ => template.bonds[b_idx].map(|bb| bb.parent_idx).unwrap_or(0),
             };
             (b_idx, a_idx)
         }
@@ -241,11 +257,23 @@ mod tests {
         // idx 5 = CG1, idx 6 = CG2
         let cg1 = coords[5];
         let cg2 = coords[6];
-        assert!(dist(cg1, cg2) > 1.5, "CG1 and CG2 must be distinct (got {:.3} Å)", dist(cg1, cg2));
+        assert!(
+            dist(cg1, cg2) > 1.5,
+            "CG1 and CG2 must be distinct (got {:.3} Å)",
+            dist(cg1, cg2)
+        );
         // Both should be ~1.524 Å from CB (idx 4)
         let cb = coords[4];
-        assert!((dist(cb, cg1) - 1.524).abs() < 0.01, "CB-CG1 bond: {:.3}", dist(cb, cg1));
-        assert!((dist(cb, cg2) - 1.524).abs() < 0.01, "CB-CG2 bond: {:.3}", dist(cb, cg2));
+        assert!(
+            (dist(cb, cg1) - 1.524).abs() < 0.01,
+            "CB-CG1 bond: {:.3}",
+            dist(cb, cg1)
+        );
+        assert!(
+            (dist(cb, cg2) - 1.524).abs() < 0.01,
+            "CB-CG2 bond: {:.3}",
+            dist(cb, cg2)
+        );
     }
 
     #[test]
@@ -255,7 +283,11 @@ mod tests {
         // idx 4 = CB, idx 5 = SG
         let cb = coords[4];
         let sg = coords[5];
-        assert!((dist(cb, sg) - 1.808).abs() < 0.01, "CB-SG bond: {:.3}", dist(cb, sg));
+        assert!(
+            (dist(cb, sg) - 1.808).abs() < 0.01,
+            "CB-SG bond: {:.3}",
+            dist(cb, sg)
+        );
     }
 
     #[test]
@@ -266,13 +298,17 @@ mod tests {
         let o = coords[3];
         let d_to_c = dist(o, C);
         let d_to_n = dist(o, N);
-        assert!(d_to_c < 1.3, "O must be ~1.231 Å from backbone C, got {:.3}", d_to_c);
+        assert!(
+            d_to_c < 1.3,
+            "O must be ~1.231 Å from backbone C, got {:.3}",
+            d_to_c
+        );
         assert!(d_to_n > 2.0, "O must not be bonded to N, got {:.3}", d_to_n);
     }
 
     #[test]
     fn test_apply_ic_table_updates_bond_lengths() {
-        use crate::pb::proxide::rotlib::v1::{ResidueGeometryTable, ResidueGeometry, IcRecord};
+        use crate::pb::proxide::rotlib::v1::{IcRecord, ResidueGeometry, ResidueGeometryTable};
 
         // Create a minimal ResidueGeometryTable for testing
         let table = ResidueGeometryTable {
@@ -280,65 +316,63 @@ mod tests {
             version: "test_v1".to_string(),
             license: "test".to_string(),
             citation: "test".to_string(),
-            residues: vec![
-                ResidueGeometry {
-                    name: "SER".to_string(),
-                    ic: vec![
-                        // O placement: N-CA-C-O
-                        IcRecord {
-                            atom_i: "N".to_string(),
-                            atom_j: "CA".to_string(),
-                            atom_k: "C".to_string(),
-                            atom_l: "O".to_string(),
-                            branch: false,
-                            b_ij: 1.458,  // N-CA bond (prerequisite)
-                            theta_ijk: 108.5,  // N-CA-C angle
-                            phi_ijkl: 180.0,   // N-CA-C-O dihedral
-                            theta_jkl: 120.8,  // CA-C-O angle
-                            b_kl: 1.231,  // C-O bond (consequent)
-                        },
-                        // CB placement: N-CA-CB-OG (parent=CA)
-                        IcRecord {
-                            atom_i: "N".to_string(),
-                            atom_j: "CA".to_string(),
-                            atom_k: "CB".to_string(),
-                            atom_l: "OG".to_string(),
-                            branch: false,
-                            b_ij: 1.458,  // N-CA bond
-                            theta_ijk: 110.5,  // N-CA-CB angle
-                            phi_ijkl: -119.7,  // dihedral
-                            theta_jkl: 111.1,  // CA-CB-OG angle
-                            b_kl: 1.417,  // CB-OG bond
-                        },
-                        // OG placement: CA-CB-OG-HG (parent=CB, child would be HG)
-                        IcRecord {
-                            atom_i: "CA".to_string(),
-                            atom_j: "CB".to_string(),
-                            atom_k: "OG".to_string(),
-                            atom_l: "HG".to_string(),
-                            branch: false,
-                            b_ij: 1.540,  // CA-CB bond
-                            theta_ijk: 111.1,  // CA-CB-OG angle
-                            phi_ijkl: 0.0,  // dihedral
-                            theta_jkl: 109.5,  // CB-OG-HG angle
-                            b_kl: 0.96,  // OG-HG bond
-                        },
-                        // HG placement: CB-OG-HG-* (parent=OG, for successor bond lookup)
-                        IcRecord {
-                            atom_i: "CB".to_string(),
-                            atom_j: "OG".to_string(),
-                            atom_k: "HG".to_string(),
-                            atom_l: "O".to_string(),  // dummy reference
-                            branch: false,
-                            b_ij: 1.417,  // CB-OG bond (this is what OG needs!)
-                            theta_ijk: 109.5,  // CB-OG-HG angle
-                            phi_ijkl: 180.0,  // dihedral
-                            theta_jkl: 104.5,  // OG-HG-* angle
-                            b_kl: 0.96,  // HG-* bond
-                        },
-                    ],
-                },
-            ],
+            residues: vec![ResidueGeometry {
+                name: "SER".to_string(),
+                ic: vec![
+                    // O placement: N-CA-C-O
+                    IcRecord {
+                        atom_i: "N".to_string(),
+                        atom_j: "CA".to_string(),
+                        atom_k: "C".to_string(),
+                        atom_l: "O".to_string(),
+                        branch: false,
+                        b_ij: 1.458,      // N-CA bond (prerequisite)
+                        theta_ijk: 108.5, // N-CA-C angle
+                        phi_ijkl: 180.0,  // N-CA-C-O dihedral
+                        theta_jkl: 120.8, // CA-C-O angle
+                        b_kl: 1.231,      // C-O bond (consequent)
+                    },
+                    // CB placement: N-CA-CB-OG (parent=CA)
+                    IcRecord {
+                        atom_i: "N".to_string(),
+                        atom_j: "CA".to_string(),
+                        atom_k: "CB".to_string(),
+                        atom_l: "OG".to_string(),
+                        branch: false,
+                        b_ij: 1.458,      // N-CA bond
+                        theta_ijk: 110.5, // N-CA-CB angle
+                        phi_ijkl: -119.7, // dihedral
+                        theta_jkl: 111.1, // CA-CB-OG angle
+                        b_kl: 1.417,      // CB-OG bond
+                    },
+                    // OG placement: CA-CB-OG-HG (parent=CB, child would be HG)
+                    IcRecord {
+                        atom_i: "CA".to_string(),
+                        atom_j: "CB".to_string(),
+                        atom_k: "OG".to_string(),
+                        atom_l: "HG".to_string(),
+                        branch: false,
+                        b_ij: 1.540,      // CA-CB bond
+                        theta_ijk: 111.1, // CA-CB-OG angle
+                        phi_ijkl: 0.0,    // dihedral
+                        theta_jkl: 109.5, // CB-OG-HG angle
+                        b_kl: 0.96,       // OG-HG bond
+                    },
+                    // HG placement: CB-OG-HG-* (parent=OG, for successor bond lookup)
+                    IcRecord {
+                        atom_i: "CB".to_string(),
+                        atom_j: "OG".to_string(),
+                        atom_k: "HG".to_string(),
+                        atom_l: "O".to_string(), // dummy reference
+                        branch: false,
+                        b_ij: 1.417,      // CB-OG bond (this is what OG needs!)
+                        theta_ijk: 109.5, // CB-OG-HG angle
+                        phi_ijkl: 180.0,  // dihedral
+                        theta_jkl: 104.5, // OG-HG-* angle
+                        b_kl: 0.96,       // HG-* bond
+                    },
+                ],
+            }],
         };
 
         // Get SER template and apply IC
@@ -350,18 +384,27 @@ mod tests {
         assert!(tmpl.bonds[4].is_some());
         let cb_bond = tmpl.bonds[4].unwrap();
         // bond_angle_deg should be theta_ijk from N-CA-CB-OG record = 110.5
-        assert!((cb_bond.bond_angle_deg - 110.5).abs() < 0.01,
-                "CB angle updated: expected ~110.5, got {}", cb_bond.bond_angle_deg);
+        assert!(
+            (cb_bond.bond_angle_deg - 110.5).abs() < 0.01,
+            "CB angle updated: expected ~110.5, got {}",
+            cb_bond.bond_angle_deg
+        );
 
         // OG should be updated with IC values from CA-CB-OG-HG record (for angle)
         // and CB-OG-HG-* record (for bond length)
         assert!(tmpl.bonds[5].is_some());
         let og_bond = tmpl.bonds[5].unwrap();
         // bond_angle_deg should be theta_ijk from CA-CB-OG-HG = 111.1
-        assert!((og_bond.bond_angle_deg - 111.1).abs() < 0.01,
-                "OG angle updated: expected ~111.1, got {}", og_bond.bond_angle_deg);
+        assert!(
+            (og_bond.bond_angle_deg - 111.1).abs() < 0.01,
+            "OG angle updated: expected ~111.1, got {}",
+            og_bond.bond_angle_deg
+        );
         // bond_length should be b_ij from CB-OG-HG-* record = 1.417
-        assert!((og_bond.bond_length - 1.417).abs() < 0.01,
-                "OG bond updated: expected ~1.417, got {}", og_bond.bond_length);
+        assert!(
+            (og_bond.bond_length - 1.417).abs() < 0.01,
+            "OG bond updated: expected ~1.417, got {}",
+            og_bond.bond_length
+        );
     }
 }

@@ -71,11 +71,9 @@ pub fn get_bond_order(res_name: &str, atom1: &str, atom2: &str) -> u8 {
                 return 4;
             }
         }
-        "TRP" => {
-            // Indole ring
-            if is_ring_atom_trp(a) && is_ring_atom_trp(b) {
-                return 4;
-            }
+        // Indole ring
+        "TRP" if is_ring_atom_trp(a) && is_ring_atom_trp(b) => {
+            return 4;
         }
         _ => {}
     }

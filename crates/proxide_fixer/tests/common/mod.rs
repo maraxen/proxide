@@ -21,9 +21,7 @@ pub fn load_topology(name: &str) -> Option<Topology> {
     // Use proxide_io to parse the PDB file
     // parse_pdb_file returns (RawAtomData, Vec<usize>) where Vec<usize> are model indices
     match proxide_io::formats::pdb::parse_pdb_file(&path) {
-        Ok((raw_data, _model_ids)) => {
-            Some(Topology::from_raw_atom_data(&raw_data))
-        }
+        Ok((raw_data, _model_ids)) => Some(Topology::from_raw_atom_data(&raw_data)),
         Err(_) => None,
     }
 }

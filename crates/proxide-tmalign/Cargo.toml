@@ -1,0 +1,41 @@
+[package]
+name        = "proxide-tmalign"
+version.workspace  = true
+edition.workspace  = true
+authors.workspace  = true
+license.workspace  = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace   = true
+description = "TM-align structural alignment algorithm — Rust/orx-parallel reimplementation of Zhang Lab USalign/TMalign"
+keywords    = ["protein", "structural-alignment", "tm-align", "structural-biology"]
+categories  = ["science", "algorithms"]
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "tmalign"
+path = "src/bin/tmalign.rs"
+
+[[bench]]
+name = "bench_pairwise"
+harness = false
+
+[dependencies]
+proxide-core.workspace     = true
+proxide-io.workspace       = true
+nalgebra         = { workspace = true }
+orx-parallel     = { workspace = true }
+ndarray          = { version = "0.17.2", default-features = false, features = ["std"] }
+thiserror        = { workspace = true }
+log              = { workspace = true }
+
+[dev-dependencies]
+approx    = { workspace = true }
+criterion = { workspace = true }
+rand      = { workspace = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+proxide-parallel-rt.workspace = true
+getrandom = { version = "0.2", features = ["js"] }

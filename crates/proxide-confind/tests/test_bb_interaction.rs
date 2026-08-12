@@ -1,8 +1,8 @@
 mod common;
 
-use common::{make_synthetic_backbone, load_rotlib_or_skip};
-use proxide_confind::ConFind;
+use common::{load_rotlib_or_skip, make_synthetic_backbone};
 use proxide_confind::coords::ResidueIndex;
+use proxide_confind::ConFind;
 
 #[test]
 #[ignore = "requires rotamer library — set RLIB env var to run"]
@@ -27,8 +27,14 @@ fn bb_interaction_adjacent_same_chain_ignored() {
     let pairs_set: std::collections::HashSet<_> = contact.pairs.iter().cloned().collect();
 
     // Adjacent pairs should not be reported
-    assert!(!pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))), "Adjacent (0,1) should be ignored");
-    assert!(!pairs_set.contains(&(ResidueIndex(1), ResidueIndex(2))), "Adjacent (1,2) should be ignored");
+    assert!(
+        !pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))),
+        "Adjacent (0,1) should be ignored"
+    );
+    assert!(
+        !pairs_set.contains(&(ResidueIndex(1), ResidueIndex(2))),
+        "Adjacent (1,2) should be ignored"
+    );
 }
 
 #[test]
@@ -79,7 +85,10 @@ fn bb_interaction_different_chains_no_flanking_skip() {
     let pairs_set: std::collections::HashSet<_> = contact.pairs.iter().cloned().collect();
 
     // Cross-chain pairs are not subject to flanking skip
-    assert!(pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))), "Cross-chain pair should appear");
+    assert!(
+        pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))),
+        "Cross-chain pair should appear"
+    );
 }
 
 #[test]
@@ -103,7 +112,11 @@ fn bb_interaction_far_apart_not_reported() {
 
     let contact = result.unwrap();
     // Pair is too far, should not be reported
-    assert_eq!(contact.pairs.len(), 0, "Residues > dcut_bb apart should not be reported");
+    assert_eq!(
+        contact.pairs.len(),
+        0,
+        "Residues > dcut_bb apart should not be reported"
+    );
 }
 
 #[test]
@@ -149,5 +162,9 @@ fn bb_interaction_one_residue() {
 
     let contact = result.unwrap();
     // Single residue has no pairs
-    assert_eq!(contact.pairs.len(), 0, "Single residue should have no pairs");
+    assert_eq!(
+        contact.pairs.len(),
+        0,
+        "Single residue should have no pairs"
+    );
 }

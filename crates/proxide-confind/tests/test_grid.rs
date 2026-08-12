@@ -9,10 +9,9 @@ fn brute_force_within(
 ) -> Vec<usize> {
     let mut out = Vec::new();
     for (i, p) in points.iter().enumerate() {
-        let d = ((p[0] - center[0]).powi(2)
-            + (p[1] - center[1]).powi(2)
-            + (p[2] - center[2]).powi(2))
-        .sqrt();
+        let d =
+            ((p[0] - center[0]).powi(2) + (p[1] - center[1]).powi(2) + (p[2] - center[2]).powi(2))
+                .sqrt();
         if d >= dmin && d <= dmax {
             out.push(tags[i]);
         }
@@ -75,13 +74,19 @@ fn grid_vs_brute_force_deterministic() {
     let mut seed: u64 = 12345;
 
     for _ in 0..100 {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let x = (seed >> 33) as f64 / u32::MAX as f64 * 20.0 - 10.0;
 
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let y = (seed >> 33) as f64 / u32::MAX as f64 * 20.0 - 10.0;
 
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let z = (seed >> 33) as f64 / u32::MAX as f64 * 20.0 - 10.0;
 
         pts.push([x, y, z]);
@@ -110,13 +115,19 @@ fn grid_vs_brute_force_annular() {
     let mut seed: u64 = 12345;
 
     for _ in 0..100 {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let x = (seed >> 33) as f64 / u32::MAX as f64 * 20.0 - 10.0;
 
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let y = (seed >> 33) as f64 / u32::MAX as f64 * 20.0 - 10.0;
 
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let z = (seed >> 33) as f64 / u32::MAX as f64 * 20.0 - 10.0;
 
         pts.push([x, y, z]);
@@ -135,5 +146,8 @@ fn grid_vs_brute_force_annular() {
     grid_res.sort_unstable();
     brute_res.sort_unstable();
 
-    assert_eq!(grid_res, brute_res, "annular query: grid and brute-force differ");
+    assert_eq!(
+        grid_res, brute_res,
+        "annular query: grid and brute-force differ"
+    );
 }

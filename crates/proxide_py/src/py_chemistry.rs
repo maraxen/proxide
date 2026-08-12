@@ -257,7 +257,9 @@ pub fn assign_espaloma_charges(
     // Load weights (lazy static or similar would be better, but for now we parse from embedded bytes)
     // In a production scenario, we'd cache this.
     let weights = chem::inference::EspalomaWeights::from_bytes(chem::inference::EMBEDDED_WEIGHTS)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to load weights: {}", e)))?;
+        .map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to load weights: {}", e))
+    })?;
 
     // Release GIL and run inference
     let charges = py.allow_threads(|| {
@@ -275,7 +277,7 @@ pub fn assign_espaloma_charges(
     Ok(PyArray1::from_vec_bound(py, charges).into_py(py))
 }
 
-fn extract_coords(py: Python<'_>, obj: &PyObject) -> PyResult<Vec<[f32; 3]>> {
+pub(crate) fn extract_coords(py: Python<'_>, obj: &PyObject) -> PyResult<Vec<[f32; 3]>> {
     let bound = obj.bind(py);
 
     if let Ok(l) = bound.downcast::<PyList>() {

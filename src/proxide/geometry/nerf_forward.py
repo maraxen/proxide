@@ -37,21 +37,20 @@ Design decisions
 
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
 from proxide.chem.residues import (
-    atom_order,
     chi_angles_mask,
     restype_atom37_rigid_group_positions,
     restype_atom37_to_rigid_group,
-    restype_atom37_mask as _restype_atom37_mask,
     restype_order,
-    restype_1to3,
     restype_rigid_group_default_frame,
 )
-
+from proxide.chem.residues import (
+    restype_atom37_mask as _restype_atom37_mask,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -129,7 +128,7 @@ def chi_to_coords(
     N: np.ndarray,
     CA: np.ndarray,
     C: np.ndarray,
-    chi_angles_rad: Sequence[Optional[float]],
+    chi_angles_rad: Sequence[float | None],
 ) -> tuple[np.ndarray, np.ndarray]:
     """Place side-chain atoms given backbone atoms and χ angles.
 

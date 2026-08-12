@@ -5,9 +5,9 @@
 //! Ensures no silent gaps: every atom either has CHARMM geometry or retains a valid
 //! Engh-Huber fallback, or is marked Missing and logged as an error.
 
-use crate::RotlibError;
 use super::charmm_ic::CharmmIdeals;
 use super::template::ResidueTemplate;
+use crate::RotlibError;
 
 /// Source of an internal-coordinate value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,7 +96,9 @@ pub fn validate_and_fill_ic(
     let mut missing_atoms = Vec::new();
 
     for atom_idx in 3..template.num_atoms() {
-        let Some(bond) = template.bonds[atom_idx] else { continue };
+        let Some(bond) = template.bonds[atom_idx] else {
+            continue;
+        };
         let atom_name = template.atom_names[atom_idx].clone();
         let parent_idx = bond.parent_idx;
         let parent_name = template.atom_names[parent_idx].clone();
@@ -121,36 +123,35 @@ pub fn validate_and_fill_ic(
         let grandparent_class = ideals.class_of(charmm_resname, &grandparent_name);
 
         // Determine bond length source and value.
-        let (length_source, new_length) =
-            match (&atom_class, &parent_class) {
-                (Some(a), Some(p)) => {
-                    match ideals.bond_length(a, p) {
-                        Some(charmm_val) => (ICSource::Charmm, Some(charmm_val)),
-                        None => {
-                            // CHARMM miss: check if Engh-Huber placeholder is finite.
-                            if engh_huber_length.is_finite() && engh_huber_length > 0.0 {
-                                tracing::warn!(
-                                    "CHARMM IC miss {} {} bond_length; using Engh-Huber {} Å",
-                                    template.code,
-                                    atom_name,
-                                    engh_huber_length
-                                );
-                                (ICSource::EnghHuberFallback, None)
-                            } else {
-                                (ICSource::Missing, None)
-                            }
+        let (length_source, new_length) = match (&atom_class, &parent_class) {
+            (Some(a), Some(p)) => {
+                match ideals.bond_length(a, p) {
+                    Some(charmm_val) => (ICSource::Charmm, Some(charmm_val)),
+                    None => {
+                        // CHARMM miss: check if Engh-Huber placeholder is finite.
+                        if engh_huber_length.is_finite() && engh_huber_length > 0.0 {
+                            tracing::warn!(
+                                "CHARMM IC miss {} {} bond_length; using Engh-Huber {} Å",
+                                template.code,
+                                atom_name,
+                                engh_huber_length
+                            );
+                            (ICSource::EnghHuberFallback, None)
+                        } else {
+                            (ICSource::Missing, None)
                         }
                     }
                 }
-                _ => {
-                    // Class missing: cannot query CHARMM.
-                    if engh_huber_length.is_finite() && engh_huber_length > 0.0 {
-                        (ICSource::EnghHuberFallback, None)
-                    } else {
-                        (ICSource::Missing, None)
-                    }
+            }
+            _ => {
+                // Class missing: cannot query CHARMM.
+                if engh_huber_length.is_finite() && engh_huber_length > 0.0 {
+                    (ICSource::EnghHuberFallback, None)
+                } else {
+                    (ICSource::Missing, None)
                 }
-            };
+            }
+        };
 
         // Determine bond angle source and value.
         let (angle_source, new_angle) = match (&atom_class, &parent_class, &grandparent_class) {
@@ -244,10 +245,12 @@ mod tests {
             .expect("load CHARMM36");
         let mut template = standard_residue_template("GLU").expect("GLU template");
 
-        let report =
-            validate_and_fill_ic(&mut template, &ideals, "GLU").expect("validate GLU");
+        let report = validate_and_fill_ic(&mut template, &ideals, "GLU").expect("validate GLU");
 
-        assert!(report.fully_covered(), "GLU should be fully covered by CHARMM");
+        assert!(
+            report.fully_covered(),
+            "GLU should be fully covered by CHARMM"
+        );
         assert!(report.fallback_count() == 0, "GLU should have no fallbacks");
         assert!(
             report.missing().count() == 0,
@@ -262,10 +265,12 @@ mod tests {
             .expect("load CHARMM36");
         let mut template = standard_residue_template("ARG").expect("ARG template");
 
-        let report =
-            validate_and_fill_ic(&mut template, &ideals, "ARG").expect("validate ARG");
+        let report = validate_and_fill_ic(&mut template, &ideals, "ARG").expect("validate ARG");
 
-        assert!(report.fully_covered(), "ARG should be fully covered by CHARMM");
+        assert!(
+            report.fully_covered(),
+            "ARG should be fully covered by CHARMM"
+        );
     }
 
     #[test]
@@ -275,10 +280,12 @@ mod tests {
             .expect("load CHARMM36");
         let mut template = standard_residue_template("LEU").expect("LEU template");
 
-        let report =
-            validate_and_fill_ic(&mut template, &ideals, "LEU").expect("validate LEU");
+        let report = validate_and_fill_ic(&mut template, &ideals, "LEU").expect("validate LEU");
 
-        assert!(report.fully_covered(), "LEU should be fully covered by CHARMM");
+        assert!(
+            report.fully_covered(),
+            "LEU should be fully covered by CHARMM"
+        );
     }
 
     #[test]
@@ -289,17 +296,12 @@ mod tests {
         let mut template = standard_residue_template("GLU").expect("GLU template");
 
         // Before: Engh-Huber placeholder
-        let before_angle = template.bonds[4]
-            .expect("CB bond")
-            .bond_angle_deg;
+        let before_angle = template.bonds[4].expect("CB bond").bond_angle_deg;
 
-        let report =
-            validate_and_fill_ic(&mut template, &ideals, "GLU").expect("validate GLU");
+        let report = validate_and_fill_ic(&mut template, &ideals, "GLU").expect("validate GLU");
 
         // After: CHARMM value
-        let after_angle = template.bonds[4]
-            .expect("CB bond after")
-            .bond_angle_deg;
+        let after_angle = template.bonds[4].expect("CB bond after").bond_angle_deg;
 
         // Cross-check: the CB coverage should show Charmm source.
         let cb_coverage = report
@@ -308,7 +310,8 @@ mod tests {
             .find(|e| e.atom == "CB")
             .expect("CB coverage entry");
         assert_eq!(
-            cb_coverage.angle_source, ICSource::Charmm,
+            cb_coverage.angle_source,
+            ICSource::Charmm,
             "GLU CB angle should come from CHARMM"
         );
 
@@ -363,8 +366,7 @@ mod tests {
             .expect("load CHARMM36");
         let mut template = standard_residue_template("GLU").expect("GLU template");
 
-        let report =
-            validate_and_fill_ic(&mut template, &ideals, "GLU").expect("validate GLU");
+        let report = validate_and_fill_ic(&mut template, &ideals, "GLU").expect("validate GLU");
 
         // GLU is fully covered; fallback_count should be 0.
         assert_eq!(

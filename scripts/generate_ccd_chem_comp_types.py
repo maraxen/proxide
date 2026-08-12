@@ -29,7 +29,7 @@ import logging
 import subprocess
 import sys
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -160,7 +160,7 @@ def main() -> None:
     import ccd_chem_comp_types_pb2 as pb  # noqa: E402
 
     table = pb.ChemCompTypeTable()
-    table.ccd_version = f"wwpdb-components.cif.gz fetched {datetime.now(timezone.utc).date().isoformat()}"
+    table.ccd_version = f"wwpdb-components.cif.gz fetched {datetime.now(UTC).date().isoformat()}"
     for comp_id, comp_type in sorted(entries.items()):
         entry = table.entries.add()
         entry.id = comp_id

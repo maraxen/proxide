@@ -274,29 +274,38 @@ mod tests {
         {
             let h5file = hdf5::File::create(path_str).unwrap();
             let domain = h5file.create_group("1abc00").unwrap();
-            
+
             // resname
             let resnames = vec![hdf5::types::FixedAscii::<8>::from_ascii("ALA").unwrap(); 3];
-            domain.new_dataset::<hdf5::types::FixedAscii<8>>()
+            domain
+                .new_dataset::<hdf5::types::FixedAscii<8>>()
                 .shape(3)
-                .create("resname").unwrap()
-                .write(&resnames).unwrap();
-            
+                .create("resname")
+                .unwrap()
+                .write(&resnames)
+                .unwrap();
+
             // chain
             let chains = vec![hdf5::types::FixedAscii::<8>::from_ascii("A").unwrap(); 3];
-            domain.new_dataset::<hdf5::types::FixedAscii<8>>()
+            domain
+                .new_dataset::<hdf5::types::FixedAscii<8>>()
                 .shape(3)
-                .create("chain").unwrap()
-                .write(&chains).unwrap();
-            
+                .create("chain")
+                .unwrap()
+                .write(&chains)
+                .unwrap();
+
             // 320/0/coords
             let temp = domain.create_group("320").unwrap();
             let replica = temp.create_group("0").unwrap();
             let coords = vec![0.0f32; 3 * 3 * 3]; // 3 frames, 3 atoms, 3 coords
-            replica.new_dataset::<f32>()
+            replica
+                .new_dataset::<f32>()
                 .shape((3, 3, 3))
-                .create("coords").unwrap()
-                .write_raw(&coords).unwrap();
+                .create("coords")
+                .unwrap()
+                .write_raw(&coords)
+                .unwrap();
         }
 
         let metadata = parse_mdcath_metadata(path_str).unwrap();
@@ -310,7 +319,7 @@ mod tests {
 
         let frame = parse_mdcath_frame(path_str, "1abc00", "320", "0", 0).unwrap();
         assert_eq!(frame.coords.len(), 9);
-        
+
         let raw = mdcath_to_raw_atom_data(&metadata, &frame);
         assert_eq!(raw.num_atoms, 3);
         assert_eq!(raw.res_names, vec!["ALA", "ALA", "ALA"]);

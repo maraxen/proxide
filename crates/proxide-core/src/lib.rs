@@ -11,7 +11,7 @@ pub mod structure;
 pub mod testing;
 
 // Re-exports for convenience
+pub use forcefield::*;
+pub use processing::ProcessedStructure;
 pub use spec::*;
 pub use structure::systems::*;
-pub use processing::ProcessedStructure;
-pub use forcefield::*;

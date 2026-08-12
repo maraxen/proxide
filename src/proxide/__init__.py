@@ -12,7 +12,10 @@ from typing import Any
 __version__ = "0.1.0"
 
 # Re-export Rust extension functions for unified API (no JAX required).
-from proxide._proxider import (  # type: ignore[unresolved-import]
+# Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.
+# `proxide.io` is importable without JAX (fixtures / FASTA); parsing is lazy.
+from proxide import io, jaccard, tmalign  # noqa: E402
+from proxide._proxider import (  # ty: ignore[unresolved-import]
   AtomicSystem,
   CoordFormat,
   ErrorMode,
@@ -26,10 +29,14 @@ from proxide._proxider import (  # type: ignore[unresolved-import]
   assign_mbondi2_radii,
   assign_obc2_scaling_factors,
   compute_bicubic_params,
+  frame_count,
   get_mdcath_replicas,
   get_water_model,
+  # Geometry
+  kabsch_rmsd,
   # Force fields
   load_forcefield,
+  n_atoms,
   parameterize_molecule,
   parse_dcd,
   parse_mdcath_frame,
@@ -44,6 +51,11 @@ from proxide._proxider import (  # type: ignore[unresolved-import]
   parse_trr,
   # Trajectory parsing
   parse_xtc,
+  radius_of_gyration,
+  read_xtc_ca_distogram,
+  read_xtc_lazy,
+  read_xtc_parallel,
+  weighted_radius_of_gyration,
 )
 from proxide.io.fetching import (
   fetch_afdb,
@@ -51,13 +63,10 @@ from proxide.io.fetching import (
   fetch_rcsb,
 )
 
-# Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.
-# `proxide.io` is importable without JAX (fixtures / FASTA); parsing is lazy.
-from proxide import io, jaccard  # noqa: E402
-
 __all__ = [
   "io",
   "jaccard",
+  "tmalign",
   # Structure parsing
   "parse_pdb",
   "parse_mmcif",
@@ -69,7 +78,16 @@ __all__ = [
   "parse_xtc",
   "parse_dcd",
   "parse_trr",
+  "read_xtc_lazy",
+  "read_xtc_parallel",
+  "read_xtc_ca_distogram",
+  "frame_count",
+  "n_atoms",
   "TrajectoryStream",
+  # Geometry
+  "radius_of_gyration",
+  "weighted_radius_of_gyration",
+  "kabsch_rmsd",
   # HDF5
   "parse_mdtraj_h5_metadata",
   "parse_mdtraj_h5_frame",

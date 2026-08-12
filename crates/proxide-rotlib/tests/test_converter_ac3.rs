@@ -2,7 +2,6 @@
 ///
 /// Tests that the converter produces a valid rotamer library with correct structure
 /// and contains expected residues and rotamers.
-
 use proxide_rotlib::pb::rotlib_v1;
 use std::fs::File;
 use std::io::Read;
@@ -15,11 +14,16 @@ use std::process::Command;
 #[ignore] // Requires large input file and some time to run
 fn test_converter_ac3_full_library() {
     // Run the converter
-    let input_path = Path::new("/home/marielle/projects/proxide/data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib");
+    let input_path = Path::new(
+        "/home/marielle/projects/proxide/data/rotlibs/SimpleOpt1-5/ALL.bbdep.rotamers.lib",
+    );
     let output_path = Path::new("/tmp/ac3_test_rotlib.pb.zst");
 
     if !input_path.exists() {
-        eprintln!("Input file not found: {}. Skipping test.", input_path.display());
+        eprintln!(
+            "Input file not found: {}. Skipping test.",
+            input_path.display()
+        );
         return;
     }
 
@@ -55,7 +59,8 @@ fn verify_rotamer_library(path: &Path) {
     // Read and decompress
     let mut file = File::open(path).expect("Failed to open output file");
     let mut compressed = Vec::new();
-    file.read_to_end(&mut compressed).expect("Failed to read file");
+    file.read_to_end(&mut compressed)
+        .expect("Failed to read file");
 
     let decompressed = zstd::decode_all(&compressed[..]).expect("Failed to decompress");
 
@@ -66,11 +71,11 @@ fn verify_rotamer_library(path: &Path) {
     // AC-3 assertions
 
     // 1. Attribution field is non-empty
-    assert!(
-        !lib.attribution.is_empty(),
-        "Attribution field is empty"
+    assert!(!lib.attribution.is_empty(), "Attribution field is empty");
+    println!(
+        "✓ Attribution field is non-empty: {}",
+        &lib.attribution[..100]
     );
-    println!("✓ Attribution field is non-empty: {}", &lib.attribution[..100]);
 
     // 2. data_license == "ODC-BY-1.0"
     assert_eq!(
@@ -91,8 +96,8 @@ fn verify_rotamer_library(path: &Path) {
     // 4. All 22 residue codes present in Dunbrack library
     // (Note: ALA and GLY are not rotameric, so not in BBDEP library)
     let expected_codes = vec![
-        "ARG", "ASN", "ASP", "CPR", "CYD", "CYH", "CYS", "GLN", "GLU", "HIS", "ILE",
-        "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TPR", "TRP", "TYR", "VAL",
+        "ARG", "ASN", "ASP", "CPR", "CYD", "CYH", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS",
+        "MET", "PHE", "PRO", "SER", "THR", "TPR", "TRP", "TYR", "VAL",
     ];
     let actual_codes: Vec<&str> = lib.residues.iter().map(|r| r.code.as_str()).collect();
 
@@ -122,8 +127,10 @@ fn verify_rotamer_library(path: &Path) {
     let pro_bin = pro_entry
         .bins
         .iter()
-        .find(|b| (b.phi as i32 == -60 || b.phi as i32 == -59 || b.phi as i32 == -61) &&
-                   (b.psi as i32 == -40 || b.psi as i32 == -39 || b.psi as i32 == -41))
+        .find(|b| {
+            (b.phi as i32 == -60 || b.phi as i32 == -59 || b.phi as i32 == -61)
+                && (b.psi as i32 == -40 || b.psi as i32 == -39 || b.psi as i32 == -41)
+        })
         .expect("PRO bin at phi=-60, psi=-40 not found");
 
     assert!(
@@ -153,14 +160,13 @@ fn verify_rotamer_library(path: &Path) {
     let cys_bin = cys_entry
         .bins
         .iter()
-        .find(|b| (b.phi as i32 == -60 || b.phi as i32 == -59 || b.phi as i32 == -61) &&
-                   (b.psi as i32 == -40 || b.psi as i32 == -39 || b.psi as i32 == -41))
+        .find(|b| {
+            (b.phi as i32 == -60 || b.phi as i32 == -59 || b.phi as i32 == -61)
+                && (b.psi as i32 == -40 || b.psi as i32 == -39 || b.psi as i32 == -41)
+        })
         .expect("CYS bin at phi=-60, psi=-40 not found");
 
-    assert!(
-        !cys_bin.rotamers.is_empty(),
-        "CYS bin should have rotamers"
-    );
+    assert!(!cys_bin.rotamers.is_empty(), "CYS bin should have rotamers");
     println!(
         "✓ CYS at (phi=-60, psi=-40): {} rotamers",
         cys_bin.rotamers.len()

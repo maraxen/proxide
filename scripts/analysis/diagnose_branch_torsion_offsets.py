@@ -184,7 +184,7 @@ def _measure_rotamer(entry: dict, aa: str, rot_idx: int, bin_idx: int) -> dict[s
 
     # Compute chi errors (only for non-None measured values)
     chi_errors = []
-    for i, (meas, stored) in enumerate(zip(chi_measured, chi_stored)):
+    for _i, (meas, stored) in enumerate(zip(chi_measured, chi_stored, strict=False)):
         if meas is not None:
             err = meas - stored
             # Normalize to [-180, 180]
@@ -199,7 +199,7 @@ def _measure_rotamer(entry: dict, aa: str, rot_idx: int, bin_idx: int) -> dict[s
     # Measure branch atom offset (if applicable)
     branch_offset = None
     if aa in BRANCH_SPECS:
-        for branch_atom, dihedral_atoms, chi_idx, template_deg in BRANCH_SPECS[aa]:
+        for _branch_atom, dihedral_atoms, chi_idx, _template_deg in BRANCH_SPECS[aa]:
             atoms = [atom_to_coords.get(name) for name in dihedral_atoms]
             if all(a is not None for a in atoms):
                 branch_torsion = _dihedral_signed(*atoms)
@@ -245,7 +245,9 @@ def diagnose_residue(entry: dict, aa: str) -> Result:
         n_chis = len(chi_errors_all[0]) if chi_errors_all[0] else 0
         for chi_idx in range(n_chis):
             valid_errs = [
-                e for errors in chi_errors_all if errors and chi_idx < len(errors) and errors[chi_idx] is not None
+                e
+                for errors in chi_errors_all
+                if errors and chi_idx < len(errors) and errors[chi_idx] is not None
                 for e in [errors[chi_idx]]
             ]
             if valid_errs:
@@ -348,7 +350,8 @@ def main(argv=None) -> int:
         results.append(result)
 
         logger.info(
-            "  n_rotamers=%d, mean_chi_errs=%s, branch=%s, expected=%.1f° measured=%.1f° delta=%.1f°",
+            "  n_rotamers=%d, mean_chi_errs=%s, branch=%s, "
+            "expected=%.1f° measured=%.1f° delta=%.1f°",
             result.n_rotamers,
             [round(e, 1) if e is not None else None for e in result.mean_chi_errs],
             result.branch_atom,
@@ -381,8 +384,14 @@ def main(argv=None) -> int:
         res_str = result.residue
         n_rot_str = str(result.n_rotamers)
         branch_str = result.branch_atom if result.branch_atom else "N/A"
-        exp_str = f"{result.expected_offset_deg:.1f}°" if result.expected_offset_deg is not None else "N/A"
-        meas_str = f"{result.measured_offset_deg:.1f}°" if result.measured_offset_deg is not None else "N/A"
+        exp_str = (
+            f"{result.expected_offset_deg:.1f}°" if result.expected_offset_deg is not None
+            else "N/A"
+        )
+        meas_str = (
+            f"{result.measured_offset_deg:.1f}°" if result.measured_offset_deg is not None
+            else "N/A"
+        )
         delta_str = f"{result.delta_deg:.1f}°" if result.delta_deg is not None else "N/A"
         status_str = result.status
 
@@ -392,7 +401,7 @@ def main(argv=None) -> int:
         )
 
     print("=" * 100)
-    print(f"\nStatus legend:")
+    print("\nStatus legend:")
     print("  PASS      — |delta| < 2° (offset matches template)")
     print("  MARGINAL  — 2° < |delta| < 5° (offset exists but smaller than rotation error)")
     print("  FAIL      — |delta| > 5° (offset does NOT match template)")

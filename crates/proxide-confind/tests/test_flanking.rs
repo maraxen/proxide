@@ -1,8 +1,8 @@
 mod common;
 
-use common::{make_synthetic_backbone, make_two_chain_backbone, load_rotlib_or_skip};
-use proxide_confind::ConFind;
+use common::{load_rotlib_or_skip, make_synthetic_backbone, make_two_chain_backbone};
 use proxide_confind::coords::ResidueIndex;
+use proxide_confind::ConFind;
 
 #[test]
 #[ignore = "requires rotamer library — set RLIB env var to run"]
@@ -25,11 +25,17 @@ fn flanking_same_chain_adjacent_skipped() {
     assert!(result.is_ok(), "bb_interaction should succeed");
 
     let contact = result.unwrap();
-    
+
     // With ignore_flanking=1, pairs (0,1) and (1,2) should NOT be in results
     let pairs_set: std::collections::HashSet<_> = contact.pairs.iter().cloned().collect();
-    assert!(!pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))), "Adjacent pair (0,1) should be skipped");
-    assert!(!pairs_set.contains(&(ResidueIndex(1), ResidueIndex(2))), "Adjacent pair (1,2) should be skipped");
+    assert!(
+        !pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))),
+        "Adjacent pair (0,1) should be skipped"
+    );
+    assert!(
+        !pairs_set.contains(&(ResidueIndex(1), ResidueIndex(2))),
+        "Adjacent pair (1,2) should be skipped"
+    );
 }
 
 #[test]
@@ -52,10 +58,13 @@ fn flanking_same_chain_nonadjacent_included() {
     assert!(result.is_ok());
 
     let contact = result.unwrap();
-    
+
     // With ignore_flanking=1, pair (0,2) IS in results (not adjacent)
     let pairs_set: std::collections::HashSet<_> = contact.pairs.iter().cloned().collect();
-    assert!(pairs_set.contains(&(ResidueIndex(0), ResidueIndex(2))), "Non-adjacent pair (0,2) should be included");
+    assert!(
+        pairs_set.contains(&(ResidueIndex(0), ResidueIndex(2))),
+        "Non-adjacent pair (0,2) should be included"
+    );
 }
 
 #[test]
@@ -77,12 +86,21 @@ fn flanking_zero_same_chain_all_included() {
     assert!(result.is_ok());
 
     let contact = result.unwrap();
-    
+
     // With ignore_flanking=0, all pairs within dcut should be included
     let pairs_set: std::collections::HashSet<_> = contact.pairs.iter().cloned().collect();
-    assert!(pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))), "Pair (0,1) should be included with ignore_flanking=0");
-    assert!(pairs_set.contains(&(ResidueIndex(0), ResidueIndex(2))), "Pair (0,2) should be included with ignore_flanking=0");
-    assert!(pairs_set.contains(&(ResidueIndex(1), ResidueIndex(2))), "Pair (1,2) should be included with ignore_flanking=0");
+    assert!(
+        pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))),
+        "Pair (0,1) should be included with ignore_flanking=0"
+    );
+    assert!(
+        pairs_set.contains(&(ResidueIndex(0), ResidueIndex(2))),
+        "Pair (0,2) should be included with ignore_flanking=0"
+    );
+    assert!(
+        pairs_set.contains(&(ResidueIndex(1), ResidueIndex(2))),
+        "Pair (1,2) should be included with ignore_flanking=0"
+    );
 }
 
 #[test]
@@ -105,9 +123,13 @@ fn flanking_large_ignore_value() {
     assert!(result.is_ok());
 
     let contact = result.unwrap();
-    
+
     // No pairs should be reported (all are too close via flanking rule)
-    assert_eq!(contact.pairs.len(), 0, "With large ignore_flanking, no same-chain pairs should be reported");
+    assert_eq!(
+        contact.pairs.len(),
+        0,
+        "With large ignore_flanking, no same-chain pairs should be reported"
+    );
 }
 
 #[test]
@@ -130,8 +152,11 @@ fn flanking_cross_chain_always_included() {
     assert!(result.is_ok());
 
     let contact = result.unwrap();
-    
+
     // Cross-chain pair should appear even with ignore_flanking=1
     let pairs_set: std::collections::HashSet<_> = contact.pairs.iter().cloned().collect();
-    assert!(pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))), "Cross-chain pair should appear");
+    assert!(
+        pairs_set.contains(&(ResidueIndex(0), ResidueIndex(1))),
+        "Cross-chain pair should appear"
+    );
 }

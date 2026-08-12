@@ -1,8 +1,8 @@
 // TODO: Review allow attributes at a later point
 #![allow(clippy::needless_range_loop, clippy::type_complexity)]
 
-use proxide_geometry::geometry::nerf::Nerf;
 use proxide_core::structure::systems::{AtomicSystem, AtomicSystemArgs};
+use proxide_geometry::geometry::nerf::Nerf;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -607,10 +607,10 @@ mod tests {
         header[0..2].copy_from_slice(&n_residue.to_le_bytes());
         header[8] = n_anchor;
         header[9] = b'A'; // chain A
-        // mins=0.0, cont_fs=1.0 (defaulting most to 0)
+                          // mins=0.0, cont_fs=1.0 (defaulting most to 0)
         for i in 0..6 {
             let start = 48 + i * 4;
-            header[start..start+4].copy_from_slice(&1.0f32.to_le_bytes());
+            header[start..start + 4].copy_from_slice(&1.0f32.to_le_bytes());
         }
         data.extend_from_slice(&header);
 
@@ -635,7 +635,7 @@ mod tests {
 
         // 9. Records (n_residue * 8)
         // Residue 0 (Ala = 0)
-        let record = [0u8; 8]; 
+        let record = [0u8; 8];
         data.extend_from_slice(&record);
 
         let mut cursor = std::io::Cursor::new(data);

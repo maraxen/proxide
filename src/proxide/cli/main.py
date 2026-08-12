@@ -100,7 +100,10 @@ def info(
     n_res = protein.coordinates.shape[0] if hasattr(protein, "coordinates") else 0
 
     table.add_row("Number of Residues", str(n_res))
-    table.add_row("Number of Chains", str(len(np.unique(protein.chain_index)) if hasattr(protein, "chain_index") else "N/A"))
+    table.add_row(
+      "Number of Chains",
+      str(len(np.unique(protein.chain_index)) if hasattr(protein, "chain_index") else "N/A"),
+    )
     table.add_row("Format", str(getattr(protein, "format", "Unknown")))
 
     if getattr(protein, "source", None):
@@ -119,7 +122,9 @@ def convert(
   output: str = typer.Argument(..., help="Output file path"),
   add_hydrogens: bool = typer.Option(False, "--add-hydrogens", "-a", help="Add missing hydrogens"),
   infer_bonds: bool = typer.Option(True, "--infer-bonds", "-i", help="Infer bond connectivity"),
-  force_field: str | None = typer.Option(None, "--force-field", "-f", help="Force field for parameterization"),
+  force_field: str | None = typer.Option(
+    None, "--force-field", "-f", help="Force field for parameterization"
+  ),
 ):
   """Convert structure between formats and apply modifications."""
   from proxide.io.parsing.backend import iterload, write_dcd
@@ -135,7 +140,9 @@ def convert(
     is_traj_out = out_path.suffix.lower() in traj_exts
 
     if is_traj_in and is_traj_out:
-      with console.status(f"[bold green]Streaming trajectory [cyan]{input}[/cyan] -> [cyan]{output}[/cyan]..."):
+      with console.status(
+        f"[bold green]Streaming trajectory [cyan]{input}[/cyan] -> [cyan]{output}[/cyan]..."
+      ):
         # Initial analysis to get number of atoms
         # For now, we use the first chunk to detect metadata
         stream = iterload(input, chunk_size=100)
@@ -152,7 +159,10 @@ def convert(
               writer = write_dcd(output, n_atoms)
             else:
               # Fallback or error if writer not implemented
-              console.print(f"[red]Error: Writing to {out_path.suffix} is not yet supported in streaming mode.[/red]")
+              console.print(
+                f"[red]Error: Writing to {out_path.suffix} is not yet supported "
+                f"in streaming mode.[/red]"
+              )
               raise typer.Exit(1)
 
           # Write frames in chunk
@@ -164,7 +174,10 @@ def convert(
         if writer:
           writer.finalize()
 
-      console.print(f"[bold green]✓[/bold green] Streamed {total_frames} frames from [cyan]{input}[/cyan] to [cyan]{output}[/cyan]")
+      console.print(
+        f"[bold green]✓[/bold green] Streamed {total_frames} frames from "
+        f"[cyan]{input}[/cyan] to [cyan]{output}[/cyan]"
+      )
       return
 
     # Standard structure conversion
@@ -185,10 +198,15 @@ def convert(
     elif out_path.suffix.lower() in [".cif", ".mmcif"]:
       write_mmcif(protein, output)
     else:
-      console.print(f"[yellow]Warning: Format {out_path.suffix} not yet supported natively. Saving as NPZ.[/yellow]")
+      console.print(
+        f"[yellow]Warning: Format {out_path.suffix} not yet supported natively. "
+        f"Saving as NPZ.[/yellow]"
+      )
       write_npz(protein, out_path.with_suffix(".npz"))
 
-    console.print(f"[bold green]✓[/bold green] Converted [cyan]{input}[/cyan] to [cyan]{output}[/cyan]")
+    console.print(
+      f"[bold green]✓[/bold green] Converted [cyan]{input}[/cyan] to [cyan]{output}[/cyan]"
+    )
 
   except Exception as e:
     console.print(f"[red]Error during conversion: {e}[/red]")
@@ -245,7 +263,9 @@ def bench(
 @app.command()
 def parameterize(
   input: str = typer.Argument(..., help="Input molecule file (MOL2, SDF)"),
-  output: str = typer.Option(None, "--output", "-o", help="Output .npz path (defaults to stem.npz)"),
+  output: str = typer.Option(
+    None, "--output", "-o", help="Output .npz path (defaults to stem.npz)"
+  ),
 ):
   """Assign GAFF parameters to a small molecule and save to NPZ."""
   from proxide.io.parsing.molecule import Molecule
@@ -274,7 +294,7 @@ def parameterize(
         "bonds": np.array(mol.bonds),
       }
 
-      np.savez_compressed(output, **data)
+      np.savez_compressed(output, **data)  # ty: ignore[invalid-argument-type]
 
     console.print(f"[bold green]✓[/bold green] Parameterized and saved to [cyan]{output}[/cyan]")
 
@@ -286,7 +306,9 @@ def parameterize(
 @app.command()
 def charges(
   input: str = typer.Argument(..., help="Input molecule file (MOL2, SDF)"),
-  backend: str = typer.Option("rust", "--backend", "-b", help="Backend for computation: 'rust' or 'jax'"),
+  backend: str = typer.Option(
+    "rust", "--backend", "-b", help="Backend for computation: 'rust' or 'jax'"
+  ),
 ):
   """Assign partial charges via Expaloma AM1-BCC surrogate."""
   from proxide.chem.partial_charges import assign_espaloma_charges_from_proxide_molecule
@@ -306,7 +328,10 @@ def charges(
       q = assign_espaloma_charges_from_proxide_molecule(mol, backend=backend)
       elapsed = time.perf_counter() - start
 
-    console.print(f"[bold green]✓[/bold green] Assigned {len(q)} partial charges in [cyan]{elapsed*1000:.2f} ms[/cyan]")
+    console.print(
+      f"[bold green]✓[/bold green] Assigned {len(q)} partial charges "
+      f"in [cyan]{elapsed*1000:.2f} ms[/cyan]"
+    )
 
   except Exception as e:
     console.print(f"[red]Charge assignment failed: {e}[/red]")

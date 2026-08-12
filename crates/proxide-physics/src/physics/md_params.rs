@@ -196,7 +196,9 @@ pub fn parameterize_structure(
                         }
 
                         // Apply element-based LJ fallbacks
-                        for atom_idx in res_info.start_atom..(res_info.start_atom + res_info.num_atoms) {
+                        for atom_idx in
+                            res_info.start_atom..(res_info.start_atom + res_info.num_atoms)
+                        {
                             let element = &processed.raw_atoms.elements[atom_idx];
                             let (fb_sigma, fb_epsilon) = match element.to_uppercase().as_str() {
                                 "H" => (0.1069, 0.065),
@@ -204,7 +206,10 @@ pub fn parameterize_structure(
                                 "N" => (0.325, 0.71),
                                 "O" => (0.296, 0.88),
                                 "S" => (0.356, 1.04),
-                                _ => (crate::physics::constants::DEFAULT_SIGMA, crate::physics::constants::DEFAULT_EPSILON),
+                                _ => (
+                                    crate::physics::constants::DEFAULT_SIGMA,
+                                    crate::physics::constants::DEFAULT_EPSILON,
+                                ),
                             };
                             sigmas[atom_idx] = fb_sigma;
                             epsilons[atom_idx] = fb_epsilon;
@@ -216,7 +221,11 @@ pub fn parameterize_structure(
             }
         };
 
-        let template_atoms: HashMap<&str, _> = template.atoms.iter().map(|a| (a.name.as_str(), a)).collect();
+        let template_atoms: HashMap<&str, _> = template
+            .atoms
+            .iter()
+            .map(|a| (a.name.as_str(), a))
+            .collect();
         let mut local_to_global: HashMap<&str, usize> = HashMap::new();
         let mut claimed_template_atoms: HashSet<String> = HashSet::new();
         let mut unmatched_h_indices: Vec<usize> = Vec::new();
@@ -224,13 +233,14 @@ pub fn parameterize_structure(
         // PASS 1: Exact name match
         for atom_idx in res_info.start_atom..(res_info.start_atom + res_info.num_atoms) {
             let atom_name = &processed.raw_atoms.atom_names[atom_idx];
-            let template_atom_opt = template_atoms.get(atom_name.as_str()).or_else(|| {
-                match atom_name.as_str() {
-                    "H" => template_atoms.get("H1"),
-                    "H1" => template_atoms.get("H"),
-                    _ => None,
-                }
-            });
+            let template_atom_opt =
+                template_atoms
+                    .get(atom_name.as_str())
+                    .or_else(|| match atom_name.as_str() {
+                        "H" => template_atoms.get("H1"),
+                        "H1" => template_atoms.get("H"),
+                        _ => None,
+                    });
 
             if let Some(template_atom) = template_atom_opt {
                 charges[atom_idx] = template_atom.charge.unwrap_or(0.0);
@@ -253,11 +263,19 @@ pub fn parameterize_structure(
 
                 if has_gbsa {
                     if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
-                        if let Some(ref mut r) = radii { r[atom_idx] = gbsa.radius; }
-                        if let Some(ref mut s) = scales { s[atom_idx] = gbsa.scale; }
+                        if let Some(ref mut r) = radii {
+                            r[atom_idx] = gbsa.radius;
+                        }
+                        if let Some(ref mut s) = scales {
+                            s[atom_idx] = gbsa.scale;
+                        }
                     } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
-                        if let Some(ref mut r) = radii { r[atom_idx] = gbsa.radius; }
-                        if let Some(ref mut s) = scales { s[atom_idx] = gbsa.scale; }
+                        if let Some(ref mut r) = radii {
+                            r[atom_idx] = gbsa.radius;
+                        }
+                        if let Some(ref mut s) = scales {
+                            s[atom_idx] = gbsa.scale;
+                        }
                     }
                 }
 
@@ -307,11 +325,19 @@ pub fn parameterize_structure(
 
                     if has_gbsa {
                         if let Some(gbsa) = gbsa_map.get(&template_atom.atom_type) {
-                            if let Some(ref mut r) = radii { r[h_idx] = gbsa.radius; }
-                            if let Some(ref mut s) = scales { s[h_idx] = gbsa.scale; }
+                            if let Some(ref mut r) = radii {
+                                r[h_idx] = gbsa.radius;
+                            }
+                            if let Some(ref mut s) = scales {
+                                s[h_idx] = gbsa.scale;
+                            }
                         } else if let Some(gbsa) = gbsa_map.get(&atom_class) {
-                            if let Some(ref mut r) = radii { r[h_idx] = gbsa.radius; }
-                            if let Some(ref mut s) = scales { s[h_idx] = gbsa.scale; }
+                            if let Some(ref mut r) = radii {
+                                r[h_idx] = gbsa.radius;
+                            }
+                            if let Some(ref mut s) = scales {
+                                s[h_idx] = gbsa.scale;
+                            }
                         }
                     }
                     num_parameterized += 1;
@@ -338,7 +364,8 @@ pub fn parameterize_structure(
     for angle in &topology.angles {
         let (i, j, k) = (angle.i, angle.j, angle.k);
         angles_vec.push([i, j, k]);
-        if let Some(params) = lookup_angle(&atom_classes[i], &atom_classes[j], &atom_classes[k], ff) {
+        if let Some(params) = lookup_angle(&atom_classes[i], &atom_classes[j], &atom_classes[k], ff)
+        {
             angle_params.push([params.angle, params.k]);
         } else {
             angle_params.push([0.0, 0.0]);
@@ -446,11 +473,19 @@ pub fn parameterize_structure(
     // Pre-compute 1-2 and 1-3 exclusions for filtering 1-4 exceptions
     let mut exclusions_123 = HashSet::new();
     for bond in &topology.bonds {
-        let (i, j) = if bond.i < bond.j { (bond.i, bond.j) } else { (bond.j, bond.i) };
+        let (i, j) = if bond.i < bond.j {
+            (bond.i, bond.j)
+        } else {
+            (bond.j, bond.i)
+        };
         exclusions_123.insert((i, j));
     }
     for angle in &topology.angles {
-        let (i, k) = if angle.i < angle.k { (angle.i, angle.k) } else { (angle.k, angle.i) };
+        let (i, k) = if angle.i < angle.k {
+            (angle.i, angle.k)
+        } else {
+            (angle.k, angle.i)
+        };
         exclusions_123.insert((i, k));
     }
 
@@ -458,11 +493,21 @@ pub fn parameterize_structure(
     let mut seen_14_pairs = HashSet::new();
     let mut nonbonded_exceptions = Vec::new();
     for exc in &ff.exceptions {
-        nonbonded_exceptions.push((exc.type1.clone(), exc.type2.clone(), exc.charge_prod, exc.sigma, exc.epsilon));
+        nonbonded_exceptions.push((
+            exc.type1.clone(),
+            exc.type2.clone(),
+            exc.charge_prod,
+            exc.sigma,
+            exc.epsilon,
+        ));
     }
 
     for dih in &topology.proper_dihedrals {
-        let pair_key = if dih.i < dih.l { (dih.i, dih.l) } else { (dih.l, dih.i) };
+        let pair_key = if dih.i < dih.l {
+            (dih.i, dih.l)
+        } else {
+            (dih.l, dih.i)
+        };
         if !seen_14_pairs.contains(&pair_key) && !exclusions_123.contains(&pair_key) {
             seen_14_pairs.insert(pair_key);
             pairs_14.push([dih.i, dih.l]);
@@ -474,16 +519,26 @@ pub fn parameterize_structure(
     let mut cmap_map_indices = Vec::new();
     if let Some(cmap_data) = &ff.cmap_data {
         for i in 0..processed.num_residues {
-            if i == 0 || i + 1 >= processed.num_residues { continue; }
+            if i == 0 || i + 1 >= processed.num_residues {
+                continue;
+            }
             let res_prev = &processed.residue_info[i - 1];
             let res_curr = &processed.residue_info[i];
             let res_next = &processed.residue_info[i + 1];
 
-            let find_atom = |ri: &proxide_core::processing::ResidueInfo, name: &str| -> Option<usize> {
-                (ri.start_atom..(ri.start_atom + ri.num_atoms)).find(|&idx| processed.raw_atoms.atom_names[idx] == name)
-            };
+            let find_atom =
+                |ri: &proxide_core::processing::ResidueInfo, name: &str| -> Option<usize> {
+                    (ri.start_atom..(ri.start_atom + ri.num_atoms))
+                        .find(|&idx| processed.raw_atoms.atom_names[idx] == name)
+                };
 
-            if let (Some(idx1), Some(idx2), Some(idx3), Some(idx4), Some(idx5)) = (find_atom(res_prev, "C"), find_atom(res_curr, "N"), find_atom(res_curr, "CA"), find_atom(res_curr, "C"), find_atom(res_next, "N")) {
+            if let (Some(idx1), Some(idx2), Some(idx3), Some(idx4), Some(idx5)) = (
+                find_atom(res_prev, "C"),
+                find_atom(res_curr, "N"),
+                find_atom(res_curr, "CA"),
+                find_atom(res_curr, "C"),
+                find_atom(res_next, "N"),
+            ) {
                 let c1 = &atom_classes[idx1];
                 let t2 = &atom_types[idx2];
                 let t3 = &atom_types[idx3];
@@ -491,7 +546,12 @@ pub fn parameterize_structure(
                 let c5 = &atom_classes[idx5];
 
                 for torsion in &cmap_data.torsions {
-                    if torsion.class1 == *c1 && torsion.type2 == *t2 && torsion.type3 == *t3 && torsion.type4 == *t4 && torsion.class5 == *c5 {
+                    if torsion.class1 == *c1
+                        && torsion.type2 == *t2
+                        && torsion.type3 == *t3
+                        && torsion.type4 == *t4
+                        && torsion.class5 == *c5
+                    {
                         cmap_torsions.push([idx1, idx2, idx3, idx4, idx5]);
                         cmap_map_indices.push(torsion.map_index);
                         break;
@@ -502,21 +562,45 @@ pub fn parameterize_structure(
     }
 
     let resolved_nonbonded_14_params = resolve_14_params(
-        &pairs_14, &charges, &sigmas, &epsilons, &atom_types,
-        &ff.exceptions, ff.lj14scale, ff.coulomb14scale,
+        &pairs_14,
+        &charges,
+        &sigmas,
+        &epsilons,
+        &atom_types,
+        &ff.exceptions,
+        ff.lj14scale,
+        ff.coulomb14scale,
     );
     Ok(MDParameters {
-        charges, sigmas, epsilons, radii, scales, atom_types, num_parameterized, num_skipped,
-        bonds: bonds_vec, bond_params, angles: angles_vec, angle_params,
-        dihedrals: dihedrals_vec, dihedral_params, max_proper_terms,
-        impropers: impropers_vec, improper_params, max_improper_terms,
+        charges,
+        sigmas,
+        epsilons,
+        radii,
+        scales,
+        atom_types,
+        num_parameterized,
+        num_skipped,
+        bonds: bonds_vec,
+        bond_params,
+        angles: angles_vec,
+        angle_params,
+        dihedrals: dihedrals_vec,
+        dihedral_params,
+        max_proper_terms,
+        impropers: impropers_vec,
+        improper_params,
+        max_improper_terms,
         pairs_14,
         resolved_nonbonded_14_params,
         nonbonded_exceptions,
         cmap_torsions,
         cmap_map_indices,
 
-        cmap_grids: if let Some(cmap_data) = &ff.cmap_data { cmap_data.maps.clone() } else { Vec::new() },
+        cmap_grids: if let Some(cmap_data) = &ff.cmap_data {
+            cmap_data.maps.clone()
+        } else {
+            Vec::new()
+        },
     })
 }
 
@@ -533,8 +617,8 @@ pub fn parameterize_molecule(
     elements: &[String],
     bond_tolerance: f32,
 ) -> Result<MDParameters, ParamError> {
-    use proxide_gaff::gaff::{assign_gaff_types, GaffParameters};
     use proxide_core::forcefield::topology::Topology;
+    use proxide_gaff::gaff::{assign_gaff_types, GaffParameters};
 
     let n_atoms = elements.len();
     if coords.len() != n_atoms {
@@ -546,7 +630,8 @@ pub fn parameterize_molecule(
     }
 
     // Infer topology from coordinates
-    let topology = proxide_geometry::geometry::topology::generate_topology(coords, elements, bond_tolerance);
+    let topology =
+        proxide_geometry::geometry::topology::generate_topology(coords, elements, bond_tolerance);
     let gaff = GaffParameters::new();
 
     // Assign GAFF atom types
@@ -617,8 +702,14 @@ pub fn parameterize_molecule(
     // 1-4 pairs from dihedrals
     let pairs_14: Vec<[usize; 2]> = dihedrals_vec.iter().map(|d| [d[0], d[3]]).collect();
     let resolved_nonbonded_14_params = resolve_14_params(
-        &pairs_14, &charges, &sigmas, &epsilons, &atom_types,
-        &[], 0.5, 0.833333,
+        &pairs_14,
+        &charges,
+        &sigmas,
+        &epsilons,
+        &atom_types,
+        &[],
+        0.5,
+        0.833333,
     );
 
     Ok(MDParameters {
@@ -829,9 +920,10 @@ fn resolve_14_params(
         .map(|&[i, j]| {
             let ti = &atom_types[i];
             let tj = &atom_types[j];
-            if let Some(exc) = exceptions.iter().find(|e| {
-                (&e.type1 == ti && &e.type2 == tj) || (&e.type1 == tj && &e.type2 == ti)
-            }) {
+            if let Some(exc) = exceptions
+                .iter()
+                .find(|e| (&e.type1 == ti && &e.type2 == tj) || (&e.type1 == tj && &e.type2 == ti))
+            {
                 [exc.charge_prod, exc.sigma, exc.epsilon]
             } else {
                 let charge_prod = coulomb14scale * charges[i] * charges[j];
@@ -1098,30 +1190,32 @@ mod tests {
         let mut ff = make_test_forcefield();
 
         // Add Proper Torsion
-        ff.proper_torsions.push(proxide_core::forcefield::ProperTorsionParam {
-            class1: "N".to_string(),
-            class2: "CX".to_string(),
-            class3: "C".to_string(),
-            class4: "N".to_string(),
-            terms: vec![proxide_core::forcefield::TorsionTerm {
-                periodicity: 3,
-                phase: 0.0,
-                k: 1.5,
-            }],
-        });
+        ff.proper_torsions
+            .push(proxide_core::forcefield::ProperTorsionParam {
+                class1: "N".to_string(),
+                class2: "CX".to_string(),
+                class3: "C".to_string(),
+                class4: "N".to_string(),
+                terms: vec![proxide_core::forcefield::TorsionTerm {
+                    periodicity: 3,
+                    phase: 0.0,
+                    k: 1.5,
+                }],
+            });
 
         // Add Improper
-        ff.improper_torsions.push(proxide_core::forcefield::ImproperTorsionParam {
-            class1: "N".to_string(),
-            class2: "N".to_string(),
-            class3: "CX".to_string(), // Center
-            class4: "C".to_string(),
-            terms: vec![proxide_core::forcefield::TorsionTerm {
-                periodicity: 2,
-                phase: 3.14159,
-                k: 10.0,
-            }],
-        });
+        ff.improper_torsions
+            .push(proxide_core::forcefield::ImproperTorsionParam {
+                class1: "N".to_string(),
+                class2: "N".to_string(),
+                class3: "CX".to_string(), // Center
+                class4: "C".to_string(),
+                terms: vec![proxide_core::forcefield::TorsionTerm {
+                    periodicity: 2,
+                    phase: 3.14159,
+                    k: 10.0,
+                }],
+            });
 
         // Set up 4-atom linear topology: N-CA-C-N
         let mut raw = RawAtomData::with_capacity(4);
@@ -1146,11 +1240,18 @@ mod tests {
             proxide_core::forcefield::Bond::new(1, 2),
             proxide_core::forcefield::Bond::new(2, 3),
         ];
-        let elements = vec!["N".to_string(), "C".to_string(), "C".to_string(), "N".to_string()];
+        let elements = vec![
+            "N".to_string(),
+            "C".to_string(),
+            "C".to_string(),
+            "N".to_string(),
+        ];
         let mut topology = proxide_core::forcefield::Topology::new(bonds, &elements);
 
         // Dihedral N-CA-C-N
-        topology.proper_dihedrals.push(proxide_core::forcefield::Dihedral::new_proper(0, 1, 2, 3));
+        topology
+            .proper_dihedrals
+            .push(proxide_core::forcefield::Dihedral::new_proper(0, 1, 2, 3));
 
         let options = ParamOptions::default();
         let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
@@ -1171,7 +1272,10 @@ mod tests {
                 class5: "CX".to_string(),
                 map_index: 0,
             }],
-            maps: vec![proxide_core::forcefield::CMAPGrid { size: 24, energies: vec![0.0; 24*24] }],
+            maps: vec![proxide_core::forcefield::CMAPGrid {
+                size: 24,
+                energies: vec![0.0; 24 * 24],
+            }],
         });
 
         let structure = make_test_structure();
@@ -1240,15 +1344,30 @@ mod tests {
     fn test_terminal_caps_last_only() {
         let mut ff = make_test_forcefield();
         // Add CALA
-        ff.residue_templates.push(proxide_core::forcefield::ResidueTemplate {
-            name: "CALA".to_string(),
-            atoms: vec![
-                proxide_core::forcefield::ResidueAtom { name: "N".to_string(), atom_type: "N".to_string(), charge: Some(-0.6) },
-                proxide_core::forcefield::ResidueAtom { name: "CA".to_string(), atom_type: "CX".to_string(), charge: Some(0.01) },
-                proxide_core::forcefield::ResidueAtom { name: "C".to_string(), atom_type: "C".to_string(), charge: Some(0.5) },
-            ],
-            bonds: vec![], external_bonds: vec![], override_level: None,
-        });
+        ff.residue_templates
+            .push(proxide_core::forcefield::ResidueTemplate {
+                name: "CALA".to_string(),
+                atoms: vec![
+                    proxide_core::forcefield::ResidueAtom {
+                        name: "N".to_string(),
+                        atom_type: "N".to_string(),
+                        charge: Some(-0.6),
+                    },
+                    proxide_core::forcefield::ResidueAtom {
+                        name: "CA".to_string(),
+                        atom_type: "CX".to_string(),
+                        charge: Some(0.01),
+                    },
+                    proxide_core::forcefield::ResidueAtom {
+                        name: "C".to_string(),
+                        atom_type: "C".to_string(),
+                        charge: Some(0.5),
+                    },
+                ],
+                bonds: vec![],
+                external_bonds: vec![],
+                override_level: None,
+            });
         ff.build_indices();
 
         let mut raw = RawAtomData::new();
@@ -1256,34 +1375,95 @@ mod tests {
         // Residue 1: N, CA, C (ALA)
         // Residue 2: N, CA, C (ALA) -> Should be CALA
         raw.add_atom(AtomRecord {
-            serial: 1, atom_name: "N".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 1,
-            x: 0.0, y: 0.0, z: 0.0, element: "N".to_string(), ..AtomRecord::default()
+            serial: 1,
+            atom_name: "N".to_string(),
+            res_name: "ALA".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            element: "N".to_string(),
+            ..AtomRecord::default()
         });
         raw.add_atom(AtomRecord {
-            serial: 2, atom_name: "CA".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 1,
-            x: 1.0, y: 0.0, z: 0.0, element: "C".to_string(), ..AtomRecord::default()
+            serial: 2,
+            atom_name: "CA".to_string(),
+            res_name: "ALA".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+            element: "C".to_string(),
+            ..AtomRecord::default()
         });
         raw.add_atom(AtomRecord {
-            serial: 3, atom_name: "C".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 1,
-            x: 2.0, y: 0.0, z: 0.0, element: "C".to_string(), ..AtomRecord::default()
+            serial: 3,
+            atom_name: "C".to_string(),
+            res_name: "ALA".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            x: 2.0,
+            y: 0.0,
+            z: 0.0,
+            element: "C".to_string(),
+            ..AtomRecord::default()
         });
 
         raw.add_atom(AtomRecord {
-            serial: 4, atom_name: "N".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 2,
-            x: 10.0, y: 0.0, z: 0.0, element: "N".to_string(), ..AtomRecord::default()
+            serial: 4,
+            atom_name: "N".to_string(),
+            res_name: "ALA".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 2,
+            x: 10.0,
+            y: 0.0,
+            z: 0.0,
+            element: "N".to_string(),
+            ..AtomRecord::default()
         });
         raw.add_atom(AtomRecord {
-            serial: 5, atom_name: "CA".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 2,
-            x: 11.0, y: 0.0, z: 0.0, element: "C".to_string(), ..AtomRecord::default()
+            serial: 5,
+            atom_name: "CA".to_string(),
+            res_name: "ALA".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 2,
+            x: 11.0,
+            y: 0.0,
+            z: 0.0,
+            element: "C".to_string(),
+            ..AtomRecord::default()
         });
         raw.add_atom(AtomRecord {
-            serial: 6, atom_name: "C".to_string(), res_name: "ALA".to_string(), chain_id: "A".to_string(), res_seq: 2,
-            x: 12.0, y: 0.0, z: 0.0, element: "C".to_string(), ..AtomRecord::default()
+            serial: 6,
+            atom_name: "C".to_string(),
+            res_name: "ALA".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 2,
+            x: 12.0,
+            y: 0.0,
+            z: 0.0,
+            element: "C".to_string(),
+            ..AtomRecord::default()
         });
 
         let structure = ProcessedStructure::from_raw(raw).unwrap();
-        let topology = proxide_core::forcefield::Topology::new(vec![], &["N".to_string(), "C".to_string(), "C".to_string(), "N".to_string(), "C".to_string(), "C".to_string()]);
-        let options = ParamOptions { auto_terminal_caps: true, missing_mode: MissingResidueMode::SkipWarn };
+        let topology = proxide_core::forcefield::Topology::new(
+            vec![],
+            &[
+                "N".to_string(),
+                "C".to_string(),
+                "C".to_string(),
+                "N".to_string(),
+                "C".to_string(),
+                "C".to_string(),
+            ],
+        );
+        let options = ParamOptions {
+            auto_terminal_caps: true,
+            missing_mode: MissingResidueMode::SkipWarn,
+        };
 
         let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
 

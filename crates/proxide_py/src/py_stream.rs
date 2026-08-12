@@ -1,9 +1,9 @@
 #![allow(clippy::useless_conversion)]
-use std::fs::File;
 use crate::formats;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::fs::File;
 use std::path::Path;
 
 #[pyclass]

@@ -111,9 +111,75 @@ def generate_test_trajectories(output_dir: Path, num_frames: int = 10):
   return True
 
 
+def generate_large_xtc_fixture(output_dir: Path, num_frames: int = 5000):
+  """Generate a larger multi-thousand-frame XTC fixture.
+
+  Same 4-atom topology as `generate_test_trajectories`; only the frame count
+  differs. Exists to exercise/benchmark the offset-index scan, the on-disk
+  offset cache, and parallel frame decoding on a trajectory too large for a
+  single-digit frame count to meaningfully test.
+
+  Args:
+      output_dir: Directory to write the trajectory file
+      num_frames: Number of frames to generate
+
+  """
+  output_dir.mkdir(parents=True, exist_ok=True)
+
+  topology = mdtraj.Topology()
+  chain = topology.add_chain()
+  residue = topology.add_residue("ALA", chain)
+
+  n_atom = topology.add_atom("N", mdtraj.element.nitrogen, residue)
+  ca_atom = topology.add_atom("CA", mdtraj.element.carbon, residue)
+  c_atom = topology.add_atom("C", mdtraj.element.carbon, residue)
+  o_atom = topology.add_atom("O", mdtraj.element.oxygen, residue)
+
+  topology.add_bond(n_atom, ca_atom)
+  topology.add_bond(ca_atom, c_atom)
+  topology.add_bond(c_atom, o_atom)
+
+  base_coords = np.array(
+    [
+      [0.00, 0.00, 0.00],
+      [0.15, 0.00, 0.00],
+      [0.25, 0.10, 0.00],
+      [0.25, 0.20, 0.00],
+    ],
+    dtype=np.float32,
+  )
+
+  np.random.seed(1337)
+  coords = np.zeros((num_frames, 4, 3), dtype=np.float32)
+  for i in range(num_frames):
+    noise = np.random.randn(4, 3).astype(np.float32) * 0.01
+    coords[i] = base_coords + noise
+
+  unitcell_lengths = np.array([[5.0, 5.0, 5.0]] * num_frames, dtype=np.float32)
+  unitcell_angles = np.array([[90.0, 90.0, 90.0]] * num_frames, dtype=np.float32)
+
+  traj = mdtraj.Trajectory(
+    coords,
+    topology,
+    unitcell_lengths=unitcell_lengths,
+    unitcell_angles=unitcell_angles,
+  )
+
+  xtc_path = output_dir / "large.xtc"
+  traj.save_xtc(str(xtc_path))
+  print(f"  ✓ Large XTC ({num_frames} frames): {xtc_path}")
+
+  pdb_path = output_dir.parent / "1crn.pdb"
+  loaded = mdtraj.load(str(xtc_path), top=str(pdb_path))
+  print(f"    Verified: {loaded.n_frames} frames, {loaded.n_atoms} atoms")
+
+  return True
+
+
 if __name__ == "__main__":
   script_dir = Path(__file__).parent
   project_root = script_dir.parent
   output_dir = project_root / "tests" / "data" / "trajectories"
 
   generate_test_trajectories(output_dir)
+  generate_large_xtc_fixture(output_dir)

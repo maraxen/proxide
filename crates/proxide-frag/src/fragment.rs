@@ -29,10 +29,10 @@ pub struct Centered;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackboneAtom {
-    N  = 0,
+    N = 0,
     CA = 1,
-    C  = 2,
-    O  = 3,
+    C = 2,
+    O = 3,
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +55,10 @@ pub struct Fragment<const N: usize, State> {
 impl<const N: usize> Fragment<N, Raw> {
     /// Construct a new raw fragment from the given coordinate array.
     pub fn new(coords: [[[f32; 3]; 4]; N]) -> Self {
-        Self { coords, _state: PhantomData }
+        Self {
+            coords,
+            _state: PhantomData,
+        }
     }
 
     /// Center the fragment by subtracting the centroid from every atom coordinate.
@@ -77,10 +80,9 @@ impl<const N: usize> Fragment<N, Raw> {
         let centroid = [sum[0] / n_atoms, sum[1] / n_atoms, sum[2] / n_atoms];
 
         // Reject if already centered.
-        let norm = (centroid[0] * centroid[0]
-            + centroid[1] * centroid[1]
-            + centroid[2] * centroid[2])
-            .sqrt();
+        let norm =
+            (centroid[0] * centroid[0] + centroid[1] * centroid[1] + centroid[2] * centroid[2])
+                .sqrt();
         if norm < 1e-6_f32 {
             return Err(AlreadyCenteredError { norm });
         }
@@ -99,7 +101,10 @@ impl<const N: usize> Fragment<N, Raw> {
         }
 
         Ok((
-            Fragment { coords: centered_coords, _state: PhantomData },
+            Fragment {
+                coords: centered_coords,
+                _state: PhantomData,
+            },
             centroid,
         ))
     }
@@ -110,7 +115,10 @@ impl<const N: usize> Fragment<N, Centered> {
     /// re-centering them.  Called by [`crate::search`] to create temporary
     /// views over database entry coordinate arrays.
     pub(crate) fn new_centered(coords: [[[f32; 3]; 4]; N]) -> Self {
-        Self { coords, _state: PhantomData }
+        Self {
+            coords,
+            _state: PhantomData,
+        }
     }
 
     /// Sum of squared magnitudes of all atom coordinate vectors.

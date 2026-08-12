@@ -1,0 +1,746 @@
+//! TM-align pipeline: orchestrates all 5 seeding strategies with refinement
+//! and produces the final TM-score result.
+//!
+//! This module implements two entry points running the same algorithm on a
+//! pair of protein structures:
+//!
+//! - `tmalign_pair_serial` — fully sequential.
+//! - `tmalign_pair` — seeds (a)/(b)/(c)/(e)'s raw generation runs concurrently
+//!   via `orx-parallel`'s `.into_par()`; the gating/refinement/best-tracking logic
+//!   (and seed (d), which depends on the running-best alignment) stays
+//!   sequential in both. See [`tmalign_pair`]'s doc for why only seed
+//!   generation is parallelized, not the full candidate set.
+//!
+//! Both share the same 5-seed sequence:
+//!
+//! 1. **Seed (a): Gapless threading** — slides one sequence over the other.
+//! 2. **Seed (b): Secondary structure** — aligns via SS-letter identity, gated on
+//!    `TM > TMmax * 0.2`.
+//! 3. **Seed (c): Local structure** — fragment-based Kabsch, gated on
+//!    `TM > TMmax * ddcc` (ddcc=0.1 if len≤40, else 0.4), refined with 2 iterations.
+//! 4. **Seed (d): SS+local combo** — combines local superposition + SS scoring,
+//!    fed the current best alignment, gated on `TM > TMmax * ddcc`, 30 iterations.
+//! 5. **Seed (e): Fragment gapless** — finds long contiguous fragments and threads,
+//!    gated on `TM > TMmax * ddcc`, refined with gap_open=0 only, 2 iterations.
+//!
+//! After all seeds, a final refinement stage re-runs the best alignment with
+//! strict `d0_final` (not the looser search-phase `d0`) to compute the canonical
+//! TM-scores normalized by both structure lengths.
+
+use crate::d0;
+use crate::error::TmAlignError;
+use crate::kabsch::kabsch_superpose;
+use crate::nw::AlignedPair;
+use crate::refine::dp_iter;
+use crate::score::{apply_transform_with_matrix, evaluate_tm_score};
+use crate::seed::{run_seed, AlignmentMap, SeedKind};
+use nalgebra::Vector3;
+use orx_parallel::{IntoParIter, ParIter};
+
+/// Result of TM-align pairwise alignment: alignment map, rotation, translation,
+/// and final TM-scores normalized by both structure lengths.
+#[derive(Debug, Clone)]
+pub struct TmAlignResult {
+    /// Raw alignment map from the winning seed's DP: `(Some(i), Some(j))` for
+    /// aligned residue pairs, gaps as `None`. NOT filtered by `score_d8` — may
+    /// contain pairs that land beyond `score_d8` post-rotation and therefore
+    /// don't count toward [`Self::n_aligned`] (see its doc).
+    pub alignment: AlignmentMap,
+    /// Optimal rotation matrix (row-major 3×3).
+    pub rotation: [[f32; 3]; 3],
+    /// Translation vector.
+    pub translation: [f32; 3],
+    /// TM-score normalized by structure 1 length.
+    pub tm_score_norm1: f32,
+    /// TM-score normalized by structure 2 length (canonical single TM-score).
+    pub tm_score_norm2: f32,
+    /// Number of residue pairs in the final alignment whose post-rotation
+    /// distance is within the `score_d8` cutoff (USalign's `Lali`/`n_ali8` —
+    /// `TMalign.h:3554-3593`). This is *not* a raw count of `Some/Some` pairs
+    /// in [`Self::alignment`]: `NWDP_TM`'s diagonal score is always positive,
+    /// so the DP has no penalty for admitting a geometrically bad match, and
+    /// such pairs are excluded here even though they remain in the raw map.
+    pub n_aligned: usize,
+}
+
+/// Run TM-align on a pair of protein structures (serial, single-pair entry point).
+///
+/// Executes all 5 seeding strategies (gapless threading, secondary structure,
+/// local structure, SS+local combo, fragment gapless) in sequence, refining each
+/// seed's initial alignment via iterative DP and fragment superposition. Returns
+/// the best result found across all seeds.
+///
+/// # Arguments
+///
+/// - `coords1` — Cα coordinates of structure 1.
+/// - `coords2` — Cα coordinates of structure 2.
+///
+/// # Returns
+///
+/// `TmAlignResult` containing the best alignment, rotation, translation, and
+/// final TM-scores. Returns an error only if the coordinate arrays are empty
+/// or mismatched (individual seed failures are tolerated).
+///
+/// # Errors
+///
+/// Returns `TmAlignError` if:
+/// - Either coordinate array is empty.
+/// - No seed ever produces a usable alignment (all fail).
+///
+/// # Algorithm Overview
+///
+/// Per `TMalign_main` (USalign/TMalign.h:3138+), the pipeline is:
+///
+/// 1. Compute search-phase `d0` and `d0_search` from `l_norm = min(len1, len2)`.
+/// 2. Gapless threading (seed a) → DP_iter(gap_range=0..2, iter=30) → track best.
+/// 3. SS seed (b) → gate `TM > TMmax*0.2` → DP_iter(0..2, 30) → track best.
+/// 4. Local structure (c) → gate `TM > TMmax*ddcc` → DP_iter(0..2, **2 iters only**).
+/// 5. SS+local combo (d) → pass current best alignment → gate `TM > TMmax*ddcc`
+///    → DP_iter(0..2, 30).
+/// 6. Fragment gapless (e) → gate `TM > TMmax*ddcc` → DP_iter(1..2, 2 iters).
+/// 7. Final stage: re-compute TM-scores using `d0_final` (not search-phase d0),
+///    normalized by both structure lengths. Before scoring, the alignment is
+///    filtered by `score_d8` (`TMalign.h:3554-3593`): pairs that land beyond
+///    `score_d8` under the definitive rotation don't count toward `n_aligned`
+///    or the TM-score sum, even if the DP's raw alignment included them.
+#[allow(unused_assignments)] // tmmax's final write (after the last seed) is never read back, by design
+pub fn tmalign_pair_serial(
+    coords1: &[Vector3<f32>],
+    coords2: &[Vector3<f32>],
+) -> Result<TmAlignResult, TmAlignError> {
+    if coords1.is_empty() || coords2.is_empty() {
+        return Err(TmAlignError::EmptyStructure);
+    }
+    let l_norm = coords1.len().min(coords2.len());
+    let (d0_search_phase, d0_search) = d0::d0_search(l_norm);
+
+    let seed_a = run_seed(
+        SeedKind::GaplessThreading,
+        coords1,
+        coords2,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+        None,
+    );
+    let seed_b = run_seed(
+        SeedKind::SecondaryStructure,
+        coords1,
+        coords2,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+        None,
+    );
+    let seed_c = run_seed(
+        SeedKind::LocalStructure,
+        coords1,
+        coords2,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+        None,
+    );
+    let seed_e = run_seed(
+        SeedKind::FragmentGapless,
+        coords1,
+        coords2,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+        None,
+    );
+
+    tmalign_pair_from_seeds(
+        coords1,
+        coords2,
+        l_norm,
+        d0_search_phase,
+        d0_search,
+        seed_a,
+        seed_b,
+        seed_c,
+        seed_e,
+    )
+}
+
+/// Parallel twin of [`tmalign_pair_serial`]: seeds (a)/(b)/(c)/(e)'s raw
+/// generation (`run_seed`, independent of each other's *values* — only
+/// gated by a later score threshold, which stays sequential below) runs
+/// concurrently via `orx-parallel`'s `.into_par()`. Everything downstream —
+/// gating decisions, `DP_iter` refinement, best-alignment tracking, seed
+/// (d)'s dependent generation (it requires the running-best alignment as
+/// an input and therefore cannot be precomputed here), and the final
+/// `score_d8`-filtered scoring — is bit-for-bit identical to
+/// `tmalign_pair_serial`'s sequential logic in [`tmalign_pair_from_seeds`],
+/// so the two should agree *exactly*, not merely within a floating-point
+/// reduction-order tolerance: no floating-point sum is reordered by this
+/// split, only four independent function calls are made concurrently
+/// instead of in series.
+///
+/// This is a more conservative parallelization than "run all up-to-10
+/// (seed, gap_open) candidates independently and take the max": that
+/// framing doesn't hold for this pipeline (see backlog #3758's resolution
+/// notes) because seed (d) has a genuine data dependency on the running
+/// best alignment, and seeds (b)/(c)/(e) are conditionally skipped based
+/// on a running best-score threshold that only exists after earlier seeds
+/// have run — parallelizing across the *gated* candidates risks admitting
+/// a seed the serial version would have skipped, which could disagree with
+/// `tmalign_pair_serial`. Parallelizing only the four independent seeds'
+/// (comparatively cheap) raw-generation step is safe because the
+/// expensive, order-sensitive `DP_iter` refinement and gating stay exactly
+/// as they were.
+pub fn tmalign_pair(
+    coords1: &[Vector3<f32>],
+    coords2: &[Vector3<f32>],
+) -> Result<TmAlignResult, TmAlignError> {
+    if coords1.is_empty() || coords2.is_empty() {
+        return Err(TmAlignError::EmptyStructure);
+    }
+    let l_norm = coords1.len().min(coords2.len());
+    let (d0_search_phase, d0_search) = d0::d0_search(l_norm);
+
+    let seed_kinds = vec![
+        SeedKind::GaplessThreading,
+        SeedKind::SecondaryStructure,
+        SeedKind::LocalStructure,
+        SeedKind::FragmentGapless,
+    ];
+    // orx-parallel's default IterationOrder is `Ordered`, so `collect()` below
+    // preserves seed_kinds' input order -- essential since the pop()s after it
+    // rely on positional a/b/c/e correspondence.
+    let par = seed_kinds.into_par().map(|kind| {
+        run_seed(
+            kind,
+            coords1,
+            coords2,
+            d0_search_phase,
+            d0_search,
+            l_norm,
+            None,
+        )
+    });
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let par = par.num_threads(proxide_parallel_rt::num_threads());
+    let mut seed_results: Vec<Result<AlignmentMap, TmAlignError>> = par.collect();
+
+    let seed_e = seed_results.pop().expect("4 seeds dispatched");
+    let seed_c = seed_results.pop().expect("4 seeds dispatched");
+    let seed_b = seed_results.pop().expect("4 seeds dispatched");
+    let seed_a = seed_results.pop().expect("4 seeds dispatched");
+
+    tmalign_pair_from_seeds(
+        coords1,
+        coords2,
+        l_norm,
+        d0_search_phase,
+        d0_search,
+        seed_a,
+        seed_b,
+        seed_c,
+        seed_e,
+    )
+}
+
+/// Shared sequential core for both [`tmalign_pair_serial`] and
+/// [`tmalign_pair`]: consumes seeds (a)/(b)/(c)/(e)'s already-computed raw
+/// generation results (identical whether they were produced serially or
+/// concurrently) and replicates `TMalign_main`'s exact gated sequential
+/// order — gating, `DP_iter` refinement, best-alignment tracking, seed
+/// (d)'s dependent generation, and the final `score_d8`-filtered scoring.
+#[allow(unused_assignments)] // tmmax's final write (after the last seed) is never read back, by design
+#[allow(clippy::too_many_arguments)] // matches seed/mod.rs's run_seed and refine.rs's existing dispatch-function convention
+fn tmalign_pair_from_seeds(
+    coords1: &[Vector3<f32>],
+    coords2: &[Vector3<f32>],
+    l_norm: usize,
+    d0_search_phase: f32,
+    d0_search: f32,
+    seed_a: Result<AlignmentMap, TmAlignError>,
+    seed_b: Result<AlignmentMap, TmAlignError>,
+    seed_c: Result<AlignmentMap, TmAlignError>,
+    seed_e: Result<AlignmentMap, TmAlignError>,
+) -> Result<TmAlignResult, TmAlignError> {
+    let xlen = coords1.len();
+    let ylen = coords2.len();
+    let ddcc = if l_norm <= 40 { 0.1 } else { 0.4 };
+
+    let mut tmmax = -1.0_f32;
+    let mut best_alignment: Option<AlignmentMap> = None;
+
+    // ==================== Seed (a): Gapless threading ====================
+    match seed_a {
+        Ok(alignment) => {
+            // Run DP_iter with gap_open range [0, 2) = [-0.6, 0.0]
+            let (refined_alignment, tm_score) = dp_iter(
+                coords1,
+                coords2,
+                &alignment,
+                d0_search_phase,
+                d0_search,
+                l_norm,
+                (0, 2), // gap_open_range for both -0.6 and 0.0
+                30,     // max_iterations
+            );
+            if tm_score > tmmax {
+                tmmax = tm_score;
+                best_alignment = Some(refined_alignment);
+            }
+        }
+        Err(_) => {
+            // Skip this seed; not a fatal error.
+        }
+    }
+
+    // ==================== Seed (b): Secondary structure ====================
+    match seed_b {
+        Ok(alignment) => {
+            // Gate: only refine if raw score > TMmax * 0.2
+            let raw_score = score_alignment(&alignment, coords1, coords2, d0_search_phase, l_norm);
+            if raw_score > tmmax * 0.2 {
+                let (refined_alignment, tm_score) = dp_iter(
+                    coords1,
+                    coords2,
+                    &alignment,
+                    d0_search_phase,
+                    d0_search,
+                    l_norm,
+                    (0, 2),
+                    30,
+                );
+                if tm_score > tmmax {
+                    tmmax = tm_score;
+                    best_alignment = Some(refined_alignment);
+                }
+            }
+        }
+        Err(_) => {
+            // Skip this seed.
+        }
+    }
+
+    // ==================== Seed (c): Local structure ====================
+    match seed_c {
+        Ok(alignment) => {
+            // Gate: only refine if raw score > TMmax * ddcc
+            let raw_score = score_alignment(&alignment, coords1, coords2, d0_search_phase, l_norm);
+            if raw_score > tmmax * ddcc {
+                // Note: DP_iter with max_iterations=2 for local-structure seed only
+                let (refined_alignment, tm_score) = dp_iter(
+                    coords1,
+                    coords2,
+                    &alignment,
+                    d0_search_phase,
+                    d0_search,
+                    l_norm,
+                    (0, 2),
+                    2, // 2 iterations only for this seed
+                );
+                if tm_score > tmmax {
+                    tmmax = tm_score;
+                    best_alignment = Some(refined_alignment);
+                }
+            }
+        }
+        Err(_) => {
+            // Skip this seed.
+        }
+    }
+
+    // ==================== Seed (d): SS+local combo ====================
+    match run_seed(
+        SeedKind::SsPlus,
+        coords1,
+        coords2,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+        best_alignment.as_ref(), // Pass current best alignment (e.g., from gapless threading)
+    ) {
+        Ok(alignment) => {
+            // Gate: only refine if raw score > TMmax * ddcc
+            let raw_score = score_alignment(&alignment, coords1, coords2, d0_search_phase, l_norm);
+            if raw_score > tmmax * ddcc {
+                let (refined_alignment, tm_score) = dp_iter(
+                    coords1,
+                    coords2,
+                    &alignment,
+                    d0_search_phase,
+                    d0_search,
+                    l_norm,
+                    (0, 2),
+                    30,
+                );
+                if tm_score > tmmax {
+                    tmmax = tm_score;
+                    best_alignment = Some(refined_alignment);
+                }
+            }
+        }
+        Err(_) => {
+            // Skip this seed; expected if SsPlus was called without a prior best alignment.
+        }
+    }
+
+    // ==================== Seed (e): Fragment gapless ====================
+    match seed_e {
+        Ok(alignment) => {
+            // Gate: only refine if raw score > TMmax * ddcc
+            let raw_score = score_alignment(&alignment, coords1, coords2, d0_search_phase, l_norm);
+            if raw_score > tmmax * ddcc {
+                // Note: gap_open_range=(1,2) means only gap_open=0.0, and 2 iterations
+                let (refined_alignment, tm_score) = dp_iter(
+                    coords1,
+                    coords2,
+                    &alignment,
+                    d0_search_phase,
+                    d0_search,
+                    l_norm,
+                    (1, 2), // gap_open_range for 0.0 only
+                    2,      // 2 iterations for this seed
+                );
+                if tm_score > tmmax {
+                    tmmax = tm_score;
+                    best_alignment = Some(refined_alignment);
+                }
+            }
+        }
+        Err(_) => {
+            // Skip this seed.
+        }
+    }
+
+    // ==================== Final stage: compute canonical TM-scores ====================
+    let alignment = best_alignment
+        .ok_or_else(|| TmAlignError::Parse("No seed produced a usable alignment".to_string()))?;
+
+    // Extract aligned pair coordinates for final Kabsch fit.
+    let (coords1_aligned, coords2_aligned): (Vec<Vector3<f32>>, Vec<Vector3<f32>>) = alignment
+        .iter()
+        .filter_map(|&(i_opt, j_opt)| match (i_opt, j_opt) {
+            (Some(i), Some(j)) if i < coords1.len() && j < coords2.len() => {
+                Some((coords1[i], coords2[j]))
+            }
+            _ => None,
+        })
+        .unzip();
+
+    let n_aligned_raw = coords1_aligned.len();
+    if n_aligned_raw == 0 {
+        return Err(TmAlignError::Parse(
+            "Final alignment has no aligned pairs".to_string(),
+        ));
+    }
+
+    // Final refinement to get the definitive rotation and translation.
+    //
+    // NOT a plain kabsch_superpose over every aligned pair: dp_iter's internal
+    // tmscore8_search already found a distance-cutoff-refined rotation that
+    // excludes outlier pairs from the fit (that's precisely how it achieves a
+    // good TM-score) — dp_iter only returns the alignment + score, not that
+    // rotation, so re-deriving it here via a naive whole-alignment fit would
+    // refit including those outliers and produce a substantially worse
+    // (higher-RMSD, lower-TM-score) superposition than what was actually
+    // found during refinement. Re-running tmscore8_search one more time on
+    // the final best alignment (mirroring TMalign_main's own final
+    // `detailed_search_standard` re-fit) recovers that definitive fit.
+    let (final_result, _) = crate::refine::tmscore8_search(
+        &coords1_aligned,
+        &coords2_aligned,
+        d0_search_phase,
+        d0_search,
+        l_norm,
+    );
+
+    // Filter by score_d8 under the definitive rotation before reporting
+    // n_aligned or summing the final TM-score (TMalign.h:3554-3593). Pairs
+    // that survived the raw DP alignment but land beyond score_d8 once the
+    // final rotation is applied don't count as "aligned" for reporting
+    // purposes, even though nwdp_tm's diagonal score (always positive, no
+    // penalty for a bad match) let them stay in the raw alignment map.
+    // Without this filter n_aligned tracks the raw DP pair count instead of
+    // USalign's own Lali/n_ali8, which is what produced the previously-open
+    // n_aligned discrepancy (backlog #3788): TM-scores matched the reference
+    // within ~0.4% while n_aligned came out far too high (163 vs 119) because
+    // those extra pairs contribute almost nothing to the TM-score sum but
+    // still counted toward the raw total.
+    let score_d8_cutoff = d0::score_d8(l_norm);
+    let filtered_alignment: Vec<AlignedPair> = alignment
+        .iter()
+        .copied()
+        .filter(|&(i_opt, j_opt)| match (i_opt, j_opt) {
+            (Some(i), Some(j)) if i < coords1.len() && j < coords2.len() => {
+                let rotated = apply_transform_with_matrix(
+                    coords1[i],
+                    &final_result.rotation,
+                    &final_result.translation,
+                );
+                (rotated - coords2[j]).norm() <= score_d8_cutoff
+            }
+            _ => false,
+        })
+        .collect();
+
+    let n_aligned = filtered_alignment.len();
+
+    // Compute final TM-scores using d0_final (strict thresholds) for each normalization length.
+    let d0_final_xlen = d0::d0_final(xlen);
+    let d0_final_ylen = d0::d0_final(ylen);
+
+    let tm_score_norm1 = evaluate_tm_score(
+        coords1,
+        coords2,
+        &filtered_alignment,
+        &final_result.rotation,
+        &final_result.translation,
+        d0_final_xlen,
+        xlen,
+    );
+
+    let tm_score_norm2 = evaluate_tm_score(
+        coords1,
+        coords2,
+        &filtered_alignment,
+        &final_result.rotation,
+        &final_result.translation,
+        d0_final_ylen,
+        ylen,
+    );
+
+    Ok(TmAlignResult {
+        alignment,
+        rotation: final_result.rotation,
+        translation: final_result.translation,
+        tm_score_norm1,
+        tm_score_norm2,
+        n_aligned,
+    })
+}
+
+/// Helper: score an alignment using the fast iterative method.
+///
+/// Computes TM-score for a given alignment by Kabsch-fitting and running
+/// three iterations of distance-filtered re-fitting (same as `get_score_fast`).
+/// Used to evaluate seed quality before deciding whether to run DP_iter.
+fn score_alignment(
+    alignment: &[AlignedPair],
+    coords1: &[Vector3<f32>],
+    coords2: &[Vector3<f32>],
+    d0: f32,
+    l_norm: usize,
+) -> f32 {
+    if l_norm == 0 || alignment.is_empty() {
+        return 0.0;
+    }
+
+    // Collect aligned pairs.
+    let (r1, r2): (Vec<Vector3<f32>>, Vec<Vector3<f32>>) = alignment
+        .iter()
+        .filter_map(|&(i_opt, j_opt)| match (i_opt, j_opt) {
+            (Some(i), Some(j)) if i < coords1.len() && j < coords2.len() => {
+                Some((coords1[i], coords2[j]))
+            }
+            _ => None,
+        })
+        .unzip();
+
+    if r1.is_empty() {
+        return 0.0;
+    }
+
+    // Single Kabsch fit + naive TM-score (no distance filtering at this gate stage).
+    let result = kabsch_superpose(&r1, &r2);
+    evaluate_tm_score(
+        coords1,
+        coords2,
+        alignment,
+        &result.rotation,
+        &result.translation,
+        d0,
+        l_norm,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identical_structures_yield_high_tm_scores() {
+        // Two identical small structures should align with TM-score near 1.0.
+        let coords = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(3.8, 0.0, 0.0),
+            Vector3::new(7.6, 0.0, 0.0),
+            Vector3::new(11.4, 0.0, 0.0),
+            Vector3::new(15.2, 0.0, 0.0),
+        ];
+        let result = tmalign_pair_serial(&coords, &coords);
+        assert!(result.is_ok());
+        let res = result.unwrap();
+        // Both should be near 1.0 since structures are identical.
+        assert!(
+            res.tm_score_norm1 > 0.9,
+            "norm1 score too low: {}",
+            res.tm_score_norm1
+        );
+        assert!(
+            res.tm_score_norm2 > 0.9,
+            "norm2 score too low: {}",
+            res.tm_score_norm2
+        );
+        assert!(res.n_aligned >= 5);
+    }
+
+    #[test]
+    fn different_structure_lengths_produce_different_tm_scores() {
+        // Structure 1: 5 residues
+        let coords1 = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(3.8, 0.0, 0.0),
+            Vector3::new(7.6, 0.0, 0.0),
+            Vector3::new(11.4, 0.0, 0.0),
+            Vector3::new(15.2, 0.0, 0.0),
+        ];
+        // Structure 2: 3 residues (a subset of structure 1)
+        let coords2 = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(3.8, 0.0, 0.0),
+            Vector3::new(7.6, 0.0, 0.0),
+        ];
+
+        let result = tmalign_pair_serial(&coords1, &coords2);
+        assert!(result.is_ok());
+        let res = result.unwrap();
+
+        // TM_norm1 (normalized by xlen=5) should be lower than TM_norm2 (normalized by ylen=3)
+        // because the longer structure has more residues counted in the denominator.
+        assert!(
+            res.tm_score_norm1 <= res.tm_score_norm2,
+            "Expected tm_score_norm1 <= tm_score_norm2, got {} vs {}",
+            res.tm_score_norm1,
+            res.tm_score_norm2
+        );
+    }
+
+    #[test]
+    fn empty_structures_return_error() {
+        let empty: Vec<Vector3<f32>> = vec![];
+        let coords = vec![Vector3::new(0.0, 0.0, 0.0)];
+
+        assert!(tmalign_pair_serial(&empty, &coords).is_err());
+        assert!(tmalign_pair_serial(&coords, &empty).is_err());
+    }
+
+    #[test]
+    fn result_contains_rotation_and_translation() {
+        // Non-collinear/non-coplanar synthetic helix: a perfectly collinear
+        // point set (e.g. all points along the x-axis) makes Kabsch rotation
+        // recovery non-unique — any rotation about the x-axis fits the
+        // self-aligned structure with zero RMSD too, since y=z=0 everywhere —
+        // so identity isn't the only valid answer and this test would be
+        // fixture-dependent flakiness, not a real assertion about the pipeline.
+        let coords: Vec<Vector3<f32>> = (0..8)
+            .map(|i| {
+                let angle = i as f32 * 100.0_f32.to_radians();
+                let z = i as f32 * 1.5;
+                Vector3::new(2.3 * angle.cos(), 2.3 * angle.sin(), z)
+            })
+            .collect();
+
+        let result = tmalign_pair_serial(&coords, &coords);
+        assert!(result.is_ok());
+        let res = result.unwrap();
+
+        // For identical structures, rotation should be ~identity and translation ~zero.
+        let rot = &res.rotation;
+        assert!((rot[0][0] - 1.0).abs() < 0.1);
+        assert!((rot[1][1] - 1.0).abs() < 0.1);
+        assert!((rot[2][2] - 1.0).abs() < 0.1);
+
+        let trans = &res.translation;
+        assert!(trans.iter().all(|&t| t.abs() < 0.1));
+    }
+
+    // ------------------------------------------------------------------
+    // tmalign_pair (parallel) vs tmalign_pair_serial parity — backlog #3758
+    // ------------------------------------------------------------------
+
+    /// tmalign_pair's four independent seeds run concurrently, but the
+    /// downstream gating/refinement/scoring is bit-for-bit identical logic
+    /// (tmalign_pair_from_seeds) — so results must match tmalign_pair_serial
+    /// exactly, not just within a tolerance.
+    fn assert_exact_parity(coords1: &[Vector3<f32>], coords2: &[Vector3<f32>]) {
+        let serial = tmalign_pair_serial(coords1, coords2);
+        let parallel = tmalign_pair(coords1, coords2);
+
+        match (serial, parallel) {
+            (Ok(s), Ok(p)) => {
+                assert_eq!(s.n_aligned, p.n_aligned, "n_aligned mismatch");
+                assert_eq!(
+                    s.tm_score_norm1, p.tm_score_norm1,
+                    "tm_score_norm1 mismatch"
+                );
+                assert_eq!(
+                    s.tm_score_norm2, p.tm_score_norm2,
+                    "tm_score_norm2 mismatch"
+                );
+                assert_eq!(s.rotation, p.rotation, "rotation mismatch");
+                assert_eq!(s.translation, p.translation, "translation mismatch");
+                assert_eq!(s.alignment, p.alignment, "alignment mismatch");
+            }
+            (Err(_), Err(_)) => {} // both agree on failure
+            (s, p) => panic!("serial/parallel disagreed on success: serial={s:?}, parallel={p:?}"),
+        }
+    }
+
+    #[test]
+    fn tmalign_pair_matches_serial_on_identical_structures() {
+        let coords = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(3.8, 0.0, 0.0),
+            Vector3::new(7.6, 0.0, 0.0),
+            Vector3::new(11.4, 0.0, 0.0),
+            Vector3::new(15.2, 0.0, 0.0),
+        ];
+        assert_exact_parity(&coords, &coords);
+    }
+
+    #[test]
+    fn tmalign_pair_matches_serial_on_different_lengths() {
+        let coords1 = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(3.8, 0.0, 0.0),
+            Vector3::new(7.6, 0.0, 0.0),
+            Vector3::new(11.4, 0.0, 0.0),
+            Vector3::new(15.2, 0.0, 0.0),
+        ];
+        let coords2 = vec![
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(3.8, 0.0, 0.0),
+            Vector3::new(7.6, 0.0, 0.0),
+        ];
+        assert_exact_parity(&coords1, &coords2);
+    }
+
+    #[test]
+    fn tmalign_pair_matches_serial_on_non_collinear_structure() {
+        let coords: Vec<Vector3<f32>> = (0..8)
+            .map(|i| {
+                let angle = i as f32 * 100.0_f32.to_radians();
+                let z = i as f32 * 1.5;
+                Vector3::new(2.3 * angle.cos(), 2.3 * angle.sin(), z)
+            })
+            .collect();
+        assert_exact_parity(&coords, &coords);
+    }
+
+    #[test]
+    fn tmalign_pair_empty_structures_return_error() {
+        let empty: Vec<Vector3<f32>> = vec![];
+        let coords = vec![Vector3::new(0.0, 0.0, 0.0)];
+
+        assert!(tmalign_pair(&empty, &coords).is_err());
+        assert!(tmalign_pair(&coords, &empty).is_err());
+    }
+}

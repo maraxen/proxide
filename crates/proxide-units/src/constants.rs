@@ -22,7 +22,11 @@ mod tests {
     fn test_energy_roundtrip() {
         let val = 2.5;
         let roundtrip = (val * KCAL_TO_KJ * KJ_TO_KCAL - val).abs();
-        assert!(roundtrip < 1e-5, "Energy roundtrip should be precise; got {}", roundtrip);
+        assert!(
+            roundtrip < 1e-5,
+            "Energy roundtrip should be precise; got {}",
+            roundtrip
+        );
     }
 
     #[test]
@@ -30,6 +34,10 @@ mod tests {
         // Expected value: KJ_TO_KCAL / 100.0 ≈ 0.002390057
         let expected = KJ_TO_KCAL / 100.0;
         let diff = (BOND_K_FACTOR - expected).abs();
-        assert!(diff < 1e-8, "BOND_K_FACTOR should be ~0.002390057; got {}", BOND_K_FACTOR);
+        assert!(
+            diff < 1e-8,
+            "BOND_K_FACTOR should be ~0.002390057; got {}",
+            BOND_K_FACTOR
+        );
     }
 }

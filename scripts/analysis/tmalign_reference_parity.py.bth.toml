@@ -1,0 +1,118 @@
+[experiment]
+hypothesis = """
+Rust proxide-tmalign's tmalign_pair_serial reproduces the reference USalign
+`-outfmt 2` TM-score/n_aligned within tolerance across a curated 6-pair
+benchmark set spanning easy (same protein, high identity), hard (same
+fold, low identity), different-length, and unrelated-fold-negative-control
+categories (.praxia/docs/specs/260729_proxide-tmalign-phases-2-5.md, Phase 5).
+
+Phase 2 (task 260729_tmalign_scaffold) validated this at 2-pair scale
+(PDB1/PDB2 cross-alignment + PDB1 self-alignment, both from the
+USalign-bundled sample structures) and passed. This run expands to the
+full curated set with 4 new real, permissively-licensed (public-domain
+RCSB) single-chain structures committed under
+crates/proxide-tmalign/tests/data/: lysozyme (6LYZ/1LYZ, easy), myoglobin
+vs hemoglobin beta-chain (1MBN/2DHB, hard/low-identity same-fold),
+triosephosphate isomerase vs myoglobin (1YPI/1MBN, different-length +
+unrelated-fold), and ubiquitin vs lysozyme (1UBQ/6LYZ, different-length +
+unrelated-fold, near the random-TM floor).
+"""
+task_id = "260729_tmalign_scaffold"
+
+[outcomes.pass]
+condition = """
+All 6 pairs' tm_score_norm1/tm_score_norm2 are within STANDARD_TOLERANCE
+(0.01) of the reference TMalign binary's TM1/TM2, and n_aligned matches
+the reference Lali exactly for every non-"hard"-tagged pair.
+"""
+signals = [
+  "max_abs_tm_diff_standard < 0.01",
+  "max_abs_n_aligned_diff_standard == 0",
+  "no pair with is_hard=false has exceeds_tolerance=true",
+]
+interpretation = """
+tmalign_pair_serial's seed/DP_iter/refinement/score_d8-filtering pipeline
+reproduces the reference implementation across the full category spread,
+not just the 2-pair Phase 2 baseline. Safe to treat as the ground-truth
+parity claim for Phase 3b/4 (batch scoring, PyO3 bindings) which both
+build on tmalign_pair_serial without touching its numerics.
+"""
+is_residual = false
+
+[outcomes.marginal]
+condition = """
+Every "standard" (non-hard) pair is within tolerance, but the one pair
+tagged is_hard=true (ubiquitin vs lysozyme, TM-scores in the 0.23-0.34
+band near the ~0.17 random-fold floor) exceeds HARD_TOLERANCE (0.03) on
+tm_score_norm1/norm2 and/or its n_aligned differs from the reference.
+"""
+signals = [
+  "max_abs_tm_diff_standard < 0.01 (all non-hard pairs fine)",
+  "any_hard_pair_exceeds_tolerance == true",
+  "outcome field in the result JSON == \"marginal\"",
+]
+interpretation = """
+Points to a seed-selection/refinement edge case at near-random-floor
+TM-scores, not a numerics bug: at TM-scores this low, the DP has many
+near-equally-scoring candidate alignments, and this implementation's seed
+evaluation order can legitimately converge on a different local optimum
+than the reference binary without either being wrong. This is expected and
+was pre-registered as the anticipated marginal case in the Phase 5 plan —
+NOT the same failure class as the (already-fixed) score_d8/n_aligned
+counting bug from earlier in this epic, which was a real numerics
+divergence and affected the "standard" PDB1/PDB2 pair, not a hard/near-floor
+one. No fix is warranted from a marginal-only outcome; re-run if the seed
+implementations change and confirm the discrepancy stays confined to the
+hard-tagged pair.
+"""
+is_residual = false
+
+[outcomes.fail]
+condition = """
+Any non-hard ("standard") pair's TM-score diff exceeds STANDARD_TOLERANCE
+(0.01), or its n_aligned differs from the reference at all.
+"""
+signals = [
+  "max_abs_tm_diff_standard >= 0.01",
+  "max_abs_n_aligned_diff_standard > 0",
+  "any pair with is_hard=false has exceeds_tolerance=true",
+  "outcome field in the result JSON == \"fail\"",
+]
+interpretation = """
+Systematic deviation on a pair that is NOT near the random-fold floor
+points to a real numerics bug: d0 formula, DP scoring (NWDP_TM), or a
+Kabsch sign/rotation-convention error — the same failure class the
+(already-fixed) score_d8/n_aligned gap was. Re-run test_parity_pdb1_pdb2.rs
+and test_parity_curated_set.rs individually to localize which pair
+regressed, then audit pipeline.rs/score.rs/kabsch.rs for the specific
+stage (seed generation vs DP_iter refinement vs final scoring) the
+regressed pair's category implicates.
+"""
+is_residual = false
+
+[result_schema]
+usalign_repo_git_sha = "string: git SHA of the ~/repos/USalign checkout used to build the reference binary"
+outcome = "string: pass | marginal | fail, per the taxonomy above"
+max_abs_tm_diff_standard = "float: largest |rust - reference| TM-score diff across non-hard pairs"
+max_abs_tm_diff_hard = "float: largest |rust - reference| TM-score diff across hard-tagged pairs"
+max_abs_n_aligned_diff_standard = "int: largest |rust_n_aligned - ref_lali| across non-hard pairs"
+
+pairs = [
+  {
+    pair = "string: <name1>_vs_<name2>",
+    category = "string: phase2_baseline | self_alignment | easy | hard | different_length_negative_control",
+    is_hard = "bool: whether HARD_TOLERANCE applies to this pair instead of STANDARD_TOLERANCE",
+    tolerance_used = "float",
+    ref_tm1 = "float: reference TMalign TM1", ref_tm2 = "float: reference TMalign TM2",
+    ref_lali = "int: reference TMalign Lali/n_ali8",
+    rust_tm_score_norm1 = "float", rust_tm_score_norm2 = "float", rust_n_aligned = "int",
+    diff_tm1 = "float", diff_tm2 = "float", n_aligned_diff = "int (signed: rust - reference)",
+    exceeds_tolerance = "bool",
+  },
+]
+
+[result_schema.provenance]
+script_path = "scripts/analysis/tmalign_reference_parity.py"
+curated_fixtures_dir = "crates/proxide-tmalign/tests/data/ (committed, public-domain RCSB PDB single-chain extracts)"
+fixture_sources = "RCSB entries 1UBQ, 6LYZ, 1LYZ, 1MBN, 2DHB (chain B extracted), 1YPI (chain A extracted); fetched via files.rcsb.org"
+usalign_repo_default = "~/repos/USalign"

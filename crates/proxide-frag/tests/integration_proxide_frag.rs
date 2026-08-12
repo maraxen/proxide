@@ -12,8 +12,7 @@
 
 use approx::assert_relative_eq;
 use proxide_frag::{
-    AlreadyCenteredError, Fragment, FragmentDb, FragmentDbBuilder, Raw, SourceLabel,
-    kabsch_rmsd,
+    kabsch_rmsd, AlreadyCenteredError, Fragment, FragmentDb, FragmentDbBuilder, Raw, SourceLabel,
 };
 use rand::{Rng, SeedableRng};
 
@@ -25,29 +24,79 @@ use rand::{Rng, SeedableRng};
 /// Source: PDB 1UBQ.
 const UBIQUITIN_1_5: [[[f32; 3]; 4]; 5] = [
     // MET 1
-    [[27.340, 24.430, 2.614], [26.266, 25.413, 2.842], [26.913, 26.639, 3.531], [27.886, 26.463, 4.263]],
+    [
+        [27.340, 24.430, 2.614],
+        [26.266, 25.413, 2.842],
+        [26.913, 26.639, 3.531],
+        [27.886, 26.463, 4.263],
+    ],
     // GLN 2
-    [[26.335, 27.783, 3.258], [26.850, 29.024, 3.898], [26.100, 29.200, 5.202], [24.865, 29.378, 5.230]],
+    [
+        [26.335, 27.783, 3.258],
+        [26.850, 29.024, 3.898],
+        [26.100, 29.200, 5.202],
+        [24.865, 29.378, 5.230],
+    ],
     // ILE 3
-    [[26.842, 29.241, 6.271], [26.155, 29.362, 7.552], [26.633, 28.288, 8.497], [26.882, 27.140, 8.054]],
+    [
+        [26.842, 29.241, 6.271],
+        [26.155, 29.362, 7.552],
+        [26.633, 28.288, 8.497],
+        [26.882, 27.140, 8.054],
+    ],
     // PHE 4
-    [[26.850, 28.665, 9.756], [27.303, 27.728, 10.726], [26.290, 26.630, 11.041], [25.148, 26.680, 10.583]],
+    [
+        [26.850, 28.665, 9.756],
+        [27.303, 27.728, 10.726],
+        [26.290, 26.630, 11.041],
+        [25.148, 26.680, 10.583],
+    ],
     // VAL 5
-    [[26.720, 25.674, 11.780], [25.855, 24.568, 12.116], [24.528, 24.935, 12.768], [23.985, 26.049, 12.563]],
+    [
+        [26.720, 25.674, 11.780],
+        [25.855, 24.568, 12.116],
+        [24.528, 24.935, 12.768],
+        [23.985, 26.049, 12.563],
+    ],
 ];
 
 /// 1UBQ residues 6-10 backbone atoms (LYS, THR, LEU, THR, GLY).
 const UBIQUITIN_6_10: [[[f32; 3]; 4]; 5] = [
     // LYS 6
-    [[24.021, 24.049, 13.465], [22.773, 24.262, 14.155], [21.836, 23.047, 14.055], [21.876, 22.222, 14.979]],
+    [
+        [24.021, 24.049, 13.465],
+        [22.773, 24.262, 14.155],
+        [21.836, 23.047, 14.055],
+        [21.876, 22.222, 14.979],
+    ],
     // THR 7
-    [[20.988, 22.974, 13.014], [20.085, 21.822, 12.849], [19.231, 21.603, 14.080], [18.031, 21.940, 14.051]],
+    [
+        [20.988, 22.974, 13.014],
+        [20.085, 21.822, 12.849],
+        [19.231, 21.603, 14.080],
+        [18.031, 21.940, 14.051],
+    ],
     // LEU 8
-    [[19.849, 21.046, 15.115], [19.074, 20.756, 16.318], [19.700, 19.613, 17.072], [20.489, 18.855, 16.488]],
+    [
+        [19.849, 21.046, 15.115],
+        [19.074, 20.756, 16.318],
+        [19.700, 19.613, 17.072],
+        [20.489, 18.855, 16.488],
+    ],
     // THR 9
-    [[19.270, 19.440, 18.290], [19.748, 18.333, 19.097], [20.001, 17.137, 18.268], [20.815, 17.209, 17.325]],
+    [
+        [19.270, 19.440, 18.290],
+        [19.748, 18.333, 19.097],
+        [20.001, 17.137, 18.268],
+        [20.815, 17.209, 17.325],
+    ],
     // GLY 10
-    [[19.367, 16.101, 18.620], [19.606, 14.907, 17.831], [20.356, 13.895, 18.618], [20.079, 13.717, 19.795]],
+    [
+        [19.367, 16.101, 18.620],
+        [19.606, 14.907, 17.831],
+        [20.356, 13.895, 18.618],
+        [20.079, 13.717, 19.795],
+    ],
 ];
 
 /// Golden reference RMSD for fixture B: residues 1-5 vs 6-10 of 1UBQ.
@@ -155,7 +204,10 @@ fn ac2_symmetric_already_centered() {
         }
     }
     let result = Fragment::<5, Raw>::new(coords).center();
-    assert!(result.is_err(), "Symmetric coords with centroid=0 should trigger guard");
+    assert!(
+        result.is_err(),
+        "Symmetric coords with centroid=0 should trigger guard"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +273,10 @@ fn ac4_no_false_negatives() {
         "Self-match must be found with epsilon=0.001"
     );
     let self_found = results.iter().any(|r| r.rmsd < 0.001);
-    assert!(self_found, "Self-entry must have RMSD < 0.001; results: {results:?}");
+    assert!(
+        self_found,
+        "Self-entry must have RMSD < 0.001; results: {results:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -274,11 +329,18 @@ fn ac6_serial_parallel_parity() {
     let par = db.search(&query_centered, epsilon);
     let ser = db.search_serial(&query_centered_2, epsilon);
 
-    assert_eq!(par.len(), ser.len(), "Parallel and serial must return same number of results");
+    assert_eq!(
+        par.len(),
+        ser.len(),
+        "Parallel and serial must return same number of results"
+    );
 
     for (p, s) in par.iter().zip(ser.iter()) {
         assert_relative_eq!(p.rmsd, s.rmsd, epsilon = 1e-5_f32);
-        assert_eq!(p.label, s.label, "Labels must match between parallel and serial");
+        assert_eq!(
+            p.label, s.label,
+            "Labels must match between parallel and serial"
+        );
     }
 }
 
@@ -293,7 +355,10 @@ fn ac7_empty_database() {
     assert!(db.is_empty());
     let (query_centered, _) = Fragment::<5, Raw>::new(UBIQUITIN_1_5).center().unwrap();
     let results = db.search(&query_centered, 100.0);
-    assert!(results.is_empty(), "Empty database must return empty results");
+    assert!(
+        results.is_empty(),
+        "Empty database must return empty results"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,10 @@ impl StereoSantizer {
         Self { tolerance }
     }
 
-    pub fn sanitize(&self, system: &mut proxide_rs::structure::systems::AtomicSystem) -> Result<(), String> {
+    pub fn sanitize(
+        &self,
+        _system: &mut proxide_rs::structure::systems::AtomicSystem,
+    ) -> Result<(), String> {
         // Implementation logic
         // Identify chiral centers, validate configuration using proxide-geometry
         // For now, providing a placeholder that compiles and fits the trait signature

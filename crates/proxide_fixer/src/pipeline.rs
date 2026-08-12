@@ -1,8 +1,8 @@
 use crate::models::Topology;
 use proxide_core::forcefield::ForceField;
 use proxide_rotlib::RotamerLibrary;
-use thiserror::Error;
 use std::collections::HashMap;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum SystemPrepError {
@@ -22,7 +22,12 @@ pub enum SystemPrepError {
     #[error("protonation-state sanitizer failed: {0}")]
     ProtonationStateError(#[from] crate::protonation_state::ProtonationStateError),
 
-    #[cfg(any(feature = "protonation", feature = "capping", feature = "stereo", feature = "disulfide"))]
+    #[cfg(any(
+        feature = "protonation",
+        feature = "capping",
+        feature = "stereo",
+        feature = "disulfide"
+    ))]
     #[error("hydrogen sanitizer failed: {0}")]
     HydrogenError(#[from] crate::sanitizers::hydrogens::HydrogenError),
 
@@ -138,11 +143,14 @@ impl<'a> SystemPrep<'a> {
                 if let Some(lib) = self.lib {
                     use crate::mutate::Mutator;
                     let mut mutator = Mutator::new(self.topology, lib);
-                    let mutation_report = mutator.apply(&self.config.mutations)
+                    let mutation_report = mutator
+                        .apply(&self.config.mutations)
                         .map_err(SystemPrepError::Mutation)?;
                     report.mutation = Some(mutation_report);
                 } else {
-                    log::warn!("mutations requested but no rotamer library provided; skipping mutations");
+                    log::warn!(
+                        "mutations requested but no rotamer library provided; skipping mutations"
+                    );
                 }
             }
         }
@@ -168,7 +176,7 @@ impl<'a> SystemPrep<'a> {
         // Step 2: Loop modeling (C10) — model missing loops via Modeller
         {
             if self.config.model_loops {
-                if let Some(seqres) = &self.config.seqres {
+                if let Some(_seqres) = &self.config.seqres {
                     let missing = crate::loop_model::detect_missing_loops(self.topology);
                     if !missing.is_empty() {
                         let mut modeller = crate::loop_model::LoopModeller::new(self.topology);
@@ -249,7 +257,12 @@ impl<'a> SystemPrep<'a> {
 
         // Step 6: Hydrogens (C6) — available regardless of feature gates
         // Note: sanitizers module itself is feature-gated; only run if at least one feature is enabled
-        #[cfg(any(feature = "protonation", feature = "capping", feature = "stereo", feature = "disulfide"))]
+        #[cfg(any(
+            feature = "protonation",
+            feature = "capping",
+            feature = "stereo",
+            feature = "disulfide"
+        ))]
         {
             if self.config.place_hydrogens {
                 let mut sanitizer =
@@ -262,8 +275,7 @@ impl<'a> SystemPrep<'a> {
         {
             if self.config.repack_sidechains {
                 if let Some(lib) = self.lib {
-                    let mut repacker =
-                        crate::repack::SidechainRepacker::new(self.topology, lib);
+                    let mut repacker = crate::repack::SidechainRepacker::new(self.topology, lib);
                     repacker.complete_and_repack(crate::repack::RepackMode::CompleteMissingOnly)?;
                 }
             }
@@ -406,7 +418,10 @@ mod tests {
         // This should still succeed (not error), but the disulfide step should be
         // either skipped OR a warning emitted. The key is: no silent failure.
         let result = sysprep.run();
-        assert!(result.is_ok(), "SystemPrep should not error even with disabled feature");
+        assert!(
+            result.is_ok(),
+            "SystemPrep should not error even with disabled feature"
+        );
     }
 
     #[test]
@@ -423,7 +438,10 @@ mod tests {
 
         let mut sysprep = SystemPrep::new(&mut topology, &ff, None, config);
         let result = sysprep.run();
-        assert!(result.is_ok(), "SystemPrep should not error even with disabled feature");
+        assert!(
+            result.is_ok(),
+            "SystemPrep should not error even with disabled feature"
+        );
     }
 
     #[test]
@@ -440,7 +458,10 @@ mod tests {
         let mut sysprep = SystemPrep::new(&mut topology, &ff, None, config);
         let result = sysprep.run();
 
-        assert!(result.is_ok(), "SystemPrep should succeed when solvation is None");
+        assert!(
+            result.is_ok(),
+            "SystemPrep should succeed when solvation is None"
+        );
         let report = result.unwrap();
         assert!(
             report.solvation.is_none(),
@@ -462,7 +483,10 @@ mod tests {
         let mut sysprep = SystemPrep::new(&mut topology, &ff, None, config);
         let result = sysprep.run();
 
-        assert!(result.is_ok(), "SystemPrep should succeed when mutations is empty");
+        assert!(
+            result.is_ok(),
+            "SystemPrep should succeed when mutations is empty"
+        );
         let report = result.unwrap();
         assert!(
             report.mutation.is_none(),

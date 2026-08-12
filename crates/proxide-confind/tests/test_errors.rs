@@ -1,8 +1,8 @@
 mod common;
 
-use common::{make_synthetic_backbone, load_rotlib_or_skip};
-use proxide_confind::{ConFind, ConFindError};
+use common::{load_rotlib_or_skip, make_synthetic_backbone};
 use proxide_confind::coords::{ProteinBackbone, ResidueBackbone, ResidueIndex};
+use proxide_confind::{ConFind, ConFindError};
 use proxide_core::processing::residues::ResidueId;
 use std::sync::Arc;
 
@@ -213,5 +213,8 @@ fn interference_uncached_residue_returns_error() {
     let ri = ResidueIndex(0);
     let result = confind.interference(&[ri], 0.5);
     // Should return NotCached error since ri not cached
-    assert!(matches!(result, Err(ConFindError::NotCached(ResidueIndex(0)))));
+    assert!(matches!(
+        result,
+        Err(ConFindError::NotCached(ResidueIndex(0)))
+    ));
 }

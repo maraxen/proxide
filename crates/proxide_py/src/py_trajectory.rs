@@ -87,10 +87,7 @@ pub fn parse_dcd(py: Python<'_>, path: String) -> PyResult<PyObject> {
         }
         let cells_array = PyArray1::from_slice_bound(py, &flat_cells);
         let cells_reshaped = cells_array.reshape((traj.num_frames, 6)).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "Failed to reshape unit_cells: {}",
-                e
-            ))
+            pyo3::exceptions::PyValueError::new_err(format!("Failed to reshape unit_cells: {}", e))
         })?;
         dict.set_item("unit_cells", cells_reshaped)?;
     }
@@ -135,10 +132,7 @@ pub fn parse_trr(py: Python<'_>, path: String) -> PyResult<PyObject> {
         }
         let vel_array = PyArray1::from_slice_bound(py, &flat_vel);
         let vel_reshaped = vel_array.reshape(shape).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "Failed to reshape velocities: {}",
-                e
-            ))
+            pyo3::exceptions::PyValueError::new_err(format!("Failed to reshape velocities: {}", e))
         })?;
         dict.set_item("velocities", vel_reshaped)?;
     }
@@ -153,10 +147,7 @@ pub fn parse_trr(py: Python<'_>, path: String) -> PyResult<PyObject> {
         }
         let box_array = PyArray1::from_slice_bound(py, &flat_box);
         let box_reshaped = box_array.reshape((traj.num_frames, 3, 3)).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "Failed to reshape box_vectors: {}",
-                e
-            ))
+            pyo3::exceptions::PyValueError::new_err(format!("Failed to reshape box_vectors: {}", e))
         })?;
         dict.set_item("box_vectors", box_reshaped)?;
     }

@@ -15,7 +15,7 @@ from collections.abc import Iterator, Sequence
 from io import StringIO
 from typing import cast
 
-import h5py
+import h5py  # ty: ignore[unresolved-import]
 import hydride
 import numpy as np
 from biotite import structure
@@ -38,10 +38,10 @@ def _add_hydrogens_mdcath(atom_array: AtomArray) -> AtomArray:
     # Infer bonds
     if not atom_array.bonds:
       try:
-        atom_array.bonds = structure.connect_via_residue_names(atom_array)  # type: ignore[unresolved-attribute]
+        atom_array.bonds = structure.connect_via_residue_names(atom_array)
       except Exception as e:  # noqa: BLE001
         logger.warning("Failed to infer bonds: %s", e)
-        atom_array.bonds = structure.connect_via_distances(atom_array)  # type: ignore[unresolved-attribute]
+        atom_array.bonds = structure.connect_via_distances(atom_array)
 
     # Add charge annotation
     if "charge" not in atom_array.get_annotation_categories():

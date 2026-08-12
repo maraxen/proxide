@@ -168,9 +168,9 @@ class AtomicConstants:
     radii: Atomic radii (e.g., for GBSA). Shape (N_atoms,).
     bond_params: Bond force field params [length, k]. Shape (N_bonds, 2).
     angle_params: Angle force field params [theta, k]. Shape (N_angles, 2).
-    dihedral_params: Dihedral params [periodicity, phase, k]. 
+    dihedral_params: Dihedral params [periodicity, phase, k].
       Shape (N_dihedrals, 3) or (N_dihedrals, MAX_TERMS, 3).
-    improper_params: Improper dihedral params. 
+    improper_params: Improper dihedral params.
       Shape (N_impropers, 3) or (N_impropers, MAX_TERMS, 3).
     cmap_grid: CMAP energy grid for backbone corrections. Shape (grid_size, grid_size).
 
@@ -264,7 +264,9 @@ class AtomicSystem:
       return False
     return int(jnp.sum(self.topology.molecule_type == 2)) > 0
 
-  def to_openmm_system(self, coulomb14scale: float = 1.0, lj14scale: float = 1.0, **kwargs: Any) -> Any:
+  def to_openmm_system(
+    self, coulomb14scale: float = 1.0, lj14scale: float = 1.0, **kwargs: Any
+  ) -> Any:
     """Convert to OpenMM system."""
     from proxide.core.projector import OpenMMSpec, project_to_openmm_system
     spec = OpenMMSpec(coulomb14scale=coulomb14scale, lj14scale=lj14scale)

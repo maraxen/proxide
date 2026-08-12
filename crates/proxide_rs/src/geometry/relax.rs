@@ -699,22 +699,28 @@ mod tests {
         // Methanol: CH3-OH
         // C(0), O(1), H(2,3,4 on C), H(5 on O)
         let mut coords: Vec<[f32; 3]> = vec![
-            [0.000, 0.000, 0.000],  // C0
-            [1.430, 0.000, 0.000],  // O1 (C-O bond 1.43A)
-            [-0.350, 1.000, 0.000], // H2
-            [-0.350, -0.500, 0.866], // H3
+            [0.000, 0.000, 0.000],    // C0
+            [1.430, 0.000, 0.000],    // O1 (C-O bond 1.43A)
+            [-0.350, 1.000, 0.000],   // H2
+            [-0.350, -0.500, 0.866],  // H3
             [-0.350, -0.500, -0.866], // H4
-            [1.800, 0.800, 0.000],  // H5 (O-H bond, initially eclipsed with H2)
+            [1.800, 0.800, 0.000],    // H5 (O-H bond, initially eclipsed with H2)
         ];
         let elements = vec![
-            "C".to_string(), "O".to_string(),
-            "H".to_string(), "H".to_string(), "H".to_string(), "H".to_string(),
+            "C".to_string(),
+            "O".to_string(),
+            "H".to_string(),
+            "H".to_string(),
+            "H".to_string(),
+            "H".to_string(),
         ];
         // Typical partial charges for methanol (approximate)
         let charges = vec![0.145, -0.598, 0.040, 0.040, 0.040, 0.293];
         let bonds = vec![
             [0, 1], // C-O
-            [0, 2], [0, 3], [0, 4], // C-H
+            [0, 2],
+            [0, 3],
+            [0, 4], // C-H
             [1, 5], // O-H
         ];
 
@@ -725,18 +731,31 @@ mod tests {
 
         let initial_energy = {
             let groups = vec![-1, -1, 0, 0, 0, 1];
-            let minimizer = EnergyMinimizer::new(&coords, &elements, Some(&charges), &bonds, &groups, 10.0);
+            let minimizer =
+                EnergyMinimizer::new(&coords, &elements, Some(&charges), &bonds, &groups, 10.0);
             minimizer.global_energy(&coords)
         };
 
-        let (iters, final_energy) = relax_hydrogens(&mut coords, &elements, Some(&charges), &bonds, &options);
+        let (iters, final_energy) =
+            relax_hydrogens(&mut coords, &elements, Some(&charges), &bonds, &options);
 
         assert!(iters > 0, "Should perform at least one iteration");
-        assert!(final_energy < initial_energy, "Energy should decrease after relaxation. Init: {}, Final: {}", initial_energy, final_energy);
-        
+        assert!(
+            final_energy < initial_energy,
+            "Energy should decrease after relaxation. Init: {}, Final: {}",
+            initial_energy,
+            final_energy
+        );
+
         // Check that H5 (index 5) moved significantly to avoid repulsion
         let h5_final = coords[5];
-        let dist_to_h2 = ((h5_final[0] - coords[2][0]).powi(2) + (h5_final[1] - coords[2][1]).powi(2) + (h5_final[2] - coords[2][2]).powi(2)).sqrt();
-        assert!(dist_to_h2 > 1.5, "Hydrogens should have moved away from each other");
+        let dist_to_h2 = ((h5_final[0] - coords[2][0]).powi(2)
+            + (h5_final[1] - coords[2][1]).powi(2)
+            + (h5_final[2] - coords[2][2]).powi(2))
+        .sqrt();
+        assert!(
+            dist_to_h2 > 1.5,
+            "Hydrogens should have moved away from each other"
+        );
     }
 }

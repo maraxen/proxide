@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
+use purr::feature::{Aliphatic, Aromatic, AtomKind, BondKind, BracketSymbol, Element};
 use purr::graph::Builder;
 use purr::read::read;
-use purr::feature::{AtomKind, BondKind, Element, Aliphatic, Aromatic, BracketSymbol};
+use serde::{Deserialize, Serialize};
 
 /// Bond order enumeration for WASM serialization.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -112,11 +112,7 @@ fn extract_atomic_info(atom_kind: &AtomKind) -> Result<(u8, i8), String> {
             let atomic_num = aromatic_to_atomic_num(aromatic)?;
             Ok((atomic_num, 0))
         }
-        AtomKind::Bracket {
-            symbol,
-            charge,
-            ..
-        } => {
+        AtomKind::Bracket { symbol, charge, .. } => {
             let atomic_num = bracket_symbol_to_atomic_num(symbol)?;
             let formal_charge = charge.as_ref().map(charge_to_i8).unwrap_or(0);
             Ok((atomic_num, formal_charge))
@@ -161,7 +157,9 @@ fn bracket_symbol_to_atomic_num(symbol: &BracketSymbol) -> Result<u8, String> {
     match symbol {
         BracketSymbol::Star => Err("Star atoms not supported".to_string()),
         BracketSymbol::Element(element) => element_to_atomic_num(element),
-        BracketSymbol::Aromatic(bracket_aromatic) => bracket_aromatic_to_atomic_num(bracket_aromatic),
+        BracketSymbol::Aromatic(bracket_aromatic) => {
+            bracket_aromatic_to_atomic_num(bracket_aromatic)
+        }
     }
 }
 
@@ -478,7 +476,10 @@ mod tests {
 
     #[test]
     fn parse_invalid_smiles() {
-        assert!(parse("not-smiles!!").is_err(), "invalid SMILES should error");
+        assert!(
+            parse("not-smiles!!").is_err(),
+            "invalid SMILES should error"
+        );
     }
 
     #[test]

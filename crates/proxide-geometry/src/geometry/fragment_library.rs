@@ -378,18 +378,22 @@ mod tests {
         let key = FragmentKey::new("C", 0, 0, vec![1]);
         // Centered coordinates:
         let heavy_coords = [[1.0, 0.0, 0.0], [-0.5, 0.866, 0.0], [-0.5, -0.866, 0.0]];
-        lib.fragments.insert(key.clone(), Fragment {
-            residue_name: "test".to_string(),
-            atom_name: "C".to_string(),
-            heavy_coords,
-            hydrogen_coords: vec![[0.0, 0.0, 1.0]],
-        });
+        lib.fragments.insert(
+            key.clone(),
+            Fragment {
+                residue_name: "test".to_string(),
+                atom_name: "C".to_string(),
+                heavy_coords,
+                hydrogen_coords: vec![[0.0, 0.0, 1.0]],
+            },
+        );
 
         // Rotate target heavy coords by 90 deg around Z
         let rotated_heavy = [[0.0, 1.0, 0.0], [-0.866, -0.5, 0.0], [0.866, -0.5, 0.0]];
 
         let center = [0.0, 0.0, 0.0];
-        let h_pos = calculate_hydrogen_positions(&lib, "C", 0, 0, vec![1], center, &rotated_heavy).unwrap();
+        let h_pos =
+            calculate_hydrogen_positions(&lib, "C", 0, 0, vec![1], center, &rotated_heavy).unwrap();
 
         assert_eq!(h_pos.len(), 1);
         // Original H was at [0, 0, 1], rotating by 90 deg around Z leaves it at [0, 0, 1]

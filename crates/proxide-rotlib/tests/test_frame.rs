@@ -63,7 +63,12 @@ fn test_switch_frames_known_backbone() {
     let bf = backbone_frame(n, ca, c);
     let xform = Transform::switch_frames(&bf, &Frame::identity());
     let result = xform.apply([1.0, 0.0, 0.0]);
-    assert_near(result, [2.458, 0.0, 0.0], 1e-9, "known backbone switch_frames");
+    assert_near(
+        result,
+        [2.458, 0.0, 0.0],
+        1e-9,
+        "known backbone switch_frames",
+    );
 }
 
 #[test]

@@ -1,11 +1,11 @@
-use proxide_rs::geometry::hydrogens::{add_hydrogens, init_fragment_library};
-use proxide_rs::processing::residues::{ProcessedStructure};
 use proxide_core::structure::{AtomRecord, RawAtomData};
+use proxide_rs::geometry::hydrogens::{add_hydrogens, init_fragment_library};
+use proxide_rs::processing::residues::ProcessedStructure;
 
 #[test]
 fn test_add_hydrogens_basic() {
     init_fragment_library();
-    
+
     // Construct a minimal RawAtomData
     let mut raw_atoms = RawAtomData::new();
     raw_atoms.add_atom(AtomRecord {
@@ -26,9 +26,9 @@ fn test_add_hydrogens_basic() {
         radius: None,
         is_hetatm: false,
     });
-    
+
     let mut structure = ProcessedStructure::from_raw(raw_atoms).unwrap();
-    
+
     let mut bonds = Vec::new();
 
     let result = add_hydrogens(&mut structure, &mut bonds);

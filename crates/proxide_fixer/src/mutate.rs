@@ -25,9 +25,9 @@ pub struct MutationRequest {
 
 #[derive(Debug, Clone)]
 pub struct MutationReport {
-    pub applied: Vec<(String, i32, String, String)>,  // chain, res_id, from_aa, to_aa
+    pub applied: Vec<(String, i32, String, String)>, // chain, res_id, from_aa, to_aa
     pub neighbourhood_repacked: usize,
-    pub disulfides_reevaluated: usize,  // count of disulfide bonds found
+    pub disulfides_reevaluated: usize, // count of disulfide bonds found
 }
 
 #[derive(Error, Debug)]
@@ -37,7 +37,11 @@ pub enum MutationError {
     #[error("target AA '{0}' is not a canonical residue")]
     InvalidTargetAa(String),
     #[error("residue {chain}:{res_id} missing backbone anchor {atom}")]
-    MissingBackbone { chain: String, res_id: i32, atom: &'static str },
+    MissingBackbone {
+        chain: String,
+        res_id: i32,
+        atom: &'static str,
+    },
     #[error("rebuild failed: {0}")]
     Rebuild(#[from] RepackError),
     #[error("disulfide re-evaluation failed: {0}")]
@@ -52,11 +56,19 @@ pub struct Mutator<'a> {
 
 impl<'a> Mutator<'a> {
     pub fn new(topology: &'a mut Topology, lib: &'a RotamerLibrary) -> Self {
-        Self { topology, lib, shell_radius: 8.0 }
+        Self {
+            topology,
+            lib,
+            shell_radius: 8.0,
+        }
     }
 
     pub fn with_shell(topology: &'a mut Topology, lib: &'a RotamerLibrary, shell: f32) -> Self {
-        Self { topology, lib, shell_radius: shell }
+        Self {
+            topology,
+            lib,
+            shell_radius: shell,
+        }
     }
 
     /// Re-evaluate CYS↔CYX based on SG–SG distance.
@@ -139,9 +151,7 @@ impl<'a> Mutator<'a> {
         disulfide_pairs.len()
     }
 
-    pub fn apply(&mut self, requests: &[MutationRequest])
-        -> Result<MutationReport, MutationError>
-    {
+    pub fn apply(&mut self, requests: &[MutationRequest]) -> Result<MutationReport, MutationError> {
         // Step 0: trivial case
         if requests.is_empty() {
             return Ok(MutationReport {
@@ -177,7 +187,9 @@ impl<'a> Mutator<'a> {
                             .iter()
                             .enumerate()
                             .find_map(|(r_idx, residue)| {
-                                if residue.res_id == req.res_id && residue.insertion_code == req.insertion_code {
+                                if residue.res_id == req.res_id
+                                    && residue.insertion_code == req.insertion_code
+                                {
                                     Some((c_idx, r_idx))
                                 } else {
                                     None
@@ -210,7 +222,9 @@ impl<'a> Mutator<'a> {
         // Step 2: apply name changes
         let mut applied_log = Vec::new();
         for (req, chain_idx, res_idx) in &validated_mutations {
-            let old_aa = self.topology.chains[*chain_idx].residues[*res_idx].name.clone();
+            let old_aa = self.topology.chains[*chain_idx].residues[*res_idx]
+                .name
+                .clone();
             self.topology.chains[*chain_idx].residues[*res_idx].name = req.target_aa.clone();
             applied_log.push((
                 req.chain_id.clone(),
@@ -383,10 +397,10 @@ mod tests {
     #[ignore] // Requires rotlib to be loaded
     fn apply_empty_returns_ok() {
         let mut topology = make_test_topology();
-        let rotlib_path = std::path::PathBuf::from(
-            std::env::var("ROTLIB_PATH")
-                .unwrap_or_else(|_| "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()),
-        );
+        let rotlib_path =
+            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
+                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
+            }));
         let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![];
@@ -402,10 +416,10 @@ mod tests {
     #[ignore] // Requires rotlib to be loaded
     fn apply_invalid_target_aa_returns_error() {
         let mut topology = make_test_topology();
-        let rotlib_path = std::path::PathBuf::from(
-            std::env::var("ROTLIB_PATH")
-                .unwrap_or_else(|_| "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()),
-        );
+        let rotlib_path =
+            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
+                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
+            }));
         let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![MutationRequest {
@@ -427,10 +441,10 @@ mod tests {
     #[ignore] // Requires rotlib to be loaded
     fn apply_missing_residue_returns_error() {
         let mut topology = make_test_topology();
-        let rotlib_path = std::path::PathBuf::from(
-            std::env::var("ROTLIB_PATH")
-                .unwrap_or_else(|_| "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()),
-        );
+        let rotlib_path =
+            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
+                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
+            }));
         let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![MutationRequest {
@@ -494,10 +508,10 @@ mod tests {
                 }],
             }],
         };
-        let rotlib_path = std::path::PathBuf::from(
-            std::env::var("ROTLIB_PATH")
-                .unwrap_or_else(|_| "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()),
-        );
+        let rotlib_path =
+            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
+                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
+            }));
         let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![MutationRequest {
@@ -508,7 +522,12 @@ mod tests {
         }];
         let result = mutator.apply(&requests);
         assert!(result.is_err());
-        if let Err(MutationError::MissingBackbone { chain, res_id, atom }) = result {
+        if let Err(MutationError::MissingBackbone {
+            chain,
+            res_id,
+            atom,
+        }) = result
+        {
             assert_eq!(chain, "A");
             assert_eq!(res_id, 1);
             assert_eq!(atom, "N");
@@ -521,10 +540,10 @@ mod tests {
     #[ignore] // Requires full rotlib + topology rebuild; integration test
     fn apply_ala_to_leu_rebuilds_sidechain() {
         let mut topology = make_test_topology();
-        let rotlib_path = std::path::PathBuf::from(
-            std::env::var("ROTLIB_PATH")
-                .unwrap_or_else(|_| "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()),
-        );
+        let rotlib_path =
+            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
+                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
+            }));
         let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![MutationRequest {
@@ -539,7 +558,7 @@ mod tests {
         assert_eq!(report.applied.len(), 1);
         assert_eq!(report.applied[0].2, "ALA"); // from_aa
         assert_eq!(report.applied[0].3, "LEU"); // to_aa
-        // Check that residue name was updated
+                                                // Check that residue name was updated
         let residue = &topology.chains[0].residues[0];
         assert_eq!(residue.name, "LEU");
     }
@@ -560,6 +579,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires rotlib to be loaded
     fn sg_sg_within_threshold_becomes_cyx() {
         // Two CYS residues with SG atoms 2.0 Å apart → both renamed to CYX
         let mut topology = Topology {
@@ -684,10 +704,10 @@ mod tests {
             }],
         };
 
-        let rotlib_path = std::path::PathBuf::from(
-            std::env::var("ROTLIB_PATH")
-                .unwrap_or_else(|_| "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()),
-        );
+        let rotlib_path =
+            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
+                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
+            }));
         let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
         let mut mutator = Mutator::new(&mut topology, &lib);
         let count = mutator.reevaluate_disulfides();
@@ -700,6 +720,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires rotlib to be loaded
     fn sg_sg_outside_threshold_stays_cys() {
         // Two CYS residues with SG atoms 5.0 Å apart → stay CYS
         let mut topology = Topology {
@@ -824,10 +845,10 @@ mod tests {
             }],
         };
 
-        let rotlib_path = std::path::PathBuf::from(
-            std::env::var("ROTLIB_PATH")
-                .unwrap_or_else(|_| "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()),
-        );
+        let rotlib_path =
+            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
+                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
+            }));
         let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
         let mut mutator = Mutator::new(&mut topology, &lib);
         let count = mutator.reevaluate_disulfides();
@@ -840,77 +861,76 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires rotlib to be loaded
     fn unpaired_cyx_renamed_to_cys() {
         // One CYX residue alone (no partner within 2.5 Å) → renamed to CYS
         let mut topology = Topology {
             chains: vec![Chain {
                 id: "A".to_string(),
-                residues: vec![
-                    Residue {
-                        name: "CYX".to_string(),
-                        res_id: 1,
-                        insertion_code: ' ',
-                        atoms: vec![
-                            Atom {
-                                name: "N".to_string(),
-                                element: "N".to_string(),
-                                coords: [0.0, 0.0, 0.0],
-                                alt_loc: ' ',
-                                serial: 1,
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            },
-                            Atom {
-                                name: "CA".to_string(),
-                                element: "C".to_string(),
-                                coords: [1.5, 0.0, 0.0],
-                                alt_loc: ' ',
-                                serial: 2,
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            },
-                            Atom {
-                                name: "C".to_string(),
-                                element: "C".to_string(),
-                                coords: [2.5, 1.0, 0.0],
-                                alt_loc: ' ',
-                                serial: 3,
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            },
-                            Atom {
-                                name: "O".to_string(),
-                                element: "O".to_string(),
-                                coords: [2.5, 2.0, 0.0],
-                                alt_loc: ' ',
-                                serial: 4,
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            },
-                            Atom {
-                                name: "SG".to_string(),
-                                element: "S".to_string(),
-                                coords: [0.0, 0.0, 0.0],
-                                alt_loc: ' ',
-                                serial: 5,
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            },
-                        ],
-                    },
-                ],
+                residues: vec![Residue {
+                    name: "CYX".to_string(),
+                    res_id: 1,
+                    insertion_code: ' ',
+                    atoms: vec![
+                        Atom {
+                            name: "N".to_string(),
+                            element: "N".to_string(),
+                            coords: [0.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 1,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [1.5, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 2,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "C".to_string(),
+                            element: "C".to_string(),
+                            coords: [2.5, 1.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 3,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "O".to_string(),
+                            element: "O".to_string(),
+                            coords: [2.5, 2.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 4,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "SG".to_string(),
+                            element: "S".to_string(),
+                            coords: [0.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 5,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                    ],
+                }],
             }],
         };
 
-        let rotlib_path = std::path::PathBuf::from(
-            std::env::var("ROTLIB_PATH")
-                .unwrap_or_else(|_| "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()),
-        );
+        let rotlib_path =
+            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
+                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
+            }));
         let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
         let mut mutator = Mutator::new(&mut topology, &lib);
         let count = mutator.reevaluate_disulfides();
@@ -922,68 +942,67 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires rotlib to be loaded
     fn missing_sg_atom_treated_as_free_thiol() {
         // CYS residue with no SG atom → remains CYS (no panic)
         let mut topology = Topology {
             chains: vec![Chain {
                 id: "A".to_string(),
-                residues: vec![
-                    Residue {
-                        name: "CYS".to_string(),
-                        res_id: 1,
-                        insertion_code: ' ',
-                        atoms: vec![
-                            Atom {
-                                name: "N".to_string(),
-                                element: "N".to_string(),
-                                coords: [0.0, 0.0, 0.0],
-                                alt_loc: ' ',
-                                serial: 1,
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            },
-                            Atom {
-                                name: "CA".to_string(),
-                                element: "C".to_string(),
-                                coords: [1.5, 0.0, 0.0],
-                                alt_loc: ' ',
-                                serial: 2,
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            },
-                            Atom {
-                                name: "C".to_string(),
-                                element: "C".to_string(),
-                                coords: [2.5, 1.0, 0.0],
-                                alt_loc: ' ',
-                                serial: 3,
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            },
-                            Atom {
-                                name: "O".to_string(),
-                                element: "O".to_string(),
-                                coords: [2.5, 2.0, 0.0],
-                                alt_loc: ' ',
-                                serial: 4,
-                                b_factor: 0.0,
-                                occupancy: 1.0,
-                                is_hetatm: false,
-                            },
-                            // Missing SG atom!
-                        ],
-                    },
-                ],
+                residues: vec![Residue {
+                    name: "CYS".to_string(),
+                    res_id: 1,
+                    insertion_code: ' ',
+                    atoms: vec![
+                        Atom {
+                            name: "N".to_string(),
+                            element: "N".to_string(),
+                            coords: [0.0, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 1,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "CA".to_string(),
+                            element: "C".to_string(),
+                            coords: [1.5, 0.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 2,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "C".to_string(),
+                            element: "C".to_string(),
+                            coords: [2.5, 1.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 3,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        Atom {
+                            name: "O".to_string(),
+                            element: "O".to_string(),
+                            coords: [2.5, 2.0, 0.0],
+                            alt_loc: ' ',
+                            serial: 4,
+                            b_factor: 0.0,
+                            occupancy: 1.0,
+                            is_hetatm: false,
+                        },
+                        // Missing SG atom!
+                    ],
+                }],
             }],
         };
 
-        let rotlib_path = std::path::PathBuf::from(
-            std::env::var("ROTLIB_PATH")
-                .unwrap_or_else(|_| "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()),
-        );
+        let rotlib_path =
+            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
+                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
+            }));
         let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
         let mut mutator = Mutator::new(&mut topology, &lib);
         let count = mutator.reevaluate_disulfides();

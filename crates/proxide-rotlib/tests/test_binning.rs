@@ -13,7 +13,10 @@ fn make_3x3_lib() -> (tempfile::NamedTempFile, RotamerLibrary) {
             bins.push(BinSpec { phi, psi, freq });
         }
     }
-    let rotamers = vec![RotSpec { prob: 0.5, coords: vec![[1.0, 0.0, 0.0]] }];
+    let rotamers = vec![RotSpec {
+        prob: 0.5,
+        coords: vec![[1.0, 0.0, 0.0]],
+    }];
     let tmp = write_minimal_lib("TST", &["CB"], &bins, &rotamers);
     let lib = RotamerLibrary::load(tmp.path()).unwrap();
     (tmp, lib)
@@ -92,21 +95,39 @@ fn test_binning_tie_lower_bin_wins() {
 #[test]
 fn test_binning_unknown_aa() {
     let (_t, lib) = make_3x3_lib();
-    assert!(matches!(lib.backbone_bin("ZZZ", 0.0, 0.0, false), Err(RotlibError::UnknownAa(_))));
+    assert!(matches!(
+        lib.backbone_bin("ZZZ", 0.0, 0.0, false),
+        Err(RotlibError::UnknownAa(_))
+    ));
 }
 
 #[test]
 fn test_default_bin_first_wins_on_tie() {
     // Two bins with equal frequency — default_bin must be 0 (first)
     let tmp = helpers::write_minimal_lib(
-        "TST", &["CB"],
+        "TST",
+        &["CB"],
         &[
-            helpers::BinSpec { phi: -60.0, psi:  0.0, freq: 5.0 },
-            helpers::BinSpec { phi:  60.0, psi:  0.0, freq: 5.0 },
+            helpers::BinSpec {
+                phi: -60.0,
+                psi: 0.0,
+                freq: 5.0,
+            },
+            helpers::BinSpec {
+                phi: 60.0,
+                psi: 0.0,
+                freq: 5.0,
+            },
         ],
-        &[helpers::RotSpec { prob: 0.5, coords: vec![[1.0, 0.0, 0.0]] }],
+        &[helpers::RotSpec {
+            prob: 0.5,
+            coords: vec![[1.0, 0.0, 0.0]],
+        }],
     );
     let lib = RotamerLibrary::load(tmp.path()).unwrap();
-    assert_eq!(lib.backbone_bin("TST", 9999.0, 9999.0, false).unwrap(), 0,
-        "first-maximum wins on tie");
+    assert_eq!(
+        lib.backbone_bin("TST", 9999.0, 9999.0, false).unwrap(),
+        0,
+        "first-maximum wins on tie"
+    );
 }

@@ -30,7 +30,10 @@ impl<'a> DisulfideSanitizer<'a> {
     }
 
     pub fn with_threshold(topology: &'a mut Topology, threshold: f32) -> Self {
-        Self { topology, threshold }
+        Self {
+            topology,
+            threshold,
+        }
     }
 
     /// Detect disulfide bonds without mutation.
@@ -47,16 +50,8 @@ impl<'a> DisulfideSanitizer<'a> {
                     || residue.name == "CYX";
 
                 if is_cys_variant {
-                    if let Some(sg_atom) = residue
-                        .atoms
-                        .iter()
-                        .find(|a| a.name == "SG")
-                    {
-                        sg_residues.push((
-                            chain.id.clone(),
-                            residue.res_id,
-                            sg_atom.coords,
-                        ));
+                    if let Some(sg_atom) = residue.atoms.iter().find(|a| a.name == "SG") {
+                        sg_residues.push((chain.id.clone(), residue.res_id, sg_atom.coords));
                     }
                 }
             }
@@ -110,11 +105,10 @@ impl<'a> DisulfideSanitizer<'a> {
             // Find and rename residues: CYS -> CYX
             for chain in self.topology.chains.iter_mut() {
                 if chain.id == disulfide.chain_a {
-                    if let Some(residue) =
-                        chain
-                            .residues
-                            .iter_mut()
-                            .find(|r| r.res_id == disulfide.res_a)
+                    if let Some(residue) = chain
+                        .residues
+                        .iter_mut()
+                        .find(|r| r.res_id == disulfide.res_a)
                     {
                         residue.name = "CYX".to_string();
                         // Remove HG or HG1 if present
@@ -122,11 +116,10 @@ impl<'a> DisulfideSanitizer<'a> {
                     }
                 }
                 if chain.id == disulfide.chain_b {
-                    if let Some(residue) =
-                        chain
-                            .residues
-                            .iter_mut()
-                            .find(|r| r.res_id == disulfide.res_b)
+                    if let Some(residue) = chain
+                        .residues
+                        .iter_mut()
+                        .find(|r| r.res_id == disulfide.res_b)
                     {
                         residue.name = "CYX".to_string();
                         // Remove HG or HG1 if present

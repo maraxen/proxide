@@ -4,11 +4,12 @@ import pathlib
 import tempfile
 from io import StringIO
 
-import h5py
-import mdtraj as md
 import numpy as np
 import pytest
 from biotite.structure import AtomArray, AtomArrayStack
+
+h5py = pytest.importorskip("h5py")
+md = pytest.importorskip("mdtraj")
 
 PDB_1UBQ_STRING = """
 HEADER    CHROMOSOMAL PROTEIN                     02-JAN-87   1UBQ
