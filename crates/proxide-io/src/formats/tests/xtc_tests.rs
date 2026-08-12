@@ -725,3 +725,149 @@ fn test_determine_offsets_tolerant_matches_molly_determine_offsets() {
     }
     assert!(checked_any, "no fixture files were available to check");
 }
+
+// ---------------------------------------------------------------------------
+// `read_xtc_distogram_parallel` (minimum-image-convention pairwise distances)
+// ---------------------------------------------------------------------------
+
+/// Shape/sanity check on a real multi-frame protein trajectory: correct
+/// `(n_frames, n_pairs)` shape, every distance finite and non-negative, and
+/// within a physically sane range for an intra-protein Cα-Cα (or similar)
+/// distance — never NaN, never negative, never absurdly large.
+#[cfg(feature = "parallel")]
+#[test]
+fn test_read_xtc_distogram_parallel_shape_and_sanity_real_fixture() {
+    use crate::formats::xtc::read_xtc_distogram_parallel;
+
+    let Some(xtc_path) = frame0_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n_frames = reader.frame_count().unwrap();
+    let n_atoms = reader.n_atoms().unwrap();
+    assert!(n_atoms >= 10, "fixture too small to exercise a real subset");
+
+    // A handful of atoms spread across the fixture, not just the first few.
+    let atom_indices: Vec<usize> = (0..n_atoms).step_by(n_atoms / 8).take(8).collect();
+    let n = atom_indices.len();
+    let expected_n_pairs = n * (n - 1) / 2;
+
+    // Sample every 25th frame to keep the test fast.
+    let frame_indices: Vec<usize> = (0..n_frames).step_by(25).collect();
+
+    let distograms = read_xtc_distogram_parallel(&path, &frame_indices, &atom_indices)
+        .expect("distogram computation failed");
+
+    assert_eq!(distograms.len(), frame_indices.len());
+    for row in &distograms {
+        assert_eq!(row.len(), expected_n_pairs);
+        for &d in row {
+            assert!(d.is_finite(), "distance must be finite, got {d}");
+            assert!(d >= 0.0, "distance must be non-negative, got {d}");
+            // A real protein structure's box is typically tens of
+            // Angstroms; a correct MIC distance between any two atoms in it
+            // must be well under that, never a raw pre-wrap separation
+            // spanning the whole trajectory box.
+            assert!(
+                d < 1000.0,
+                "distance {d} Å is implausibly large for an intra-structure atom pair"
+            );
+        }
+    }
+}
+
+/// Independent-of-the-wrapper cross-check: manually decode a few frames via
+/// the serial [`XtcReader::read_frame_at`] path, select the same atoms,
+/// scale to Angstroms, and compute MIC distances directly with
+/// [`pairwise_distances_mic`] — then compare against
+/// `read_xtc_distogram_parallel`'s output. This exercises the wrapper's own
+/// plumbing (atom selection, nm->Angstrom scaling for *both* positions and
+/// box, box-vector extraction) independently of its internal call to
+/// `read_frames_parallel`, rather than just re-asserting the primitive is
+/// correct (already covered in `proxide-geometry`'s own tests).
+#[cfg(feature = "parallel")]
+#[test]
+fn test_read_xtc_distogram_parallel_matches_manual_mic_computation() {
+    use crate::formats::xtc::read_xtc_distogram_parallel;
+    use proxide_geometry::geometry::distances::{pairwise_distances_mic, BoxDims};
+
+    let Some(xtc_path) = frame0_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n_frames = reader.frame_count().unwrap();
+    let n_atoms = reader.n_atoms().unwrap();
+    assert!(n_atoms >= 6, "fixture too small to exercise a real subset");
+
+    let atom_indices = vec![0usize, n_atoms / 3, n_atoms / 2, n_atoms - 1];
+    // A small, out-of-order sample of frames.
+    let frame_indices: Vec<usize> = vec![0, n_frames / 3, n_frames / 2, n_frames - 1];
+
+    let expected: Vec<Vec<f32>> = frame_indices
+        .iter()
+        .map(|&i| {
+            let frame = reader.read_frame_at(i, &AtomSelection::All).unwrap();
+            let positions: Vec<[f32; 3]> = atom_indices
+                .iter()
+                .map(|&a| {
+                    let base = a * 3;
+                    [
+                        frame.positions[base] * 10.0,
+                        frame.positions[base + 1] * 10.0,
+                        frame.positions[base + 2] * 10.0,
+                    ]
+                })
+                .collect();
+            let mut box_ang = frame.boxvec_cols_2d();
+            for row in &mut box_ang {
+                for v in row {
+                    *v *= 10.0;
+                }
+            }
+            let box_dims = BoxDims::from_diagonal_matrix(&box_ang);
+            pairwise_distances_mic(&positions, Some(&box_dims))
+        })
+        .collect();
+
+    let got = read_xtc_distogram_parallel(&path, &frame_indices, &atom_indices)
+        .expect("distogram computation failed");
+
+    assert_eq!(got.len(), expected.len());
+    for (row_got, row_expected) in got.iter().zip(expected.iter()) {
+        assert_eq!(row_got.len(), row_expected.len());
+        for (g, e) in row_got.iter().zip(row_expected.iter()) {
+            assert!(
+                (g - e).abs() < 1e-3,
+                "manual MIC computation diverges from read_xtc_distogram_parallel: got {g} expected {e}"
+            );
+        }
+    }
+}
+
+/// A single-atom selection has zero pairs — must not panic or divide by
+/// zero, and must return an empty row per frame.
+#[cfg(feature = "parallel")]
+#[test]
+fn test_read_xtc_distogram_parallel_single_atom_has_zero_pairs() {
+    use crate::formats::xtc::read_xtc_distogram_parallel;
+
+    let Some(xtc_path) = test_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n_frames = reader.frame_count().unwrap();
+    let frame_indices: Vec<usize> = (0..n_frames).collect();
+
+    let distograms = read_xtc_distogram_parallel(&path, &frame_indices, &[0])
+        .expect("distogram computation failed");
+    assert_eq!(distograms.len(), n_frames);
+    for row in &distograms {
+        assert!(row.is_empty());
+    }
+}

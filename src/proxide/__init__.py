@@ -52,6 +52,7 @@ from proxide._proxider import (  # ty: ignore[unresolved-import]
   # Trajectory parsing
   parse_xtc,
   radius_of_gyration,
+  read_xtc_ca_distogram,
   read_xtc_lazy,
   read_xtc_parallel,
   weighted_radius_of_gyration,
@@ -79,6 +80,7 @@ __all__ = [
   "parse_trr",
   "read_xtc_lazy",
   "read_xtc_parallel",
+  "read_xtc_ca_distogram",
   "frame_count",
   "n_atoms",
   "TrajectoryStream",
