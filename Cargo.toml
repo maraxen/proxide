@@ -20,7 +20,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0-alpha.15"
+version = "0.1.0-alpha.16"
 edition = "2021"
 authors = ["Proxide Contributors"]
 license = "MIT"
