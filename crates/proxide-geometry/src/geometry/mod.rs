@@ -6,6 +6,7 @@
 
 pub mod alignment;
 pub mod angles;
+pub mod cbeta;
 pub mod cell_list;
 pub mod distances;
 pub mod fragment_library;
@@ -23,6 +24,8 @@ pub mod transforms;
 pub use alignment::*;
 #[allow(unused_imports)]
 pub use angles::*;
+#[allow(unused_imports)]
+pub use cbeta::*;
 #[allow(unused_imports)]
 pub use cell_list::*;
 #[allow(unused_imports)]

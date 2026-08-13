@@ -150,6 +150,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(py_geometry::kabsch_rmsd, m)?)?;
+    m.add_function(wrap_pyfunction!(py_geometry::idealized_cbeta, m)?)?;
 
     // Register Python wrappers
     m.add_class::<PyAtomicSystem>()?;

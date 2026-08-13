@@ -78,3 +78,22 @@ pub fn kabsch_rmsd(py: Python<'_>, coords_a: PyObject, coords_b: PyObject) -> Py
     )?;
     Ok(dict.into_py(py))
 }
+
+/// Compute an idealized C-beta position from a residue's backbone N, CA, C
+/// coordinates.
+///
+/// Uses a linear combination of the N->CA and CA->C bond vectors (plus their
+/// cross product) with empirically-fit coefficients — the standard
+/// idealized-C-beta-placement formula used broadly in structural
+/// bioinformatics, ported from `aminx.utils.coordinates.compute_c_beta`
+/// (see `proxide_geometry::geometry::cbeta` for the full derivation and the
+/// verified sign convention). General to any residue's backbone geometry;
+/// most commonly used to impute a C-beta position for glycine, which has no
+/// real side chain / CB atom of its own.
+///
+/// `n`, `ca`, `c` are each `[x, y, z]` coordinate triples. Returns the
+/// estimated CB position as `[x, y, z]`.
+#[pyfunction]
+pub fn idealized_cbeta(n: [f32; 3], ca: [f32; 3], c: [f32; 3]) -> [f32; 3] {
+    proxide_geometry::geometry::cbeta::idealized_cbeta_from_atoms(n, ca, c)
+}
