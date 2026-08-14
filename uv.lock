@@ -11,6 +11,29 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "abcdefghijk"
+version = "0.1.0"
+source = { editable = "/home/marielle/projects/abcdefghijk" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jax", marker = "extra == 'jax'" },
+    { name = "numpy" },
+]
+provides-extras = ["jax"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "hypothesis", specifier = ">=6" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "ruff", specifier = ">=0.14" },
+    { name = "ty", specifier = ">=0.0.1a21" },
+]
+
+[[package]]
 name = "absl-py"
 version = "2.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3178,6 +3201,7 @@ trajectories = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "abcdefghijk" },
     { name = "chex" },
     { name = "expaloma" },
     { name = "openmm" },
@@ -3239,6 +3263,7 @@ provides-extras = ["cuda", "tpu", "cpu", "ml", "molecules", "espaloma", "espalom
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "abcdefghijk", editable = "/home/marielle/projects/abcdefghijk" },
     { name = "chex" },
     { name = "expaloma", specifier = ">=0.1.0" },
     { name = "openmm", specifier = ">=8.4.0.post2" },
