@@ -267,6 +267,10 @@ unresolved-attribute = "ignore"
 
 [dependency-groups]
 dev = [
+    # Phase 0 alphabet conformance (decision D4). DEV GROUP ONLY -- nothing under src/
+    # imports this, so no runtime dependency edge is created.
+    # See tests/test_alphabet_conformance.py.
+    "abcdefghijk",
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
     "chex",
@@ -280,3 +284,7 @@ dev = [
 
 [tool.uv]
 # No platform lock to allow cross-platform resolution
+
+[tool.uv.sources]
+# Local path until the alphabet package is renamed and published.
+abcdefghijk = { path = "/home/marielle/projects/abcdefghijk", editable = true }
