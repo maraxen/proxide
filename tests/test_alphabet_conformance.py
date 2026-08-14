@@ -22,12 +22,12 @@ from __future__ import annotations
 
 import pytest
 
-abcdefghijk = pytest.importorskip(
-  "abcdefghijk",
+alphex = pytest.importorskip(
+  "alphex",
   reason="alphabet conformance library not installed; add it to the dev group",
 )
-known = abcdefghijk.known
-SpecialKind = abcdefghijk.SpecialKind
+known = alphex.known
+SpecialKind = alphex.SpecialKind
 
 
 def test_restypes_is_the_alphafold_ordering() -> None:
