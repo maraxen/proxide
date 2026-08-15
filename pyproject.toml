@@ -270,7 +270,7 @@ dev = [
     # Phase 0 alphabet conformance (decision D4). DEV GROUP ONLY -- nothing under src/
     # imports this, so no runtime dependency edge is created.
     # See tests/test_alphabet_conformance.py.
-    "alphex",
+    "alphex>=0.1.0a1",
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
     "chex",
@@ -286,5 +286,4 @@ dev = [
 # No platform lock to allow cross-platform resolution
 
 [tool.uv.sources]
-# Local path until the alphabet package is renamed and published.
-alphex = { path = "/home/marielle/projects/alphex", editable = true }
+# alphex: PyPI (https://pypi.org/project/alphex/) -- no source override needed.
