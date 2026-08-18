@@ -2,12 +2,13 @@
 # The actual bathos-literature-parity 5-phase protocol is a deliberate follow-up step,
 # not run by this change. This file defines paper reference and implementation paths only.
 
+[parity]
 # paper_pdf path is valid only after PR #20 (gaff2-paper-inputs) is merged to main.
 # Until then, this path points to the worktree location from that branch.
 # Once merged, update this to: references/gaff2/114502_1_online_gaff2.pdf
 paper_pdf = "/home/marielle/projects/proxide/.claude/worktrees/gaff2-paper-inputs/references/gaff2/114502_1_online_gaff2.pdf"
 
-impl_paths = ["proxide/chem/gaff2.py"]
+impl_paths = ["src/proxide/chem/gaff2.py"]
 
 # Benchmark input: molecules for GAFF2 parity validation
 benchmark_input = "benchmarks/gaff2_parity_molecules.yaml"
