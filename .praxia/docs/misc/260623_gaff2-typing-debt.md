@@ -63,3 +63,27 @@ Implemented in `naurmalade/src/naurmalade/ligand/parameterize.py`:
 - Validated on 17-OHP: charge sum = 0.0000 e, 24 heavy atoms typed, 0 zero-k bonds
 
 Energy/force parity vs SMIRNOFF pending (requires openff-toolkit in naurmalade env — see item 3).
+
+### 5. Ethene (C=C) incorrectly assigned as cz due to rule-matching bug
+
+**Found:** 2026-08-18 in PR #21 golden fixture audit
+
+Ethene (C=C, SMILES `C=C`) is incorrectly assigned as `cz` (requires 3 nitrogen neighbors: `N3,N3,N3`), which is nonsensical for a nitrogen-free molecule.
+
+**Root cause:** The `cz` rule at ATOMTYPE_GFF2.DEF line 31:
+```
+ATD  cz    *   6   3   *   *   *                (N3,N3,N3)  &
+```
+requires 3 nitrogen neighbors in the atomic_prop field. The rule-matching logic does not verify that a neighbor-pattern requirement (e.g., `N3,N3,N3`) can actually be satisfied before matching — it only checks that the pattern *format* parses, not that the required atom types exist in the molecule.
+
+**Expected behavior:** Ethene should match `c2` (line 70: "other sp2 C"):
+```
+ATD  c2    *   6   3   &
+```
+which is a catch-all for sp2 carbons with no special constraints.
+
+**Impact:** Any saturated hydrocarbon double bond (C=C, C=N, C=S where one carbon has no oxygen/sulfur) may match the `cz` rule if the rule ordering places `cz` before `c2`. This is masked in most small-molecule cases but would fail spectacularly for molecules with partial nitrile-analog geometries.
+
+**Fix needed:** Modify `_check_atomic_prop()` in `gaff2.py` to validate that required neighbor types actually exist before reporting a match. This is a deeper refactor than the h_ew fix (item 1) because it requires neighbor-type instantiation, not just bond-type pattern matching.
+
+**Marked as xfail:** Test case `test_atom_type_ethene_bug()` in `tests/test_gaff2_golden.py` documents this with `pytest.mark.xfail`.
