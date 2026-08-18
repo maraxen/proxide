@@ -18,7 +18,7 @@ The project uses a per-structure configuration model:
 2. **Per-PDB metadata approach** (`inputs/*/collection.yaml` and `*.meta.yaml` files):
    - Structures are tracked via per-PDB YAML metadata files
    - Metadata includes a `has_ligands` boolean flag (predominantly `false` across the collection)
-   - Current collections: hyperTEV_pdb (5 structures from tev_design project), sweet_vft (sucralose cosolvent studies)
+   - Current collections: hyperTEV_pdb (6 structures from tev_design project), sweet_vft (sucralose cosolvent studies)
 
 3. **Ligand parameterization workflow** (`src/naurmalade/ligand/` module):
    - Inputs: holo PDB + YAML/JSON config
