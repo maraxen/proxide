@@ -1,0 +1,196 @@
+# GAFF2 Benchmark Curation - Self-Critique Pass
+
+**Task ID:** 260818_ligand_extension_scope  
+**Date:** 2026-08-18  
+**Tier:** Core Tier (10 molecules)  
+**Author:** Claude Code (self-critique, not independent review)
+
+## Summary
+
+This document records a **self-critique pass** on the curated core tier molecules against the 4 known GAFF2 gaps plus explicitly required bridgehead aromatic and cross-conjugated polyene coverage. 
+
+**Critical caveat:** This self-critique does NOT substitute for genuinely independent review. A separate reviewer (human or independent agent) MUST re-evaluate this list before the actual parity validation campaign runs. Self-evaluation has inherent blind spots; this pass documents what I could identify, not what I missed.
+
+---
+
+## Gap Coverage Analysis
+
+### Gap 1: h_ew (Hydrogen in Electron-Withdrawing Environment)
+
+**Target:** Carbon-type disambiguation via bond-multiplicity patterns (cs vs c), not literal hydrogen chemistry on nitrogen/oxygen. The h_ew gap addresses hydrogen atom typing in environments where carbon bonding context is complex.
+
+**Molecules claiming to target this gap:**
+- **Formamide** (NC=O): ✓ Minimal amide; N-H bonds test carbon bonding complexity (C bonded to both N and O with different multiplicities)
+- **N-methylacetamide** (CC(=O)NC): ✓ Secondary amide variant; more complex carbon environment with mixed sp2/sp3 neighbors
+
+**Self-critique confidence: MODERATE**
+- Both molecules feature carbonyl carbon (C=O) and nitrogen neighbors, creating complex bonding contexts that require disambiguation of carbon types based on bond multiplicity
+- Formamide is minimal/pure; N-methylacetamide adds methyl substitution creating a richer bonding pattern
+- **Potential gaps I'm not confident about:**
+  - Enolate forms are not represented (e.g., keto-enol tautomerism). If the gap requires enolate-specific carbon disambiguation, these two amides may not fully exercise it.
+  - No carbamate or urea structures (N bonded to C(=O)O or C(=O)N), which might have different carbon-type requirements
+  - Only primary/secondary amides; no tertiary amides (but tertiary have no N-H)
+
+**Flag for independent review:** Verify that amides provide the intended carbon-type disambiguation stress; if other EW environments are needed, supplement with additional structures.
+
+---
+
+### Gap 2: cc/cd/ce/cf Conjugated Carbon Systems
+
+**Target:** sp2 carbons in conjugated systems; GAFF2 spec defines cc (ring conjugation), cd (terminal ring), ce (chain conjugation), cf (other conjugation contexts).
+
+**Molecules claiming to target this gap:**
+- **1,3-Butadiene** (C=CC=C): ✓ Conjugated diene chain; central C's will be cc or ce, terminal C's may be cc or cd depending on implementation
+- **Acrolein** (C=CC=O): ✓ α,β-unsaturated aldehyde; combines C=C-C=O conjugation with carbonyl
+- **Thiophene** (c1ccsc1): ~ Aromatic heterocycle (conjugation within aromatic system, but aromatic typing may mask conjugation gap)
+- **Naphthalene** (c1ccc2ccccc2c1), **Biphenyl** (c1ccc(-c2ccccc2)cc1), **Indene** (C1C=Cc2ccccc21), **Anthracene** (c1ccc2cc3ccccc3cc2c1): ~ Aromatic systems (aromatic typing may dominate)
+
+**Self-critique confidence: MODERATE-LOW**
+- 1,3-Butadiene is a strong, unambiguous test case for conjugated diene (ce or cc carbons)
+- Acrolein combines conjugation with carbonyl, which is good for stress-testing but may conflate two gaps
+- Aromatic molecules (naphthalene, indene, thiophene, anthracene) have internal sp2 carbons that are conjugated, but they are classified under aromatic rules (cp, ca). This may NOT exercise the cc/cd/ce/cf gap if the implementation treats aromatic as a separate typing category that doesn't use cc/cd/ce/cf at all.
+
+**Flag for independent review:** 
+- Verify that aromatic fused systems actually use cc/cd/ce/cf typing or if they use separate aromatic rules (ca, cp). If the latter, these molecules do NOT test the gap.
+- 1,3-Butadiene alone may be insufficient. Consider adding **1,3-cyclohexadiene** (C1=CC=CCC1) to test conjugation within a non-aromatic context (alicyclic conjugation).
+
+---
+
+### Gap 3: cp (Aromatic Carbon - Bridgehead)
+
+**Target:** Aromatic carbon in bridgehead/fused-ring aromatic systems. GAFF2 spec defines cp as requiring membership in exactly ONE six-membered ring.
+
+**Molecules claiming to target this gap:**
+- **Benzene** (c1ccccc1): ✓ Single aromatic ring; baseline for cp (all carbons are cp, each in exactly one 6-ring)
+- **Biphenyl** (c1ccc(-c2ccccc2)cc1): ✓ Two separate 6-membered aromatic rings connected by single bond; each cp carbon belongs to exactly ONE six-membered ring (cleaner test case per spec definition)
+- **Naphthalene** (c1ccc2ccccc2c1): ~ Two fused 6-rings; bridgehead carbons at positions 4a/8a (junction points) belong to TWO six-membered rings simultaneously — may not strictly satisfy spec definition of cp as requiring membership in exactly ONE 6-ring
+- **Indene** (C1C=Cc2ccccc21): ✓ Fused 5+6 rings; aromatic carbons in the 6-membered ring test cp typing in asymmetric fused context
+- **Thiophene** (c1ccsc1): ✓ Aromatic heterocycle; cp in non-6-membered context
+- **Anthracene** (c1ccc2cc3ccccc3cc2c1): ✓✓ Three fused 6-rings; extensive bridgehead/junction carbons stress multi-ring complexity
+
+**Self-critique confidence: MODERATE**
+- Benzene and Biphenyl have unambiguous cp carbons (each in exactly one 6-ring) — strong coverage per spec definition
+- Naphthalene's bridgehead carbons are a genuine ambiguity: they are aromatic and bond to other aromatic carbons, but violate the "exactly ONE ring" constraint — this is now documented honestly rather than assumed HIGH confidence
+- Anthracene extends beyond naphthalene in complexity with three fused rings, providing good stress test
+- This gap appears reasonably covered, with clear single-ring baseline (benzene/biphenyl) and complex fused systems (naphthalene/anthracene) to test edge cases
+
+**Flags for independent review on cp gap:**
+- Verify proxide's ATD rules for cp: does it require "exactly ONE six-membered ring" as written in ATOMTYPE_GFF2.DEF? If so, confirm naphthalene's bridgehead typing as a known stress case or implementation-specific behavior.
+- Biphenyl provides a cleaner spec-compliant test case than naphthalene for literal "cp in one 6-ring" coverage.
+
+---
+
+### Gap 4: Multi-Ring (Multi-Wildcard ATD Rules)
+
+**Target:** Complex topologies stressing multi-wildcard ATD rules; fused ring systems with complex neighbor patterns.
+
+**Molecules claiming to target this gap:**
+- **Naphthalene** (c1ccc2ccccc2c1): ✓ Two fused 6-rings
+- **Indene** (C1=CC=C2C(=C1)C=C2): ✓ Fused 5+6 rings (asymmetric)
+- **Anthracene** (c1cc2ccccc2cc1): ✓✓ Three fused 6-rings (larger, more complex)
+- **Thiophene** (c1ccsc1): ~ 5-membered aromatic (less multi-ring stress than fused systems)
+
+**Self-critique confidence: MODERATE**
+- Naphthalene and Anthracene are good test cases for multi-ring topology
+- Indene adds asymmetry (5-membered + 6-membered fusion) which may stress ATD differently
+- **Potential gaps I'm not confident about:**
+  - No tricyclic non-aromatic systems (e.g., norbornane derivatives, steroid skeletons). If the gap is specifically in sp3-dominated multi-ring systems, this list is weak.
+  - No cross-ring bonds (e.g., adamantane, which has bridging bonds between rings). These might stress ATD rules differently than simple fused rings.
+  - All multi-ring molecules in this list are aromatic; alicyclic polycycles might be different.
+
+**Flag for independent review:** Consider adding a non-aromatic multi-ring molecule (e.g., **norbornane** C1CC2CCC1C2) to test sp3-dominated topology if the gap is not aromatic-specific.
+
+---
+
+## Adversarial Requirements
+
+### Requirement 1: Bridgehead Aromatic
+
+**Definition:** An aromatic carbon that is part of a bicyclic/fused system at the ring junction point.
+
+**Status:** ✓✓ WELL COVERED
+- **Naphthalene** and **Anthracene** have unambiguous bridgehead aromatic carbons
+- **Indene** has bridgehead carbons (though the 5-membered ring bridgehead is sp2, not sp3)
+
+### Requirement 2: Cross-Conjugated Polyene
+
+**Definition:** Multiple C=C bonds conjugated to a common sp2 center in a branched arrangement (not linear conjugation).
+
+**Status:** ✓ COVERED
+- **Divinyl ketone** (C=CC(=O)C=C) has two C=C bonds (vinyl groups) both conjugated to a central C=O (carbonyl). The branching at the carbonyl carbon creates genuine cross-conjugation, where both vinyl arms share conjugation through the central sp2 carbon.
+- This is unambiguous cross-conjugation with a branching topology
+
+---
+
+## Summary of Confidence Levels
+
+| Gap | Coverage | Confidence | Notes |
+|-----|----------|------------|-------|
+| h_ew | 2 molecules (formamide, N-methylacetamide) | MODERATE | Strong for carbon-type disambiguation in amide contexts; may miss other EW environments |
+| cc/cd/ce/cf | 4-5 molecules (1,3-butadiene strong; aromatic weak) | MODERATE-LOW | Non-aromatic conjugation well-tested; aromatic conjugation unclear |
+| cp (aromatic) | 6 molecules (benzene, biphenyl, naphthalene, indene, thiophene, anthracene) | MODERATE | Good coverage with benzene/biphenyl as spec-compliant baselines; naphthalene ambiguity now documented |
+| multi-ring | 4 molecules (naphthalene, indene, anthracene, thiophene) | MODERATE | Aromatic fused systems well-covered; sp3 polycycles missing |
+
+---
+
+## Gaps in This Self-Critique (Known Unknowns)
+
+1. **No empirical validation against proxide yet.** This curation is theoretical; actual GAFF2 typing results may reveal issues I didn't anticipate.
+
+2. **Unknown: Implementation details of proxide's GAFF2 module.** If proxide uses simplified ATD rules or deviates from the ATOMTYPE_GFF2.DEF spec in ways I don't know, this list might miss key stress points.
+
+3. **Unknown: Exact definition of cc/cd/ce/cf gap.** I assumed it's about typing conjugated sp2 carbons; if it's something else, my coverage is wrong.
+
+4. **Unknown: Whether h_ew is specifically amide or broader.** Amides are strong candidates, but enolates, ynamides, or other EW environments might be the real gap.
+
+5. **Unknown: RDKit SMILES rendering.** I assumed RDKit would render these SMILES correctly; if any SMILES is malformed or renders to wrong structure, the test fails silently.
+
+---
+
+## Recommendations for Independent Review
+
+**Before running the actual parity validation campaign, an independent reviewer MUST:**
+
+1. **Verify SMILES correctness:** Render each molecule in RDKit and visually confirm structure (not just valence check).
+
+2. **Cross-check against proxide's known issues:** If proxide has GitHub issues or PRs mentioning GAFF2 gaps, verify this list actually targets those issues.
+
+3. **Run preliminary GAFF2 typing:** Use proxide to parameterize each molecule and confirm:
+   - Formamide / N-methylacetamide get correct h_ew handling
+   - 1,3-Butadiene uses cc/cd/ce/cf typing (or whatever the gap is)
+   - Naphthalene / Indene / Anthracene get cp bridgehead typing
+
+4. **Consider adding supplementary molecules** if any gap is under-covered:
+   - h_ew: Add an enolate or carbamate if needed
+   - cc/cd/ce/cf: Add 1,3-cyclohexadiene or a non-aromatic conjugated system
+   - multi-ring: Add norbornane or adamantane for sp3-dominated topology
+
+5. **Sanity-check against literature:** Cross-reference this curation against published GAFF2 benchmark molecules (if they exist) to ensure real-world relevance.
+
+---
+
+## Conclusion
+
+This core tier of 10 molecules provides **reasonable coverage** of the 4 GAFF2 gaps and explicitly includes bridgehead aromatic and cross-conjugated polyene molecules. However, this is a **self-critique only** and has known blind spots (see "Gaps in This Self-Critique" above).
+
+**This list is NOT FINAL for the parity campaign.** An independent review MUST complete before actual validation runs.
+
+---
+
+## Supplement Tier Notes
+
+The core tier is supplemented by:
+
+1. **AmberMD GAFF2 geostd tarball:** ~29,000 pre-parameterized ligands (download and documentation TBD; see gaff2_parity_molecules.yaml)
+
+2. **Project-specific molecules:**
+   - **17-OHP (17-hydroxyprogesterone):** From biosensors idea-019 (steroid with h_ew and multi-ring stress)
+   - **naurmalade ligands:** From gaff2-paper-inputs branch (if relevant to gaps)
+
+These supplement the core tier for cross-validation and real-world relevance testing.
+
+---
+
+**Generated:** 2026-08-18  
+**Task:** 260818_ligand_extension_scope (backlog item #211)  
+**Status:** Ready for independent review
