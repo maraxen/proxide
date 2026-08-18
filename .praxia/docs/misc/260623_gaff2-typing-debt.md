@@ -63,3 +63,14 @@ Implemented in `naurmalade/src/naurmalade/ligand/parameterize.py`:
 - Validated on 17-OHP: charge sum = 0.0000 e, 24 heavy atoms typed, 0 zero-k bonds
 
 Energy/force parity vs SMIRNOFF pending (requires openff-toolkit in naurmalade env — see item 3).
+
+### 5. GAFF2 parity campaign configuration (backlog item #212)
+
+**Status: PREP DONE (2026-08-18)**
+
+Campaign configuration file (`parity.bth.toml`) is now prepared and stacked on the benchmark-curation branch (`ligand-ext/gaff2-parity-campaign-prep`, PR with base `ligand-ext/gaff2-benchmark-curation`). Configuration includes:
+- Paper reference: `references/gaff2/114502_1_online_gaff2.pdf` (from PR #20 once merged)
+- Implementation path: `proxide/chem/gaff2.py`
+- Benchmark molecules: `benchmarks/gaff2_parity_molecules.yaml`
+
+The actual bathos-literature-parity 5-phase protocol execution is a deliberate follow-up step, to be triggered separately after this prep config is merged and reviewed.
