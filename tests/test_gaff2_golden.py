@@ -15,29 +15,67 @@ Chem = pytest.importorskip("rdkit.Chem")
 from rdkit.Chem import AllChem
 
 # Test molecules with expected atom types (from GAFF2 ATOMTYPE_GFF2.DEF)
-# These are authoritative atom types from the spec
-# Note: Some may differ in practice due to RDKit degree calculation
+# Note: Several entries below diverge from the official spec (see comments).
+# Per ATOMTYPE_GFF2.DEF (line numbers are from vendored asset):
+# - cx (line 16) requires [RG3] (3-membered ring membership)
+# - c3 (line 22) is for "other sp3 C" (non-ring)
+# - cs (line 24-26) is for C=S (not C=C or C=O)
+# - c (line 28-30) is for C=O (carbonyl carbon)
+# - c2 (line 70) is for "other sp2 C"
+# - op (line 223) is for oxygen in [RG3] (3-membered ring only)
+# - oh (line 218-222) is for hydroxyl oxygen
+# - ni (line 144) is for [RG3] nitrogen
+# - n3 (line 183) is for sp3 nitrogen (non-ring)
+# - nb (line 184) is for aromatic nitrogen [AR1]
 ATOM_TYPE_REFERENCE = {
-    # Simple alkanes - our impl uses "cx" for sp3 carbons
-    "C": ["cx"],                  # methane (cx not c3 due to ring rule)
-    "CC": ["cx", "cx"],          # ethane  
-    "CCC": ["cx", "cx", "cx"],    # propane
-    "CCCC": ["cx", "cx", "cx", "cx"],  # butane
-    
-    # Alkenes - cs for sp2 carbonyl carbon
-    "C=C": ["cs", "cs"],         # ethene
-    "C": ["cg"],                # acetylene
-    
+    # Simple alkanes
+    # c3 is for sp3 carbon per spec line 22 ("other sp3 C")
+    # cx requires [RG3] (3-membered ring) per spec line 16 — not used here
+    "C": ["c3"],                  # methane [CORRECT per spec line 22]
+    "CC": ["c3", "c3"],           # ethane [CORRECT per spec line 22]
+    "CCC": ["c3", "c3", "c3"],    # propane [CORRECT per spec line 22]
+    "CCCC": ["c3", "c3", "c3", "c3"],  # butane [CORRECT per spec line 22]
+
+    # Alkenes
+    # TODO: ethene (C=C) atom type requires spec review
+    # cs per spec is for C=S double bond (line 24-26), not C=C
+    # Implementation may use cs as catch-all for sp2 or this may need to be c2 per line 70
+    # UNVERIFIED: verify implementation matches intended GAFF2 assignment for isolated C=C
+    "C=C": ["cs", "cs"],          # ethene [UNVERIFIED: cs assignment needs validation]
+
+    # Acetylene
+    # cg is sp C (atomic number 6, 2 attachments) per spec lines 72-75
+    "C#C": ["cg", "cg"],          # acetylene [CORRECT per spec lines 72-75]
+
     # Aromatic carbons
-    "c1ccccc1": ["cp"] * 6,      # benzene
-    "c1ccc(O)cc1": ["cp", "cp", "cp", "cp", "op", "cp", "cp"],  # phenol
-    "c1ccncc1": ["cp", "cp", "cp", "nb", "cp", "cp"],  # pyridine
-    
-    # Functional groups - our impl uses "op" for alcohol O-H oxygen
-    "CCO": ["cx", "cx", "op"],      # ethanol
-    "CC(=O)C": ["cx", "cs", "o", "cx"],  # acetone
-    "CC(=O)O": ["cx", "cs", "o", "op"],  # acetic acid
-    "CCN": ["cx", "cx", "ni"],        # ethylamine (ni for primary amine)
+    # cp is for "pure aromatic atom that can form aromatic single bond" (spec line 33)
+    "c1ccccc1": ["cp"] * 6,       # benzene [CORRECT per spec line 33]
+
+    # Phenol
+    # oh is for hydroxyl oxygen per spec lines 218-222 (2 or 3 attachments with specific H count)
+    "c1ccc(O)cc1": ["cp", "cp", "cp", "cp", "oh", "cp", "cp"],  # phenol [CORRECT per spec line 218-222]
+
+    # Pyridine
+    # nb is aromatic nitrogen [AR1] per spec line 184
+    "c1ccncc1": ["cp", "cp", "cp", "nb", "cp", "cp"],  # pyridine [CORRECT per spec line 184]
+
+    # Functional groups
+    # Ethanol: c3 for alkyl carbon, oh for hydroxyl oxygen
+    "CCO": ["c3", "c3", "oh"],      # ethanol [CORRECT per spec lines 22, 218-222]
+
+    # Acetone
+    # c for carbonyl carbon C=O per spec lines 28-30
+    # o for carbonyl oxygen per spec line 217 (1 attachment)
+    "CC(=O)C": ["c3", "c", "o", "c3"],  # acetone [CORRECT per spec lines 22, 28-30, 217]
+
+    # Acetic acid
+    # c3 for alkyl carbon, c for carbonyl carbon, o for carbonyl oxygen, oh for carboxyl O-H
+    "CC(=O)O": ["c3", "c", "o", "oh"],  # acetic acid [CORRECT per spec lines 22, 28-30, 217, 218-222]
+
+    # Ethylamine
+    # n3 is sp3 nitrogen per spec line 183 (7 valence, 3 attachments, non-ring)
+    # ni requires [RG3] per spec line 144 — not used here
+    "CCN": ["c3", "c3", "n3"],        # ethylamine [CORRECT per spec lines 22, 183]
 }
 
 # Known mass values (from gaff-2.2.20.dat)
