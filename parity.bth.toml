@@ -1,0 +1,7 @@
+# PREP ONLY — This file stages inputs for the GAFF2 literature-parity campaign.
+# The actual bathos-literature-parity 5-phase protocol is a deliberate follow-up step,
+# not run by this change. This file defines paper reference and implementation paths only.
+
+[parity]
+paper_pdf = "references/gaff2/114502_1_online_gaff2.pdf"
+impl_paths = ["src/proxide/chem/gaff2.py"]
