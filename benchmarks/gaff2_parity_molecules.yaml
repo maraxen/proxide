@@ -1,7 +1,7 @@
 # GAFF2 Benchmark Curation - Core Tier
 # ====================================
 #
-# Curated set of 10 molecules targeting proxide's 4 known GAFF2 gaps, plus
+# Curated set of 11 molecules targeting proxide's 4 known GAFF2 gaps, plus
 # explicitly required bridgehead aromatic and cross-conjugated polyene coverage.
 #
 # Gap targets:
@@ -32,15 +32,23 @@ molecules:
       - "multi-ring"  # Two fused 6-membered rings (multi-wildcard ATD stress test)
     tier: "core"
     description: "Fused two-ring aromatic system. Tests bridgehead aromatic carbons (cp at the 4,5 fusion point) and multi-ring topology complexity."
-    notes: "Naphthalene's bridgehead carbons (positions 4a and 8a) are aromatic and bonded to other aromatic carbons in a fused system — the canonical cp typing challenge."
+    notes: "Naphthalene's bridgehead carbons (positions 4a and 8a) are aromatic and bonded to other aromatic carbons in a fused system. Note: The fusion carbons belong to TWO six-membered rings simultaneously, which may not strictly satisfy specs defining cp as requiring membership in exactly ONE six-membered ring (see biphenyl for comparison)."
+
+  - name: "Biphenyl"
+    smiles: "c1ccc(-c2ccccc2)cc1"
+    targets_gap:
+      - "cp"  # SINGLE-RING AROMATIC - pure cp carbons in separate rings
+    tier: "core"
+    description: "Two separate benzene rings connected by a single C-C bond. Each ring is an independent six-membered aromatic ring. Tests cp typing in a simpler context than fused systems."
+    notes: "Contrasts with naphthalene: each aromatic carbon in biphenyl belongs to exactly one six-membered aromatic ring, providing a cleaner test case for cp typing without the ambiguity of fusion-point carbons belonging to multiple rings."
 
   - name: "Indene"
-    smiles: "C1=CC=C2C(=C1)C=C2"
+    smiles: "C1C=Cc2ccccc21"
     targets_gap:
       - "cp"  # Aromatic carbons in 6-membered ring
       - "multi-ring"  # Fused 5+6 rings
     tier: "core"
-    description: "Bicyclic with fused 5-membered and 6-membered aromatic rings. Tests aromatic carbon typing in different ring contexts and multi-ring topology."
+    description: "Bicyclic with fused 5-membered and 6-membered aromatic rings. The 5-membered ring contains one sp3 methylene (C1) and two sp2 carbons (C=C), fused to the aromatic 6-membered ring. Tests aromatic carbon typing in different ring contexts and multi-ring topology."
 
   - name: "1,3-Butadiene"
     smiles: "C=CC=C"
@@ -50,13 +58,13 @@ molecules:
     description: "Classic conjugated diene. Terminal carbons will be typed as ce (sp2 in conjugated chain), internal carbons as cc. Tests conjugated sp2 carbon discrimination."
     notes: "Spec lines 37-58 define cc for ring conjugation, lines 60-64 define ce for chain conjugation; this molecule tests the ce typing."
 
-  - name: "1,5-Hexadiene"
-    smiles: "C=CCCC=C"
+  - name: "Divinyl ketone"
+    smiles: "C=CC(=O)C=C"
     targets_gap:
-      - "cross-conjugated"  # CROSS-CONJUGATED POLYENE - isolated C=C bonds not adjacent
+      - "cross-conjugated"  # CROSS-CONJUGATED POLYENE - vinyl groups conjugated to central carbonyl
     tier: "core"
-    description: "Two C=C double bonds separated by a saturated chain (C-C-C between the double bonds). Tests cross-conjugated/non-conjugated polyene handling; carbons should type as c2 (sp2, non-conjugated)."
-    notes: "Explicit adversarial requirement: cross-conjugated polyene without continuous conjugation."
+    description: "Two vinyl groups (C=C) conjugated to a central carbonyl carbon (C=O). Tests cross-conjugated system with branching at a central sp2 carbon. Carbons should type according to conjugation rules (ce or cc for vinyl, c for carbonyl)."
+    notes: "Explicit adversarial requirement: genuine cross-conjugated polyene with two vinyl arms bonded to a common sp2 carbonyl center."
 
   - name: "Formamide"
     smiles: "NC=O"
@@ -94,13 +102,13 @@ molecules:
     notes: "Tests cp typing robustness to ring size variation and heteroatom presence."
 
   - name: "Anthracene"
-    smiles: "c1cc2ccccc2cc1"
+    smiles: "c1ccc2cc3ccccc3cc2c1"
     targets_gap:
       - "cp"  # Aromatic carbons in central ring
       - "multi-ring"  # Three fused 6-membered rings (larger than naphthalene)
     tier: "core"
-    description: "Three fused aromatic rings in linear arrangement. Tests cp typing in more complex multi-ring topology (larger than naphthalene) and stresses multi-wildcard ATD rules with 14 aromatic carbons."
-    notes: "Largest aromatic fused system in this tier; maximum test of multi-ring topology complexity."
+    description: "Three fused aromatic rings in linear arrangement (tricyclic). Tests cp typing in more complex multi-ring topology (larger than naphthalene) and stresses multi-wildcard ATD rules with 14 aromatic carbons arranged in a central ring with outer rings on each side."
+    notes: "Largest aromatic fused system in this tier; maximum test of multi-ring topology complexity. Distinct from naphthalene (bicyclic) in both structure and size."
 
 # Supplement tier sources (to be documented separately)
 # ========================================================

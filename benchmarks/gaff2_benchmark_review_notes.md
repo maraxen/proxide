@@ -17,21 +17,21 @@ This document records a **self-critique pass** on the curated core tier molecule
 
 ### Gap 1: h_ew (Hydrogen in Electron-Withdrawing Environment)
 
-**Target:** Hydrogen on nitrogen/oxygen in electron-withdrawing contexts (amides, enolates, etc.)
+**Target:** Carbon-type disambiguation via bond-multiplicity patterns (cs vs c), not literal hydrogen chemistry on nitrogen/oxygen. The h_ew gap addresses hydrogen atom typing in environments where carbon bonding context is complex.
 
 **Molecules claiming to target this gap:**
-- **Formamide** (NC=O): ✓ Minimal amide; H on N bonded to C=O
-- **N-methylacetamide** (CC(=O)NC): ✓ Secondary amide variant; H on N adjacent to C=O
+- **Formamide** (NC=O): ✓ Minimal amide; N-H bonds test carbon bonding complexity (C bonded to both N and O with different multiplicities)
+- **N-methylacetamide** (CC(=O)NC): ✓ Secondary amide variant; more complex carbon environment with mixed sp2/sp3 neighbors
 
 **Self-critique confidence: MODERATE**
-- Both molecules have hydrogen on nitrogen bonded to carbonyl (C=O), which is the classic EW environment
-- Formamide is minimal/pure; N-methylacetamide adds methyl substitution on both N and C=O sides
+- Both molecules feature carbonyl carbon (C=O) and nitrogen neighbors, creating complex bonding contexts that require disambiguation of carbon types based on bond multiplicity
+- Formamide is minimal/pure; N-methylacetamide adds methyl substitution creating a richer bonding pattern
 - **Potential gaps I'm not confident about:**
-  - Enolate forms are not represented (e.g., keto-enol tautomerism). If the gap is specifically about enolate H, these two amides may not fully exercise it.
-  - No carbamate or urea structures (N bonded to C(=O)O or C(=O)N), which might have different h_ew typing
+  - Enolate forms are not represented (e.g., keto-enol tautomerism). If the gap requires enolate-specific carbon disambiguation, these two amides may not fully exercise it.
+  - No carbamate or urea structures (N bonded to C(=O)O or C(=O)N), which might have different carbon-type requirements
   - Only primary/secondary amides; no tertiary amides (but tertiary have no N-H)
 
-**Flag for independent review:** Verify that amides are the intended h_ew test case; if enolates or other EW environments are the main gap, supplement with additional structures.
+**Flag for independent review:** Verify that amides provide the intended carbon-type disambiguation stress; if other EW environments are needed, supplement with additional structures.
 
 ---
 
@@ -43,7 +43,7 @@ This document records a **self-critique pass** on the curated core tier molecule
 - **1,3-Butadiene** (C=CC=C): ✓ Conjugated diene chain; central C's will be cc or ce, terminal C's may be cc or cd depending on implementation
 - **Acrolein** (C=CC=O): ✓ α,β-unsaturated aldehyde; combines C=C-C=O conjugation with carbonyl
 - **Thiophene** (c1ccsc1): ~ Aromatic heterocycle (conjugation within aromatic system, but aromatic typing may mask conjugation gap)
-- **Naphthalene** (c1ccc2ccccc2c1), **Indene**, **Anthracene**: ~ Aromatic fused systems (again, aromatic typing may dominate)
+- **Naphthalene** (c1ccc2ccccc2c1), **Biphenyl** (c1ccc(-c2ccccc2)cc1), **Indene** (C1C=Cc2ccccc21), **Anthracene** (c1ccc2cc3ccccc3cc2c1): ~ Aromatic systems (aromatic typing may dominate)
 
 **Self-critique confidence: MODERATE-LOW**
 - 1,3-Butadiene is a strong, unambiguous test case for conjugated diene (ce or cc carbons)
@@ -58,21 +58,25 @@ This document records a **self-critique pass** on the curated core tier molecule
 
 ### Gap 3: cp (Aromatic Carbon - Bridgehead)
 
-**Target:** Aromatic carbon in bridgehead/fused-ring aromatic systems.
+**Target:** Aromatic carbon in bridgehead/fused-ring aromatic systems. GAFF2 spec defines cp as requiring membership in exactly ONE six-membered ring.
 
 **Molecules claiming to target this gap:**
-- **Naphthalene** (c1ccc2ccccc2c1): ✓✓ Two fused 6-rings; clear bridgehead carbons at positions 4a/8a (junction points)
-- **Indene** (C1=CC=C2C(=C1)C=C2): ✓ Fused 5+6 rings; has bridgehead carbons in the 5-ring portion
-- **Benzene** (c1ccccc1): ✓ Single aromatic ring; baseline for cp (all carbons are cp)
+- **Benzene** (c1ccccc1): ✓ Single aromatic ring; baseline for cp (all carbons are cp, each in exactly one 6-ring)
+- **Biphenyl** (c1ccc(-c2ccccc2)cc1): ✓ Two separate 6-membered aromatic rings connected by single bond; each cp carbon belongs to exactly ONE six-membered ring (cleaner test case per spec definition)
+- **Naphthalene** (c1ccc2ccccc2c1): ~ Two fused 6-rings; bridgehead carbons at positions 4a/8a (junction points) belong to TWO six-membered rings simultaneously — may not strictly satisfy spec definition of cp as requiring membership in exactly ONE 6-ring
+- **Indene** (C1C=Cc2ccccc21): ✓ Fused 5+6 rings; aromatic carbons in the 6-membered ring test cp typing in asymmetric fused context
 - **Thiophene** (c1ccsc1): ✓ Aromatic heterocycle; cp in non-6-membered context
-- **Anthracene** (c1cc2ccccc2cc1): ✓✓ Three fused 6-rings; multiple bridgehead carbons
+- **Anthracene** (c1ccc2cc3ccccc3cc2c1): ✓✓ Three fused 6-rings; extensive bridgehead/junction carbons stress multi-ring complexity
 
-**Self-critique confidence: HIGH**
-- Naphthalene and Anthracene have unambiguous bridgehead aromatic carbons (the junction points between fused rings)
-- All molecules are confidently aromatic and should have cp (or aromatic-variant) carbons
-- This gap appears well-covered
+**Self-critique confidence: MODERATE**
+- Benzene and Biphenyl have unambiguous cp carbons (each in exactly one 6-ring) — strong coverage per spec definition
+- Naphthalene's bridgehead carbons are a genuine ambiguity: they are aromatic and bond to other aromatic carbons, but violate the "exactly ONE ring" constraint — this is now documented honestly rather than assumed HIGH confidence
+- Anthracene extends beyond naphthalene in complexity with three fused rings, providing good stress test
+- This gap appears reasonably covered, with clear single-ring baseline (benzene/biphenyl) and complex fused systems (naphthalene/anthracene) to test edge cases
 
-**No flags for independent review on cp gap coverage.**
+**Flags for independent review on cp gap:**
+- Verify proxide's ATD rules for cp: does it require "exactly ONE six-membered ring" as written in ATOMTYPE_GFF2.DEF? If so, confirm naphthalene's bridgehead typing as a known stress case or implementation-specific behavior.
+- Biphenyl provides a cleaner spec-compliant test case than naphthalene for literal "cp in one 6-ring" coverage.
 
 ---
 
@@ -110,11 +114,11 @@ This document records a **self-critique pass** on the curated core tier molecule
 
 ### Requirement 2: Cross-Conjugated Polyene
 
-**Definition:** Multiple C=C bonds where conjugation is not continuous (separated by sp3 carbons or in branched arrangements).
+**Definition:** Multiple C=C bonds conjugated to a common sp2 center in a branched arrangement (not linear conjugation).
 
 **Status:** ✓ COVERED
-- **1,5-Hexadiene** (C=CCCC=C) explicitly has two C=C bonds separated by an sp3 linker (C-C-C)
-- This is unambiguous cross-conjugation (not continuous)
+- **Divinyl ketone** (C=CC(=O)C=C) has two C=C bonds (vinyl groups) both conjugated to a central C=O (carbonyl). The branching at the carbonyl carbon creates genuine cross-conjugation, where both vinyl arms share conjugation through the central sp2 carbon.
+- This is unambiguous cross-conjugation with a branching topology
 
 ---
 
@@ -122,9 +126,9 @@ This document records a **self-critique pass** on the curated core tier molecule
 
 | Gap | Coverage | Confidence | Notes |
 |-----|----------|------------|-------|
-| h_ew | 2 molecules (formamide, N-methylacetamide) | MODERATE | Strong for amides; may miss enolates or other EW contexts |
+| h_ew | 2 molecules (formamide, N-methylacetamide) | MODERATE | Strong for carbon-type disambiguation in amide contexts; may miss other EW environments |
 | cc/cd/ce/cf | 4-5 molecules (1,3-butadiene strong; aromatic weak) | MODERATE-LOW | Non-aromatic conjugation well-tested; aromatic conjugation unclear |
-| cp (bridgehead) | 5 molecules (naphthalene, indene, anthracene, thiophene, benzene) | HIGH | Excellent coverage; aromatic is well-defined |
+| cp (aromatic) | 6 molecules (benzene, biphenyl, naphthalene, indene, thiophene, anthracene) | MODERATE | Good coverage with benzene/biphenyl as spec-compliant baselines; naphthalene ambiguity now documented |
 | multi-ring | 4 molecules (naphthalene, indene, anthracene, thiophene) | MODERATE | Aromatic fused systems well-covered; sp3 polycycles missing |
 
 ---
