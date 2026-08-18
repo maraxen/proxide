@@ -87,3 +87,16 @@ which is a catch-all for sp2 carbons with no special constraints.
 **Fix needed:** Modify `_check_atomic_prop()` in `gaff2.py` to validate that required neighbor types actually exist before reporting a match. This is a deeper refactor than the h_ew fix (item 1) because it requires neighbor-type instantiation, not just bond-type pattern matching.
 
 **Marked as xfail:** Test case `test_atom_type_ethene_bug()` in `tests/test_gaff2_golden.py` documents this with `pytest.mark.xfail`.
+
+### 6. GAFF2 parity campaign configuration (backlog item #212)
+
+**Status: PREP DONE (2026-08-18)**
+
+Campaign configuration file (`parity.bth.toml`) is now prepared, referencing:
+- Paper reference: `references/gaff2/114502_1_online_gaff2.pdf` (PR #20, merged)
+- Implementation path: `src/proxide/chem/gaff2.py`
+- Benchmark molecules: `benchmarks/gaff2_parity_molecules.yaml` (PR #22, merged)
+
+The actual bathos-literature-parity 5-phase protocol execution is a deliberate follow-up step, to be triggered separately once this config is reviewed.
+
+Note: this item was originally filed via PR #212/#23 (`ligand-ext/gaff2-parity-campaign-prep`), which GitHub reported as merged but whose commits never actually reached `main` due to a stacked-PR merge-order issue (its base branch was consumed by a sibling PR's merge before #23's own commits landed on it). This entry reconciles that orphaned content directly onto `main`, using the already-merged `[parity]` config from PR #20 rather than #23's stale copy (which still referenced a local worktree absolute path for `paper_pdf`, since it was drafted before PR #20 merged).

@@ -5,3 +5,4 @@
 [parity]
 paper_pdf = "references/gaff2/114502_1_online_gaff2.pdf"
 impl_paths = ["src/proxide/chem/gaff2.py"]
+benchmark_input = "benchmarks/gaff2_parity_molecules.yaml"
