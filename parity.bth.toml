@@ -1,8 +1,42 @@
-# PREP ONLY — This file stages inputs for the GAFF2 literature-parity campaign.
-# The actual bathos-literature-parity 5-phase protocol is a deliberate follow-up step,
-# not run by this change. This file defines paper reference and implementation paths only.
+# GAFF2 atom-typing literature-parity campaign — full 5-phase protocol run.
+# Tolerance policy adopted from .praxia/docs/decisions/260818_gaff2-parity-verdict-policy.md
+# (approver + h_ew remediation-gating choice are still open human sign-offs there;
+# they gate what happens AFTER a verdict, not the verdict computation itself).
+#
+# CORRECTED 260819 — the originally-staged references/gaff2/114502_1_online_gaff2.pdf
+# (He/Man/Yang/Lee/Wang, JCP 153, 114502, 2020) is the ABCG2 *charge-model* paper, not
+# a GAFF2 atom-typing spec; it explicitly states the real GAFF2 methods paper was
+# unpublished as of 2020. All 3 independent Phase-1 blind-reconstruction agents
+# confirmed this from the text and converged on the same missing reference (Wang,
+# Wang, Kollman & Case 2006, J. Mol. Graphics Modell. 25:247, DOI 10.1016/j.jmgm.2005.12.005
+# -- paywalled, not locally available). Rather than block on sourcing that paper, the
+# actual ground-truth spec for DEF-rule syntax and precedence is bundled directly in
+# AmberTools and vendored here: the FOOTER of
+# src/proxide/assets/gaff/dat/ATOMTYPE_GFF2.DEF ("Field descriptions" / "Specific
+# symbols" / "Predefined words" / "Miscellaneous" sections) -- separate from
+# src/proxide/chem/gaff2.py (the code under test). This is a strictly better primary
+# source: self-contained, unambiguous, and it already documents the precedence rule
+# ("defination order is crucial, special atom types should [be] defined before the
+# more general ones") that Phase 1 needs.
 
 [parity]
-paper_pdf = "references/gaff2/114502_1_online_gaff2.pdf"
+paper_pdf = "src/proxide/assets/gaff/dat/ATOMTYPE_GFF2.DEF"
 impl_paths = ["src/proxide/chem/gaff2.py"]
 benchmark_input = "benchmarks/gaff2_parity_molecules.yaml"
+reference_code = null
+citation_note = "Primary spec = footer of ATOMTYPE_GFF2.DEF (bundled with AmberTools/proxide), not a journal paper. Background/algorithmic provenance: Wang, Wang, Kollman & Case (2006), J. Mol. Graphics Modell. 25:247, DOI 10.1016/j.jmgm.2005.12.005 (not locally available, paywalled -- not required reading for this run). references/gaff2/114502_1_online_gaff2.pdf is the ABCG2 charge-model paper and is NOT part of the atom-typing spec (confirmed wrong by all 3 Phase-1 lens agents 260819)."
+recon_lenses = ["math", "algo", "protocol"]
+attack_lenses = ["stats", "struct"]
+# UPDATED 260819 after PR #26 (rewrote the parser to correctly implement the
+# real f7/f8/f9 field semantics -- the original hypotheses below referenced
+# the pre-fix, mislabeled field names ("h_ew" meant true f8 in the old code).
+hypotheses = [
+  "GAFF2 atom types are assigned identically to the DEF-file rule precedence for all benchmark molecules",
+  "f8 bond-type-count disambiguation (e.g. cs/c's [2DL]/[1DB,0DL]/[3sb] variants) is correctly applied where multiple rules share the same atomic_num/num_attached",
+  "f9 neighbor-pattern matching (e.g. cp's 3-aromatic-neighbor requirement) correctly discriminates ring-junction atoms from ordinary ring atoms",
+  "AR1/AR2/AR3 aromaticity sub-classification affects verdict for 5-membered heteroaromatics (furan/pyrrole/thiophene) -- KNOWN GAP, not yet resolved (PR #26 collapses AR1/AR2/AR3 to one sentinel; no algorithm exists in the DEF file to compute them separately)",
+  "ring/aromaticity detection matches the specification for fused and bridgehead systems -- naphthalene's cp/ca bridgehead reading is a documented guess (PR #26), not verified against a real reference",
+]
+equivalence_bound = 0.0
+N = 3
+M = 3

@@ -15,17 +15,31 @@ Chem = pytest.importorskip("rdkit.Chem")
 from rdkit.Chem import AllChem
 
 # Test molecules with expected atom types (from GAFF2 ATOMTYPE_GFF2.DEF)
-# Note: Several entries below diverge from the official spec (see comments).
 # Per ATOMTYPE_GFF2.DEF (line numbers are from vendored asset):
 # - cx (line 16) requires [RG3] (3-membered ring membership)
 # - c3 (line 22) is for "other sp3 C" (non-ring)
 # - cs (line 24-26) is for C=S (not C=C or C=O)
 # - c (line 28-30) is for C=O (carbonyl carbon)
+# - ca (line 35) is "pure aromatic atom" [AR1] -- no neighbor-count constraint
+# - cp (line 33) is aromatic AND requires 3 aromatic (XX[AR1]) neighbors -- i.e.
+#   a fused-ring junction (biphenyl connector, naphthalene bridgehead), NOT an
+#   ordinary monosubstituted aromatic ring carbon (which has only 2 aromatic
+#   heavy neighbors + one non-aromatic substituent or H)
+# - cg (line 72-75) is "sp C of conjugated systems" (per the DEF file's own
+#   comment) -- it requires a *single-bonded* neighbor that is itself a
+#   2-attached sp carbon (a diyne/cumulated-system pattern), NOT plain
+#   mono/di-substituted alkynes, which correctly fall through to c1
+# - c1 (line 77-78) is "other sp C" -- the catch-all for ordinary alkynes
 # - c2 (line 70) is for "other sp2 C"
 # - op (line 223) is for oxygen in [RG3] (3-membered ring only)
 # - oh (line 218-222) is for hydroxyl oxygen
 # - ni (line 144) is for [RG3] nitrogen
 # - n3 (line 183) is for sp3 nitrogen (non-ring)
+# - n8 (line 181) is generic primary amine N (3 attached, 2 H), no further
+#   constraint -- nt (line 143) additionally requires a neighbor carbon with
+#   attached_count==3 that itself has a 1-attached O/S neighbor (a beta-hydroxy/
+#   thio amine pattern), which plain ethylamine's -CH2- (attached_count==4) does
+#   not have
 # - nb (line 184) is for aromatic nitrogen [AR1]
 ATOM_TYPE_REFERENCE = {
     # Simple alkanes
@@ -36,27 +50,32 @@ ATOM_TYPE_REFERENCE = {
     "CCC": ["c3", "c3", "c3"],    # propane [CORRECT per spec line 22]
     "CCCC": ["c3", "c3", "c3", "c3"],  # butane [CORRECT per spec line 22]
 
-    # Alkenes
-    # cz per spec is for C bonded to 3 nitrogens (line 31), which is nonsensical for ethene
-    # This is a pre-existing bug in gaff2.py's rule matching - ethene has no nitrogen neighbors
-    # See .praxia/docs/misc/260623_gaff2-typing-debt.md for details
-    "C=C": ["cz", "cz"],          # ethene [BUG: cz requires 3 N neighbors, marked xfail]
+    # Ethene: c2 ("other sp2 C", line 70) is correct. A pre-existing bug used to
+    # mistype this as cz (which requires 3 nitrogen neighbors -- nonsensical for
+    # a nitrogen-free molecule); fixed alongside the DEF-grammar rewrite that
+    # made _check_atomic_prop's neighbor-existence check actually work. See
+    # .praxia/docs/misc/260623_gaff2-typing-debt.md item 5.
+    "C=C": ["c2", "c2"],          # ethene
 
-    # Acetylene
-    # cg is sp C (atomic number 6, 2 attachments) per spec lines 72-75
-    "C#C": ["cg", "cg"],          # acetylene [CORRECT per spec lines 72-75]
+    # Acetylene (plain, unsubstituted): falls through cg's four alternative
+    # neighbor-pattern rows (all require a *single-bonded* 2-attached neighbor,
+    # which a terminal alkyne carbon -- reached only via the triple bond -- does
+    # not have) to c1, the generic "other sp C" catch-all. Verified cg DOES fire
+    # correctly for a genuinely conjugated case (e.g. hexa-2,4-diyne's internal
+    # sp carbons, each single-bonded to another 2-attached sp carbon).
+    "C#C": ["c1", "c1"],          # acetylene
 
-    # Aromatic carbons
-    # cp is for "pure aromatic atom that can form aromatic single bond" (spec line 33)
-    "c1ccccc1": ["cp"] * 6,       # benzene [CORRECT per spec line 33]
+    # Aromatic carbons: plain benzene has no fused-ring-junction carbons, so
+    # every ring carbon is the generic aromatic type ca, not cp (see header note).
+    "c1ccccc1": ["ca"] * 6,       # benzene
 
     # Phenol
     # oh is for hydroxyl oxygen per spec lines 218-222 (2 or 3 attachments with specific H count)
-    "c1ccc(O)cc1": ["cp", "cp", "cp", "cp", "oh", "cp", "cp"],  # phenol [CORRECT per spec line 218-222]
+    "c1ccc(O)cc1": ["ca", "ca", "ca", "ca", "oh", "ca", "ca"],  # phenol
 
     # Pyridine
     # nb is aromatic nitrogen [AR1] per spec line 184
-    "c1ccncc1": ["cp", "cp", "cp", "nb", "cp", "cp"],  # pyridine [CORRECT per spec line 184]
+    "c1ccncc1": ["ca", "ca", "ca", "nb", "ca", "ca"],  # pyridine
 
     # Functional groups
     # Ethanol: c3 for alkyl carbon, oh for hydroxyl oxygen
@@ -71,10 +90,10 @@ ATOM_TYPE_REFERENCE = {
     # c3 for alkyl carbon, c for carbonyl carbon, o for carbonyl oxygen, oh for carboxyl O-H
     "CC(=O)O": ["c3", "c", "o", "oh"],  # acetic acid [CORRECT per spec lines 22, 28-30, 217, 218-222]
 
-    # Ethylamine
-    # nt is sp3 nitrogen per spec line 143 (7 valence, 3 neighbors, 2 hydrogens, neighbor C3(XA1))
-    # n3 is more general sp3 nitrogen per spec line 183 (7 valence, 3 attachments, non-ring)
-    "CCN": ["c3", "c3", "nt"],        # ethylamine [CORRECT per spec line 143]
+    # Ethylamine: n8, the generic primary-amine catch-all (see header note) --
+    # not nt, whose required neighbor pattern (a 3-attached carbon bearing its
+    # own 1-attached O/S neighbor) ethylamine's plain -CH2- (4 attached) doesn't match.
+    "CCN": ["c3", "c3", "n8"],        # ethylamine
 }
 
 # Known mass values (from gaff-2.2.20.dat)
@@ -187,14 +206,17 @@ def get_reference_charges(smiles: str) -> dict:
     ("CC", ["c3", "c3"]),
     ("CCC", ["c3", "c3", "c3"]),
     ("CCCC", ["c3", "c3", "c3", "c3"]),
-    ("C#C", ["cg", "cg"]),
-    ("c1ccccc1", ["cp"] * 6),
-    ("c1ccc(O)cc1", ["cp", "cp", "cp", "cp", "oh", "cp", "cp"]),
-    ("c1ccncc1", ["cp", "cp", "cp", "nb", "cp", "cp"]),
+    ("C=C", ["c2", "c2"]),
+    ("C#C", ["c1", "c1"]),
+    ("CC#CC#CC", ["c3", "c1", "cg", "cg", "c1", "c3"]),
+    ("c1ccccc1", ["ca"] * 6),
+    ("c1ccc(-c2ccccc2)cc1", ["ca", "ca", "ca", "cp", "cp", "ca", "ca", "ca", "ca", "ca", "ca", "ca"]),
+    ("c1ccc(O)cc1", ["ca", "ca", "ca", "ca", "oh", "ca", "ca"]),
+    ("c1ccncc1", ["ca", "ca", "ca", "nb", "ca", "ca"]),
     ("CCO", ["c3", "c3", "oh"]),
     ("CC(=O)C", ["c3", "c", "o", "c3"]),
     ("CC(=O)O", ["c3", "c", "o", "oh"]),
-    ("CCN", ["c3", "c3", "nt"]),
+    ("CCN", ["c3", "c3", "n8"]),
 ])
 def test_atom_type_golden_reference(smiles: str, expected_types: list[str]) -> None:
     """Test that GAFF2 atom type assignment matches golden reference values.
@@ -216,18 +238,15 @@ def test_atom_type_golden_reference(smiles: str, expected_types: list[str]) -> N
     )
 
 
-@pytest.mark.xfail(
-    reason="pre-existing gaff2.py rule-matching bug: ethene (C=C) incorrectly matches "
-           "cz rule (requires 3 nitrogen neighbors), which is nonsensical for a "
-           "nitrogen-free molecule. See .praxia/docs/misc/260623_gaff2-typing-debt.md"
-)
-def test_atom_type_ethene_bug() -> None:
-    """Test case for C=C (ethene) that exposes pre-existing rule-matching bug.
+def test_atom_type_ethene_bug_fixed() -> None:
+    """Regression test for a previously-filed rule-matching bug (now fixed).
 
-    The cz rule at ATOMTYPE_GFF2.DEF line 31 requires 3 nitrogen neighbors (N3,N3,N3),
-    but ethene has no nitrogen atoms. This appears to be a specification issue or
-    implementation bug in the rule-matching logic that prioritizes cz before checking
-    for availability of required neighbor types.
+    The cz rule at ATOMTYPE_GFF2.DEF line 31 requires 3 nitrogen neighbors
+    (N3,N3,N3), which ethene (no nitrogen atoms) cannot satisfy. This used to
+    incorrectly match anyway because _check_atomic_prop's neighbor-existence
+    check was a no-op; the DEF-grammar rewrite made real neighbor-pattern
+    matching work, so ethene now correctly falls through to c2 ("other sp2 C",
+    line 70). See .praxia/docs/misc/260623_gaff2-typing-debt.md item 5.
     """
     from proxide.chem.gaff2 import parameterize_gaff_with_rdkit
 
@@ -239,12 +258,190 @@ def test_atom_type_ethene_bug() -> None:
     AllChem.SanitizeMol(mol)
 
     result = parameterize_gaff_with_rdkit(mol)
-    # This should ideally be c2 (sp2 carbon, line 70), not cz
-    # but the current implementation returns cz due to the rule-matching bug
     assert result["atom_types"] == ["c2", "c2"], (
-        f"Ethene should assign c2 (other sp2 C, line 70), "
-        f"but got {result['atom_types']} due to pre-existing bug"
+        f"Ethene should assign c2 (other sp2 C, line 70), got {result['atom_types']}"
     )
+
+
+@pytest.mark.parametrize("smiles,expected_types", [
+    # ca ("pure aromatic atom", [AR1] only, no neighbor-count constraint) sits
+    # before the cc family in file order, so it wins for any RDKit-aromatic
+    # ring carbon under the current AR1/AR2/AR3 collapse (see the AR-class
+    # note in _atom_bond_facts): the DEF file distinguishes AR1 (pure aromatic,
+    # e.g. benzene/pyridine) from AR2/AR3 (planar conjugated rings with
+    # alternating bonds, e.g. these 5-membered heteroaromatics) structurally,
+    # but gives no algorithm to compute which is which -- confirmed as the
+    # single largest underspecified gap by all three independent
+    # blind-reconstruction lenses of this campaign. These are therefore
+    # locked-in regression tests for CURRENT best-effort behavior, not a claim
+    # that `ca` is the ultimate spec-correct answer for these ring carbons --
+    # revisit if/when AR-class classification is implemented for real.
+    ("c1ccoc1", [("C", "ca"), ("C", "ca"), ("C", "ca"), ("O", "os"), ("C", "ca")]),
+    ("c1cc[nH]c1", [("C", "ca"), ("C", "ca"), ("C", "ca"), ("N", "na"), ("C", "ca")]),
+    ("c1ccsc1", [("C", "ca"), ("C", "ca"), ("C", "ca"), ("S", "ss"), ("C", "ca")]),
+])
+def test_atom_type_five_membered_heteroaromatics(smiles: str, expected_types: list) -> None:
+    """Regression test documenting current (AR1/AR2/AR3-collapsed) behavior."""
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.MolFromSmiles(smiles)
+    assert mol is not None, f"Failed to parse SMILES: {smiles}"
+    mol = Chem.AddHs(mol)
+    AllChem.SanitizeMol(mol)
+
+    types = assign_gaff2_atom_types(mol)
+    heavy = [
+        (atom.GetSymbol(), t) for atom, t in zip(mol.GetAtoms(), types) if atom.GetAtomicNum() != 1
+    ]
+    assert heavy == expected_types, f"SMILES {smiles}: expected {expected_types}, got {heavy}"
+
+
+def test_naphthalene_bridgehead_is_documented_ambiguity() -> None:
+    """Naphthalene's fused-ring bridgeheads are a genuinely open spec question.
+
+    cp's f8 token "1RG6" could mean "member of exactly one 6-ring" (excluding
+    naphthalene's bridgeheads, which are each in TWO 6-rings) or "a 6-ring is
+    present" as one qualifying condition among others. This implementation
+    reads it as an exact ring-count (1RG6 = exactly one 6-membered ring),
+    which excludes bridgeheads from cp -- but this is a documented guess, not
+    a verified answer (needs a real reference: antechamber or the OpenFF GAFF2
+    plugin). This test locks in current behavior and flags the ambiguity
+    rather than silently asserting confidence either way.
+    """
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.MolFromSmiles("c1ccc2ccccc2c1")
+    mol = Chem.AddHs(mol)
+    AllChem.SanitizeMol(mol)
+    types = [t for atom, t in zip(mol.GetAtoms(), assign_gaff2_atom_types(mol)) if atom.GetAtomicNum() != 1]
+
+    # Current reading: exact-ring-count semantics exclude bridgeheads from cp,
+    # so every naphthalene ring carbon (bridgeheads included) resolves to ca.
+    assert types == ["ca"] * 10, (
+        f"Naphthalene ring carbons: got {types}. If this changes, it likely means "
+        f"the 1RG6 exact-count reading changed -- re-verify against a real GAFF2 "
+        f"reference before updating this assertion, don't just match new output."
+    )
+
+
+class TestGaff2Grammar:
+    """Direct unit tests for the f8/f9 DEF-grammar parser, independent of RDKit."""
+
+    def test_parse_atomic_prop_and_list(self) -> None:
+        from proxide.chem.gaff2 import parse_atomic_prop
+
+        expr = parse_atomic_prop("sb,db,AR2")
+        assert expr.op == "AND"
+        assert [(t.word, t.count) for t in expr.tokens] == [
+            ("sb", None), ("db", None), ("AR2", None),
+        ]
+
+    def test_parse_atomic_prop_or_list(self) -> None:
+        from proxide.chem.gaff2 import parse_atomic_prop
+
+        expr = parse_atomic_prop("AR1.AR2.AR3")
+        assert expr.op == "OR"
+        assert [t.word for t in expr.tokens] == ["AR1", "AR2", "AR3"]
+
+    def test_parse_atomic_prop_exact_counts(self) -> None:
+        from proxide.chem.gaff2 import parse_atomic_prop
+
+        assert [(t.word, t.count) for t in parse_atomic_prop("2DL").tokens] == [("DL", 2)]
+        assert [(t.word, t.count) for t in parse_atomic_prop("1DB,0DL").tokens] == [
+            ("DB", 1), ("DL", 0),
+        ]
+        assert [(t.word, t.count) for t in parse_atomic_prop("3sb").tokens] == [("sb", 3)]
+        assert [(t.word, t.count) for t in parse_atomic_prop("AR1,1RG6").tokens] == [
+            ("AR1", None), ("RG6", 1),
+        ]
+
+    def test_parse_chem_env_simple_count_list(self) -> None:
+        from proxide.chem.gaff2 import parse_chem_env
+
+        expr = parse_chem_env("(N3,N3,N3)")
+        assert len(expr.neighbors) == 3
+        assert all(n.elem_or_wild == "N" and n.attached_count == 3 for n in expr.neighbors)
+
+    def test_parse_chem_env_bracket_with_edge_suffix(self) -> None:
+        from proxide.chem.gaff2 import parse_chem_env
+
+        expr = parse_chem_env("(XD3[sb',db])")
+        assert len(expr.neighbors) == 1
+        n = expr.neighbors[0]
+        assert n.elem_or_wild == "XD" and n.attached_count == 3
+        assert n.edge_bond_reqs == [("sb", True)]
+        assert n.own_props is not None and [t.word for t in n.own_props.tokens] == ["db"]
+
+    def test_parse_chem_env_nested_recursion(self) -> None:
+        from proxide.chem.gaff2 import parse_chem_env
+
+        expr = parse_chem_env("(C3(C3))")
+        assert len(expr.neighbors) == 1
+        n = expr.neighbors[0]
+        assert n.elem_or_wild == "C" and n.attached_count == 3
+        assert n.nested is not None
+        assert len(n.nested.neighbors) == 1
+        assert n.nested.neighbors[0].elem_or_wild == "C"
+        assert n.nested.neighbors[0].attached_count == 3
+
+    def test_parse_chem_env_aromatic_neighbor_bracket(self) -> None:
+        """The exact syntax that was silently no-op'd before this fix (cp's rule)."""
+        from proxide.chem.gaff2 import parse_chem_env
+
+        expr = parse_chem_env("(XX[AR1],XX[AR1],XX[AR1])")
+        assert len(expr.neighbors) == 3
+        for n in expr.neighbors:
+            assert n.elem_or_wild == "XX"
+            assert n.own_props is not None
+            assert [t.word for t in n.own_props.tokens] == ["AR1"]
+
+
+def test_def_file_parses_without_dropping_fields() -> None:
+    """Smoke test: parse the real DEF file and sanity-check nothing silently drops.
+
+    Operationalizes the debt-doc's suggested audit ("grep all parsed rules for
+    cases where a bracket/paren was clearly present in the raw line but the
+    parsed field is None").
+    """
+    from pathlib import Path
+
+    from proxide.chem.gaff2 import parse_gaff2_rules
+
+    def_path = (
+        Path(__file__).parent.parent
+        / "src" / "proxide" / "assets" / "gaff" / "dat" / "ATOMTYPE_GFF2.DEF"
+    )
+    rules, wildatom_map = parse_gaff2_rules(def_path)
+
+    # Pinned to the actual count from the vendored DEF file (317 of 318 raw ATD
+    # rows -- the remaining one is the bare "ATD DU &" sentinel, which has no
+    # residue/atomic_num fields at all and is intentionally not a parseable
+    # rule). Update deliberately if the asset is ever regenerated/upgraded, not
+    # to silence a regression.
+    assert len(rules) == 317, f"Expected 317 parsed rules, got {len(rules)}"
+    assert "XX" in wildatom_map and set(wildatom_map["XX"]) == {"C", "N", "O", "S", "P"}
+
+    # Re-derive each rule's raw line and confirm no bracket/paren was silently dropped.
+    raw_lines = def_path.read_text().split("\n")
+    atd_lines = [
+        line.strip() for line in raw_lines
+        if line.strip().startswith("ATD") and "&" in line
+    ]
+    assert len(atd_lines) >= len(rules)  # some raw lines may fail to parse (e.g. bare "ATD DU &")
+
+    # An f9 neighbor spec can itself contain a "[...]" bracket (e.g. nu's
+    # "(XX[AR1.AR2.AR3])"), so only a "[" appearing BEFORE any "(" is really in
+    # the f8 position -- a bracket nested inside f9 is not a dropped f8 field.
+    dropped_bracket = [
+        rule.atom_type for rule, raw in zip(rules, atd_lines)
+        if "[" in raw.split("(")[0] and rule.atomic_prop is None
+    ]
+    dropped_paren = [
+        rule.atom_type for rule, raw in zip(rules, atd_lines)
+        if "(" in raw and rule.chem_env is None
+    ]
+    assert not dropped_bracket, f"Rules with a raw f8 '[' but no parsed atomic_prop: {dropped_bracket}"
+    assert not dropped_paren, f"Rules with a raw '(' but no parsed chem_env: {dropped_paren}"
 
 
 def validate_implementation(proxide_result: dict, smiles: str) -> dict:

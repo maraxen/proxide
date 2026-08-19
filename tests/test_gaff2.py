@@ -1,12 +1,19 @@
 """Test dataset for GAFF2 parameterization.
 
 Validation strategy:
-1. Atom types - compare against known correct values from GAFF2 spec
-2. Masses/bonds/angles - compare against parsed dat file entries
-3. Charges - verify charge conservation (sum ≈ 0)
-4. Parameter lookups - verify substitution logic works for torsions
+1. Masses/bonds/angles - compare against parsed dat file entries
+2. Charges - verify charge conservation (sum ≈ 0)
+3. Parameter lookups - verify substitution logic works for torsions
 
-Reference values from GAFF2 ATOMTYPE_GFF2.DEF and gaff-2.2.20.dat
+Reference values from gaff-2.2.20.dat. Atom-type-assignment correctness is
+covered by tests/test_gaff2_golden.py (real `assert`-based tests against the
+ATOMTYPE_GFF2.DEF rule table) -- this file's own former ATOM_TYPE_TESTS/
+test_atom_types() were removed because (a) their expected values were wrong
+relative to the actual DEF file (e.g. methane -> "cx", which requires a
+3-membered ring methane doesn't have; ethanol O -> "op", a 3-membered-ring
+oxygen type, not "oh") and (b) the test itself used `return failed == 0`
+instead of `assert`, which pytest does not treat as a failure -- it could
+never actually fail regardless of content.
 """
 
 import pytest
@@ -16,53 +23,10 @@ Chem = pytest.importorskip("rdkit.Chem")
 from rdkit.Chem import AllChem
 
 from proxide.chem.gaff2 import (
-    assign_gaff2_atom_types,
     parameterize_gaff_with_rdkit,
     load_gaff2_parameters,
 )
 
-
-# Test molecules with expected atom types
-# Format: (smiles, expected_atom_types)
-# Note: Our implementation uses specific GAFF2 types - some differ from idealized expectations
-ATOM_TYPE_TESTS = [
-    # Alkanes (sp3 carbon)
-    ("C", ["cx"]),
-    ("CC", ["cx", "cx"]),
-    ("CCC", ["cx", "cx", "cx"]),
-    ("CCCC", ["cx", "cx", "cx", "cx"]),
-    # Alkenes (sp2 carbon)
-    ("C=C", ["cs", "cs"]),
-    # Our implementation: terminal carbons in internal alkenes get cx due to degree counting
-    ("CC=CC", ["cx", "cs", "cs", "cx"]),  # RDKit degree counts H
-    # Alkynes (sp carbon)
-    ("C#C", ["cg", "cg"]),
-    # Aromatic
-    ("c1ccccc1", ["cp"] * 6),
-    ("c1ccc(N)cc1", ["cp", "cp", "cp", "cp", "ni", "cp", "cp"]),
-    ("c1ccc(O)cc1", ["cp", "cp", "cp", "cp", "op", "cp", "cp"]),
-    ("c1ccncc1", ["cp", "cp", "cp", "nb", "cp", "cp"]),
-    # Alcohols
-    ("CCO", ["cx", "cx", "op"]),
-    ("CCCO", ["cx", "cx", "cx", "op"]),
-    # Ethers - our impl types these as op (alcohol-like)
-    ("CCOC", ["cx", "cx", "op", "cx"]),
-    # Carbonyls
-    ("C=O", ["cs", "o"]),
-    ("CC(=O)C", ["cx", "cs", "o", "cx"]),
-    ("CC(=O)O", ["cx", "cs", "o", "op"]),
-    ("CC(=O)OC", ["cx", "cs", "o", "op", "cx"]),
-    # Amines - GAFF2 uses ni for amine N
-    ("CCN", ["cx", "cx", "ni"]),
-    ("NCCN", ["ni", "cx", "cx", "ni"]),
-    # Thiols - GAFF2 uses s2 for thioether or s for thiol
-    ("CCCS", ["cx", "cx", "cx", "s2"]),
-    # Halogens - our impl falls back to x for unrecognized
-    ("CCCl", ["cx", "cx", "x"]),  # cl not yet implemented
-    ("CCBr", ["cx", "cx", "x"]),  # br not yet implemented
-    # Nitro - falls back to ni
-    ("CC[N+](=O)[O-]", ["cx", "cx", "ni", "o", "o"]),
-]
 
 # Test molecules for parameter validation
 PARAM_TESTS = [
@@ -85,27 +49,6 @@ def prepare_mol(smiles: str) -> Chem.Mol:
     mol = Chem.AddHs(mol)
     AllChem.SanitizeMol(mol)
     return mol
-
-
-def test_atom_types():
-    """Test atom type assignment for known molecules."""
-    passed = 0
-    failed = 0
-    
-    for smiles, expected in ATOM_TYPE_TESTS:
-        mol = prepare_mol(smiles)
-        result = assign_gaff2_atom_types(mol)
-        
-        if result == expected:
-            passed += 1
-        else:
-            failed += 1
-            print(f"FAIL: {smiles}")
-            print(f"  Expected: {expected}")
-            print(f"  Got:      {result}")
-    
-    print(f"\nAtom Type Tests: {passed} passed, {failed} failed")
-    return failed == 0
 
 
 def test_charge_conservation():
@@ -293,20 +236,17 @@ def run_all_tests():
     print("=" * 60)
     
     results = []
-    
-    print("\n1. Testing atom types...")
-    results.append(("Atom types", test_atom_types()))
-    
-    print("\n2. Testing charge conservation...")
+
+    print("\n1. Testing charge conservation...")
     results.append(("Charge conservation", test_charge_conservation()))
-    
-    print("\n3. Testing parameter lookups...")
+
+    print("\n2. Testing parameter lookups...")
     results.append(("Parameter lookups", test_parameter_lookups()))
-    
-    print("\n4. Testing parameter values...")
+
+    print("\n3. Testing parameter values...")
     results.append(("Parameter values", test_parameter_values()))
-    
-    print("\n5. Testing full parameterization...")
+
+    print("\n4. Testing full parameterization...")
     results.append(("Full parameterization", test_full_parameterization()))
     
     print("\n" + "=" * 60)

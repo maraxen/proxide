@@ -21,9 +21,32 @@ molecules:
   - name: "Benzene"
     smiles: "c1ccccc1"
     targets_gap:
-      - "cp"  # Baseline aromatic carbon (cp per spec line 33)
+      - "ca"  # Baseline aromatic carbon (ca per spec line 35: pure aromatic, no
+              # neighbor-count constraint)
     tier: "core"
-    description: "Simple aromatic baseline. All carbons should be typed as cp."
+    description: "Simple aromatic baseline. All carbons should be typed as ca."
+    notes: "CORRECTED 260819: previously documented as 'all cp', which was
+      itself downstream of a confirmed parser bug (cp's required '3 aromatic
+      neighbors' constraint was silently unenforced, so cp matched on ring
+      size alone before ca ever got a chance). cp (spec line 33) additionally
+      requires 3 aromatic heavy neighbors -- a fused-ring-junction pattern
+      benzene's 2-aromatic-neighbor ring carbons don't have. See Biphenyl for
+      a molecule that actually exercises real cp carbons."
+
+  - name: "Toluene"
+    smiles: "Cc1ccccc1"
+    targets_gap:
+      - "ca"  # Monosubstituted aromatic ring -- ipso carbon has one
+              # non-aromatic (methyl) neighbor, so still fails cp's 3-aromatic-
+              # neighbor requirement and correctly resolves to ca like the rest
+    tier: "core"
+    description: "Benzene with a single methyl substituent. All 6 ring carbons
+      (including the ipso carbon attached to the methyl group) should be ca,
+      not cp -- the ipso carbon has only 2 aromatic heavy neighbors plus one
+      non-aromatic substituent."
+    notes: "Added 260819 specifically to exercise the monosubstituted-ring
+      case (as opposed to the unsubstituted-ring Benzene case above) that
+      first surfaced the cp/ca bracket-pattern parsing bug."
 
   - name: "Naphthalene"
     smiles: "c1ccc2ccccc2c1"
@@ -32,15 +55,22 @@ molecules:
       - "multi-ring"  # Two fused 6-membered rings (multi-wildcard ATD stress test)
     tier: "core"
     description: "Fused two-ring aromatic system. Tests bridgehead aromatic carbons (cp at the 4,5 fusion point) and multi-ring topology complexity."
-    notes: "Naphthalene's bridgehead carbons (positions 4a and 8a) are aromatic and bonded to other aromatic carbons in a fused system. Note: The fusion carbons belong to TWO six-membered rings simultaneously, which may not strictly satisfy specs defining cp as requiring membership in exactly ONE six-membered ring (see biphenyl for comparison)."
+    notes: "Naphthalene's bridgehead carbons (positions 4a and 8a) are aromatic and bonded to other aromatic carbons in a fused system. Note: The fusion carbons belong to TWO six-membered rings simultaneously, which may not strictly satisfy specs defining cp as requiring membership in exactly ONE six-membered ring (see biphenyl for comparison). RESOLVED (as a documented reading, not a verified answer) 260819: this implementation treats cp's '1RG6' token as an exact ring count, so bridgeheads (2 six-rings) are excluded from cp -- all 10 naphthalene ring carbons, bridgeheads included, currently resolve to ca. See tests/test_gaff2_golden.py::test_naphthalene_bridgehead_is_documented_ambiguity, which locks in this behavior while flagging it as needing real external verification (antechamber/OpenFF) before being treated as ground truth."
 
   - name: "Biphenyl"
     smiles: "c1ccc(-c2ccccc2)cc1"
     targets_gap:
-      - "cp"  # SINGLE-RING AROMATIC - pure cp carbons in separate rings
+      - "cp"  # The 2 ipso/connector carbons genuinely have 3 aromatic heavy
+              # neighbors (2 ring + 1 cross-ring) and should be cp; the other
+              # 10 ring carbons have only 2 aromatic neighbors and are ca
     tier: "core"
-    description: "Two separate benzene rings connected by a single C-C bond. Each ring is an independent six-membered aromatic ring. Tests cp typing in a simpler context than fused systems."
-    notes: "Contrasts with naphthalene: each aromatic carbon in biphenyl belongs to exactly one six-membered aromatic ring, providing a cleaner test case for cp typing without the ambiguity of fusion-point carbons belonging to multiple rings."
+    description: "Two separate benzene rings connected by a single C-C bond. The
+      two ipso carbons (one per ring, at the connection point) should be cp;
+      the remaining 10 ring carbons should be ca."
+    notes: "CORRECTED 260819: previously documented as 'pure cp carbons', which
+      was wrong for the same reason as Benzene above -- only the 2 carbons
+      that are genuinely bonded to 3 aromatic heavy neighbors (the ring-ring
+      connection points) satisfy cp's real neighbor-count requirement."
 
   - name: "Indene"
     smiles: "C1C=Cc2ccccc21"
@@ -95,11 +125,40 @@ molecules:
   - name: "Thiophene"
     smiles: "c1ccsc1"
     targets_gap:
-      - "cp"  # Aromatic carbon (may be different type or same as benzene)
-      - "multi-ring"  # Aromatic heterocycle adds topological complexity
+      - "cc/cd"  # 5-membered heteroaromatic ring carbons are spec-intended to
+                 # be the cc/cd conjugated-ring family (AR2/AR3), not ca (AR1)
     tier: "core"
     description: "Aromatic 5-membered heterocycle with sulfur. Tests aromatic carbon typing in non-6-membered rings and heteroatom interaction with aromatic system."
-    notes: "Tests cp typing robustness to ring size variation and heteroatom presence."
+    notes: "KNOWN LIMITATION 260819: currently resolves to ca (all 4 ring
+      carbons), not the cc/cd family, because this implementation cannot
+      structurally distinguish AR1 (pure aromatic, e.g. benzene/pyridine) from
+      AR2/AR3 (planar conjugated rings with alternating bonds, which 5-membered
+      heteroaromatics like thiophene/furan/pyrrole are meant to be) -- the DEF
+      file gives classification targets for AR1-AR5 but no algorithm to compute
+      them. See Furan/Pyrrole entries and
+      tests/test_gaff2_golden.py::test_atom_type_five_membered_heteroaromatics."
+
+  - name: "Furan"
+    smiles: "c1ccoc1"
+    targets_gap:
+      - "cc/cd"  # Same AR1/AR2/AR3 limitation as thiophene, oxygen analog
+    tier: "core"
+    description: "Aromatic 5-membered heterocycle with oxygen. Added 260819
+      alongside Thiophene/Pyrrole to exercise the cc/cd-vs-ca AR-class gap
+      across all three common 5-membered heteroaromatics."
+    notes: "See Thiophene's notes -- same known AR1/AR2/AR3 classification
+      limitation applies; currently resolves to ca for all 4 ring carbons."
+
+  - name: "Pyrrole"
+    smiles: "c1cc[nH]c1"
+    targets_gap:
+      - "cc/cd"  # Same AR1/AR2/AR3 limitation as thiophene/furan, N-H analog
+    tier: "core"
+    description: "Aromatic 5-membered heterocycle with N-H. Added 260819
+      alongside Thiophene/Furan for the same reason."
+    notes: "See Thiophene's notes -- same known AR1/AR2/AR3 classification
+      limitation applies; currently resolves to ca for all 4 ring carbons
+      (ring N resolves to na)."
 
   - name: "Anthracene"
     smiles: "c1ccc2cc3ccccc3cc2c1"
