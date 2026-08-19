@@ -22,6 +22,43 @@ fn large_xtc_path() -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+/// Many-frame fixture (4000 frames, 64 atoms) with a per-frame VARYING,
+/// slightly triclinic box, used to regression-test box-vector decoding —
+/// investigated under praxia debt #1237 / proxide#16 (see
+/// [`test_xtc_box_vectors_match_ground_truth_across_full_trajectory`] for
+/// why that report turned out not to be a decode bug, and why this fixture
+/// is still a valuable regression guard regardless). See
+/// `scripts/generate_trajectory_test_data.py::generate_box_drift_xtc_fixture`
+/// for how this and its ground-truth sidecar were generated.
+fn box_drift_xtc_path() -> Option<PathBuf> {
+    let path = project_root().join("tests/data/trajectories/box_drift.xtc");
+    path.exists().then_some(path)
+}
+
+/// Ground-truth box vectors (Angstroms) for [`box_drift_xtc_path`]: a flat
+/// little-endian f32 blob, shape `(num_frames, 3, 3)` row-major (row `i` of
+/// each 3x3 is box vector `i`, matching mdtraj/GROMACS convention and
+/// `frame.boxvec_cols_2d()`'s output layout).
+fn load_box_drift_ground_truth() -> Vec<[[f32; 3]; 3]> {
+    let path = project_root().join("tests/data/trajectories/box_drift_ground_truth_angstrom.bin");
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+    assert_eq!(bytes.len() % 36, 0, "ground-truth blob size must be a multiple of 9 f32s");
+    let n_frames = bytes.len() / 36;
+    let mut out = Vec::with_capacity(n_frames);
+    for frame_idx in 0..n_frames {
+        let mut mat = [[0.0f32; 3]; 3];
+        for (row, mat_row) in mat.iter_mut().enumerate() {
+            for (col, cell) in mat_row.iter_mut().enumerate() {
+                let offset = frame_idx * 36 + row * 12 + col * 4;
+                *cell = f32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+            }
+        }
+        out.push(mat);
+    }
+    out
+}
+
 /// A well-characterized multi-frame fixture (501 frames), used for the
 /// truncated-trailing-frame test below — needs enough frames that chopping
 /// bytes off the end unambiguously lands inside the *last* frame's own
@@ -870,4 +907,106 @@ fn test_read_xtc_distogram_parallel_single_atom_has_zero_pairs() {
     for row in &distograms {
         assert!(row.is_empty());
     }
+}
+
+/// Regression guard investigated under praxia debt #1237 / proxide#16: box
+/// vectors decoded from a many-frame, per-frame-VARYING-box XTC trajectory
+/// must match ground truth at every sampled frame across the file — not
+/// just frame 0.
+///
+/// proxide#16 originally reported `box_vectors` from `read_xtc_lazy`/
+/// `read_xtc_parallel` diverging from mdtraj's by >100 Angstrom by
+/// mid-trajectory on a real ~66,543-frame file, while coordinates/times
+/// matched exactly. Deep root-causing (see the PR that added this test)
+/// found this was **not** a proxide decode bug: proxide's raw, byte-exact
+/// box matrix — independently cross-checked against mdtraj's own low-level
+/// `XTCTrajectoryFile.read()` and against a hand-parsed read of the raw XDR
+/// bytes at the same offset — matched perfectly at every frame tested,
+/// including the frame with the reported ~134 Angstrom "divergence". The
+/// apparent corruption was mdtraj's *high-level* `Trajectory` reducing box
+/// vectors to `unitcell_lengths`/`unitcell_angles` on load and
+/// reconstructing a matrix in its own canonical (`a` along x, `b` in the
+/// xy-plane) orientation on read — a lossy-of-orientation but
+/// lengths/angles-preserving transform — which differs from proxide's
+/// as-stored matrix whenever the source file's box isn't already written in
+/// that canonical orientation (common for trajectories converted from
+/// AMBER). Converting proxide's raw box back to lengths+angles reproduces
+/// mdtraj's reported values to full float32 precision, confirming the two
+/// are physically identical cells in different (but both valid)
+/// representations.
+///
+/// This test therefore does NOT regress a "fix" to that decode path —
+/// there was nothing to fix there. It guards against a *real* future
+/// regression: this fixture has a per-frame-varying, slightly triclinic
+/// ground-truth box (unlike every other fixture in this file, which is
+/// static/orthorhombic and can't detect either a drift or a
+/// transpose/row-column bug), sampled across the full trajectory rather
+/// than frame 0 only — exactly the shape of check that would have caught
+/// proxide#16's actual decode path being wrong, had it been.
+#[test]
+fn test_xtc_box_vectors_match_ground_truth_across_full_trajectory() {
+    let Some(xtc_path) = box_drift_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let ground_truth = load_box_drift_ground_truth();
+
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n_frames = reader.frame_count().expect("frame_count failed");
+    assert_eq!(
+        n_frames,
+        ground_truth.len(),
+        "fixture frame count must match ground-truth sidecar"
+    );
+
+    let mut max_abs_diff = 0.0f32;
+    let mut max_abs_diff_frame = 0usize;
+    let mut first_bad_frame: Option<usize> = None;
+
+    for frame_idx in (0..n_frames).step_by(25) {
+        let frame = reader
+            .read_frame_at(frame_idx, &AtomSelection::All)
+            .unwrap_or_else(|e| panic!("read_frame_at({frame_idx}) failed: {e}"));
+        let mut box_ang = frame.boxvec_cols_2d();
+        for row in &mut box_ang {
+            for v in row {
+                *v *= 10.0;
+            }
+        }
+
+        let expected = ground_truth[frame_idx];
+        let mut frame_max_diff = 0.0f32;
+        for row in 0..3 {
+            for col in 0..3 {
+                let diff = (box_ang[row][col] - expected[row][col]).abs();
+                frame_max_diff = frame_max_diff.max(diff);
+            }
+        }
+        if frame_max_diff > max_abs_diff {
+            max_abs_diff = frame_max_diff;
+            max_abs_diff_frame = frame_idx;
+        }
+        if frame_max_diff > 1.0 && first_bad_frame.is_none() {
+            first_bad_frame = Some(frame_idx);
+        }
+        assert!(
+            frame_max_diff < 1.0,
+            "box vectors diverge from ground truth at frame {frame_idx}: \
+             got {box_ang:?}, expected {expected:?} (max abs diff {frame_max_diff} Angstrom)"
+        );
+    }
+
+    // Belt-and-suspenders: even if every individual per-frame assertion
+    // somehow passed, the worst-case diff across the whole scan must still
+    // be small and no frame should have crossed the 1 Angstrom bad-frame
+    // threshold above.
+    assert!(
+        first_bad_frame.is_none(),
+        "at least one frame exceeded the 1 Angstrom threshold"
+    );
+    assert!(
+        max_abs_diff < 1.0,
+        "worst-case box vector diff across trajectory was {max_abs_diff} Angstrom \
+         at frame {max_abs_diff_frame}"
+    );
 }

@@ -109,6 +109,13 @@ fn frames_to_pydict(
 /// cursor — mdtraj `md.load(path, stride=..., atom_indices=...)`-equivalent,
 /// but backed by proxide-io's on-disk `.offsets` sidecar so repeat opens of
 /// the same file skip the header scan.
+///
+/// `box_vectors` are returned exactly as stored in the file (same reference
+/// frame as `coordinates`), which is not always element-wise identical to
+/// mdtraj's `Trajectory.unitcell_vectors` for the same file — see the "Box
+/// vector convention" section of `proxide_io::formats::xtc`'s module docs
+/// (investigated under praxia debt #1237 / proxide#16) before comparing the
+/// two directly.
 #[pyfunction]
 #[pyo3(signature = (path, stride=1, atom_indices=None))]
 pub fn read_xtc_lazy(
@@ -183,7 +190,8 @@ pub fn read_xtc_lazy(
 /// (each worker opens its own file handle and seeks directly to its assigned
 /// offset). Same stride/atom_indices calling convention as [`read_xtc_lazy`]
 /// — order and duplicates in `atom_indices` are preserved exactly, matching
-/// mdtraj's `atom_indices` semantics.
+/// mdtraj's `atom_indices` semantics. Same `box_vectors` convention as
+/// [`read_xtc_lazy`] too (see its doc comment).
 #[pyfunction]
 #[pyo3(signature = (path, stride=1, atom_indices=None))]
 pub fn read_xtc_parallel(

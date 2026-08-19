@@ -11,6 +11,42 @@
 //! natoms-validated, mirroring MDAnalysis's `.npz` offset cache) so repeat opens
 //! of the same file skip the rescan. [`XtcTrajectory`]/[`read_xtc_molly`] remain
 //! the eager, whole-array (mdtraj-style) product for existing call sites.
+//!
+//! ## Box vector convention (praxia debt #1237 / proxide#16)
+//!
+//! Box vectors returned by this module (`XtcTrajectory::boxes`,
+//! [`XtcReader::read_frame_at`]'s `MollyFrame::boxvec`/`boxvec_cols_2d()`, and
+//! the Python-facing `box_vectors` from `read_xtc_lazy`/`read_xtc_parallel`)
+//! are the raw 3x3 matrix **exactly as stored in the file**, row `i` = box
+//! vector `i`, in whatever orientation the file's writer chose — the same
+//! reference frame as the coordinates returned alongside them, so using a
+//! frame's box together with that same frame's coordinates (e.g. for PBC
+//! wrapping/unwrapping or unit-cell-relative distances) is always
+//! self-consistent and correct.
+//!
+//! This is *not* necessarily the same matrix mdtraj's high-level
+//! `Trajectory.unitcell_vectors` reports for the same file. mdtraj reduces
+//! box vectors to `unitcell_lengths`/`unitcell_angles` (3+3 scalars) on
+//! load and reconstructs a matrix in its own canonical orientation
+//! (`a` along x, `b` in the xy-plane) every time `.unitcell_vectors` is
+//! read — see `mdtraj/core/trajectory.py`'s `unitcell_vectors` property.
+//! That reconstruction is lossless for the cell's *shape* (lengths + angles
+//! between vectors) but discards the original matrix's absolute
+//! orientation/rotation. For trajectories whose box wasn't already written
+//! in that canonical orientation — common for files converted from AMBER,
+//! as opposed to ones GROMACS itself wrote — mdtraj's reported matrix and
+//! this module's raw matrix will differ even though they describe the
+//! identical periodic cell: reducing either one back to lengths+angles
+//! (e.g. via `mdtraj.utils.box_vectors_to_lengths_and_angles`) reproduces
+//! the same 6 numbers to float32 precision. This was root-caused after
+//! proxide#16 reported the raw matrix as "corrupted" purely from a naive
+//! element-wise comparison against mdtraj's reoriented one; see
+//! `test_xtc_box_vectors_match_ground_truth_across_full_trajectory` in
+//! `tests/xtc_tests.rs` for the full writeup and the byte-level/
+//! low-level-mdtraj cross-checks that ruled out an actual decode bug.
+//! Comparing this module's box vectors against mdtraj element-wise is only
+//! valid once both are reduced to (or reconstructed from) lengths+angles,
+//! or the file's box is already GROMACS-canonical.
 
 use molly::selection::AtomSelection;
 use molly::{Frame as MollyFrame, XTCReader};
