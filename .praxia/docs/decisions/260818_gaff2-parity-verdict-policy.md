@@ -4,13 +4,13 @@ description: Verdict policy and tolerances for bathos-literature-parity validati
 metadata:
   type: decision
   task_id: 260818_ligand_extension_scope
-  status: draft
+  status: resolved
 ---
 
 # Decision: GAFF2 Parity Verdict Policy
 
-**Date:** 2026-08-18  
-**Status:** Draft  
+**Date:** 2026-08-18 (sign-offs resolved 2026-08-20)  
+**Status:** Resolved  
 **Task:** 260818_ligand_extension_scope  
 **Backlog Item:** #209 (gaff2-verdict-policy)
 
@@ -128,7 +128,9 @@ M=3 attackers ensures independent refutation attempts.
 
 ## Approver
 
-[NEEDS HUMAN SIGN-OFF: name the approver for an accepted-PARTIAL verdict]
+**Resolved 2026-08-20 by Marielle.** Approver for accepted-PARTIAL verdicts on this
+campaign: **Marielle**. The campaign's first real verdict (PARTIAL) was computed
+2026-08-20; see `.praxia/docs/audits/260820_gaff2-parity-verdict.md`.
 
 ---
 
@@ -157,7 +159,22 @@ If the parity run returns a FAIL verdict:
 
 ## Recommendation: h_ew Typing Fix and Core-Tier Campaign Prerequisite
 
-[NEEDS HUMAN SIGN-OFF: decision on whether item 1 (h_ew bond-type checking) from `.praxia/docs/misc/260623_gaff2-typing-debt.md` must land before Core-tier campaign execution]
+**Resolved 2026-08-20 by Marielle, on the evidence in
+`.praxia/docs/audits/260820_gaff2-parity-verdict.md`.** This question predates PR #26
+(2026-08-19), which rewrote the DEF-grammar parser and fixed the field this section
+calls "h_ew" (renamed `atomic_prop`/f8 in the rewrite). The Phase 3-5 parity run this
+sign-off links to re-verified — independently, via orchestrator-owned invariant tests,
+not by trusting PR #26's description — that h_ew bond-count disambiguation now works
+correctly for every currently-curated benchmark molecule (formamide,
+N-methylacetamide, acetone, acetate). One confirmed, scoped residual defect remains
+(lowercase `sb`/`db` bond-category counts omit the DEF footer's "includes aromatic"
+inclusive semantics — does not affect any current benchmark molecule; tracked as
+`tests/test_gaff2_parity_invariants.py::test_bond_category_facts_sb_includes_aromatic_confirmed_defect`).
+Given that, **neither Option A nor Option B below is chosen as originally framed** —
+the mandatory-prerequisite question is moot (the fix already landed and is verified);
+the residual gap is small, scoped, and does not block Core-tier campaigns, but should
+be fixed before this document is next revisited. See the verdict report's Follow-ups
+§1 for the recommended fix.
 
 The h_ew field encodes bond-type patterns (2DL = delocalized double bonds, 1DB,0DL = one double + zero delocalized, 3sb = three single bonds) that disambiguate otherwise identical GAFF2 rules. The current implementation in `proxide/chem/gaff2.py` **does not check h_ew** — all matching rules are treated as equivalent from a type-assignment standpoint.
 
@@ -176,7 +193,9 @@ Item 1 from 260623_gaff2-typing-debt.md (implement h_ew bond-type matching) **mu
 **Option B (Permissive — h_ew fix deferred, FAIL treated as expected signal):**  
 If the parity run flags h_ew-related mistyping as a FAIL, treat it as an **expected, non-blocking signal** that documents a known limitation. Core-tier campaigns may proceed with an explicit caveat: "GAFF2 has not been validated on molecules with delocalized bonding; ligands with amides or enolates should use SMIRNOFF instead." This is a trade-off: faster campaign startup vs. later discovery of typing bugs on complex ligands.
 
-**[NEEDS HUMAN SIGN-OFF: choose Option A or Option B and provide a name/email of who made the decision]**
+**Resolved 2026-08-20 by Marielle** — see the resolution note above the Options; neither
+Option A nor Option B applies as originally framed, since the underlying fix already
+landed in PR #26 and was independently re-verified rather than assumed.
 
 ---
 
