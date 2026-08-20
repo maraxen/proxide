@@ -220,13 +220,143 @@ molecules:
       docstring -- the 1RG6-exact-count reading is now confirmed against a
       real reference, and that confirmation applies equally here."
 
-# Supplement tier sources (to be documented separately)
-# ========================================================
-# Primary: AmberMD GAFF2 geostd tarball
-#   - Download: https://ambermd.org/doc12/GAFF2/
-#   - ~29,000 pre-parameterized ligands
-#   - Use case: cross-validation of core tier against literature benchmark
+# Supplement tier: real consumer molecules (260820)
+# ==================================================
+# Per the original cross-repo plan
+# (demistify/.praxia/docs/specs/260818_scope-sequence-and-priority-for-gaff2-li.md),
+# distinct from the Core tier above (curated to stress specific known gaps):
+# real molecules already running through proxide in production, sourced
+# directly from the two live consumers rather than hand-picked.
 #
-# Secondary: Project-specific molecules
-#   - 17-OHP: 17-hydroxyprogesterone (biosensors idea-019)
-#   - naurmalade ligands: TBD from referenced branch
+# 17-OHP is owned by biosensors (campaigns/*/config.json's
+# parameterize_ligand.ligand block, confirmed byte-identical across ~17
+# campaign configs) and run via naurmalade as the MD engine -- "biosensors'
+# 17-OHP" and "naurmalade's live ligand set" turned out to be the SAME
+# molecule, not two independent sources as the original plan assumed
+# (naurmalade itself has no independent drug-like-ligand production set).
+# Real additional diversity comes from naurmalade's own 9-molecule cosolvent-
+# probe set (configs/sweet_vft_cosolv_config.json, run through the
+# gaff2_espaloma pathway in production) -- amino-acid-sidechain-mimic
+# fragments, not bound ligands, but real currently-running GAFF2-typed
+# inputs with genuine chemical diversity this tier otherwise lacks (aromatic
+# ring, imidazole, carboxylate/ammonium zwitterion-like groups).
+#
+# All types below verified via a live run of the code in this repo (260820,
+# post AR1/AR2/AR3 fix + H-atom typing rework), not sourced from any
+# external prediction.
+
+  - name: "17-OHP"
+    smiles: "C[C@]12CC[C@H]3[C@@H](CCC4=CC(=O)CC[C@@]43C)[C@@H]1CC[C@@H]2C(=O)CO"
+    targets_gap:
+      - "real-consumer"  # Production ligand, not a curated synthetic case
+    tier: "supplement"
+    description: "17-hydroxyprogesterone. biosensors' sole production ligand (resname OHP), parameterized via naurmalade's gaff2_espaloma pathway across ~17 fusion-protein MD campaigns. A steroid with a conjugated enone (cross-conjugated C=C-C=O in the A-ring), several cyclopentane/cyclohexane sp3 ring carbons (c5/c6), and a terminal primary alcohol/ketone side chain -- exercises real production-scale structural complexity none of the Core tier's smaller synthetic molecules cover."
+    notes: "Source: biosensors/campaigns/*/config.json (SMILES identical across
+      every campaign checked). Real run (260820) resolves to 24 heavy atoms:
+      c3, c5, c6 (x6), c2, ce, c (x2, both carbonyls: enone + side-chain
+      ketone), o (x2), c6 (x2 more), c3, c5 (x4), oh -- the A-ring enone's
+      alpha,beta carbons correctly resolve to c2/ce (chain conjugation, same
+      mechanism as this tier's Acrolein/Divinyl-ketone Core-tier cases), not
+      a ring-conjugated family, since the enone is exocyclic to the steroid's
+      saturated ring system."
+
+  - name: "Phenylalanine-probe"
+    smiles: "c1ccccc1"
+    targets_gap:
+      - "real-consumer"
+    tier: "supplement"
+    description: "Benzene -- naurmalade's cosolvent-probe fragment mimicking phenylalanine's aromatic sidechain (configs/sweet_vft_cosolv_config.json, resname EHP). Same molecule as the Core tier's Benzene entry, included here for provenance (confirms a real production cosolvent input types identically to the curated case)."
+    notes: "All 6 ring carbons resolve to ca, matching the Core-tier Benzene
+      entry exactly."
+
+  - name: "Tyrosine-probe"
+    smiles: "c1ccccc1O"
+    targets_gap:
+      - "real-consumer"
+    tier: "supplement"
+    description: "Phenol -- cosolvent-probe fragment mimicking tyrosine's aromatic sidechain (resname RYT)."
+    notes: "All 6 ring carbons resolve to ca, hydroxyl O resolves to oh."
+
+  - name: "Histidine-probe"
+    smiles: "C1=CN=CN1"
+    targets_gap:
+      - "real-consumer"
+      - "cc/cd"  # Independent confirmation the AR1/AR2/AR3 fix generalizes
+                 # beyond the Core tier's furan/pyrrole/thiophene
+    tier: "supplement"
+    description: "Imidazole -- cosolvent-probe fragment mimicking histidine's aromatic sidechain (resname SIH). A 5-membered heteroaromatic with TWO ring nitrogens (one pyridine-like, one pyrrole-like) -- exercises the AR1/AR2/AR3 fix on a heteroaromatic pattern distinct from the Core tier's furan/pyrrole/thiophene (single heteroatom each)."
+    notes: "Real run (260820) resolves ring carbons to cc (both), the
+      pyridine-like N to nc, the pyrrole-like N-H to na -- confirms the
+      AR1/AR2/AR3 fix (6 in ring_counts_by_size gates AR1) generalizes
+      correctly to a two-heteroatom 5-membered ring, not just the
+      single-heteroatom cases the Core tier happened to test."
+
+  - name: "SerThr-probe"
+    smiles: "CC(O)C"
+    targets_gap:
+      - "real-consumer"
+    tier: "supplement"
+    description: "Isopropanol -- cosolvent-probe fragment mimicking serine/threonine's hydroxyl sidechains (resname STH)."
+    notes: "All 3 carbons resolve to c3, hydroxyl O resolves to oh."
+
+  - name: "AsnGln-probe"
+    smiles: "CC(=O)N"
+    targets_gap:
+      - "real-consumer"
+      - "h_ew"  # Second independent amide N-H case beyond the Core tier's
+                # Formamide/N-methylacetamide
+    tier: "supplement"
+    description: "Acetamide -- cosolvent-probe fragment mimicking asparagine/glutamine's amide sidechains (resname AGN). A third, independent amide N-H case beyond the Core tier's Formamide/N-methylacetamide."
+    notes: "Real run (260820): methyl C resolves to c3, carbonyl C to c,
+      carbonyl O to o, amide N to nt (same family as Formamide's N).
+      Confirms the 260820 H-typing fix's hn resolution (verified via
+      TestHAtomTyping::test_formamide_h_stress_hn_and_h5) generalizes to
+      this independently-sourced production molecule."
+
+  - name: "IleLeu-probe"
+    smiles: "CC(C)CC"
+    targets_gap:
+      - "real-consumer"
+    tier: "supplement"
+    description: "Isopentane -- cosolvent-probe fragment mimicking isoleucine/leucine's branched aliphatic sidechains (resname UEL)."
+    notes: "All 5 carbons resolve to c3 -- plain sp3 alkane, no gap stress;
+      included for provenance/completeness of the real cosolvent set."
+
+  - name: "AspGlu-probe"
+    smiles: "CC(=O)[O-]"
+    targets_gap:
+      - "real-consumer"
+      - "h_ew"  # Delocalized carboxylate anion -- the [2DL]-branch case the
+                # Core tier's cs/c coverage never found a real molecule for
+    tier: "supplement"
+    description: "Acetate anion -- cosolvent-probe fragment mimicking aspartate/glutamate's carboxylate sidechains (resname NEG). A resonance-delocalized carboxylate; this project's DL (delocalized bond) convention treats aromatic bonds as delocalized but NOT isolated non-ring resonance systems like this one (a documented, deliberate simplification -- see _bond_category_facts's docstring), so this exercises that documented limitation on a real production molecule."
+    notes: "Real run (260820): methyl C resolves to c3, carbonyl-family C to
+      c, both O's to o (symmetric anion, RDKit's default Kekule structure
+      picks one O as the formal double bond -- both resolve identically here
+      since c's f8 disambiguation doesn't depend on which specific O is
+      which). Confirms the c/cs f8 branches examined in
+      TestGaff2Grammar::test_atomic_prop_matches_2dl_and_3sb_exact_counts
+      are exercised correctly on the true production case they were
+      motivated by, even though [2DL] itself doesn't fire (per this
+      project's documented DL-detection simplification)."
+
+  - name: "Arg-probe"
+    smiles: "C(=[NH2+])(N)NC"
+    targets_gap:
+      - "real-consumer"
+    tier: "supplement"
+    description: "N-methylguanidinium cation -- cosolvent-probe fragment mimicking arginine's guanidinium sidechain (resname GRA). A resonance-delocalized, charged nitrogen-rich fragment -- structurally distinct from anything in the Core tier."
+    notes: "Real run (260820): central C resolves to cz (guanidinium-type sp2
+      carbon, requires 3 N neighbors per its f9 pattern -- correctly fires
+      here, unlike the pre-PR-26 ethene bug where cz incorrectly fired for a
+      nitrogen-free molecule), the two NH2 nitrogens resolve to nv, the
+      N-methyl nitrogen resolves to nu, methyl C resolves to c3."
+
+  - name: "Lys-probe"
+    smiles: "CC[NH3+]"
+    targets_gap:
+      - "real-consumer"
+    tier: "supplement"
+    description: "Ethylammonium cation -- cosolvent-probe fragment mimicking lysine's primary-amine sidechain (resname SYL)."
+    notes: "Real run (260820): both carbons resolve to c3, the protonated
+      amine N resolves to nz."
