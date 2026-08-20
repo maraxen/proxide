@@ -210,13 +210,35 @@ def get_reference_charges(smiles: str) -> dict:
     ("C#C", ["c1", "c1"]),
     ("CC#CC#CC", ["c3", "c1", "cg", "cg", "c1", "c3"]),
     ("c1ccccc1", ["ca"] * 6),
+    # Toluene: monosubstituted ring, ipso carbon has only 2 aromatic heavy
+    # neighbors (+1 non-aromatic methyl substituent), so it fails cp's f9
+    # 3-aromatic-neighbor requirement same as every other ring carbon -- all
+    # 6 are ca. Added 260820 (verdict-report follow-up #4); previously
+    # curated in benchmarks/gaff2_parity_molecules.yaml with no assertion.
+    ("Cc1ccccc1", ["c3", "ca", "ca", "ca", "ca", "ca", "ca"]),
     ("c1ccc(-c2ccccc2)cc1", ["ca", "ca", "ca", "cp", "cp", "ca", "ca", "ca", "ca", "ca", "ca", "ca"]),
     ("c1ccc(O)cc1", ["ca", "ca", "ca", "ca", "oh", "ca", "ca"]),
     ("c1ccncc1", ["ca", "ca", "ca", "nb", "ca", "ca"]),
+    # Anthracene: three linearly fused 6-rings. All 4 bridgeheads (idx 3, 5,
+    # 10, 12) have 3 aromatic heavy neighbors (satisfying cp's f9 pattern)
+    # but are members of TWO six-rings simultaneously, failing cp's exact
+    # f8 "1RG6" token -- same bridgehead-exclusion mechanism as naphthalene
+    # (see test_naphthalene_bridgehead_is_documented_ambiguity's docstring
+    # for the underlying reading caveat, which applies equally here). Added
+    # 260820 (verdict-report follow-up #4); previously curated in
+    # benchmarks/gaff2_parity_molecules.yaml with no assertion.
+    ("c1ccc2cc3ccccc3cc2c1", ["ca"] * 14),
     ("CCO", ["c3", "c3", "oh"]),
     ("CC(=O)C", ["c3", "c", "o", "c3"]),
     ("CC(=O)O", ["c3", "c", "o", "oh"]),
     ("CCN", ["c3", "c3", "n8"]),
+    # Thioacetone: cs's f9 pattern (S1, a terminal 1-attached sulfur) fires
+    # here where c's analogous (XA1 = O-or-S) pattern would otherwise also
+    # match -- cs/c are actually disambiguated by which f9 branch matches
+    # (S-specific vs O-or-S), not by which f8 bond-count branch fires (both
+    # take the same [1DB,0DL] branch as acetone's carbonyl carbon). Added
+    # 260820 (verdict-report follow-up #4) for cs coverage (previously zero).
+    ("CC(=S)C", ["c3", "cs", "s", "c3"]),
 ])
 def test_atom_type_golden_reference(smiles: str, expected_types: list[str]) -> None:
     """Test that GAFF2 atom type assignment matches golden reference values.
@@ -394,6 +416,44 @@ class TestGaff2Grammar:
             assert n.elem_or_wild == "XX"
             assert n.own_props is not None
             assert [t.word for t in n.own_props.tokens] == ["AR1"]
+
+    def test_atomic_prop_matches_2dl_and_3sb_exact_counts(self) -> None:
+        """Direct matching-level coverage for c/cs's [2DL] and [3sb] f8
+        branches (ATOMTYPE_GFF2.DEF lines 24-30), added for verdict-report
+        follow-up #4. `test_parse_atomic_prop_exact_counts` already covers
+        parsing these tokens; no simple, verifiable real molecule was found
+        that reaches these specific branches through the real first-match
+        precedence order (both require an attached_count=3 carbon with 2
+        aromatic/delocalized bonds or 3 inclusive-single bonds while ALSO
+        matching cs/c's f9 sulfur/oxygen neighbor pattern -- a combination
+        that didn't correspond to any straightforward organic molecule),
+        so this exercises atomic_prop_matches directly against constructed
+        AtomBondFacts instead, at the same level as this class's other
+        grammar tests.
+        """
+        from proxide.chem.gaff2 import (
+            AtomBondFacts,
+            atomic_prop_matches,
+            parse_atomic_prop,
+        )
+
+        def facts(**bond_counts: int) -> AtomBondFacts:
+            base = {"SB": 0, "DB": 0, "TB": 0, "AB": 0, "DL": 0, "sb": 0, "db": 0, "tb": 0}
+            base.update(bond_counts)
+            return AtomBondFacts(
+                in_ring=False, ring_counts_by_size={}, aromaticity_class=None,
+                bond_counts=base,
+            )
+
+        two_dl = parse_atomic_prop("2DL")
+        assert atomic_prop_matches(two_dl, facts(DL=2, AB=2))
+        assert not atomic_prop_matches(two_dl, facts(DL=1, AB=1))
+        assert not atomic_prop_matches(two_dl, facts(DL=3, AB=3))
+
+        three_sb = parse_atomic_prop("3sb")
+        assert atomic_prop_matches(three_sb, facts(sb=3))
+        assert not atomic_prop_matches(three_sb, facts(sb=2))
+        assert not atomic_prop_matches(three_sb, facts(sb=4))
 
 
 def test_def_file_parses_without_dropping_fields() -> None:
