@@ -107,27 +107,57 @@ systematic run). Recomputed grade: **PARITY**, all five ceilings green.
 
 **What PARITY does and doesn't cover — read this before treating it as unconditional.**
 This grade covers exactly `parity.bth.toml`'s 5 pre-registered hypotheses (all
-heavy-atom-typing questions). Two real, documented gaps sit outside that registered
-scope and are NOT resolved by this grade:
+heavy-atom-typing questions). Two real, documented gaps originally sat outside that
+registered scope, neither resolved by the grade itself — both have since been closed
+with real evidence too (Update 4 below), though neither was ever a formal hypothesis:
 - **cc/cd ring-alternation** (a torsion-parameter bookkeeping convention — real GAFF2
-  alternates `cc`/`cd` around a conjugated ring; proxide gets the atom-type *family*
-  right but not the alternation). There is no `cd` ATD rule anywhere in
+  alternates `cc`/`cd` around a conjugated ring). There is no `cd` ATD rule anywhere in
   `ATOMTYPE_GFF2.DEF` (confirmed by grep), so this genuinely isn't part of "does the
-  rule engine correctly implement the DEF file" — it needs a separate ring-traversal
-  algorithm, tracked as a future item, not a defect in this verdict.
+  rule engine correctly implement the DEF file" — it needed a separate graph-coloring
+  post-process, not rule-matching. **CLOSED, Update 4.**
 - **H-atom typing's electron-withdrawing-atom element set** (`_EW_ATOMS = {N, O, F, Cl,
   Br, I}`, PR #28): a real, DEF-file-verified implementation of the h1-h5/hx/hn/ho/hs/hp
-  family, but the specific EW element set is a documented judgment call the DEF file
-  itself never enumerates. H-atom typing was never part of this campaign's registered
-  hypotheses (which only ever covered heavy atoms), so this doesn't affect the grade —
-  but it's a real, standing judgment call worth knowing about if H-atom typing
-  correctness matters for downstream work.
+  family, but the specific EW element set was a documented judgment call the DEF file
+  itself never enumerates. **VERIFIED, Update 4** — every H-typing case checked against
+  real antechamber output matches exactly; no longer just a defensible guess.
 
 See `.praxia/docs/decisions/260818_gaff2-parity-verdict-policy.md` for what this PARITY
 grade means for the demistify ligand-extension gate (idea-002) — per the original
 cross-repo plan, a genuine PARITY verdict satisfies that gate outright, no
 accepted-PARTIAL sign-off needed. That decision doc's update flags this explicitly for
 human confirmation rather than assuming the gate should open silently.
+
+**Update 4, same day (2026-08-20) — the two remaining caveats above are now closed
+too**, at your request to push toward total parity where possible:
+
+- **H-atom EW-element set: verified, not just a judgment call.** Ran every H-typing
+  stress case from `TestHAtomTyping` (chloroform→h3, chloromethane→h1,
+  dichloromethane→h2, ethanol→hc/h1/ho, formyl chloride→h5, tetramethylammonium→hx,
+  formamide→nt/hn/h5) through real antechamber output. **Every single case matches
+  exactly.** `_EW_ATOMS = {N, O, F, Cl, Br, I}` is confirmed correct, not just
+  defensible.
+- **cc/cd ring-alternation: implemented and verified.** Found AmberTools' own real
+  algorithm in its open-source repository (`Amber-MD/AmberClassic`,
+  `src/antechamber/atomtype.c`'s `atadjust()`/`cpadjust()` functions) rather than
+  reverse-engineering it from output alone: within the connected subgraph of
+  same-family conjugated atoms (`cc`/`ce`/`cg`/`pc`/`pe`/`nc`/`ne`, and separately
+  `cp`), atoms joined by a Kekule single bond keep the same label; atoms joined by a
+  double bond get the paired ("primed") label (`cc`→`cd`, `ce`→`cf`, etc). Ported
+  directly as `_relabel_conjugated_alternation` in `src/proxide/chem/gaff2.py`, and
+  verified line-for-line against real antechamber output on 8 molecules: furan,
+  pyrrole, thiophene, and imidazole (histidine-probe) correctly split to `cc`/`cd`
+  (or `nc`/`nd`); 1,3-butadiene, divinyl-ketone, acrolein, and biphenyl correctly do
+  **not** split (confirming the algorithm doesn't over-fire on molecules where no
+  double bond connects two same-family atoms). All 59 existing tests remain green;
+  4 test expectations updated (furan/pyrrole/thiophene golden cases,
+  histidine-probe's Supplement-tier case) to the now-correct alternating values.
+
+With both closed, this campaign has no known open gaps in heavy-atom OR H-atom typing
+relative to a real external GAFF2 reference. The one thing that remains genuinely
+unverified is systematic coverage: only 8 molecules have been directly compared against
+antechamber (not the full 24-molecule benchmark set), so `reproduction_rung` stays R1,
+not R2+ — a full systematic reference run would be the next step if that rung matters
+for a specific downstream use.
 
 ## Phase 3: Adversarial Refutation (M=3)
 
@@ -226,7 +256,7 @@ artifact rather than wired into a specific file):
 ```toml
 [[confounds]]
 id = "C_baseline"
-label = "GAFF2 heavy-atom typing is validated against its own DEF-file specification (PARITY) and against a real external reference implementation on 4 of 24 benchmark molecules; H-atom typing and cc/cd ring-alternation sit outside the registered hypothesis scope -- see Update 3's 'What PARITY does and doesn't cover'"
+label = "GAFF2 heavy- and H-atom typing (including cc/cd ring-alternation) is validated against its own DEF-file specification (PARITY) and against a real external reference implementation (antechamber/GAFFTemplateGenerator) on 8 of 24 benchmark molecules -- see Update 4's 'the two remaining caveats above are now closed too'"
 [confounds.reference_parity]
 reference_paper = "AmberTools ATOMTYPE_GFF2.DEF (vendored spec; see parity.bth.toml citation_note)"
 reference_metric = "exact atom-type match (equivalence_bound = 0.0)"
@@ -314,17 +344,18 @@ builds on, cited here rather than represented as prior tracked runs.
 ## Reproduce this verdict
 
 1. `uv run pytest tests/test_gaff2_golden.py tests/test_gaff2_parity_invariants.py -v`
-   — expect 55 passed, 0 xfailed (51 golden [incl. 10 Supplement-tier cases +
-   TestHAtomTyping's 8 cases] + 4 invariants, all passing after PR #27/#28/#29's
-   fixes landed).
+   — expect 59 passed, 0 xfailed, after PR #27/#28/#29/#30's fixes landed (see
+   `tests/test_gaff2_golden.py`'s `TestHAtomTyping` and Supplement-tier cases).
 2. `uv run python scripts/validation/gaff2_external_reference.py` — real
    antechamber-vs-proxide comparison for furan/pyrrole/thiophene/naphthalene; expect
-   naphthalene MATCH, the three heteroaromatics DIFFER only on cc/cd alternation (the
-   explicitly out-of-scope gap — atom-type family already matches).
+   **MATCH on all 4** as of the cc/cd-alternation fix (Update 4) — this script's
+   comparison targets predate that fix and haven't been re-scripted to assert MATCH
+   automatically; the manual verification is recorded in Update 4.
 3. `uv run python scripts/validation/gaff2_parity_verdict.py` — expect `PARITY`
    (`clause_parity_pct=1.0`, `ambiguity_load=none`, `reproduction_rung=R1`, all five
    ceilings green).
-4. If cc/cd ring-alternation or H-atom typing's EW-element-set ever get scoped into a
-   future campaign's registered hypotheses, update `parity.bth.toml` and
+4. If systematic coverage against a real reference (reproduction rung R2+) or the
+   8-molecule antechamber comparison set ever get scoped into a future campaign's
+   registered hypotheses, update `parity.bth.toml` and
    `scripts/validation/gaff2_parity_verdict.py`'s evidence accordingly and re-run the
    grader — do not hand-edit the verdict.

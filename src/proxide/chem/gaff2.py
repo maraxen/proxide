@@ -825,6 +825,62 @@ def extract_atom_features(
     return features
 
 
+# cc/cd (and analogous) ring/chain-alternation bookkeeping: AMBER's bonded-
+# torsion-parameter tables need conjugated-family atoms split into two
+# alternating labels so a formally-single-bonded pair and a formally-double-
+# bonded pair within the same delocalized system don't share one torsion
+# term. There is no corresponding ATD rule anywhere in ATOMTYPE_GFF2.DEF for
+# the "primed" half of each pair (`cd` never appears as a rule's atom_type
+# field; confirmed by grep) -- this can't come from rule-matching, it's a
+# separate graph-coloring post-process. Ported directly from AmberTools'
+# real algorithm (`atadjust()`/`cpadjust()`, src/antechamber/atomtype.c,
+# Amber-MD/AmberClassic) rather than reverse-engineered from output alone:
+# verified line-for-line against real antechamber output on 7 molecules
+# (furan/pyrrole/thiophene/imidazole needing the split; 1,3-butadiene/
+# divinyl-ketone/acrolein/biphenyl correctly needing none).
+_CONJUGATED_ALTERNATION_PAIRS = {
+    "cc": "cd", "ce": "cf", "cg": "ch",
+    "pc": "pd", "pe": "pf", "nc": "nd", "ne": "nf",
+}
+_BIPHENYL_ALTERNATION_PAIR = {"cp": "cq"}
+
+
+def _relabel_conjugated_alternation(
+    mol: Chem.Mol, atom_types: list[str], pairs: dict[str, str]
+) -> None:
+    """Mutate `atom_types` in place: 2-color each connected subgraph of
+    same-"unprimed"-family atoms by Kekule bond parity (single bond = same
+    label, double/triple = flipped label), relabeling flipped atoms to their
+    paired ("primed") type.
+
+    `mol` must already be Kekulized (see `assign_gaff2_atom_types`) -- an
+    un-Kekulized aromatic bond reports `AROMATIC`, which this function
+    treats as "not SINGLE" (a flip), silently corrupting the coloring for
+    ring systems exactly like the sb/db precondition this mirrors.
+    """
+    n = mol.GetNumAtoms()
+    visited = [False] * n
+    for start in range(n):
+        if visited[start] or atom_types[start] not in pairs:
+            continue
+        sign = {start: 1}
+        visited[start] = True
+        stack = [start]
+        while stack:
+            cur = stack.pop()
+            for bond in mol.GetAtomWithIdx(cur).GetBonds():
+                other = bond.GetOtherAtomIdx(cur)
+                if visited[other] or atom_types[other] not in pairs:
+                    continue
+                same = bond.GetBondType().name == "SINGLE"
+                sign[other] = sign[cur] if same else -sign[cur]
+                visited[other] = True
+                stack.append(other)
+        for idx, s in sign.items():
+            if s == -1:
+                atom_types[idx] = pairs[atom_types[idx]]
+
+
 def assign_gaff2_atom_types(
     mol: Chem.Mol,
     rules: list[Gaff2Rule] | None = None,
@@ -912,6 +968,14 @@ def assign_gaff2_atom_types(
                 atom_types.append("s")
             else:
                 atom_types.append("x")
+
+    # cc/cd-family ring/chain-alternation bookkeeping (see the two constants'
+    # docstring comment above) -- two independent passes, matching
+    # AmberTools' real atadjust()/cpadjust() structure: cc/ce/cg/pc/pe/nc/ne
+    # and cp are disjoint families that must never cross-propagate through
+    # each other even if adjacent.
+    _relabel_conjugated_alternation(mol_for_matching, atom_types, _CONJUGATED_ALTERNATION_PAIRS)
+    _relabel_conjugated_alternation(mol_for_matching, atom_types, _BIPHENYL_ALTERNATION_PAIR)
 
     return atom_types
 
