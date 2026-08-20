@@ -82,21 +82,27 @@ def compute_grade(evidence: ParityEvidence) -> ParityGradeResult:
     return ParityGradeResult(grade=grade_map[min_ceiling], ceilings=ceilings)
 
 
-# --- Evidence, per Phase 1-4 findings (see the verdict report for full derivation) ---
+# --- Evidence, per Phase 1-4 findings + verdict-report follow-ups #1/#2 (fixed
+# 2026-08-20, same day as the original verdict) -- see the verdict report for
+# full derivation ---
 #
 # clause_parity_pct: of parity.bth.toml's 4 hypotheses, evaluated against Phase 3
-#   findings + orchestrator re-derivation (Phase 4):
+#   findings + orchestrator re-derivation (Phase 4) + the follow-up fixes:
 #     H1 (rule precedence for all benchmark molecules)        -> MATCH
 #         Attacker #3's 14-molecule scorecard confirms every heavy-atom type is
 #         internally correct per the DEF rules; the deviations it found were
 #         benchmark-YAML documentation errors (Indene/Anthracene/Butadiene/etc.
-#         notes claiming behavior the code never implemented), not code defects.
-#     H2 (f8 bond-count disambiguation)                        -> DEVIATION
-#         Confirmed defect (Attacker #1 + orchestrator re-derivation,
-#         tests/test_gaff2_parity_invariants.py): lowercase sb/db bond-category
-#         counts omit the DEF footer's "includes aromatic" inclusive semantics.
-#         Scoped: does not corrupt any current benchmark molecule (re-derived
-#         and locked in as a passing invariant), but is a real, reproducible bug.
+#         notes claiming behavior the code never implemented, corrected as
+#         follow-up #3), not code defects.
+#     H2 (f8 bond-count disambiguation)                        -> MATCH (was
+#         DEVIATION at the original verdict). Attacker #1's confirmed defect
+#         (lowercase sb/db bond-category counts omitting the DEF footer's
+#         "includes aromatic" inclusive semantics) is FIXED (follow-up #1):
+#         assign_gaff2_atom_types now Kekulizes a local copy before matching,
+#         so sb/db reflect the true per-bond Kekule identity. Verified via
+#         tests/test_gaff2_parity_invariants.py
+#         ::test_bond_category_facts_sb_db_include_aromatic_kekule_identity
+#         (passing, not xfail).
 #     H3 (f9 neighbor-pattern cp discrimination)               -> MATCH
 #         Attacker #2 found no defect across 5 additional fused/bridgehead
 #         molecules (anthracene, pyrene, triphenylene, triphenylbenzene,
@@ -105,30 +111,29 @@ def compute_grade(evidence: ParityEvidence) -> ParityGradeResult:
 #         Attacker #2 found supporting-but-not-conclusive external evidence
 #         (openbabel/openbabel's independent gaff.dat legend) favoring the
 #         current exact-count reading. Genuinely useful, not dispositive.
-#   -> 2/4 MATCH = 0.5
+#   -> 3/4 MATCH = 0.75
 #
-# adversarial_survived: scoped to whether any of the 4 *operationalized*
-#   hypotheses above was mechanism-nullified (per the decision doc's own FAIL
-#   trigger: "adversarial attacks find mechanism-nullifying defects"). H2's
-#   defect is real but classified MAJOR-not-critical (see 04_adjudicate.md's
-#   severity rubric) because it does not corrupt the benchmark set the campaign
-#   actually validates against -- represented via clause_parity_pct instead of
-#   forcing a FAIL-by-design "landed refutation" here. True: no hypothesis was
-#   mechanism-nullified.
+# adversarial_survived: True -- no operationalized hypothesis was mechanism-
+#   nullified (H2's defect was real but scoped/non-critical, and is now fixed
+#   outright rather than merely documented).
 #
 #   NOTE: Attacker #3 also found a second, separate confirmed defect
 #   (_H_TYPE_BY_HEAVY missing most nitrogen ATD types, causing amide N-H to
 #   mistype as "hc" instead of "hn") -- deliberately EXCLUDED from this
-#   evidence block. H-atom typing was explicitly scoped out of this campaign
-#   (parity.bth.toml's hypotheses cover heavy-atom typing only; H-atom typing
-#   was deferred as "Section B" in the original implementation plan). This
-#   finding does not gate THIS grade, but must be addressed before any future
-#   claim of H-atom-typing parity. See the verdict report.
+#   evidence block, same as at the original verdict. H-atom typing was
+#   explicitly scoped out of this campaign (parity.bth.toml's hypotheses cover
+#   heavy-atom typing only; H-atom typing was deferred as "Section B" in the
+#   original implementation plan). This defect is now ALSO fixed (follow-up
+#   #2, via _H_TYPE_ELEMENT_DEFAULT) and verified end-to-end
+#   (tests/test_gaff2_parity_invariants.py::test_h_type_by_heavy_amide_n_h_types_as_hn),
+#   but stays excluded from this grade's evidence for the same scoping reason
+#   as before -- fixing it doesn't retroactively bring it into this campaign's
+#   hypothesis set, it just means the next H-atom-typing parity run (if one is
+#   scoped) starts from a better baseline.
 #
 # invariant_pass: tests/test_gaff2_parity_invariants.py's core, must-hold
-#   invariant (no regression on the h_ew benchmark set despite the H2 defect)
-#   passes. The two xfail tests document known, tracked, scoped defects rather
-#   than an unexpected invariant failure.
+#   invariant (no regression on the h_ew benchmark set) passes. Zero xfail
+#   tests remain -- both confirmed defects are fixed and locked in as passing.
 #
 # reproduction_rung: R0 -- text-parity only (ATOMTYPE_GFF2.DEF's own footer);
 #   no local antechamber/OpenFF GAFF2 reference run exists to reach R1+.
@@ -136,10 +141,11 @@ def compute_grade(evidence: ParityEvidence) -> ParityGradeResult:
 # ambiguity_load: load_bearing -- AR1/AR2/AR3 aromaticity sub-classification
 #   for 5-membered heteroaromatics remains genuinely unresolved (the DEF file
 #   gives no algorithm to compute it), and this sits in the core aromatic-
-#   typing mechanism, not an edge hyperparameter.
+#   typing mechanism, not an edge hyperparameter. Unaffected by the follow-up
+#   fixes; still caps the grade to PARTIAL even with clause_parity at 0.75.
 
 EVIDENCE = ParityEvidence(
-    clause_parity_pct=0.5,
+    clause_parity_pct=0.75,
     adversarial_survived=True,
     invariant_pass=True,
     reproduction_rung="R0",

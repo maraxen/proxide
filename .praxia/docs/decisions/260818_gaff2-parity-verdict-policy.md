@@ -166,15 +166,15 @@ calls "h_ew" (renamed `atomic_prop`/f8 in the rewrite). The Phase 3-5 parity run
 sign-off links to re-verified — independently, via orchestrator-owned invariant tests,
 not by trusting PR #26's description — that h_ew bond-count disambiguation now works
 correctly for every currently-curated benchmark molecule (formamide,
-N-methylacetamide, acetone, acetate). One confirmed, scoped residual defect remains
-(lowercase `sb`/`db` bond-category counts omit the DEF footer's "includes aromatic"
-inclusive semantics — does not affect any current benchmark molecule; tracked as
-`tests/test_gaff2_parity_invariants.py::test_bond_category_facts_sb_includes_aromatic_confirmed_defect`).
+N-methylacetamide, acetone, acetate). One confirmed, scoped residual defect was found
+(lowercase `sb`/`db` bond-category counts omitting the DEF footer's "includes
+aromatic" inclusive semantics — did not affect any current benchmark molecule) and
+**fixed the same day**, before this campaign's PR merged (Kekulizing a local copy
+before rule matching; see the verdict report's Follow-ups §1 and
+`tests/test_gaff2_parity_invariants.py::test_bond_category_facts_sb_db_include_aromatic_kekule_identity`).
 Given that, **neither Option A nor Option B below is chosen as originally framed** —
-the mandatory-prerequisite question is moot (the fix already landed and is verified);
-the residual gap is small, scoped, and does not block Core-tier campaigns, but should
-be fixed before this document is next revisited. See the verdict report's Follow-ups
-§1 for the recommended fix.
+the mandatory-prerequisite question is moot: the fix already landed, is verified, and
+the one residual gap this section originally flagged is no longer open.
 
 The h_ew field encodes bond-type patterns (2DL = delocalized double bonds, 1DB,0DL = one double + zero delocalized, 3sb = three single bonds) that disambiguate otherwise identical GAFF2 rules. The current implementation in `proxide/chem/gaff2.py` **does not check h_ew** — all matching rules are treated as equivalent from a type-assignment standpoint.
 

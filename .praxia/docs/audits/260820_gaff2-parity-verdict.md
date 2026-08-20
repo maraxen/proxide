@@ -39,6 +39,15 @@ rule-precedence-correct heavy-atom typing, and `cp`/`ca` fused-ring discriminati
 specifically — held up under adversarial attack across 14 benchmark molecules plus 5
 additional fused/bridgehead PAHs the attackers introduced.
 
+**Update, same day (2026-08-20):** follow-ups #1-#4 below all landed before merge.
+Both confirmed defects (sb/db inclusive semantics; `_H_TYPE_BY_HEAVY` missing
+nitrogen types) are now fixed and verified, not just documented — `clause_parity_pct`
+moved from 0.5 to 0.75 as a result. The grade is still **PARTIAL** (`ambiguity_load`
+alone is enough to cap it there — AR1/AR2/AR3 is a genuine, unresolved spec gap, not
+a bug), but on strictly better evidence than the original run. See the updated Phase
+5 table and Follow-ups section below; the Phase 3/4 sections are left as originally
+written (historical record of what the campaign found) with pointers to what changed.
+
 ## Phase 3: Adversarial Refutation (M=3)
 
 Three independent agents, each stating an assumption upfront and defaulting to
@@ -58,36 +67,46 @@ not reproduced verbatim here for length.
 
 Per the campaign's re-derivation lock, both claimed code defects were independently
 re-derived — not trusted from the agent reports — via
-`tests/test_gaff2_parity_invariants.py`:
+`tests/test_gaff2_parity_invariants.py`. **Both were then fixed the same day
+(follow-ups #1/#2 below); the tests now lock in the fixes as passing assertions, not
+xfail** — original wording preserved here for the historical record:
 
-1. `test_bond_category_facts_sb_includes_aromatic_confirmed_defect` (xfail, strict) —
-   confirms Attacker #1's finding directly: toluene's ipso carbon has 3 heavy bonds (2
-   aromatic + 1 single) and should satisfy `3sb`, but the current tally gives `sb=1`.
+1. ~~`test_bond_category_facts_sb_includes_aromatic_confirmed_defect` (xfail,
+   strict)~~ — confirmed Attacker #1's finding directly: toluene's ipso carbon has 3
+   heavy bonds (2 aromatic + 1 single) and should satisfy `3sb`, but the tally gave
+   `sb=1`. **FIXED**; now
+   `test_bond_category_facts_sb_db_include_aromatic_kekule_identity` (passing).
 2. `test_f8_bond_count_disambiguation_no_regression_on_h_ew_benchmark_molecules`
-   (passing) — confirms the defect above does **not** corrupt formamide,
-   N-methylacetamide, acetone, or acetate's carbonyl-carbon typing.
-3. `test_h_type_by_heavy_missing_amide_n_types_confirmed_defect` (xfail, strict) —
-   confirms Attacker #3's H-typing finding directly: formamide/N-methylacetamide's
-   amide nitrogen (`nt`/`ns`) is absent from `_H_TYPE_BY_HEAVY`, so its H silently
-   types as `hc` instead of `hn`.
+   (passing) — confirms the defect above did **not** corrupt formamide,
+   N-methylacetamide, acetone, or acetate's carbonyl-carbon typing (still true after
+   the fix).
+3. ~~`test_h_type_by_heavy_missing_amide_n_types_confirmed_defect` (xfail,
+   strict)~~ — confirmed Attacker #3's H-typing finding directly:
+   formamide/N-methylacetamide's amide nitrogen (`nt`/`ns`) was absent from
+   `_H_TYPE_BY_HEAVY`, so its H silently typed as `hc` instead of `hn`. **FIXED**;
+   now `test_h_type_by_heavy_amide_n_h_types_as_hn` (passing).
 
-All three re-derivations reproduced the agents' claims exactly (2 xfail, 1 pass).
-`tests/test_gaff2_golden.py`'s existing 28 tests remain green — no regression.
+All three re-derivations reproduced the agents' claims exactly (2 xfail, 1 pass) at
+the time of the original verdict. `tests/test_gaff2_golden.py`'s 28 (now 32) tests
+remained green throughout — no regression from either fix.
 
-**Severity ranking** (per `04_adjudicate.md`'s rubric):
+**Severity ranking** (per `04_adjudicate.md`'s rubric, as originally adjudicated):
 
 - Defect 1 (sb/db inclusive semantics): **major**. Real, reproducible, but scoped —
-  does not corrupt the current benchmark set, and a clear fix direction exists
-  (whether to include aromatic bonds in the `sb`/`db` tally, or to Kekulize before
-  bond-category extraction — the latter is more precise but has broader blast radius
-  and deserves its own scoped review rather than a fix bolted onto this verdict).
-- Defect 2 (`_H_TYPE_BY_HEAVY` missing N types): **major, out of this grade's scope**.
-  H-atom typing was never covered by `parity.bth.toml`'s hypotheses (heavy-atom typing
-  only) and was explicitly deferred as a separate follow-up in the plan that produced
-  PR #26. This finding does not gate the PARTIAL grade below, but must be fixed before
-  any future claim of H-atom-typing parity — it directly undermines the "critical
-  hydrogen typing on N adjacent to C=O" claim that Formamide/N-methylacetamide were
-  specifically curated to test.
+  did not corrupt the current benchmark set. Fix direction chosen: Kekulize a local
+  copy before rule matching (`assign_gaff2_atom_types`), giving the true per-bond
+  Kekule single/double identity while preserving `GetIsAromatic()` for AB/DL — more
+  precise than the alternative (folding all aromatic bonds into both `sb` and `db`,
+  which would over-count).
+- Defect 2 (`_H_TYPE_BY_HEAVY` missing N types): **major, was out of this grade's
+  scope, now fixed anyway**. H-atom typing was never covered by
+  `parity.bth.toml`'s hypotheses (heavy-atom typing only) and remains formally
+  deferred as "Section B" of the plan that produced PR #26 (the *full* h1-h5/hx/ha
+  sp2-vs-sp3 + electron-withdrawing-neighbor-count rework is still not done) — but
+  this specific, narrow bug (missing dict entries silently defaulting to the wrong
+  element's H type) was cheap and DEF-file-verified to fix (`ATOMTYPE_GFF2.DEF` lines
+  79-82: `hn`/`ho`/`hs`/`hp` are each unconditional on the *specific* N/O/S/P
+  sub-type), so it was fixed rather than left as a documented gap.
 
 ## Phase 5: Graded Verdict
 
@@ -96,10 +115,10 @@ Evidence (full derivation in `scripts/validation/gaff2_parity_verdict.py`'s comm
 | Dimension | Value | Ceiling |
 |---|---|---|
 | `invariant_pass` | True | PARITY |
-| `clause_parity_pct` | 0.5 (2/4 hypotheses MATCH) | PARTIAL |
+| `clause_parity_pct` | 0.75 (3/4 hypotheses MATCH — H2 moved from DEVIATION to MATCH after follow-up #1's fix) | PARTIAL |
 | `adversarial_survived` | True (no hypothesis mechanism-nullified) | PARITY |
 | `reproduction_rung` | R0 (text-parity only; no local antechamber/OpenFF run) | PARITY |
-| `ambiguity_load` | load_bearing (AR1/AR2/AR3 unresolved) | PARTIAL |
+| `ambiguity_load` | load_bearing (AR1/AR2/AR3 unresolved — unaffected by the follow-up fixes) | PARTIAL |
 
 **Grade = min(ceilings) = PARTIAL.**
 
@@ -134,44 +153,61 @@ Both `[NEEDS HUMAN SIGN-OFF]` items in
 that file's diff in this same commit):
 
 - **Approver for accepted-PARTIAL verdicts:** Marielle.
-- **h_ew Option A vs. B:** resolved as **effectively satisfied, with a documented
-  residual gap** — not the open A/B choice as originally framed. PR #26 correctly
-  implemented f8's digit-count *arithmetic* and fixed the *disambiguation outcome* for
-  every currently-curated h_ew molecule (re-verified here, not just trusted from the PR
-  description). The one confirmed residual gap (lowercase `sb`/`db` inclusive-bond
-  semantics) is scoped, tracked (xfail test above), and does not corrupt any current
-  benchmark molecule — it does not block Core-tier campaigns under Option B's framing,
-  but should be fixed before this file is next touched, since it's now a small, clearly
-  specified, one-function change.
+- **h_ew Option A vs. B:** resolved as **fully satisfied** — not the open A/B choice
+  as originally framed, and no longer even the "residual gap" framing this section
+  originally used. PR #26 correctly implemented f8's digit-count *arithmetic* and
+  fixed the *disambiguation outcome* for every currently-curated h_ew molecule
+  (re-verified here, not just trusted from the PR description); the one confirmed
+  residual gap this section originally flagged (lowercase `sb`/`db` inclusive-bond
+  semantics) is now fixed outright (follow-up #1), not just documented.
 
-## Follow-ups (not blocking this verdict)
+## Follow-ups
 
-1. **Fix `_bond_category_facts`'s sb/db inclusive semantics** (Defect 1). Recommended
-   direction: decide between (a) folding aromatic bonds into both `sb` and `db` tallies
-   consistently with the existing `DL := is_aromatic` simplification (cheap, but
-   over-counts — a 3-aromatic-bond atom would show both `sb=3` and `db=3`), or (b)
-   Kekulizing before bond-category extraction to get the true per-bond Kekule identity
-   while preserving `GetIsAromatic()` (more precise, broader blast radius — touches
-   molecule preparation, deserves its own review). Un-xfail
-   `test_bond_category_facts_sb_includes_aromatic_confirmed_defect` once fixed.
-2. **Fix `_H_TYPE_BY_HEAVY`'s missing nitrogen ATD types** (Defect 2) as the first
-   concrete item when Section B (H-atom typing rework, deferred in the plan that
-   produced PR #26) is scoped. Un-xfail
-   `test_h_type_by_heavy_missing_amide_n_types_confirmed_defect` once fixed.
-3. **Correct `benchmarks/gaff2_parity_molecules.yaml`'s authoring deviations** (Attacker
-   #3): Indene and Anthracene both claim `targets_gap: cp` but produce zero `cp` atoms
-   (same bridgehead-exclusion mechanism as Naphthalene, just undocumented for these
-   two); 1,3-Butadiene's terminal/internal `ce`/`cc` claim is exactly backwards;
-   Divinyl-ketone/Acrolein overclaim `cc`/`cd`/`ce` coverage for terminal `=CH2`
-   carbons that structurally can't get those types. None of these are code defects —
-   the code is internally consistent; the curation notes are wrong or incomplete.
-4. **Add golden-test coverage** for Toluene (already matches, cheap to lock in),
-   Anthracene (currently zero coverage), and the `[2DL]`/`[3sb]`/`cs` branches of the
-   f8 grammar (currently only `[1DB,0DL]` is exercised by a golden molecule).
-5. **AR1/AR2/AR3 sub-classification** remains unresolved (no algorithm exists in the
-   DEF file); this is the item keeping `ambiguity_load = load_bearing`. No action
-   recommended beyond what's already documented in `tests/test_gaff2_golden.py`'s
-   `test_atom_type_five_membered_heteroaromatics` and `parity.bth.toml`'s hypothesis 4.
+**Status as of the same-day update: #1-#4 are DONE (all landed before merge).
+#5 remains open by design (no fix possible without new information).**
+
+1. ~~Fix `_bond_category_facts`'s sb/db inclusive semantics~~ **DONE.**
+   `assign_gaff2_atom_types` now Kekulizes a local copy
+   (`clearAromaticFlags=False`) before rule matching, so `sb`/`db` reflect the true
+   per-bond Kekule identity (including aromatic bonds) while `SB`/`DB` stay exact/
+   non-aromatic. Never mutates the caller's molecule. Locked in as
+   `test_bond_category_facts_sb_db_include_aromatic_kekule_identity` (passing).
+2. ~~Fix `_H_TYPE_BY_HEAVY`'s missing nitrogen ATD types~~ **DONE** (narrow fix, not
+   the full Section B rework). Unrecognized heavy types now fall back to an
+   element-derived default (`_H_TYPE_ELEMENT_DEFAULT`: N→hn, O→ho, S→hs, P→hp,
+   verified against `ATOMTYPE_GFF2.DEF` lines 79-82) instead of a blanket `hc`;
+   carbon keeps its existing coarser `hc` default. Locked in as
+   `test_h_type_by_heavy_amide_n_h_types_as_hn` (passing, exercises the real
+   `build_gaff2_ffxml` path end-to-end via its emitted FFXML, not just the lookup
+   table in isolation). The full h1-h5/hx/ha sp2-vs-sp3 + electron-withdrawing-
+   neighbor-count rework (Section B) remains a separate, larger follow-up.
+3. ~~Correct `benchmarks/gaff2_parity_molecules.yaml`'s authoring deviations~~
+   **DONE.** Indene and Anthracene's false `cp` claims corrected with
+   mechanism-specific notes (Indene fails cp's f9 3-aromatic-neighbor requirement,
+   same as Toluene's ipso carbon; Anthracene fails f8's exact `1RG6` ring-count
+   token, same as Naphthalene — these are two *different* mechanisms, verified
+   separately rather than assumed identical). 1,3-Butadiene's backwards
+   terminal/internal claim, and Divinyl-ketone/Acrolein's overclaimed `ce`/`cc`
+   coverage for terminal `=CH2` carbons, corrected with a DEF-file-grounded
+   explanation (`ce`'s f9 pattern requires a single-bonded heavy neighbor, which a
+   double-bond-only terminal carbon structurally cannot have).
+4. ~~Add golden-test coverage~~ **DONE.** Toluene and Anthracene locked in as
+   parametrized golden cases; Thioacetone (`CC(=S)C`) added for first-ever `cs`
+   coverage (verifies `cs`/`c` are disambiguated by f9's S-vs-O/S neighbor pattern,
+   not by which f8 branch fires — both hit `[1DB,0DL]`). `[2DL]`/`[3sb]` got
+   matching-level coverage (`atomic_prop_matches` against constructed
+   `AtomBondFacts`) rather than a real-molecule test — no real molecule was found
+   that reaches those specific `c`/`cs` branches through actual rule precedence
+   without introducing an unverified claim; parsing-level coverage for these tokens
+   already existed.
+5. **AR1/AR2/AR3 sub-classification remains unresolved** (no algorithm exists in the
+   DEF file); this is the item keeping `ambiguity_load = load_bearing` even after
+   #1-#4. No action recommended beyond what's already documented in
+   `tests/test_gaff2_golden.py`'s `test_atom_type_five_membered_heteroaromatics` and
+   `parity.bth.toml`'s hypothesis 4 — closing this would need either a real
+   antechamber/OpenFF reference run (reaching reproduction rung R1+) or a
+   genuinely new structural heuristic, not a code fix to the current grammar
+   engine.
 
 ## Provenance note
 
@@ -185,10 +221,12 @@ builds on, cited here rather than represented as prior tracked runs.
 ## Reproduce this verdict
 
 1. `uv run pytest tests/test_gaff2_golden.py tests/test_gaff2_parity_invariants.py -v`
-   — expect 28 passed (golden) + 1 passed + 2 xfailed (invariants).
-2. `uv run python scripts/validation/gaff2_parity_verdict.py` — expect `PARTIAL`.
-3. If either follow-up fix (1 or 2 above) lands: update the corresponding evidence
-   value in `scripts/validation/gaff2_parity_verdict.py` (clause_parity_pct moves
-   toward 0.75 or 1.0 as hypotheses move from DEVIATION to MATCH), un-xfail the
-   matching invariant test, and re-run this script — do not hand-edit the verdict
-   without re-running the grader.
+   — expect 35 passed, 0 xfailed (32 golden + 3 invariants, all passing after
+   follow-ups #1/#2/#4 landed).
+2. `uv run python scripts/validation/gaff2_parity_verdict.py` — expect `PARTIAL`
+   (`clause_parity_pct=0.75`, capped by `ambiguity_load`).
+3. If AR1/AR2/AR3 sub-classification (follow-up #5) is ever resolved — most likely
+   via a real antechamber/OpenFF reference run — update `ambiguity_load` to `"none"`
+   or `"non_load_bearing"` in `scripts/validation/gaff2_parity_verdict.py` and
+   `reproduction_rung` to `"R1"` or better, then re-run the grader; do not hand-edit
+   the verdict without re-running it.
