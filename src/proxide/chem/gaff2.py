@@ -220,19 +220,35 @@ def _parse_neighbor_spec(raw: str) -> NeighborSpec | None:
         if close != -1:
             bracket_body = rest[1:close]
             rest = rest[close + 1:]
-            plain_tokens = []
-            for raw_tok in bracket_body.replace(".", ",").split(","):
-                raw_tok = raw_tok.strip()
-                if not raw_tok:
-                    continue
-                if raw_tok.endswith("''"):
-                    edge_bond_reqs.append((raw_tok[:-2], False))
-                elif raw_tok.endswith("'"):
-                    edge_bond_reqs.append((raw_tok[:-1], True))
-                else:
-                    plain_tokens.append(raw_tok)
-            if plain_tokens:
-                own_props = parse_atomic_prop(",".join(plain_tokens))
+            # Bug found post-merge PARITY audit (260820): this used to do
+            # bracket_body.replace(".", ",").split(",") -- silently turning the
+            # DEF footer's own documented "." = OR ("the ring and aromatity
+            # descriptions") into an AND before parse_atomic_prop ever saw it.
+            # The only chem_env bracket in the whole DEF file that uses "."
+            # is (XX[AR1.AR2.AR3]) (nv/nm/nn's "attached to any aromatic-class
+            # neighbor" pattern, confirmed by grep -- no bracket in the file
+            # mixes "." with a comma-separated edge_bond_req, so a dot-bearing
+            # bracket is unambiguously a plain-token OR list, never a mix).
+            # AND(AR1, AR2, AR3) is unsatisfiable (an atom has exactly one
+            # aromaticity class), so nv/nm/nn could never fire and silently
+            # fell through to n8/np/nq -- e.g. aniline's N mistyped n8 instead
+            # of nv.
+            if "." in bracket_body:
+                own_props = parse_atomic_prop(bracket_body)
+            else:
+                plain_tokens = []
+                for raw_tok in bracket_body.split(","):
+                    raw_tok = raw_tok.strip()
+                    if not raw_tok:
+                        continue
+                    if raw_tok.endswith("''"):
+                        edge_bond_reqs.append((raw_tok[:-2], False))
+                    elif raw_tok.endswith("'"):
+                        edge_bond_reqs.append((raw_tok[:-1], True))
+                    else:
+                        plain_tokens.append(raw_tok)
+                if plain_tokens:
+                    own_props = parse_atomic_prop(",".join(plain_tokens))
 
     if rest.startswith("("):
         nested = _parse_paren_group(_TokenStream(rest))
