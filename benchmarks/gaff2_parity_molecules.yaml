@@ -75,26 +75,55 @@ molecules:
   - name: "Indene"
     smiles: "C1C=Cc2ccccc21"
     targets_gap:
-      - "cp"  # Aromatic carbons in 6-membered ring
+      - "ca"  # CORRECTED 260820: NOT cp -- see notes
       - "multi-ring"  # Fused 5+6 rings
     tier: "core"
-    description: "Bicyclic with fused 5-membered and 6-membered aromatic rings. The 5-membered ring contains one sp3 methylene (C1) and two sp2 carbons (C=C), fused to the aromatic 6-membered ring. Tests aromatic carbon typing in different ring contexts and multi-ring topology."
+    description: "Bicyclic with fused 5-membered and 6-membered aromatic rings. The 5-membered ring contains one sp3 methylene (typed c5, the RG5 sp3-ring type) and two sp2 carbons (C=C, typed c2/ce), fused to the aromatic 6-membered ring (all 6 ring carbons typed ca, including both fusion atoms). Tests aromatic carbon typing in different ring contexts and multi-ring topology."
+    notes: "CORRECTED 260820: previously claimed targets_gap: cp, but produces
+      zero cp atoms. Unlike Naphthalene/Anthracene's ring-count-based
+      exclusion, the mechanism here is the same as Toluene's: each 6-ring/
+      5-ring fusion carbon has only 2 aromatic heavy neighbors (the adjacent
+      benzo-ring atoms) plus 1 NON-aromatic heavy neighbor (the 5-ring's sp3
+      CH2 or sp2 CH=), so it fails cp's f9 '3 aromatic heavy neighbors'
+      requirement outright -- its ring-count token (1RG6) is actually
+      satisfied (ring_counts_by_size={5:1,6:1}), it just never gets there.
+      All 6 aromatic ring carbons resolve to ca."
 
   - name: "1,3-Butadiene"
     smiles: "C=CC=C"
     targets_gap:
-      - "cc/cd"  # Conjugated sp2 carbons (cc/cd gap per spec lines 37-58)
+      - "ce"  # CORRECTED 260820 -- see notes; was "cc/cd"
     tier: "core"
-    description: "Classic conjugated diene. Terminal carbons will be typed as ce (sp2 in conjugated chain), internal carbons as cc. Tests conjugated sp2 carbon discrimination."
-    notes: "Spec lines 37-58 define cc for ring conjugation, lines 60-64 define ce for chain conjugation; this molecule tests the ce typing."
+    description: "Classic conjugated diene. Terminal carbons (idx 0, 3) type as c2 (\"other sp2 C\", no conjugated-chain neighbor of their own); internal carbons (idx 1, 2) type as ce (sp2 in a conjugated chain -- each bonded to another sp2 carbon that itself has a double bond). Tests conjugated sp2 carbon discrimination."
+    notes: "CORRECTED 260820: the original claim (\"terminal carbons... ce...
+      internal carbons... cc\") was exactly backwards on both axes, and cc is
+      structurally impossible here regardless (cc is the *ring*-conjugation
+      family per spec lines 37-58; butadiene is acyclic). Verified via live
+      run: idx0=c2, idx1=ce, idx2=ce, idx3=c2. ce's spec rule (lines 60-64)
+      requires, via its f9 pattern, a neighbor reached over a *single-bond*
+      edge (the \"SB'\" edge-direction suffix -- e.g. \"(C3[SB'])\"). A
+      terminal =CH2 carbon's only heavy-atom bond is the double bond to the
+      internal carbon, so it has no single-bonded heavy neighbor at all and
+      cannot satisfy any of ce's 5 alternative f9 patterns -- it correctly
+      falls through to c2 (\"other sp2 C\", spec line 70). The internal
+      carbons each have exactly one single-bonded heavy neighbor (each
+      other) satisfying the pattern, hence ce."
 
   - name: "Divinyl ketone"
     smiles: "C=CC(=O)C=C"
     targets_gap:
       - "cross-conjugated"  # CROSS-CONJUGATED POLYENE - vinyl groups conjugated to central carbonyl
     tier: "core"
-    description: "Two vinyl groups (C=C) conjugated to a central carbonyl carbon (C=O). Tests cross-conjugated system with branching at a central sp2 carbon. Carbons should type according to conjugation rules (ce or cc for vinyl, c for carbonyl)."
-    notes: "Explicit adversarial requirement: genuine cross-conjugated polyene with two vinyl arms bonded to a common sp2 carbonyl center."
+    description: "Two vinyl groups (C=C) conjugated to a central carbonyl carbon (C=O). Tests cross-conjugated system with branching at a central sp2 carbon. Terminal vinyl carbons (idx 0, 5) type as c2; internal vinyl carbons (idx 1, 4 -- adjacent to the carbonyl) type as ce; the carbonyl carbon (idx 2) types as c."
+    notes: "CORRECTED 260820: the original claim (\"ce or cs for vinyl\")
+      overclaimed coverage -- only the internal vinyl carbons (bonded to the
+      carbonyl carbon via a single edge) satisfy ce's f9 single-bonded-
+      neighbor requirement; the terminal =CH2 carbons, same as
+      1,3-Butadiene, have no single-bonded heavy neighbor (their only heavy
+      bond is the terminal double bond) and fall through to c2. Verified via
+      live run: idx0=c2, idx1=ce, idx2=c, idx3=o, idx4=ce, idx5=c2. Explicit
+      adversarial requirement retained: genuine cross-conjugated polyene with
+      two vinyl arms bonded to a common sp2 carbonyl center."
 
   - name: "Formamide"
     smiles: "NC=O"
@@ -116,11 +145,17 @@ molecules:
   - name: "Acrolein (2-Propenal)"
     smiles: "C=CC=O"
     targets_gap:
-      - "cc/cd"  # α,β-unsaturated carbonyl (conjugated sp2 system)
+      - "ce"  # CORRECTED 260820 -- see notes; was "cc/cd"
       - "c"  # Carbonyl carbon
     tier: "core"
-    description: "α,β-unsaturated aldehyde. Terminal C=C conjugated with C=O. Tests both cc/cd conjugated carbons and carbonyl carbon (c) in an extended conjugated system."
-    notes: "Combines conjugation gap (cc/cd/ce) with carbonyl gap; stresses sp2 carbon typing across conjugated system."
+    description: "α,β-unsaturated aldehyde. Terminal C=C conjugated with C=O. The terminal vinyl carbon (idx 0) types as c2; the internal vinyl carbon (idx 1, single-bonded to the carbonyl) types as ce; the carbonyl carbon (idx 2) types as c."
+    notes: "CORRECTED 260820: the original claim (\"cc/cd conjugated
+      carbons\") is wrong on two counts -- cc/cd is the *ring*-conjugation
+      family (acrolein is acyclic), and only the internal vinyl carbon
+      qualifies for ce at all; the terminal =CH2 carbon has no single-bonded
+      heavy neighbor (same mechanism as 1,3-Butadiene/Divinyl-ketone) and
+      falls through to c2. Verified via live run: idx0=c2, idx1=ce, idx2=c,
+      idx3=o."
 
   - name: "Thiophene"
     smiles: "c1ccsc1"
@@ -163,11 +198,22 @@ molecules:
   - name: "Anthracene"
     smiles: "c1ccc2cc3ccccc3cc2c1"
     targets_gap:
-      - "cp"  # Aromatic carbons in central ring
+      - "ca"  # CORRECTED 260820: NOT cp -- see notes
       - "multi-ring"  # Three fused 6-membered rings (larger than naphthalene)
     tier: "core"
-    description: "Three fused aromatic rings in linear arrangement (tricyclic). Tests cp typing in more complex multi-ring topology (larger than naphthalene) and stresses multi-wildcard ATD rules with 14 aromatic carbons arranged in a central ring with outer rings on each side."
-    notes: "Largest aromatic fused system in this tier; maximum test of multi-ring topology complexity. Distinct from naphthalene (bicyclic) in both structure and size."
+    description: "Three fused aromatic rings in linear arrangement (tricyclic). Tests bridgehead-exclusion typing in more complex multi-ring topology (larger than naphthalene) and stresses multi-wildcard ATD rules with 14 aromatic carbons arranged in a central ring with outer rings on each side."
+    notes: "CORRECTED 260820: previously claimed targets_gap: cp, but produces
+      zero cp atoms. All 14 ring carbons resolve to ca, including the 4
+      bridgeheads (idx 3, 5, 10, 12) -- same mechanism as Naphthalene, and
+      confirmed by this campaign's Phase 3 adversarial refutation: each
+      bridgehead genuinely has 3 aromatic heavy neighbors (satisfying cp's f9
+      pattern) but is a member of TWO six-rings simultaneously
+      (ring_counts_by_size={6:2}), so it fails cp's exact '1RG6' token, same
+      as Naphthalene's bridgeheads. Largest aromatic fused system in this
+      tier; maximum test of multi-ring topology complexity. See
+      tests/test_gaff2_golden.py::test_naphthalene_bridgehead_is_documented_ambiguity's
+      docstring for the underlying 1RG6-reading caveat, which applies equally
+      here."
 
 # Supplement tier sources (to be documented separately)
 # ========================================================
