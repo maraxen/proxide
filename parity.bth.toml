@@ -34,8 +34,8 @@ hypotheses = [
   "GAFF2 atom types are assigned identically to the DEF-file rule precedence for all benchmark molecules",
   "f8 bond-type-count disambiguation (e.g. cs/c's [2DL]/[1DB,0DL]/[3sb] variants) is correctly applied where multiple rules share the same atomic_num/num_attached",
   "f9 neighbor-pattern matching (e.g. cp's 3-aromatic-neighbor requirement) correctly discriminates ring-junction atoms from ordinary ring atoms",
-  "AR1/AR2/AR3 aromaticity sub-classification affects verdict for 5-membered heteroaromatics (furan/pyrrole/thiophene) -- KNOWN GAP, not yet resolved (PR #26 collapses AR1/AR2/AR3 to one sentinel; no algorithm exists in the DEF file to compute them separately)",
-  "ring/aromaticity detection matches the specification for fused and bridgehead systems -- naphthalene's cp/ca bridgehead reading is a documented guess (PR #26), not verified against a real reference",
+  "AR1/AR2/AR3 aromaticity sub-classification affects verdict for 5-membered heteroaromatics (furan/pyrrole/thiophene) -- RESOLVED 260820 (PR #28, re-fixed 260820 post-audit for the exocyclic-double-bond case): confirmed MATCH against real antechamber output; see .praxia/docs/audits/260820_gaff2-parity-verdict.md Update 3/4 for the derivation, not left as the KNOWN GAP this hypothesis text originally described",
+  "ring/aromaticity detection matches the specification for fused and bridgehead systems -- RESOLVED 260820 (PR #28): naphthalene's cp/ca bridgehead reading confirmed MATCH against real antechamber output, no longer a documented guess; see .praxia/docs/audits/260820_gaff2-parity-verdict.md Update 3 for the derivation",
 ]
 equivalence_bound = 0.0
 N = 3
