@@ -86,8 +86,12 @@ def compute_grade(evidence: ParityEvidence) -> ParityGradeResult:
 # 2026-08-20, same day as the original verdict) -- see the verdict report for
 # full derivation ---
 #
-# clause_parity_pct: of parity.bth.toml's 4 hypotheses, evaluated against Phase 3
-#   findings + orchestrator re-derivation (Phase 4) + the follow-up fixes:
+# clause_parity_pct: of parity.bth.toml's ACTUAL 5 pre-registered hypotheses
+#   (PR-audit finding: an earlier version of this evidence block only counted 4,
+#   silently dropping the AR1/AR2/AR3 hypothesis entirely rather than scoring it
+#   -- corrected here to use the true denominator and the toml's own numbering),
+#   evaluated against Phase 3 findings + orchestrator re-derivation (Phase 4) +
+#   the follow-up fixes:
 #     H1 (rule precedence for all benchmark molecules)        -> MATCH
 #         Attacker #3's 14-molecule scorecard confirms every heavy-atom type is
 #         internally correct per the DEF rules; the deviations it found were
@@ -102,20 +106,46 @@ def compute_grade(evidence: ParityEvidence) -> ParityGradeResult:
 #         so sb/db reflect the true per-bond Kekule identity. Verified via
 #         tests/test_gaff2_parity_invariants.py
 #         ::test_bond_category_facts_sb_db_include_aromatic_kekule_identity
-#         (passing, not xfail).
+#         (passing, not xfail) AND
+#         ::test_assign_gaff2_atom_types_kekulizes_before_matching (a spy test
+#         guarding the wiring itself, added after a PR audit found the first
+#         test alone doesn't exercise assign_gaff2_atom_types's internal
+#         Kekulize call -- no current benchmark molecule's typed OUTPUT
+#         actually depends on this fix, so an output-only test can't catch a
+#         regression here).
 #     H3 (f9 neighbor-pattern cp discrimination)               -> MATCH
 #         Attacker #2 found no defect across 5 additional fused/bridgehead
 #         molecules (anthracene, pyrene, triphenylene, triphenylbenzene,
 #         terphenyl) beyond the existing naphthalene/biphenyl tests.
-#     H4 (naphthalene bridgehead 1RG6 ambiguity resolved?)     -> AMBIGUOUS
+#     H4 (AR1/AR2/AR3 sub-classification, pre-registered as a "KNOWN GAP, not
+#         yet resolved") -> AMBIGUOUS. Genuinely unresolved; no algorithm
+#         exists in the DEF file to compute it. This same fact ALSO drives
+#         ambiguity_load=load_bearing below -- that is not double-counting:
+#         clause_parity_pct measures per-hypothesis agreement, ambiguity_load
+#         measures whether an unresolved ambiguity sits in the core mechanism.
+#         Both are true of the same underlying gap; scoring it in both
+#         dimensions is how the cap-lattice is designed to work, not a
+#         self-serving inflation -- PR-audit finding: document this
+#         explicitly rather than leave the relationship implicit.
+#     H5 (naphthalene bridgehead 1RG6 ambiguity resolved?)     -> AMBIGUOUS
 #         Attacker #2 found supporting-but-not-conclusive external evidence
 #         (openbabel/openbabel's independent gaff.dat legend) favoring the
 #         current exact-count reading. Genuinely useful, not dispositive.
-#   -> 3/4 MATCH = 0.75
+#   -> 3/5 MATCH = 0.6
 #
 # adversarial_survived: True -- no operationalized hypothesis was mechanism-
 #   nullified (H2's defect was real but scoped/non-critical, and is now fixed
 #   outright rather than merely documented).
+#
+#   PR-audit flag (judgment call, not a bug): bathos's own compute_grade
+#   docstring treats ANY landed refutation as FAIL-by-design ("it negates a
+#   core claim"), and H2's refutation genuinely landed at the time Phase 4
+#   adjudicated it. Scoring True here rests on the fix being independently
+#   chemistry-verified afterward (a fresh audit agent re-derived all 7
+#   DEF-file/RDKit claims from primary sources, not just re-running the
+#   existing tests) rather than on a formal Phase-3-style adversarial
+#   re-attack against the patched code. Recorded here explicitly for human
+#   sign-off rather than silently defaulting to the more lenient reading.
 #
 #   NOTE: Attacker #3 also found a second, separate confirmed defect
 #   (_H_TYPE_BY_HEAVY missing most nitrogen ATD types, causing amide N-H to
@@ -141,11 +171,12 @@ def compute_grade(evidence: ParityEvidence) -> ParityGradeResult:
 # ambiguity_load: load_bearing -- AR1/AR2/AR3 aromaticity sub-classification
 #   for 5-membered heteroaromatics remains genuinely unresolved (the DEF file
 #   gives no algorithm to compute it), and this sits in the core aromatic-
-#   typing mechanism, not an edge hyperparameter. Unaffected by the follow-up
-#   fixes; still caps the grade to PARTIAL even with clause_parity at 0.75.
+#   typing mechanism, not an edge hyperparameter (this is H4 above). Unaffected
+#   by the follow-up fixes; still caps the grade to PARTIAL even with
+#   clause_parity at 0.6.
 
 EVIDENCE = ParityEvidence(
-    clause_parity_pct=0.75,
+    clause_parity_pct=0.6,
     adversarial_survived=True,
     invariant_pass=True,
     reproduction_rung="R0",

@@ -54,6 +54,45 @@ def _types(smiles: str) -> list[tuple[str, str]]:
     ]
 
 
+def test_assign_gaff2_atom_types_kekulizes_before_matching(monkeypatch) -> None:
+    """Regression guard for the fix itself, not just its output.
+
+    PR-audit finding: the test below this one (and the whole golden suite)
+    Kekulizes its OWN molecule and calls _atom_bond_facts directly -- it
+    never actually exercises assign_gaff2_atom_types's internal Kekulize
+    call, and no current benchmark molecule's *output* depends on it (cs/c
+    are disambiguated by f9, not f8; verified via monkeypatching Chem.Kekulize
+    to a no-op module-wide and confirming every golden-suite molecule's
+    output is unchanged). That means a future accidental removal of the
+    internal `Chem.Kekulize(mol_for_matching, clearAromaticFlags=False)` call
+    in `assign_gaff2_atom_types` would pass every other test in this repo
+    silently. This test spies on the real call (still lets it run -- not a
+    no-op mock) to guard the wiring directly, independent of whether any
+    molecule's typed output happens to depend on it today.
+    """
+    import proxide.chem.gaff2 as gaff2_module
+
+    calls: list[tuple[bool | None]] = []
+    real_kekulize = gaff2_module.Chem.Kekulize
+
+    def spy_kekulize(mol, clearAromaticFlags=True, **kwargs):
+        calls.append((clearAromaticFlags,))
+        return real_kekulize(mol, clearAromaticFlags=clearAromaticFlags, **kwargs)
+
+    monkeypatch.setattr(gaff2_module.Chem, "Kekulize", spy_kekulize)
+
+    mol = Chem.MolFromSmiles("Cc1ccccc1")  # toluene: has aromatic bonds
+    mol = Chem.AddHs(mol)
+    AllChem.SanitizeMol(mol)
+    gaff2_module.assign_gaff2_atom_types(mol)
+
+    assert calls == [(False,)], (
+        f"expected assign_gaff2_atom_types to call Chem.Kekulize exactly "
+        f"once with clearAromaticFlags=False before rule matching; got "
+        f"{calls}"
+    )
+
+
 def test_bond_category_facts_sb_db_include_aromatic_kekule_identity() -> None:
     """Locks in follow-up #1's fix: sb/db now reflect the true per-bond Kekule
     single/double identity (regardless of aromaticity), while SB/DB stay exact

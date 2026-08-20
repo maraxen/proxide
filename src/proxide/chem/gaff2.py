@@ -364,6 +364,14 @@ def _bond_category_facts(bond) -> dict[str, bool]:
     is_single = bt.name == "SINGLE"
     is_double = bt.name == "DOUBLE"
     is_triple = bt.name == "TRIPLE"
+    if is_aromatic and bt.name not in ("SINGLE", "DOUBLE"):
+        raise AssertionError(
+            f"_bond_category_facts precondition violated: an aromatic bond "
+            f"reports GetBondType()={bt.name!r}, not SINGLE/DOUBLE -- the "
+            f"owning molecule was not Kekulized with clearAromaticFlags=False "
+            f"before this call (see assign_gaff2_atom_types). sb/db would "
+            f"silently collapse to always-False for this bond."
+        )
     return {
         "SB": is_single and not is_aromatic,
         "DB": is_double and not is_aromatic,
@@ -791,14 +799,25 @@ def assign_gaff2_atom_types(
     # SINGLE/DOUBLE. clearAromaticFlags=False keeps GetIsAromatic() intact so AB/DL
     # and aromaticity-class matching are unaffected. Never mutates the caller's
     # mol. A molecule that has already passed Chem.SanitizeMol should always
-    # Kekulize successfully (sanitization Kekulizes internally to validate), but
-    # fall back to the unmodified atom order (losing only the sb/db distinction,
-    # not correctness of every other field) if some pathological input can't be.
+    # Kekulize successfully (sanitization Kekulizes internally to validate) --
+    # deliberately NOT silently falling back to the un-Kekulized molecule on
+    # failure: that would make every downstream sb/db-dependent match silently
+    # wrong for an aromatic bond (masked by _bond_category_facts's own
+    # precondition assertion firing at an unrelated call site instead, with a
+    # confusing stack trace far from the real cause). Fail loudly here instead,
+    # at the actual point of failure, with an explicit warning first.
     mol_for_matching = Chem.Mol(mol)
     try:
         Chem.Kekulize(mol_for_matching, clearAromaticFlags=False)
-    except Chem.KekulizeException:
-        mol_for_matching = mol
+    except Chem.KekulizeException as exc:
+        import logging as _logging
+
+        _logging.getLogger(__name__).warning(
+            "assign_gaff2_atom_types: Kekulize failed (%s); refusing to "
+            "silently degrade sb/db bond-category matching for this molecule",
+            exc,
+        )
+        raise
 
     # Precedence: first-match-in-file-order (parse_gaff2_rules preserves DEF-file
     # declaration order), per ATOMTYPE_GFF2.DEF's own "defination order is crucial"

@@ -28,8 +28,9 @@ The grade is **PARTIAL**, computed via bathos's X1 cap-lattice
 `bathos.parity.compute_grade` — see that script's docstring for why it's a
 transcription rather than an import). Two ceilings are non-PARITY:
 
-- **clause_parity = PARTIAL** (0.5): of the campaign's 4 hypotheses, 2 MATCH, 1 has a
-  confirmed but scoped DEVIATION, 1 remains AMBIGUOUS.
+- **clause_parity = PARTIAL** (originally 0.5 of 4 hypotheses; see the second Update
+  below — the correct denominator is `parity.bth.toml`'s actual 5 pre-registered
+  hypotheses).
 - **ambiguity_load = PARTIAL**: the AR1/AR2/AR3 five-membered-heteroaromatic
   classification gap remains genuinely unresolved and sits in the core aromatic-typing
   mechanism.
@@ -41,12 +42,40 @@ additional fused/bridgehead PAHs the attackers introduced.
 
 **Update, same day (2026-08-20):** follow-ups #1-#4 below all landed before merge.
 Both confirmed defects (sb/db inclusive semantics; `_H_TYPE_BY_HEAVY` missing
-nitrogen types) are now fixed and verified, not just documented — `clause_parity_pct`
-moved from 0.5 to 0.75 as a result. The grade is still **PARTIAL** (`ambiguity_load`
-alone is enough to cap it there — AR1/AR2/AR3 is a genuine, unresolved spec gap, not
-a bug), but on strictly better evidence than the original run. See the updated Phase
-5 table and Follow-ups section below; the Phase 3/4 sections are left as originally
-written (historical record of what the campaign found) with pointers to what changed.
+nitrogen types) are now fixed and verified, not just documented. The grade is still
+**PARTIAL** (`ambiguity_load` alone is enough to cap it there — AR1/AR2/AR3 is a
+genuine, unresolved spec gap, not a bug), but on strictly better evidence than the
+original run. See the updated Phase 5 table and Follow-ups section below; the Phase
+3/4 sections are left as originally written (historical record of what the campaign
+found) with pointers to what changed.
+
+**Update 2, same day (2026-08-20), after subagent PR audit:** three independent
+agents (code-correctness, chemistry/domain-accuracy, test-coverage) reviewed the full
+PR before merge. Chemistry/domain-accuracy: all 7 spot-checked factual claims in this
+report and the code independently re-verified from primary sources (raw DEF-file
+text, fresh RDKit computations) — no discrepancies. Code-correctness: no high-
+confidence bugs in either production fix (~85% confidence clean). Test-coverage found
+three real issues, now fixed:
+- The original `clause_parity_pct=0.75` used the wrong denominator — 4, not
+  `parity.bth.toml`'s actual 5 pre-registered hypotheses (the AR1/AR2/AR3 hypothesis
+  was silently excluded rather than scored, and the naphthalene-bridgehead hypothesis
+  was mislabeled H4 when it's really the toml's H5). **Corrected to 3/5 = 0.6** — grade
+  unaffected (still PARTIAL either way), but now traceable against the pre-registration.
+- `test_bond_category_facts_sb_db_include_aromatic_kekule_identity` doesn't actually
+  exercise `assign_gaff2_atom_types`'s internal Kekulize call (it Kekulizes its own
+  molecule and calls `_atom_bond_facts` directly) — confirmed via monkeypatching the
+  real call away and rerunning the whole golden suite with zero output changes. Added
+  `test_assign_gaff2_atom_types_kekulizes_before_matching`, a spy test that guards the
+  wiring itself; verified it fails when the internal call is removed.
+- `_bond_category_facts`'s new Kekulization precondition was documented but
+  unenforced. Added a runtime check that raises a clear, attributable error if it's
+  ever violated, and changed `assign_gaff2_atom_types`'s `KekulizeException` handler
+  to log and re-raise instead of silently degrading (silent degradation would have
+  masked itself as a confusing failure at the new precondition check instead).
+
+Also flagged (not changed, recorded for human awareness): `adversarial_survived=True`
+is a defensible but real judgment call, not an automatic consequence of the evidence
+— see the comment in `scripts/validation/gaff2_parity_verdict.py` above `EVIDENCE`.
 
 ## Phase 3: Adversarial Refutation (M=3)
 
@@ -56,7 +85,7 @@ Three independent agents, each stating an assumption upfront and defaulting to
 | Attacker | Lens | Target | Verdict |
 |---|---|---|---|
 | #1 | struct | H2: f8 bond-count disambiguation | **Defect found — major.** `_bond_category_facts` computes lowercase `sb`/`db` identically to uppercase `SB`/`DB`, dropping the DEF footer's "includes aromatic single/double" inclusive semantics. Demonstrated on toluene's ipso carbon (a real match/no-match flip); does not corrupt the `c`/`cs` benchmark molecules tested, because `cs`/`c` are actually disambiguated by f9 (S vs O/S neighbor), not by which f8 branch fires. |
-| #2 | struct | H3+H4: cp neighbor-pattern, naphthalene bridgehead | **No defect found — moderate-high confidence.** No new mistyping across anthracene, pyrene, triphenylene, triphenylbenzene, terphenyl. No overcorrection (genuine biphenyl-type junctions still resolve to `cp`). Found supporting-but-not-conclusive external evidence (openbabel/openbabel's independently maintained `gaff.dat` legend: "`cp` — head sp2 C that connects two rings in biphenyl sys.") favoring the code's current exact-`1RG6`-count reading over the alternative. |
+| #2 | struct | H3+H5: cp neighbor-pattern, naphthalene bridgehead | **No defect found — moderate-high confidence.** No new mistyping across anthracene, pyrene, triphenylene, triphenylbenzene, terphenyl. No overcorrection (genuine biphenyl-type junctions still resolve to `cp`). Found supporting-but-not-conclusive external evidence (openbabel/openbabel's independently maintained `gaff.dat` legend: "`cp` — head sp2 C that connects two rings in biphenyl sys.") favoring the code's current exact-`1RG6`-count reading over the alternative. |
 | #3 | stats | H1: full benchmark-set rule-precedence sweep | **Defect found (out-of-scope for this grade) + benchmark-authoring deviations.** Every heavy-atom type across all 14 curated molecules is internally correct per the DEF rules. A separate, code-confirmed defect was found in H-atom typing (`_H_TYPE_BY_HEAVY` missing most nitrogen ATD types — see "Excluded finding" below). Several `benchmarks/gaff2_parity_molecules.yaml` notes overclaim or misdescribe actual behavior (see Follow-ups). |
 
 Full per-molecule scorecards and code/DEF-file citations are preserved in each
@@ -115,7 +144,7 @@ Evidence (full derivation in `scripts/validation/gaff2_parity_verdict.py`'s comm
 | Dimension | Value | Ceiling |
 |---|---|---|
 | `invariant_pass` | True | PARITY |
-| `clause_parity_pct` | 0.75 (3/4 hypotheses MATCH — H2 moved from DEVIATION to MATCH after follow-up #1's fix) | PARTIAL |
+| `clause_parity_pct` | 0.6 (3/5 hypotheses MATCH — H2 moved from DEVIATION to MATCH after follow-up #1's fix; H1/H3 MATCH; H4 AR1/AR2/AR3 and H5 naphthalene-bridgehead remain AMBIGUOUS) | PARTIAL |
 | `adversarial_survived` | True (no hypothesis mechanism-nullified) | PARITY |
 | `reproduction_rung` | R0 (text-parity only; no local antechamber/OpenFF run) | PARITY |
 | `ambiguity_load` | load_bearing (AR1/AR2/AR3 unresolved — unaffected by the follow-up fixes) | PARTIAL |
@@ -221,10 +250,10 @@ builds on, cited here rather than represented as prior tracked runs.
 ## Reproduce this verdict
 
 1. `uv run pytest tests/test_gaff2_golden.py tests/test_gaff2_parity_invariants.py -v`
-   — expect 35 passed, 0 xfailed (32 golden + 3 invariants, all passing after
-   follow-ups #1/#2/#4 landed).
+   — expect 36 passed, 0 xfailed (32 golden + 4 invariants, all passing after
+   follow-ups #1/#2/#4 and the PR-audit fixes landed).
 2. `uv run python scripts/validation/gaff2_parity_verdict.py` — expect `PARTIAL`
-   (`clause_parity_pct=0.75`, capped by `ambiguity_load`).
+   (`clause_parity_pct=0.6`, capped by both `clause_parity` and `ambiguity_load`).
 3. If AR1/AR2/AR3 sub-classification (follow-up #5) is ever resolved — most likely
    via a real antechamber/OpenFF reference run — update `ambiguity_load` to `"none"`
    or `"non_load_bearing"` in `scripts/validation/gaff2_parity_verdict.py` and
