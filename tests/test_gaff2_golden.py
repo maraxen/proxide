@@ -319,18 +319,18 @@ def test_atom_type_ethene_bug_fixed() -> None:
     # anthracene all still resolve `ca` -- ring COUNT doesn't gate AR1, only
     # ring SIZE does, matching naphthalene's real bridgehead behavior too).
     #
-    # KNOWN REMAINING GAP: real GAFF2 additionally alternates cc/cd around the
-    # ring (antechamber gives furan cc,cc,cd,os,cd, not uniform cc) -- this is
-    # a torsion-parameter bookkeeping convention with NO corresponding ATD
-    # rule in ATOMTYPE_GFF2.DEF (`cd` never appears as a rule's atom_type
-    # field anywhere in the file; grep confirms), so it can't be produced by
-    # rule-matching alone -- it needs a separate ring-traversal alternation
-    # algorithm. Getting the atom-type FAMILY right (cc vs ca) is a real fix;
-    # getting cc/cd bonded-torsion-parameter correctness right is a distinct,
-    # not-yet-implemented follow-up.
-    ("c1ccoc1", [("C", "cc"), ("C", "cc"), ("C", "cc"), ("O", "os"), ("C", "cc")]),
-    ("c1cc[nH]c1", [("C", "cc"), ("C", "cc"), ("C", "cc"), ("N", "na"), ("C", "cc")]),
-    ("c1ccsc1", [("C", "cc"), ("C", "cc"), ("C", "cc"), ("S", "ss"), ("C", "cc")]),
+    # cc/cd ring-alternation FIXED (was a known remaining gap): real GAFF2
+    # additionally alternates cc/cd around the ring for AMBER's bonded-
+    # torsion-parameter bookkeeping -- there's no corresponding ATD rule in
+    # ATOMTYPE_GFF2.DEF (`cd` never appears as a rule's atom_type field), so
+    # this can't come from rule-matching; it's a separate graph-coloring
+    # post-process (_relabel_conjugated_alternation), ported directly from
+    # AmberTools' real atadjust() algorithm (src/antechamber/atomtype.c,
+    # Amber-MD/AmberClassic) and verified line-for-line against real
+    # antechamber output.
+    ("c1ccoc1", [("C", "cc"), ("C", "cc"), ("C", "cd"), ("O", "os"), ("C", "cd")]),
+    ("c1cc[nH]c1", [("C", "cc"), ("C", "cc"), ("C", "cd"), ("N", "na"), ("C", "cd")]),
+    ("c1ccsc1", [("C", "cc"), ("C", "cc"), ("C", "cd"), ("S", "ss"), ("C", "cd")]),
 ])
 def test_atom_type_five_membered_heteroaromatics(smiles: str, expected_types: list) -> None:
     """Ring-carbon typing for 5-membered heteroaromatics, verified against a
@@ -369,9 +369,11 @@ def test_atom_type_five_membered_heteroaromatics(smiles: str, expected_types: li
     ),
     ("c1ccccc1", [("C", "ca")] * 6),  # Phenylalanine-probe
     ("c1ccccc1O", [("C", "ca")] * 6 + [("O", "oh")]),  # Tyrosine-probe
-    (  # Histidine-probe: imidazole, second independent AR1/AR2/AR3 case
+    (  # Histidine-probe: imidazole, second independent AR1/AR2/AR3 case,
+        # AND independent confirmation cc/cd-alternation (nc/nd for this
+        # molecule) generalizes beyond the furan/pyrrole/thiophene ring cases
         "C1=CN=CN1",
-        [("C", "cc"), ("C", "cc"), ("N", "nc"), ("C", "cc"), ("N", "na")],
+        [("C", "cc"), ("C", "cd"), ("N", "nd"), ("C", "cc"), ("N", "na")],
     ),
     ("CC(O)C", [("C", "c3"), ("C", "c3"), ("O", "oh"), ("C", "c3")]),  # SerThr-probe
     ("CC(=O)N", [("C", "c3"), ("C", "c"), ("O", "o"), ("N", "nt")]),  # AsnGln-probe

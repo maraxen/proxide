@@ -1,4 +1,4 @@
-# gaff2-supplement-tier Internal Docs
+# gaff2-cc-cd-alternation Internal Docs
 
 ## Daily
 

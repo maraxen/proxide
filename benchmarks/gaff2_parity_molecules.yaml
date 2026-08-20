@@ -164,18 +164,19 @@ molecules:
                  # conjugated-ring family (AR2/AR3), not ca (AR1)
     tier: "core"
     description: "Aromatic 5-membered heterocycle with sulfur. Tests aromatic carbon typing in non-6-membered rings and heteroatom interaction with aromatic system."
-    notes: "FIXED 260820: now resolves to cc (all 4 ring carbons), confirmed
+    notes: "FIXED 260820: ring carbons resolve to cc/cc/cd/cd, confirmed
       against a real external reference (antechamber/openmmforcefields
       GAFFTemplateGenerator, gaff-2.11 -- see
-      scripts/validation/gaff2_external_reference.py). The fix: AR1 ('pure
-      aromatic atom (such as benzene and pyridine)' per the DEF footer) now
-      requires membership in a 6-membered aromatic ring; AR2/AR3 covers
-      everything aromatic that isn't. KNOWN REMAINING GAP: real GAFF2
-      alternates cc/cd around the ring for torsion-parameter bookkeeping
-      (antechamber gives cc,cc,cd,ss,cd, not uniform cc) -- there is no
-      corresponding `cd` ATD rule anywhere in ATOMTYPE_GFF2.DEF (confirmed by
-      grep), so this needs a separate ring-traversal alternation algorithm,
-      not rule-matching. See Furan/Pyrrole entries and
+      scripts/validation/gaff2_external_reference.py). Two-part fix: (1) AR1
+      ('pure aromatic atom (such as benzene and pyridine)' per the DEF
+      footer) now requires membership in a 6-membered aromatic ring; AR2/AR3
+      covers everything aromatic that isn't. (2) cc/cd RING-ALTERNATION
+      bookkeeping (there is no corresponding `cd` ATD rule anywhere in
+      ATOMTYPE_GFF2.DEF, so this can't come from rule-matching) is produced
+      by `_relabel_conjugated_alternation`, ported directly from AmberTools'
+      real atadjust() algorithm (src/antechamber/atomtype.c,
+      Amber-MD/AmberClassic) and verified line-for-line against real
+      antechamber output on 8 molecules. See Furan/Pyrrole entries and
       tests/test_gaff2_golden.py::test_atom_type_five_membered_heteroaromatics."
 
   - name: "Furan"
@@ -186,8 +187,8 @@ molecules:
     description: "Aromatic 5-membered heterocycle with oxygen. Added 260819
       alongside Thiophene/Pyrrole to exercise the cc/cd-vs-ca AR-class gap
       across all three common 5-membered heteroaromatics."
-    notes: "See Thiophene's notes -- same fix and same remaining cc/cd-
-      alternation gap apply; resolves to cc for all 4 ring carbons."
+    notes: "See Thiophene's notes -- same fix applies; resolves to
+      cc/cc/cd/cd for the 4 ring carbons."
 
   - name: "Pyrrole"
     smiles: "c1cc[nH]c1"
@@ -196,9 +197,8 @@ molecules:
     tier: "core"
     description: "Aromatic 5-membered heterocycle with N-H. Added 260819
       alongside Thiophene/Furan for the same reason."
-    notes: "See Thiophene's notes -- same fix and same remaining cc/cd-
-      alternation gap apply; resolves to cc for all 4 ring carbons (ring N
-      resolves to na)."
+    notes: "See Thiophene's notes -- same fix applies; resolves to cc/cc/cd/cd
+      for the 4 ring carbons (ring N-H resolves to na)."
 
   - name: "Anthracene"
     smiles: "c1ccc2cc3ccccc3cc2c1"
@@ -285,11 +285,13 @@ molecules:
                  # beyond the Core tier's furan/pyrrole/thiophene
     tier: "supplement"
     description: "Imidazole -- cosolvent-probe fragment mimicking histidine's aromatic sidechain (resname SIH). A 5-membered heteroaromatic with TWO ring nitrogens (one pyridine-like, one pyrrole-like) -- exercises the AR1/AR2/AR3 fix on a heteroaromatic pattern distinct from the Core tier's furan/pyrrole/thiophene (single heteroatom each)."
-    notes: "Real run (260820) resolves ring carbons to cc (both), the
-      pyridine-like N to nc, the pyrrole-like N-H to na -- confirms the
-      AR1/AR2/AR3 fix (6 in ring_counts_by_size gates AR1) generalizes
-      correctly to a two-heteroatom 5-membered ring, not just the
-      single-heteroatom cases the Core tier happened to test."
+    notes: "Real run (260820, post cc/cd-alternation fix) resolves ring
+      carbons to cc/cd, the pyridine-like N to nd (the nc-family also
+      alternates, per AmberTools' real atadjust() algorithm), the
+      pyrrole-like N-H to na -- confirms both the AR1/AR2/AR3 fix and the
+      cc/cd-alternation fix generalize correctly to a two-heteroatom
+      5-membered ring AND to the nc/nd nitrogen analog, not just the
+      single-heteroatom carbon-only cases the Core tier happened to test."
 
   - name: "SerThr-probe"
     smiles: "CC(O)C"
