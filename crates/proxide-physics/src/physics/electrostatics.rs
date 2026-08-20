@@ -135,7 +135,8 @@ pub fn project_forces_to_backbone_frame(
 ) -> Vec<f32> {
     let n_res = backbone_positions.len();
     let mut projections = Vec::with_capacity(n_res * 5);
-    for (res_pos, res_forces) in backbone_positions.iter().zip(forces.chunks_exact(5)) {
+    let (force_chunks, _remainder) = forces.as_chunks::<5>();
+    for (res_pos, res_forces) in backbone_positions.iter().zip(force_chunks.iter()) {
         let n_pos = &res_pos[0];
         let ca_pos = &res_pos[1];
         let _c_pos = &res_pos[2];
