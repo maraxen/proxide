@@ -1,4 +1,4 @@
-# praxia Internal Docs
+# gaff2-parity-campaign Internal Docs
 
 ## Daily
 
@@ -34,15 +34,18 @@
 ## Actuation Surfaces
 
 ## Audits
+- [260820_gaff2-parity-verdict](audits/260820_gaff2-parity-verdict.md) — Phase 5 graded verdict (PARTIAL) for the GAFF2 atom-typing bathos-literature-parity campaign, closing out Phases 3-5
 
 ## Research
 - [260729_tm-align-phase-2-algorithm-map](research/260729_tm-align-phase-2-algorithm-map.md) — Line-referenced map of USalign's 5 seeding strategies, get_score_fast, DP_iter/NWDP_TM/TMscore8_search, and final multi-TM output
 - [260630_arrow-ipc-prototype](research/260630_arrow-ipc-prototype.md) — proxide-jaccard — Arrow IPC + sorted accession index prototype, measured against the real corpus; planus vs flatbuffers vs Arrow IPC tradeoff analysis
 - [260603_branch-torsion-offset-diagnostic](research/260603_branch-torsion-offset-diagnostic.md) — #869 diagnostic: measure branch atom torsion offsets in MASTER rotlib.bin; hypothesis = failing residues (GLU/PHE/ASP/LEU/VAL/MET) have offset != template constant; pass = confines error source; fail = error from bond angles or CB placement
 - [260603_master-rotlib-cartesian-derivation](research/260603_master-rotlib-cartesian-derivation.md) — Backlog
+- [260602_dunbrack-geometry-synthesis](research/260602_dunbrack-geometry-synthesis.jsonl)
 - [260602_rotlib-notebook-plan](research/260602_rotlib-notebook-plan.md) — NotebookLM research notebook plan for rotamer library and confind — sources, prompts, and expected outputs to ground project direction
 
 ## Decisions
+- [260818_gaff2-parity-verdict-policy](decisions/260818_gaff2-parity-verdict-policy.md) — Verdict policy and tolerances for bathos-literature-parity validation of GAFF2 atom typing implementation
 - [260623_coords_to_chi_path](decisions/260623_coords_to_chi_path.md) — ADR: pure-Python coords→χ + chi_to_coords chosen; PyO3/Rust deferred (B4 #2654)
 - [260602_contact-threshold-adr](decisions/260602_contact-threshold-adr.md) — Architecture decision record for CONTACT_THRESHOLD in proxide-confind — const vs. public arg with cited default
 
