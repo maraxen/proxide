@@ -4,15 +4,18 @@ Shells out to AmberTools' `antechamber` (via a pre-existing conda-forge
 micromamba environment, `espaloma-smoke` -- confirmed present and working on
 this machine 2026-08-20; not a proxide/naurmalade-managed environment, so its
 path is resolved at runtime rather than assumed to exist everywhere this repo
-is checked out) to get ground-truth GAFF2 (gaff-2.11) atom types for a small
-set of molecules where proxide's implementation had open questions:
+is checked out) to get ground-truth GAFF2 (gaff-2.11) atom types.
 
-- AR1/AR2/AR3 aromaticity sub-classification (furan/pyrrole/thiophene): the
-  ATOMTYPE_GFF2.DEF footer gives no algorithm to compute which 5-membered
-  heteroaromatic ring carbons are AR1 ("pure aromatic", -> ca) vs AR2/AR3
-  ("planar conjugated ring", -> cc/cd).
-- The naphthalene bridgehead `1RG6` ring-count reading (exact-count vs.
-  "a 6-ring is present" as one qualifying condition).
+EXPANDED 260820 (post-merge PARITY audit): a 3-agent audit of the merged
+"PARITY" verdict found that most of the molecules the session claimed to
+verify against antechamber were only ever checked via ephemeral, untracked
+bash/python one-liners -- this script previously covered only 4 of them. Now
+covers every molecule actually used to justify a claim in the verdict report
+or a code comment, compares BOTH heavy and H atoms (assign_gaff2_atom_types's
+return contract is full-index-aligned as of the 260820 H-typing rework, so
+there's no reason to only check heavy atoms anymore), and exits non-zero on
+any mismatch so this can gate CI instead of only printing to a log a human
+has to read.
 
 `-c dc` skips antechamber's charge computation (AM1-BCC/sqm) entirely -- this
 script only needs atom TYPES, and charge calculation is both slow and
@@ -28,6 +31,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -43,12 +47,43 @@ _DEFAULT_ANTECHAMBER = str(
     Path.home() / ".local/share/mamba/envs/espaloma-smoke/bin/antechamber"
 )
 
-MOLECULES = {
-    "furan": "c1ccoc1",
-    "pyrrole": "c1cc[nH]c1",
-    "thiophene": "c1ccsc1",
-    "naphthalene": "c1ccc2ccccc2c1",
-}
+# (name, smiles, net_charge) -- what each molecule verifies, and why it's here:
+MOLECULES: list[tuple[str, str, int]] = [
+    # AR1/AR2/AR3 five-membered heteroaromatics (cc/cd family vs ca).
+    ("furan", "c1ccoc1", 0),
+    ("pyrrole", "c1cc[nH]c1", 0),
+    ("thiophene", "c1ccsc1", 0),
+    ("imidazole", "C1=CN=CN1", 0),
+    # cc/cd-family chains that correctly do NOT split (no double bond
+    # connects two same-family atoms).
+    ("1,3-butadiene", "C=CC=C", 0),
+    ("divinyl-ketone", "C=CC(=O)C=C", 0),
+    ("acrolein", "C=CC=O", 0),
+    # cp/cq: real biphenyl connector, correctly stays cp/cp (single
+    # inter-ring bond, no flip).
+    ("biphenyl", "c1ccc(-c2ccccc2)cc1", 0),
+    # AR1 ring-count/ring-size sanity: naphthalene's bridgeheads (2 six-rings
+    # each) must stay ca, not be wrongly demoted by the exocyclic-multibond
+    # check (which must key on ANY-ring membership, not just "this ring").
+    ("naphthalene", "c1ccc2ccccc2c1", 0),
+    ("anthracene", "c1ccc2cc3ccccc3cc2c1", 0),
+    # AR1 exocyclic-double-bond exception (2-pyranone) and its boundary
+    # (benzaldehyde/styrene must NOT be demoted -- the double bond is one
+    # atom removed from the ring, not directly on a ring atom).
+    ("2-pyranone", "O=C1C=CC=CO1", 0),
+    ("benzaldehyde", "O=Cc1ccccc1", 0),
+    ("styrene", "C=Cc1ccccc1", 0),
+    # H-atom typing (h1-h5/hx/hn/ho/hs/hp electron-withdrawing-neighbor
+    # family + _EW_ATOMS element set, including sulfur).
+    ("methane", "C", 0),
+    ("ethanol", "CCO", 0),
+    ("formamide", "NC=O", 0),
+    ("chloroform", "ClC(Cl)(Cl)[H]", 0),
+    ("chloromethane", "CCl", 0),
+    ("dichloromethane", "ClCCl", 0),
+    ("tetramethylammonium", "C[N+](C)(C)C", 1),
+    ("water", "O", 0),
+]
 
 
 def antechamber_path() -> str:
@@ -63,7 +98,7 @@ def antechamber_path() -> str:
     return path
 
 
-def run_antechamber_gaff2(smiles: str) -> list[tuple[str, str]]:
+def run_antechamber_gaff2(smiles: str, net_charge: int = 0) -> list[tuple[str, str]]:
     """Return [(element, gaff2_type), ...] in RDKit atom order, via antechamber."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -83,6 +118,7 @@ def run_antechamber_gaff2(smiles: str) -> list[tuple[str, str]]:
                 "-o", str(out_path), "-fo", "mol2",
                 "-at", "gaff2",
                 "-c", "dc",  # skip charge computation -- types only
+                "-nc", str(net_charge),
                 "-pf", "y",
                 "-s", "0",
             ],
@@ -121,27 +157,35 @@ def proxide_gaff2(smiles: str) -> list[tuple[str, str]]:
     mol = Chem.MolFromSmiles(smiles)
     mol = Chem.AddHs(mol)
     AllChem.SanitizeMol(mol)
+    # assign_gaff2_atom_types returns one type per atom index (heavy + H)
+    # since the 260820 H-typing rework -- see its own docstring for the
+    # contract. strict=True: a length mismatch here is a real bug, not
+    # something to silently paper over.
     types = assign_gaff2_atom_types(mol)
-    # zip(strict=False): assign_gaff2_atom_types currently returns a
-    # heavy-atom-only compacted list (pre Phase B of the H-atom typing
-    # rework), shorter than mol.GetAtoms() when H atoms are present -- matches
-    # tests/test_gaff2_golden.py's existing convention. Once Phase B lands
-    # (full-index-aligned return contract), this can drop the `if
-    # atom.GetAtomicNum() != 1` filter and use strict=True.
-    return [
-        (atom.GetSymbol(), t)
-        for atom, t in zip(mol.GetAtoms(), types, strict=False)
-        if atom.GetAtomicNum() != 1
-    ]
+    return list(zip((a.GetSymbol() for a in mol.GetAtoms()), types, strict=True))
 
 
-def main() -> None:
-    for name, smiles in MOLECULES.items():
-        reference = [t for elem, t in run_antechamber_gaff2(smiles) if elem != "H"]
-        actual = [t for elem, t in proxide_gaff2(smiles)]
-        match = "MATCH" if reference == actual else "DIFFERS"
-        logger.info("%-12s antechamber=%-40s proxide=%-40s %s", name, reference, actual, match)
+def main() -> int:
+    any_mismatch = False
+    for name, smiles, net_charge in MOLECULES:
+        reference = run_antechamber_gaff2(smiles, net_charge)
+        actual = proxide_gaff2(smiles)
+        match = reference == actual
+        any_mismatch = any_mismatch or not match
+        status = "MATCH" if match else "DIFFERS"
+        logger.info("%-22s %s", name, status)
+        if not match:
+            logger.info("  antechamber: %s", reference)
+            logger.info("  proxide:     %s", actual)
+    if any_mismatch:
+        logger.info("\nFAIL: one or more molecules differ from the real antechamber reference.")
+        return 1
+    logger.info(
+        "\nAll %d molecules MATCH the real antechamber (gaff-2.11) reference.",
+        len(MOLECULES),
+    )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

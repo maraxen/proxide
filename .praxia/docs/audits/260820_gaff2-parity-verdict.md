@@ -132,10 +132,14 @@ too**, at your request to push toward total parity where possible:
 
 - **H-atom EW-element set: verified, not just a judgment call.** Ran every H-typing
   stress case from `TestHAtomTyping` (chloroform→h3, chloromethane→h1,
-  dichloromethane→h2, ethanol→hc/h1/ho, formyl chloride→h5, tetramethylammonium→hx,
+  dichloromethane→h2, ethanol→hc/h1/ho, tetramethylammonium→hx,
   formamide→nt/hn/h5) through real antechamber output. **Every single case matches
   exactly.** `_EW_ATOMS = {N, O, F, Cl, Br, I}` is confirmed correct, not just
-  defensible.
+  defensible. **Correction (post-merge audit, 260820):** this list previously also
+  named "formyl chloride→h5" as a separate verified molecule — there is no such test;
+  `TestHAtomTyping` has exactly one amide/formyl case (`test_formamide_h_stress_hn_and_h5`,
+  SMILES `NC=O`), and its formyl H→h5 result was being double-counted under two names.
+  Corrected here to the true count: 6 distinct molecules, not 7.
 - **cc/cd ring-alternation: implemented and verified.** Found AmberTools' own real
   algorithm in its open-source repository (`Amber-MD/AmberClassic`,
   `src/antechamber/atomtype.c`'s `atadjust()`/`cpadjust()` functions) rather than
@@ -158,6 +162,38 @@ unverified is systematic coverage: only 8 molecules have been directly compared 
 antechamber (not the full 24-molecule benchmark set), so `reproduction_rung` stays R1,
 not R2+ — a full systematic reference run would be the next step if that rung matters
 for a specific downstream use.
+
+**Update 5, same day (2026-08-20) — post-merge 3-agent audit found 3 real code bugs in
+the "PARITY" state, all fixed; external-reference coverage expanded 8→21 molecules and
+made a real, tracked, exit-code-gated CI script rather than a set of untracked ad hoc
+verification commands** (per the ephemeral-scripts discipline this campaign's own
+test-coverage audit flagged as violated for Update 4's work):
+
+- `_EW_ATOMS` was missing sulfur (`aromatic.c`'s real `aromatic()` sets `ewd=1` for S;
+  the DEF-file-verified set above was itself unverified against the one element the
+  code actually implemented incorrectly). Fixed; thiophene's beta-H now correctly `h4`.
+- `cp`/`cq` used the same multi-component reseeding pass as `cc`/`cd`, but AmberTools'
+  real `cpadjust()` has no reseed and only colors the first connected component. Fixed
+  via a `single_seed_only` parameter, scoped to the `cp`/`cq` call site only.
+- AR1 (six-ring aromatic) classification didn't implement `ring.c`'s real AR3
+  exocyclic-double-bond exception; 2-pyranone's ring carbons were wrongly `ca` instead
+  of `cc`/`cd`. Fixed via `_ring_has_exocyclic_multibond`, keyed on ANY-ring membership
+  so naphthalene/anthracene's fused bridgeheads aren't wrongly demoted.
+
+None of these change `clause_parity_pct`, `ambiguity_load`, or `reproduction_rung` as
+registered in `parity.bth.toml` — they're bugs in mechanisms the grade already covered,
+not new scope. `reproduction_rung` stays **R1**: `scripts/validation/gaff2_external_reference.py`
+now tracks 21 molecules with automated exit-code gating (up from 4 tracked / 8 ever
+manually checked), of which **11 overlap with the formal 24-molecule
+`benchmarks/gaff2_parity_molecules.yaml` set** (Furan, Pyrrole, Thiophene,
+Histidine-probe/imidazole, 1,3-Butadiene, Divinyl-ketone, Acrolein, Biphenyl,
+Naphthalene, Anthracene, Formamide) — the other 10 (2-pyranone, benzaldehyde, styrene,
+methane, ethanol, chloroform, chloromethane, dichloromethane, tetramethylammonium,
+water) were added specifically to stress the AR1/H-typing fixes above and are real
+antechamber-verified evidence, but sit outside the registered benchmark set. This is
+still short of the full-benchmark-set R2+ rung — a full 24/24 systematic run remains
+the next step if that rung matters for a specific downstream use. See the updated
+`coverage_fraction` in the `[confounds.reference_parity]` block below.
 
 ## Phase 3: Adversarial Refutation (M=3)
 
@@ -256,7 +292,7 @@ artifact rather than wired into a specific file):
 ```toml
 [[confounds]]
 id = "C_baseline"
-label = "GAFF2 heavy- and H-atom typing (including cc/cd ring-alternation) is validated against its own DEF-file specification (PARITY) and against a real external reference implementation (antechamber/GAFFTemplateGenerator) on 8 of 24 benchmark molecules -- see Update 4's 'the two remaining caveats above are now closed too'"
+label = "GAFF2 heavy- and H-atom typing (including cc/cd ring-alternation) is validated against its own DEF-file specification (PARITY) and against a real external reference implementation (antechamber, gaff-2.11) on 21 tracked molecules, 11 of which overlap the formal 24-molecule benchmark set -- see Update 5's coverage_fraction fields and scripts/validation/gaff2_external_reference.py"
 [confounds.reference_parity]
 reference_paper = "AmberTools ATOMTYPE_GFF2.DEF (vendored spec; see parity.bth.toml citation_note)"
 reference_metric = "exact atom-type match (equivalence_bound = 0.0)"
@@ -264,7 +300,11 @@ reference_value = 1.0
 equivalence_bound = 0.0
 parity_run_id = "260820_gaff2_parity_phase3"  # this campaign; no prior bth run/campaign_id existed to append to (see Provenance note below)
 verdict = "PARITY"
-reproduction_rung = "R1"  # real antechamber/GAFFTemplateGenerator comparison, PR #28
+reproduction_rung = "R1"  # real antechamber comparison, PR #28 + Update 5's audit-fix expansion; not R2+ (full benchmark-set coverage)
+coverage_molecules_tracked = 21       # scripts/validation/gaff2_external_reference.py MOLECULES, all antechamber-MATCH
+coverage_molecules_benchmark_set = 24  # benchmarks/gaff2_parity_molecules.yaml total
+coverage_molecules_benchmark_overlap = 11  # tracked molecules that are also in the formal benchmark set
+coverage_fraction = 0.4583333333333333  # coverage_molecules_benchmark_overlap / coverage_molecules_benchmark_set
 ```
 
 ## Sign-offs resolved
@@ -347,10 +387,9 @@ builds on, cited here rather than represented as prior tracked runs.
    — expect 59 passed, 0 xfailed, after PR #27/#28/#29/#30's fixes landed (see
    `tests/test_gaff2_golden.py`'s `TestHAtomTyping` and Supplement-tier cases).
 2. `uv run python scripts/validation/gaff2_external_reference.py` — real
-   antechamber-vs-proxide comparison for furan/pyrrole/thiophene/naphthalene; expect
-   **MATCH on all 4** as of the cc/cd-alternation fix (Update 4) — this script's
-   comparison targets predate that fix and haven't been re-scripted to assert MATCH
-   automatically; the manual verification is recorded in Update 4.
+   antechamber-vs-proxide comparison across all 21 tracked molecules (see Update 5);
+   expects **MATCH on all 21** and exits 0, exits 1 on any mismatch — a real CI
+   regression gate, not just a log for a human to read (fixed post-merge audit finding).
 3. `uv run python scripts/validation/gaff2_parity_verdict.py` — expect `PARITY`
    (`clause_parity_pct=1.0`, `ambiguity_load=none`, `reproduction_rung=R1`, all five
    ceilings green).

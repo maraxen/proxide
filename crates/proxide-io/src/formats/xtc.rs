@@ -704,7 +704,9 @@ pub fn read_xtc_distogram_parallel<P: AsRef<Path>>(
         .map(|frame| {
             let positions: Vec<[f32; 3]> = frame
                 .positions
-                .chunks_exact(3)
+                .as_chunks::<3>()
+                .0
+                .iter()
                 .map(|c| [c[0] * 10.0, c[1] * 10.0, c[2] * 10.0]) // nm -> Angstrom
                 .collect();
 

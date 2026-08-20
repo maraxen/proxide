@@ -394,6 +394,28 @@ def _bond_category_facts(bond) -> dict[str, bool]:
     }
 
 
+def _ring_has_exocyclic_multibond(mol: Chem.Mol, ring: tuple[int, ...]) -> bool:
+    """True if any atom in `ring` has a post-Kekulization DOUBLE/TRIPLE bond
+    to a neighbor with NO ring membership at all (AmberTools' real AR3
+    "planar rings formed 'outside' double bonds" test, ring.c -- its actual
+    condition is the OTHER atom's total ring-membership count being zero,
+    `arom[bond[j].bondj].rg[0] == 0`, not merely "not in this specific
+    ring": a fused-ring bridgehead's neighbor in the OTHER ring of the fused
+    system is still ring-connected and must NOT count as exocyclic, or
+    naphthalene/anthracene's bridgeheads would be wrongly demoted). `mol`
+    must already be Kekulized -- see `_atom_bond_facts`'s caller.
+    """
+    ring_info = mol.GetRingInfo()
+    for ring_idx in ring:
+        for bond in mol.GetAtomWithIdx(ring_idx).GetBonds():
+            other = bond.GetOtherAtomIdx(ring_idx)
+            if ring_info.NumAtomRings(other) > 0:
+                continue
+            if bond.GetBondType().name in ("DOUBLE", "TRIPLE"):
+                return True
+    return False
+
+
 def _atom_bond_facts(atom) -> AtomBondFacts:
     mol = atom.GetOwningMol()
     ring_info = mol.GetRingInfo()
@@ -426,9 +448,38 @@ def _atom_bond_facts(atom) -> AtomBondFacts:
     # token always OR them together for the same output type (e.g. cc's lines
     # 37-58) -- no case in the current benchmark set needs to tell them apart.
     # non-aromatic ring atom that is sp3 carbon -> AR5; other ring atom -> AR4.
+    #
+    # FIXED 260820 (post-merge PARITY audit): the ring-SIZE-only proxy above is
+    # necessary but not sufficient -- confirmed wrong by a real reference on
+    # 2-pyranone (O=C1C=CC=CO1), whose 6-membered ring RDKit marks aromatic but
+    # real antechamber types as the cc/cd family, not ca. Root cause, found in
+    # AmberTools' own ring-classification source (ring.c): its AR3 test
+    # ("planar rings formed 'outside' double bonds") is checked, and can fire,
+    # BEFORE the AR1 "pure aromatic ring" test -- a ring where some ring atom
+    # has an exocyclic double/triple bond to a NON-ring neighbor is AR3
+    # regardless of size or RDKit's own aromaticity perception (matches
+    # pyranone's carbonyl carbon exactly: its ring-internal bonds are
+    # single/aromatic, but its bond to the exocyclic carbonyl O is double).
+    # Ported as a targeted addition (not the full initarom/threshold system in
+    # ring.c, which has its own AR2/AR4/AR5 machinery this module doesn't need
+    # given the cc/cd-family rules never distinguish AR2 from AR3): a
+    # 6-membered otherwise-AR1-eligible ring is demoted to AR23 if ANY of its
+    # atoms has a post-Kekulization DOUBLE/TRIPLE bond to a neighbor outside
+    # the ring. Verified NOT to over-fire on benzaldehyde/styrene (exocyclic
+    # double bond one atom removed from the ring, via a single ring-to-
+    # substituent bond) -- both stay `ca`, matching real antechamber exactly.
     aromaticity_class: str | None = None
     if atom.GetIsAromatic():
-        aromaticity_class = "AR1" if 6 in ring_counts_by_size else "AR23"
+        # An atom can belong to more than one 6-ring (e.g. naphthalene's
+        # bridgeheads); AR1 fires if AT LEAST ONE of its 6-rings is "clean"
+        # (matches real antechamber's per-ring, independent-counter
+        # semantics -- the AR1 token check is a plain "was this atom ever
+        # tagged AR1 by any ring", not a single resolved class per atom).
+        six_rings = [r for r in ring_info.AtomRings() if idx in r and len(r) == 6]
+        has_clean_six_ring = any(
+            not _ring_has_exocyclic_multibond(mol, ring) for ring in six_rings
+        )
+        aromaticity_class = "AR1" if has_clean_six_ring else "AR23"
     elif in_ring and atom.GetSymbol() == "C" and atom.GetHybridization().name == "SP3":
         aromaticity_class = "AR5"
     elif in_ring:
@@ -495,11 +546,17 @@ def _prop_token_matches(tok: PropToken, facts: AtomBondFacts) -> bool:
 # connected to the atom that the hydrogen attached") and the term "EW" ("Electron-
 # withdraw atom") but never actually enumerates which elements count as EW -- "EW"
 # is never used as a token in any real f8/f9 rule pattern anywhere in the file
-# (confirmed by grep), so this set is a documented judgment call, not read out of
-# the spec. {N, O, F, Cl, Br, I} -- the common electronegative heteroatoms GAFF's
-# own h1-h5 family exists to distinguish (e.g. a chloroform H, 3 EW neighbors on
-# its carbon, vs. a plain alkane H, 0) -- chosen as the defensible starting set.
-_EW_ATOMS = frozenset({"N", "O", "F", "Cl", "Br", "I"})
+# (confirmed by grep). FIXED 260820 (post-merge PARITY audit): this used to be
+# {N, O, F, Cl, Br, I} -- a plausible-looking guess that omitted sulfur and was
+# never actually checked against a live reference before landing. Independently
+# confirmed via AmberTools' real source (`aromatic()`,
+# Amber-MD/AmberClassic/src/antechamber/aromatic.c): its `ewd` (electron-
+# withdrawing) flag is set for exactly atomic numbers 7/8/16/9/17/35/53
+# (N/O/S/F/Cl/Br/I) and nothing else -- S is explicitly commented "S is
+# considered electron withdraw group". The prior omission caused a real,
+# reproducible bug: thiophene's ring H's (beta to the ring sulfur) mistyped as
+# `ha` instead of `h4` (confirmed against real antechamber output).
+_EW_ATOMS = frozenset({"N", "O", "S", "F", "Cl", "Br", "I"})
 
 
 def _h_ew_neighbor_count(h_atom) -> int:
@@ -838,6 +895,19 @@ def extract_atom_features(
 # verified line-for-line against real antechamber output on 7 molecules
 # (furan/pyrrole/thiophene/imidazole needing the split; 1,3-butadiene/
 # divinyl-ketone/acrolein/biphenyl correctly needing none).
+#
+# atadjust() vs cpadjust() are NOT structurally identical, despite sharing the
+# same coloring rule (confirmed by re-reading both functions independently,
+# post-merge PARITY audit 260820): atadjust()'s propagation loop has a
+# `flag`-gated reseed line that picks up one new never-before-seen connected
+# component per outer pass (bounded by the total family-atom count -- more
+# than enough passes for any realistic molecule), so it colors EVERY
+# disconnected same-family subgraph in the molecule. cpadjust() has no such
+# reseed: it seeds exactly ONE atom overall (the first "cp" atom found) and
+# only ever colors that one component -- any other disconnected `cp` system
+# in the same molecule is left untouched (stays `cp`, never becomes `cq`).
+# `single_seed_only=True` on the cp/cq call below reproduces this real,
+# intentional asymmetry rather than treating both calls the same way.
 _CONJUGATED_ALTERNATION_PAIRS = {
     "cc": "cd", "ce": "cf", "cg": "ch",
     "pc": "pd", "pe": "pf", "nc": "nd", "ne": "nf",
@@ -846,7 +916,11 @@ _BIPHENYL_ALTERNATION_PAIR = {"cp": "cq"}
 
 
 def _relabel_conjugated_alternation(
-    mol: Chem.Mol, atom_types: list[str], pairs: dict[str, str]
+    mol: Chem.Mol,
+    atom_types: list[str],
+    pairs: dict[str, str],
+    *,
+    single_seed_only: bool = False,
 ) -> None:
     """Mutate `atom_types` in place: 2-color each connected subgraph of
     same-"unprimed"-family atoms by Kekule bond parity (single bond = same
@@ -857,6 +931,12 @@ def _relabel_conjugated_alternation(
     un-Kekulized aromatic bond reports `AROMATIC`, which this function
     treats as "not SINGLE" (a flip), silently corrupting the coloring for
     ring systems exactly like the sb/db precondition this mirrors.
+
+    `single_seed_only`: when True, color only the FIRST connected component
+    found (by atom index) and leave every other same-family atom untouched --
+    matches real AmberTools' `cpadjust()` (see the module-level comment above
+    `_BIPHENYL_ALTERNATION_PAIR`). When False (default), color every
+    connected component independently -- matches real `atadjust()`.
     """
     n = mol.GetNumAtoms()
     visited = [False] * n
@@ -879,6 +959,8 @@ def _relabel_conjugated_alternation(
         for idx, s in sign.items():
             if s == -1:
                 atom_types[idx] = pairs[atom_types[idx]]
+        if single_seed_only:
+            return
 
 
 def assign_gaff2_atom_types(
@@ -973,9 +1055,14 @@ def assign_gaff2_atom_types(
     # docstring comment above) -- two independent passes, matching
     # AmberTools' real atadjust()/cpadjust() structure: cc/ce/cg/pc/pe/nc/ne
     # and cp are disjoint families that must never cross-propagate through
-    # each other even if adjacent.
+    # each other even if adjacent. single_seed_only=True on the cp/cq call
+    # reproduces cpadjust()'s real (and structurally different from
+    # atadjust()'s) single-component-only behavior -- see that constant's
+    # module-level comment.
     _relabel_conjugated_alternation(mol_for_matching, atom_types, _CONJUGATED_ALTERNATION_PAIRS)
-    _relabel_conjugated_alternation(mol_for_matching, atom_types, _BIPHENYL_ALTERNATION_PAIR)
+    _relabel_conjugated_alternation(
+        mol_for_matching, atom_types, _BIPHENYL_ALTERNATION_PAIR, single_seed_only=True
+    )
 
     return atom_types
 

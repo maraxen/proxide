@@ -193,12 +193,10 @@ pub fn project_backbone_forces(
 
     let mut features = Vec::with_capacity(n_res * 5);
 
-    for (res_coords, res_forces_slice) in backbone_coords.iter().zip(forces_flat.chunks_exact(5)) {
-        let mut res_forces = [[0.0; 3]; 5];
-        res_forces.copy_from_slice(res_forces_slice);
-
+    let (force_chunks, _remainder) = forces_flat.as_chunks::<5>();
+    for (res_coords, res_forces) in backbone_coords.iter().zip(force_chunks.iter()) {
         let frame = compute_backbone_frame(res_coords);
-        let aggregated = aggregate_forces(&res_forces);
+        let aggregated = aggregate_forces(res_forces);
         let projected = project_force_onto_frame(aggregated, &frame);
 
         features.extend_from_slice(&projected.to_array());
