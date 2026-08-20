@@ -405,6 +405,57 @@ def test_supplement_tier_real_consumer_molecules(smiles: str, expected_types: li
     assert heavy == expected_types, f"SMILES {smiles}: expected {expected_types}, got {heavy}"
 
 
+@pytest.mark.parametrize("smiles,expected_types", [
+    # 2-Pyranone: FOUND by a post-merge PARITY audit (260820), not a case
+    # anyone had reason to construct beforehand -- falsifies the "6-membered
+    # aromatic ring -> AR1/ca" proxy the AR1/AR2/AR3 fix originally shipped
+    # with. Real antechamber's own AR3 test ("planar rings formed 'outside'
+    # double bonds", ring.c) fires BEFORE the AR1 test: the ring carbon
+    # bonded to the exocyclic carbonyl O via a double bond demotes the WHOLE
+    # ring from AR1 to AR23, so the other 4 ring carbons resolve via the
+    # cc/cd family (not ca), while the carbonyl carbon itself resolves via
+    # the ordinary `c` rule (same mechanism as acetone/formamide) once `ca`
+    # is no longer a candidate for it. Verified against real antechamber
+    # output (gaff-2.11): o, c, cc, cd, cd, cc, os, in exactly this order.
+    ("O=C1C=CC=CO1", [
+        ("O", "o"), ("C", "c"), ("C", "cc"), ("C", "cd"),
+        ("C", "cd"), ("C", "cc"), ("O", "os"),
+    ]),
+    # Boundary cases confirming the exocyclic-multibond check does NOT
+    # over-fire when the double bond is one atom removed from the ring (a
+    # SINGLE bond from the ring to a substituent that itself has its own
+    # double bond) -- both stay ca, matching real antechamber exactly.
+    ("O=Cc1ccccc1", [  # benzaldehyde
+        ("O", "o"), ("C", "c"),
+        ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"),
+    ]),
+    ("C=Cc1ccccc1", [  # styrene
+        ("C", "c2"), ("C", "ce"),
+        ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"),
+    ]),
+])
+def test_ar1_exocyclic_multibond_demotion(smiles: str, expected_types: list) -> None:
+    """AR1's exocyclic-double-bond exception (2-pyranone) and its boundary
+    (benzaldehyde/styrene must NOT be demoted). See
+    _ring_has_exocyclic_multibond's docstring for the AmberTools source this
+    ports, and why the check must test the OTHER atom's total ring
+    membership (not just "not in this specific ring") to avoid wrongly
+    demoting fused-ring bridgeheads like naphthalene's.
+    """
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.MolFromSmiles(smiles)
+    assert mol is not None, f"Failed to parse SMILES: {smiles}"
+    mol = Chem.AddHs(mol)
+    AllChem.SanitizeMol(mol)
+
+    types = assign_gaff2_atom_types(mol)
+    heavy = [
+        (atom.GetSymbol(), t) for atom, t in zip(mol.GetAtoms(), types) if atom.GetAtomicNum() != 1
+    ]
+    assert heavy == expected_types, f"SMILES {smiles}: expected {expected_types}, got {heavy}"
+
+
 def test_naphthalene_bridgehead_confirmed_by_external_reference() -> None:
     """Naphthalene's fused-ring bridgeheads: CONFIRMED 260820, not a guess.
 
@@ -576,6 +627,45 @@ class TestGaff2Grammar:
         methane_h = next(a for a in methane.GetAtoms() if a.GetSymbol() == "H")
         assert not chem_env_matches(expr, methane_h, {}, predecessor=None)
 
+    def test_relabel_conjugated_alternation_single_seed_only(self) -> None:
+        """Confirmed post-merge PARITY audit (260820): real AmberTools'
+        cpadjust() (governing cp/cq) has NO reseed mechanism -- it colors
+        only the FIRST same-family connected component it finds and leaves
+        every other disconnected component untouched, unlike atadjust()
+        (governing cc/cd etc.), which does eventually seed every component
+        via a `flag`-gated reseed in its relaxation loop. Zero real-molecule
+        test previously exercised this (no biphenyl-type molecule with two
+        disconnected cp systems is easy to construct), so this tests the
+        generic mechanism directly against a small synthetic two-fragment
+        molecule (two disconnected C=C pairs), matching this class's
+        existing convention of unit-level coverage when no simple real
+        molecule reaches a specific branch.
+        """
+        from proxide.chem.gaff2 import _relabel_conjugated_alternation
+
+        # Two disconnected ethene-like fragments: C=C . C=C. Fake "family"
+        # labels simulate being cc-eligible so the double bond triggers a
+        # flip -- this tests the seeding mechanism itself, not real GAFF2
+        # rule matching.
+        mol = Chem.MolFromSmiles("C=C.C=C")
+        mol = Chem.AddHs(mol)
+        AllChem.SanitizeMol(mol)
+        Chem.Kekulize(mol, clearAromaticFlags=False)
+        pairs = {"X": "Y"}
+        heavy_idx = [a.GetIdx() for a in mol.GetAtoms() if a.GetAtomicNum() != 1]
+        assert len(heavy_idx) == 4
+
+        # single_seed_only=False (atadjust()-style): both components colored.
+        types_multi = ["X"] * mol.GetNumAtoms()
+        _relabel_conjugated_alternation(mol, types_multi, pairs, single_seed_only=False)
+        assert [types_multi[i] for i in heavy_idx] == ["X", "Y", "X", "Y"]
+
+        # single_seed_only=True (cpadjust()-style): only the first component
+        # (lowest atom index) is colored; the second fragment is untouched.
+        types_single = ["X"] * mol.GetNumAtoms()
+        _relabel_conjugated_alternation(mol, types_single, pairs, single_seed_only=True)
+        assert [types_single[i] for i in heavy_idx] == ["X", "Y", "X", "X"]
+
 
 def test_def_file_parses_without_dropping_fields() -> None:
     """Smoke test: parse the real DEF file and sanity-check nothing silently drops.
@@ -702,6 +792,26 @@ class TestHAtomTyping:
         """
         types = self._heavy_and_h_types("O")
         assert types == [("O", "oh"), ("H", "ho"), ("H", "ho")]
+
+    def test_thiophene_beta_h_is_h4_not_ha(self) -> None:
+        """Confirmed post-merge PARITY audit (260820): sulfur is a real
+        electron-withdrawing atom per AmberTools' own source
+        (`aromatic()`, src/antechamber/aromatic.c: `case 16: atom[i].ewd
+        = 1; /* S is considered electron withdraw group */`) -- _EW_ATOMS
+        previously omitted it, so the two ring H's beta to the thiophene
+        sulfur (on the `cd`-typed carbons, each with EW=1 via the S
+        neighbor) mistyped as `ha` (the unconstrained sp2 catch-all)
+        instead of `h4` (DEF line 90, C3 + EW=1). The two H's alpha to
+        sulfur (on the `cc`-typed carbons, whose OTHER heavy neighbor is
+        just another ring carbon, not EW) correctly stay `ha`. Verified
+        against real antechamber output (gaff-2.11): H1=ha, H2=ha, H3=h4,
+        H4=h4, in exactly this atom order.
+        """
+        types = self._heavy_and_h_types("c1ccsc1")
+        assert types == [
+            ("C", "cc"), ("C", "cc"), ("C", "cd"), ("S", "ss"), ("C", "cd"),
+            ("H", "ha"), ("H", "ha"), ("H", "h4"), ("H", "h4"),
+        ]
 
     @staticmethod
     def _heavy_and_h_types(smiles: str) -> list[tuple[str, str]]:
