@@ -25,6 +25,14 @@ class Molecule:
       charges: Partial charges in elementary charge units.
       bonds: List of (atom_idx1, atom_idx2) tuples.
       bond_orders: Bond orders corresponding to bonds list (1=single, 2=double, etc.).
+          TRIPOS aromatic ("ar") bonds are recorded here as 1, matching the
+          formal-order convention; see `bond_aromatic` for the distinct
+          aromaticity flag `_to_rdkit()` actually needs.
+      bond_aromatic: Per-bond aromaticity flag, parallel to `bonds`/`bond_orders`.
+          Only `from_mol2` currently populates this (from TRIPOS "ar" bond
+          type); other constructors leave it empty, and `_to_rdkit()` treats
+          a shorter-than-`bonds` list as "no aromatic bonds" for backward
+          compatibility.
       residue_name: 3-letter residue code for the molecule (default "LIG").
 
   """
@@ -37,6 +45,7 @@ class Molecule:
   charges: np.ndarray
   bonds: list[tuple[int, int]]
   bond_orders: list[int] = field(default_factory=list)
+  bond_aromatic: list[bool] = field(default_factory=list)
   residue_name: str = "LIG"
 
   @property
@@ -72,6 +81,7 @@ class Molecule:
     charges: list[float] = []
     bonds: list[tuple[int, int]] = []
     bond_orders: list[int] = []
+    bond_aromatic: list[bool] = []
     residue_name = "LIG"
 
     current_section = None
@@ -130,6 +140,7 @@ class Molecule:
 
             bonds.append((atom1_id, atom2_id))
             bond_orders.append(_parse_mol2_bond_type(bond_type))
+            bond_aromatic.append(bond_type.lower() == "ar")
           continue
 
     return cls(
@@ -141,6 +152,7 @@ class Molecule:
       charges=np.array(charges, dtype=np.float32),
       bonds=bonds,
       bond_orders=bond_orders,
+      bond_aromatic=bond_aromatic,
       residue_name=residue_name if len(residue_name) <= 4 else "LIG",
     )
 
@@ -348,7 +360,16 @@ class Molecule:
   def _to_rdkit(self):
     """Convert to RDKit Mol object.
 
-    Requires RDKit.
+    Requires RDKit. Bonds flagged aromatic in `bond_aromatic` (TRIPOS "ar",
+    from `from_mol2`) are built as `Chem.BondType.AROMATIC` with both
+    endpoint atoms marked aromatic, and the result is passed through
+    `Chem.SanitizeMol` before returning -- without this, a ring built from
+    uniform single bonds (the pre-260820 behavior) has no Kekule
+    alternation for RDKit to perceive aromaticity from, and silently comes
+    out non-aromatic. Raises whatever `Chem.SanitizeMol` raises on a
+    genuinely malformed structure -- callers processing many molecules
+    (e.g. a bulk external-corpus sample) should catch and skip per-molecule
+    rather than relying on this method to do so.
     """
     try:
       from rdkit import Chem
@@ -373,9 +394,19 @@ class Molecule:
       3: Chem.BondType.TRIPLE,
     }
 
-    for (i, j), order in zip(self.bonds, self.bond_orders, strict=True):
-      bond_type = bond_type_map.get(order, Chem.BondType.SINGLE)
+    aromatic_atoms: set[int] = set()
+    for k, ((i, j), order) in enumerate(zip(self.bonds, self.bond_orders, strict=True)):
+      is_aromatic = k < len(self.bond_aromatic) and self.bond_aromatic[k]
+      if is_aromatic:
+        bond_type = Chem.BondType.AROMATIC
+        aromatic_atoms.add(i)
+        aromatic_atoms.add(j)
+      else:
+        bond_type = bond_type_map.get(order, Chem.BondType.SINGLE)
       mol.AddBond(i, j, bond_type)
+
+    for idx in aromatic_atoms:
+      mol.GetAtomWithIdx(idx).SetIsAromatic(True)
 
     # Convert to regular Mol
     mol = mol.GetMol()
@@ -385,6 +416,8 @@ class Molecule:
     for i, pos in enumerate(self.positions):
       conf.SetAtomPosition(i, pos.tolist())
     mol.AddConformer(conf, assignId=True)
+
+    Chem.SanitizeMol(mol)
 
     return mol
 

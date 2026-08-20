@@ -93,9 +93,40 @@ class TestMoleculeFromMol2:
             
             # Check bond orders (aromatic -> 1)
             assert all(o == 1 for o in mol.bond_orders)
+
+            # Check aromaticity is tracked separately from bond_orders --
+            # this is what lets _to_rdkit() distinguish a real aromatic
+            # ring from a plain single-bonded (e.g. cyclohexane) ring.
+            assert all(mol.bond_aromatic)
         finally:
             Path(mol2_path).unlink()
-    
+
+    def test_to_rdkit_perceives_aromaticity(self):
+        """`_to_rdkit()` must round-trip TRIPOS "ar" bonds as real RDKit
+        aromaticity, not silently flatten them to a uniform-single-bonded
+        (non-aromatic) ring -- confirmed post-260820 audit as a real,
+        already-shipped bug affecting every existing `_to_rdkit()` caller
+        (e.g. `proxide.chem.partial_charges`), not just new code. Without
+        the fix, RDKit has no Kekule alternation to perceive aromaticity
+        from, and `assign_gaff2_atom_types` mistypes every ring carbon.
+        """
+        from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+        with tempfile.NamedTemporaryFile(suffix=".mol2", mode="w", delete=False) as f:
+            f.write(BENZENE_MOL2)
+            mol2_path = f.name
+
+        try:
+            mol = Molecule.from_mol2(mol2_path)
+            rdmol = mol._to_rdkit()
+
+            assert all(atom.GetIsAromatic() for atom in rdmol.GetAtoms())
+
+            types = assign_gaff2_atom_types(rdmol)
+            assert types == ["ca"] * 6
+        finally:
+            Path(mol2_path).unlink()
+
     def test_real_mol2_file(self):
         """Test parsing a real MOL2 file if available."""
         # Check if imatinib.mol2 exists
