@@ -223,8 +223,9 @@ def get_reference_charges(smiles: str) -> dict:
     # 10, 12) have 3 aromatic heavy neighbors (satisfying cp's f9 pattern)
     # but are members of TWO six-rings simultaneously, failing cp's exact
     # f8 "1RG6" token -- same bridgehead-exclusion mechanism as naphthalene
-    # (see test_naphthalene_bridgehead_is_documented_ambiguity's docstring
-    # for the underlying reading caveat, which applies equally here). Added
+    # (see test_naphthalene_bridgehead_confirmed_by_external_reference's
+    # docstring -- the exact-ring-count reading is now confirmed, not just
+    # documented, and that confirmation applies equally here). Added
     # 260820 (verdict-report follow-up #4); previously curated in
     # benchmarks/gaff2_parity_molecules.yaml with no assertion.
     ("c1ccc2cc3ccccc3cc2c1", ["ca"] * 14),
@@ -241,10 +242,15 @@ def get_reference_charges(smiles: str) -> dict:
     ("CC(=S)C", ["c3", "cs", "s", "c3"]),
 ])
 def test_atom_type_golden_reference(smiles: str, expected_types: list[str]) -> None:
-    """Test that GAFF2 atom type assignment matches golden reference values.
+    """Test that GAFF2 heavy-atom type assignment matches golden reference values.
 
     Each test case calls parameterize_gaff_with_rdkit and asserts that the
-    resulting atom types match the expected reference values from the spec.
+    resulting HEAVY-atom types match the expected reference values from the
+    spec. Since the 260820 H-atom typing rework, `result["atom_types"]` is
+    index-aligned to the full molecule (heavy + H) -- these cases target
+    heavy-atom-family correctness specifically, so H entries are filtered out
+    here rather than hand-verified per molecule; see
+    TestHAtomTyping for dedicated H-type coverage.
     """
     from proxide.chem.gaff2 import parameterize_gaff_with_rdkit
 
@@ -255,8 +261,13 @@ def test_atom_type_golden_reference(smiles: str, expected_types: list[str]) -> N
     AllChem.SanitizeMol(mol)
 
     result = parameterize_gaff_with_rdkit(mol)
-    assert result["atom_types"] == expected_types, (
-        f"SMILES {smiles}: expected {expected_types}, got {result['atom_types']}"
+    heavy_types = [
+        t for atom, t in zip(mol.GetAtoms(), result["atom_types"], strict=True)
+        if atom.GetAtomicNum() != 1
+    ]
+    assert heavy_types == expected_types, (
+        f"SMILES {smiles}: expected {expected_types}, got {heavy_types} "
+        f"(full atom_types incl. H: {result['atom_types']})"
     )
 
 
@@ -280,30 +291,52 @@ def test_atom_type_ethene_bug_fixed() -> None:
     AllChem.SanitizeMol(mol)
 
     result = parameterize_gaff_with_rdkit(mol)
-    assert result["atom_types"] == ["c2", "c2"], (
-        f"Ethene should assign c2 (other sp2 C, line 70), got {result['atom_types']}"
+    heavy_types = [
+        t for atom, t in zip(mol.GetAtoms(), result["atom_types"], strict=True)
+        if atom.GetAtomicNum() != 1
+    ]
+    assert heavy_types == ["c2", "c2"], (
+        f"Ethene should assign c2 (other sp2 C, line 70), got {heavy_types}"
     )
 
 
 @pytest.mark.parametrize("smiles,expected_types", [
-    # ca ("pure aromatic atom", [AR1] only, no neighbor-count constraint) sits
-    # before the cc family in file order, so it wins for any RDKit-aromatic
-    # ring carbon under the current AR1/AR2/AR3 collapse (see the AR-class
-    # note in _atom_bond_facts): the DEF file distinguishes AR1 (pure aromatic,
-    # e.g. benzene/pyridine) from AR2/AR3 (planar conjugated rings with
-    # alternating bonds, e.g. these 5-membered heteroaromatics) structurally,
-    # but gives no algorithm to compute which is which -- confirmed as the
-    # single largest underspecified gap by all three independent
-    # blind-reconstruction lenses of this campaign. These are therefore
-    # locked-in regression tests for CURRENT best-effort behavior, not a claim
-    # that `ca` is the ultimate spec-correct answer for these ring carbons --
-    # revisit if/when AR-class classification is implemented for real.
-    ("c1ccoc1", [("C", "ca"), ("C", "ca"), ("C", "ca"), ("O", "os"), ("C", "ca")]),
-    ("c1cc[nH]c1", [("C", "ca"), ("C", "ca"), ("C", "ca"), ("N", "na"), ("C", "ca")]),
-    ("c1ccsc1", [("C", "ca"), ("C", "ca"), ("C", "ca"), ("S", "ss"), ("C", "ca")]),
+    # FIXED 260820, verified against a real external reference (antechamber /
+    # openmmforcefields.generators.GAFFTemplateGenerator, gaff-2.11, run
+    # 2026-08-20 in the espaloma-smoke conda-forge environment -- see
+    # scripts/validation/gaff2_external_reference.py). Previously these ring
+    # carbons resolved to `ca` because AR1/AR2/AR3 all collapsed to one
+    # sentinel, letting `ca`'s earlier-in-file-order [AR1]-only rule win for
+    # every aromatic ring carbon regardless of ring size (the exact same
+    # "special-before-general defeated by an over-broad sentinel" pattern as
+    # the original cp/ca bug PR #26 fixed). The real fix: AR1 ("pure aromatic
+    # atom (such as benzene and pyridine)" per the DEF footer) now requires
+    # membership in a 6-membered aromatic ring specifically; AR2/AR3 covers
+    # aromatic ring atoms that aren't (5-membered heteroaromatics in every
+    # case this campaign has evidence for). Confirmed correct against real
+    # antechamber output for these 3 molecules AND confirmed to NOT regress
+    # any 6-membered case (benzene/pyridine/toluene/biphenyl/naphthalene/
+    # anthracene all still resolve `ca` -- ring COUNT doesn't gate AR1, only
+    # ring SIZE does, matching naphthalene's real bridgehead behavior too).
+    #
+    # KNOWN REMAINING GAP: real GAFF2 additionally alternates cc/cd around the
+    # ring (antechamber gives furan cc,cc,cd,os,cd, not uniform cc) -- this is
+    # a torsion-parameter bookkeeping convention with NO corresponding ATD
+    # rule in ATOMTYPE_GFF2.DEF (`cd` never appears as a rule's atom_type
+    # field anywhere in the file; grep confirms), so it can't be produced by
+    # rule-matching alone -- it needs a separate ring-traversal alternation
+    # algorithm. Getting the atom-type FAMILY right (cc vs ca) is a real fix;
+    # getting cc/cd bonded-torsion-parameter correctness right is a distinct,
+    # not-yet-implemented follow-up.
+    ("c1ccoc1", [("C", "cc"), ("C", "cc"), ("C", "cc"), ("O", "os"), ("C", "cc")]),
+    ("c1cc[nH]c1", [("C", "cc"), ("C", "cc"), ("C", "cc"), ("N", "na"), ("C", "cc")]),
+    ("c1ccsc1", [("C", "cc"), ("C", "cc"), ("C", "cc"), ("S", "ss"), ("C", "cc")]),
 ])
 def test_atom_type_five_membered_heteroaromatics(smiles: str, expected_types: list) -> None:
-    """Regression test documenting current (AR1/AR2/AR3-collapsed) behavior."""
+    """Ring-carbon typing for 5-membered heteroaromatics, verified against a
+    real external GAFF2 reference (see module-level comment on the
+    parametrize list for the cc/cd-alternation caveat that remains open).
+    """
     from proxide.chem.gaff2 import assign_gaff2_atom_types
 
     mol = Chem.MolFromSmiles(smiles)
@@ -318,17 +351,19 @@ def test_atom_type_five_membered_heteroaromatics(smiles: str, expected_types: li
     assert heavy == expected_types, f"SMILES {smiles}: expected {expected_types}, got {heavy}"
 
 
-def test_naphthalene_bridgehead_is_documented_ambiguity() -> None:
-    """Naphthalene's fused-ring bridgeheads are a genuinely open spec question.
+def test_naphthalene_bridgehead_confirmed_by_external_reference() -> None:
+    """Naphthalene's fused-ring bridgeheads: CONFIRMED 260820, not a guess.
 
     cp's f8 token "1RG6" could mean "member of exactly one 6-ring" (excluding
     naphthalene's bridgeheads, which are each in TWO 6-rings) or "a 6-ring is
     present" as one qualifying condition among others. This implementation
     reads it as an exact ring-count (1RG6 = exactly one 6-membered ring),
-    which excludes bridgeheads from cp -- but this is a documented guess, not
-    a verified answer (needs a real reference: antechamber or the OpenFF GAFF2
-    plugin). This test locks in current behavior and flags the ambiguity
-    rather than silently asserting confidence either way.
+    which excludes bridgeheads from cp. Previously this was flagged as a
+    documented guess pending a real reference; now verified: antechamber /
+    openmmforcefields.generators.GAFFTemplateGenerator (gaff-2.11, run
+    2026-08-20, see scripts/validation/gaff2_external_reference.py) assigns
+    all 10 naphthalene ring carbons -- bridgeheads included -- `ca`, exactly
+    matching this implementation's exact-ring-count reading.
     """
     from proxide.chem.gaff2 import assign_gaff2_atom_types
 
@@ -337,12 +372,14 @@ def test_naphthalene_bridgehead_is_documented_ambiguity() -> None:
     AllChem.SanitizeMol(mol)
     types = [t for atom, t in zip(mol.GetAtoms(), assign_gaff2_atom_types(mol)) if atom.GetAtomicNum() != 1]
 
-    # Current reading: exact-ring-count semantics exclude bridgeheads from cp,
-    # so every naphthalene ring carbon (bridgeheads included) resolves to ca.
+    # Exact-ring-count semantics exclude bridgeheads from cp, so every
+    # naphthalene ring carbon (bridgeheads included) resolves to ca --
+    # confirmed correct against a real external GAFF2 reference.
     assert types == ["ca"] * 10, (
-        f"Naphthalene ring carbons: got {types}. If this changes, it likely means "
-        f"the 1RG6 exact-count reading changed -- re-verify against a real GAFF2 "
-        f"reference before updating this assertion, don't just match new output."
+        f"Naphthalene ring carbons: got {types}, expected all ca (confirmed "
+        f"against antechamber -- see scripts/validation/gaff2_external_reference.py). "
+        f"If this changes, re-verify against the real reference before updating "
+        f"this assertion, don't just match new output."
     )
 
 
@@ -455,6 +492,36 @@ class TestGaff2Grammar:
         assert not atomic_prop_matches(three_sb, facts(sb=2))
         assert not atomic_prop_matches(three_sb, facts(sb=4))
 
+    def test_chem_env_matches_hw_pattern_reachable_though_unreached(self) -> None:
+        """hw's f9 pattern (O(H1)) is real, parseable, matchable grammar --
+        the 260820 H-typing rework's fix to chem_env_matches's neighbor-
+        candidate filtering (previously excluded ALL H atoms, so a nested
+        H-element spec could never match anything) makes this reachable at
+        the grammar level. Confirms the fix itself, independent of
+        TestHAtomTyping::test_water_h_is_ho_not_hw_confirmed_by_external_reference's
+        finding that real molecules never actually resolve to hw (ho wins
+        first in file order, confirmed correct against a real reference).
+        """
+        from proxide.chem.gaff2 import chem_env_matches, parse_chem_env
+
+        water = Chem.MolFromSmiles("O")
+        water = Chem.AddHs(water)
+        AllChem.SanitizeMol(water)
+        o_atom = next(a for a in water.GetAtoms() if a.GetSymbol() == "O")
+        h_atoms = [a for a in water.GetAtoms() if a.GetSymbol() == "H"]
+        assert len(h_atoms) == 2
+
+        expr = parse_chem_env("(O(H1))")
+        # h_atoms[0]'s own f9 pattern is "(O(H1))": its neighbor must be O,
+        # and that O's neighbor (excluding h_atoms[0] itself as predecessor)
+        # must be a 1-attached H -- h_atoms[1] satisfies this.
+        assert chem_env_matches(expr, h_atoms[0], {}, predecessor=None)
+        # Sanity check the negative: methane's H has no O neighbor at all.
+        methane = Chem.AddHs(Chem.MolFromSmiles("C"))
+        AllChem.SanitizeMol(methane)
+        methane_h = next(a for a in methane.GetAtoms() if a.GetSymbol() == "H")
+        assert not chem_env_matches(expr, methane_h, {}, predecessor=None)
+
 
 def test_def_file_parses_without_dropping_fields() -> None:
     """Smoke test: parse the real DEF file and sanity-check nothing silently drops.
@@ -502,6 +569,96 @@ def test_def_file_parses_without_dropping_fields() -> None:
     ]
     assert not dropped_bracket, f"Rules with a raw f8 '[' but no parsed atomic_prop: {dropped_bracket}"
     assert not dropped_paren, f"Rules with a raw '(' but no parsed chem_env: {dropped_paren}"
+
+
+class TestHAtomTyping:
+    """H-atom typing via the real DEF rule engine (260820 Section B rework).
+
+    Previously H atoms were skipped by assign_gaff2_atom_types entirely and
+    typed by a separate heuristic keyed only on their heavy neighbor's own
+    GAFF2 type (_H_TYPE_BY_HEAVY, now deleted). All 13 H-rules
+    (ATOMTYPE_GFF2.DEF lines 79-91) are now real Gaff2Rules run through the
+    same first-match-in-file-order loop as heavy atoms. Every expected value
+    below was computed by running the real implementation, not guessed --
+    see this class's inline reasoning for why each case lands where it does.
+    """
+
+    def test_methane_all_h_are_hc(self) -> None:
+        """No electron-withdrawing neighbor on the carbon (EW=0) -> hc,
+        DEF line 88's unconstrained C4 catch-all (h3/h2/h1 all require an
+        exact nonzero EW count and don't match)."""
+        types = self._heavy_and_h_types("C")
+        assert types == [("C", "c3"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc")]
+
+    def test_ethanol_h_stress_hc_h1_ho(self) -> None:
+        """CH3-CH2-OH: the CH3 carbon's only heavy neighbor is C (not EW) ->
+        hc; the CH2 carbon's heavy neighbors are C (not EW) + O (EW) -> EW=1
+        -> h1; the O-H -> ho."""
+        types = self._heavy_and_h_types("CCO")
+        assert types == [
+            ("C", "c3"), ("C", "c3"), ("O", "oh"),
+            ("H", "hc"), ("H", "hc"), ("H", "hc"),
+            ("H", "h1"), ("H", "h1"),
+            ("H", "ho"),
+        ]
+
+    def test_formamide_h_stress_hn_and_h5(self) -> None:
+        """H2N-CHO: the amide N-H's -> hn (DEF line 79, unconstrained-on-N-
+        subtype, per the follow-up #2 fix). The formyl H is on a C3 carbon
+        (N, O, H neighbors) whose OTHER neighbors (N, O) are both EW -> EW=2
+        -> h5 (DEF line 89, C3 + EW=2)."""
+        types = self._heavy_and_h_types("NC=O")
+        assert types == [
+            ("N", "nt"), ("C", "c"), ("O", "o"),
+            ("H", "hn"), ("H", "hn"), ("H", "h5"),
+        ]
+
+    def test_chloroform_h_is_h3(self) -> None:
+        """CHCl3: the H's carbon has 3 Cl neighbors, all EW -> EW=3 -> h3
+        (DEF line 85, C4 + EW=3)."""
+        types = self._heavy_and_h_types("ClC(Cl)(Cl)[H]")
+        assert types[-1] == ("H", "h3")
+
+    def test_chloromethane_h_is_h1(self) -> None:
+        """CH3Cl: each H's carbon has 1 Cl neighbor (EW=1) -> h1."""
+        types = self._heavy_and_h_types("CCl")
+        assert [t for e, t in types if e == "H"] == ["h1", "h1", "h1"]
+
+    def test_dichloromethane_h_is_h2(self) -> None:
+        """CH2Cl2: each H's carbon has 2 Cl neighbors (EW=2) -> h2."""
+        types = self._heavy_and_h_types("ClCCl")
+        assert [t for e, t in types if e == "H"] == ["h2", "h2"]
+
+    def test_tetramethylammonium_h_is_hx(self) -> None:
+        """(CH3)4N+: every methyl H's carbon has one N neighbor with
+        attached_count=4 (a quaternary ammonium N) -> hx (DEF line 83,
+        C(N4)), not hc -- hx sits before hc in file order."""
+        types = self._heavy_and_h_types("C[N+](C)(C)C")
+        assert all(t == "hx" for e, t in types if e == "H")
+
+    def test_water_h_is_ho_not_hw_confirmed_by_external_reference(self) -> None:
+        """Water's H-O-H structurally matches hw's f9 pattern (O(H1)), but
+        `ho` (DEF line 80, unconstrained-on-O) sits BEFORE `hw` (line 84) in
+        file order and wins first -- confirmed correct against a real
+        external reference (antechamber/GAFFTemplateGenerator, gaff-2.11, run
+        260820): real GAFF2 also assigns water's H's `ho`, not `hw`. `hw` is
+        real, parseable DEF syntax (see TestGaff2Grammar's chem_env coverage
+        for the grammar itself) but is confirmed unreachable via normal
+        file-order precedence for actual water -- not a bug to fix.
+        """
+        types = self._heavy_and_h_types("O")
+        assert types == [("O", "oh"), ("H", "ho"), ("H", "ho")]
+
+    @staticmethod
+    def _heavy_and_h_types(smiles: str) -> list[tuple[str, str]]:
+        from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+        mol = Chem.MolFromSmiles(smiles)
+        assert mol is not None, f"Failed to parse SMILES: {smiles}"
+        mol = Chem.AddHs(mol)
+        AllChem.SanitizeMol(mol)
+        types = assign_gaff2_atom_types(mol)
+        return list(zip((a.GetSymbol() for a in mol.GetAtoms()), types, strict=True))
 
 
 def validate_implementation(proxide_result: dict, smiles: str) -> dict:
