@@ -351,6 +351,58 @@ def test_atom_type_five_membered_heteroaromatics(smiles: str, expected_types: li
     assert heavy == expected_types, f"SMILES {smiles}: expected {expected_types}, got {heavy}"
 
 
+@pytest.mark.parametrize("smiles,expected_types", [
+    # Supplement tier (260820): real consumer molecules, not curated synthetic
+    # cases -- see benchmarks/gaff2_parity_molecules.yaml's Supplement-tier
+    # section for full provenance/sourcing notes on each. All values below
+    # were computed by running this repo's code, not predicted.
+    (
+        # 17-OHP (biosensors' sole production ligand, run via naurmalade)
+        "C[C@]12CC[C@H]3[C@@H](CCC4=CC(=O)CC[C@@]43C)[C@@H]1CC[C@@H]2C(=O)CO",
+        [
+            ("C", "c3"), ("C", "c5"), ("C", "c6"), ("C", "c6"), ("C", "c6"),
+            ("C", "c6"), ("C", "c6"), ("C", "c6"), ("C", "c2"), ("C", "ce"),
+            ("C", "c"), ("O", "o"), ("C", "c6"), ("C", "c6"), ("C", "c6"),
+            ("C", "c3"), ("C", "c5"), ("C", "c5"), ("C", "c5"), ("C", "c5"),
+            ("C", "c"), ("O", "o"), ("C", "c3"), ("O", "oh"),
+        ],
+    ),
+    ("c1ccccc1", [("C", "ca")] * 6),  # Phenylalanine-probe
+    ("c1ccccc1O", [("C", "ca")] * 6 + [("O", "oh")]),  # Tyrosine-probe
+    (  # Histidine-probe: imidazole, second independent AR1/AR2/AR3 case
+        "C1=CN=CN1",
+        [("C", "cc"), ("C", "cc"), ("N", "nc"), ("C", "cc"), ("N", "na")],
+    ),
+    ("CC(O)C", [("C", "c3"), ("C", "c3"), ("O", "oh"), ("C", "c3")]),  # SerThr-probe
+    ("CC(=O)N", [("C", "c3"), ("C", "c"), ("O", "o"), ("N", "nt")]),  # AsnGln-probe
+    ("CC(C)CC", [("C", "c3")] * 5),  # IleLeu-probe
+    ("CC(=O)[O-]", [("C", "c3"), ("C", "c"), ("O", "o"), ("O", "o")]),  # AspGlu-probe
+    (  # Arg-probe: N-methylguanidinium, real cz + 3-N-neighbor case
+        "C(=[NH2+])(N)NC",
+        [("C", "cz"), ("N", "nv"), ("N", "nv"), ("N", "nu"), ("C", "c3")],
+    ),
+    ("CC[NH3+]", [("C", "c3"), ("C", "c3"), ("N", "nz")]),  # Lys-probe
+])
+def test_supplement_tier_real_consumer_molecules(smiles: str, expected_types: list) -> None:
+    """Real molecules from biosensors/naurmalade production, not curated cases.
+
+    See benchmarks/gaff2_parity_molecules.yaml's Supplement-tier section for
+    provenance and per-molecule reasoning.
+    """
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.MolFromSmiles(smiles)
+    assert mol is not None, f"Failed to parse SMILES: {smiles}"
+    mol = Chem.AddHs(mol)
+    AllChem.SanitizeMol(mol)
+
+    types = assign_gaff2_atom_types(mol)
+    heavy = [
+        (atom.GetSymbol(), t) for atom, t in zip(mol.GetAtoms(), types) if atom.GetAtomicNum() != 1
+    ]
+    assert heavy == expected_types, f"SMILES {smiles}: expected {expected_types}, got {heavy}"
+
+
 def test_naphthalene_bridgehead_confirmed_by_external_reference() -> None:
     """Naphthalene's fused-ring bridgeheads: CONFIRMED 260820, not a guess.
 

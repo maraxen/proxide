@@ -1,6 +1,6 @@
 ---
 name: 260820_gaff2-parity-verdict
-description: Phase 5 graded verdict (PARTIAL) for the GAFF2 atom-typing bathos-literature-parity campaign, closing out Phases 3-5
+description: Phase 5 graded verdict (PARITY, as of the PR #27/#28/#29 sprint) for the GAFF2 atom-typing bathos-literature-parity campaign
 metadata:
   type: audit
   task_id: 260820_gaff2_parity_phase3
@@ -9,10 +9,12 @@ metadata:
 
 # GAFF2 Atom-Typing Literature-Parity: Graded Verdict
 
-**Date:** 2026-08-20
+**Date:** 2026-08-20 (original PARTIAL verdict; superseded same-day by Update 3 below)
 **Campaign:** `parity.bth.toml` (proxide repo root)
-**Verdict:** **PARTIAL**
-**Approver (accepted-PARTIAL sign-off):** Marielle
+**Verdict:** **PARITY** (was PARTIAL — see Update 3)
+**Sign-off:** N/A for PARITY — the accepted-PARTIAL approver line below is historical,
+kept for the record of what PR #27 originally required.
+**Approver (accepted-PARTIAL sign-off, historical):** Marielle
 
 ## Summary
 
@@ -77,6 +79,56 @@ Also flagged (not changed, recorded for human awareness): `adversarial_survived=
 is a defensible but real judgment call, not an automatic consequence of the evidence
 — see the comment in `scripts/validation/gaff2_parity_verdict.py` above `EVIDENCE`.
 
+**Update 3, same day (2026-08-20) — verdict upgraded to PARITY.** A follow-up sprint
+(PR #28: AR1/AR2/AR3 external-reference fix + H-atom typing rework; PR #29: Supplement-
+tier benchmark) closed the two remaining registered-hypothesis gaps with real evidence:
+
+- **H4 (AR1/AR2/AR3), was AMBIGUOUS → now MATCH.** A real external reference
+  (antechamber/`openmmforcefields.generators.GAFFTemplateGenerator`, gaff-2.11, run via
+  a pre-existing conda-forge micromamba environment already on this machine — no new
+  setup needed) **confirmed the prior AMBIGUOUS status was actually masking a real bug**:
+  furan/pyrrole/thiophene's ring carbons should be the `cc` family, not `ca`. Root cause
+  was the identical "special-before-general defeated by an over-broad sentinel" pattern
+  PR #26 fixed for `cp`/`ca`: AR1/AR2/AR3 all collapsed into one match-anything
+  sentinel. Fixed: AR1 now requires membership in a 6-membered aromatic ring
+  specifically (matching the DEF footer's own "benzene and pyridine" citation for AR1);
+  re-verified against the same reference, and confirmed to generalize on a real
+  production molecule outside the original 3 test cases (histidine-probe's imidazole).
+- **H5 (naphthalene bridgehead), was AMBIGUOUS → now MATCH.** The same external
+  reference confirmed the *existing* exact-`1RG6`-ring-count implementation was already
+  correct — no code change needed, just real confirmation replacing Attacker #2's
+  external-legend inference.
+
+`clause_parity_pct` moves from 0.6 (3/5) to **1.0 (5/5)**. `ambiguity_load` moves from
+`load_bearing` to `none` (the genuine ambiguity is resolved, not just documented).
+`reproduction_rung` moves from `R0` to `R1` (a real comparison against an independent
+reference implementation now exists, on 4 of 24 benchmark molecules — not a full R2+
+systematic run). Recomputed grade: **PARITY**, all five ceilings green.
+
+**What PARITY does and doesn't cover — read this before treating it as unconditional.**
+This grade covers exactly `parity.bth.toml`'s 5 pre-registered hypotheses (all
+heavy-atom-typing questions). Two real, documented gaps sit outside that registered
+scope and are NOT resolved by this grade:
+- **cc/cd ring-alternation** (a torsion-parameter bookkeeping convention — real GAFF2
+  alternates `cc`/`cd` around a conjugated ring; proxide gets the atom-type *family*
+  right but not the alternation). There is no `cd` ATD rule anywhere in
+  `ATOMTYPE_GFF2.DEF` (confirmed by grep), so this genuinely isn't part of "does the
+  rule engine correctly implement the DEF file" — it needs a separate ring-traversal
+  algorithm, tracked as a future item, not a defect in this verdict.
+- **H-atom typing's electron-withdrawing-atom element set** (`_EW_ATOMS = {N, O, F, Cl,
+  Br, I}`, PR #28): a real, DEF-file-verified implementation of the h1-h5/hx/hn/ho/hs/hp
+  family, but the specific EW element set is a documented judgment call the DEF file
+  itself never enumerates. H-atom typing was never part of this campaign's registered
+  hypotheses (which only ever covered heavy atoms), so this doesn't affect the grade —
+  but it's a real, standing judgment call worth knowing about if H-atom typing
+  correctness matters for downstream work.
+
+See `.praxia/docs/decisions/260818_gaff2-parity-verdict-policy.md` for what this PARITY
+grade means for the demistify ligand-extension gate (idea-002) — per the original
+cross-repo plan, a genuine PARITY verdict satisfies that gate outright, no
+accepted-PARTIAL sign-off needed. That decision doc's update flags this explicitly for
+human confirmation rather than assuming the gate should open silently.
+
 ## Phase 3: Adversarial Refutation (M=3)
 
 Three independent agents, each stating an assumption upfront and defaulting to
@@ -139,6 +191,15 @@ remained green throughout — no regression from either fix.
 
 ## Phase 5: Graded Verdict
 
+**Historical record — superseded by Update 3 above.** The table, grade, and confounds
+block below reflect the state at the ORIGINAL verdict (PARTIAL, `clause_parity_pct=0.6`,
+`ambiguity_load=load_bearing`, `reproduction_rung=R0`). Current state:
+`clause_parity_pct=1.0`, `ambiguity_load=none`, `reproduction_rung=R1`, grade **PARITY**
+— see Update 3 for the full derivation and `scripts/validation/gaff2_parity_verdict.py`
+for the current, executable source of truth. The confounds block immediately below has
+been updated in place (not kept historical) since it's the citable artifact future
+campaigns should actually reference.
+
 Evidence (full derivation in `scripts/validation/gaff2_parity_verdict.py`'s comments):
 
 | Dimension | Value | Ceiling |
@@ -165,14 +226,15 @@ artifact rather than wired into a specific file):
 ```toml
 [[confounds]]
 id = "C_baseline"
-label = "GAFF2 atom typing is validated against its own DEF-file specification, with two documented residual gaps"
+label = "GAFF2 heavy-atom typing is validated against its own DEF-file specification (PARITY) and against a real external reference implementation on 4 of 24 benchmark molecules; H-atom typing and cc/cd ring-alternation sit outside the registered hypothesis scope -- see Update 3's 'What PARITY does and doesn't cover'"
 [confounds.reference_parity]
 reference_paper = "AmberTools ATOMTYPE_GFF2.DEF (vendored spec; see parity.bth.toml citation_note)"
 reference_metric = "exact atom-type match (equivalence_bound = 0.0)"
 reference_value = 1.0
 equivalence_bound = 0.0
 parity_run_id = "260820_gaff2_parity_phase3"  # this campaign; no prior bth run/campaign_id existed to append to (see Provenance note below)
-verdict = "PARTIAL"
+verdict = "PARITY"
+reproduction_rung = "R1"  # real antechamber/GAFFTemplateGenerator comparison, PR #28
 ```
 
 ## Sign-offs resolved
@@ -192,8 +254,12 @@ that file's diff in this same commit):
 
 ## Follow-ups
 
-**Status as of the same-day update: #1-#4 are DONE (all landed before merge).
-#5 remains open by design (no fix possible without new information).**
+**Status as of Update 3: #1-#5 are all DONE.** See "What PARITY does and doesn't
+cover" in Update 3 for two NEW, real, deliberately-out-of-scope items this sprint
+surfaced (cc/cd ring-alternation; H-atom typing's EW-element-set judgment call) —
+not listed as numbered follow-ups here since they were never part of this
+campaign's registered hypotheses, but tracked and linked from Update 3 for anyone
+who needs H-typing or torsion-parameter correctness specifically.
 
 1. ~~Fix `_bond_category_facts`'s sb/db inclusive semantics~~ **DONE.**
    `assign_gaff2_atom_types` now Kekulizes a local copy
@@ -229,14 +295,12 @@ that file's diff in this same commit):
    that reaches those specific `c`/`cs` branches through actual rule precedence
    without introducing an unverified claim; parsing-level coverage for these tokens
    already existed.
-5. **AR1/AR2/AR3 sub-classification remains unresolved** (no algorithm exists in the
-   DEF file); this is the item keeping `ambiguity_load = load_bearing` even after
-   #1-#4. No action recommended beyond what's already documented in
-   `tests/test_gaff2_golden.py`'s `test_atom_type_five_membered_heteroaromatics` and
-   `parity.bth.toml`'s hypothesis 4 — closing this would need either a real
-   antechamber/OpenFF reference run (reaching reproduction rung R1+) or a
-   genuinely new structural heuristic, not a code fix to the current grammar
-   engine.
+5. ~~AR1/AR2/AR3 sub-classification remains unresolved~~ **DONE** (PR #28). Closed
+   exactly as this item predicted: via a real antechamber/OpenFF reference run
+   (`scripts/validation/gaff2_external_reference.py`), which found the prior
+   AMBIGUOUS status was masking a real bug (furan/pyrrole/thiophene should be `cc`,
+   not `ca`) and fixed it (AR1 now requires 6-membered-ring membership). See
+   Update 3 for the full derivation.
 
 ## Provenance note
 
@@ -250,12 +314,17 @@ builds on, cited here rather than represented as prior tracked runs.
 ## Reproduce this verdict
 
 1. `uv run pytest tests/test_gaff2_golden.py tests/test_gaff2_parity_invariants.py -v`
-   — expect 36 passed, 0 xfailed (32 golden + 4 invariants, all passing after
-   follow-ups #1/#2/#4 and the PR-audit fixes landed).
-2. `uv run python scripts/validation/gaff2_parity_verdict.py` — expect `PARTIAL`
-   (`clause_parity_pct=0.6`, capped by both `clause_parity` and `ambiguity_load`).
-3. If AR1/AR2/AR3 sub-classification (follow-up #5) is ever resolved — most likely
-   via a real antechamber/OpenFF reference run — update `ambiguity_load` to `"none"`
-   or `"non_load_bearing"` in `scripts/validation/gaff2_parity_verdict.py` and
-   `reproduction_rung` to `"R1"` or better, then re-run the grader; do not hand-edit
-   the verdict without re-running it.
+   — expect 55 passed, 0 xfailed (51 golden [incl. 10 Supplement-tier cases +
+   TestHAtomTyping's 8 cases] + 4 invariants, all passing after PR #27/#28/#29's
+   fixes landed).
+2. `uv run python scripts/validation/gaff2_external_reference.py` — real
+   antechamber-vs-proxide comparison for furan/pyrrole/thiophene/naphthalene; expect
+   naphthalene MATCH, the three heteroaromatics DIFFER only on cc/cd alternation (the
+   explicitly out-of-scope gap — atom-type family already matches).
+3. `uv run python scripts/validation/gaff2_parity_verdict.py` — expect `PARITY`
+   (`clause_parity_pct=1.0`, `ambiguity_load=none`, `reproduction_rung=R1`, all five
+   ceilings green).
+4. If cc/cd ring-alternation or H-atom typing's EW-element-set ever get scoped into a
+   future campaign's registered hypotheses, update `parity.bth.toml` and
+   `scripts/validation/gaff2_parity_verdict.py`'s evidence accordingly and re-run the
+   grader — do not hand-edit the verdict.

@@ -1,4 +1,4 @@
-# gaff2-parity-campaign Internal Docs
+# gaff2-supplement-tier Internal Docs
 
 ## Daily
 
@@ -34,7 +34,7 @@
 ## Actuation Surfaces
 
 ## Audits
-- [260820_gaff2-parity-verdict](audits/260820_gaff2-parity-verdict.md) — Phase 5 graded verdict (PARTIAL) for the GAFF2 atom-typing bathos-literature-parity campaign, closing out Phases 3-5
+- [260820_gaff2-parity-verdict](audits/260820_gaff2-parity-verdict.md) — Phase 5 graded verdict (PARITY, as of the PR
 
 ## Research
 - [260729_tm-align-phase-2-algorithm-map](research/260729_tm-align-phase-2-algorithm-map.md) — Line-referenced map of USalign's 5 seeding strategies, get_score_fast, DP_iter/NWDP_TM/TMscore8_search, and final multi-TM output
