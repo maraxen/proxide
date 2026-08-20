@@ -337,6 +337,19 @@ def _attached_count(atom) -> int:
 def _bond_category_facts(bond) -> dict[str, bool]:
     """Per-bond category flags, used both for tallying and for `'`/`''` edge checks.
 
+    Requires `bond`'s owning molecule to have been Kekulized with
+    `clearAromaticFlags=False` (see `assign_gaff2_atom_types`) -- otherwise every
+    ring bond in an aromatic system reports `GetBondType() == AROMATIC` rather
+    than its true Kekule SINGLE/DOUBLE identity, and the sb/db distinction below
+    collapses to always-False for ring bonds.
+
+    Per ATOMTYPE_GFF2.DEF's footer: SB/DB are *exact, non-aromatic* bond identity
+    ("Single bond" / "Double bond", no qualifier); sb/db are the *inclusive*
+    unions ("Single bond, including aromatic single..." / "Double bond, including
+    aromatic double"). With Kekulization applied, `bt.name` already reflects the
+    true per-bond Kekule single/double assignment regardless of aromaticity, so
+    sb/db read directly off it; SB/DB additionally require `not is_aromatic`.
+
     DL (delocalized) detection convention: a bond is treated as delocalized iff it
     is aromatic. This is a deliberate, documented simplification (the DEF file's
     "9 in AM1-BCC" delocalized bond-order code has no equivalent in RDKit's bond
@@ -352,8 +365,8 @@ def _bond_category_facts(bond) -> dict[str, bool]:
     is_double = bt.name == "DOUBLE"
     is_triple = bt.name == "TRIPLE"
     return {
-        "SB": is_single,
-        "DB": is_double,
+        "SB": is_single and not is_aromatic,
+        "DB": is_double and not is_aromatic,
         "TB": is_triple,
         "AB": is_aromatic,
         "DL": is_aromatic,
@@ -771,12 +784,28 @@ def assign_gaff2_atom_types(
 
     atom_types: list[str] = []
 
+    # Kekulize a local copy before matching: f8/f9's lowercase sb/db bond-category
+    # tokens require the true per-bond Kekule single/double identity (see
+    # _bond_category_facts), which RDKit only exposes once aromatic ring bonds
+    # are Kekulized -- by default they report GetBondType() == AROMATIC, not
+    # SINGLE/DOUBLE. clearAromaticFlags=False keeps GetIsAromatic() intact so AB/DL
+    # and aromaticity-class matching are unaffected. Never mutates the caller's
+    # mol. A molecule that has already passed Chem.SanitizeMol should always
+    # Kekulize successfully (sanitization Kekulizes internally to validate), but
+    # fall back to the unmodified atom order (losing only the sb/db distinction,
+    # not correctness of every other field) if some pathological input can't be.
+    mol_for_matching = Chem.Mol(mol)
+    try:
+        Chem.Kekulize(mol_for_matching, clearAromaticFlags=False)
+    except Chem.KekulizeException:
+        mol_for_matching = mol
+
     # Precedence: first-match-in-file-order (parse_gaff2_rules preserves DEF-file
     # declaration order), per ATOMTYPE_GFF2.DEF's own "defination order is crucial"
     # rule. H atoms are skipped here -- they are typed separately via a heavy-type
     # heuristic (_H_TYPE_BY_HEAVY, used in build_gaff2_ffxml), not via this rule
     # table; see the module-level note near that map.
-    for atom in mol.GetAtoms():
+    for atom in mol_for_matching.GetAtoms():
         if atom.GetAtomicNum() == 1:
             continue
 
@@ -1009,6 +1038,19 @@ _H_TYPE_BY_HEAVY: dict[str, str] = {
     "p3": "hp", "p5": "hp",
 }
 
+# Fallback for heavy GAFF2 types not covered above (e.g. n5-n9, ni, nj, nk, nl,
+# nx, ny, nz, no, nu, nv, nm, nn, np, nq, nt, ns, and any other type this dict
+# doesn't enumerate). Per ATOMTYPE_GFF2.DEF lines 79-82, hn/ho/hs/hp are each
+# defined as unconditional on the *specific* heavy atom type -- "(N)"/"(O)"/
+# "(S)"/"(P)" with no further constraint -- so any H attached to a nitrogen
+# should be "hn" regardless of which N ATD type it is, and likewise for O/S/P.
+# Only carbon keeps the coarser "hc" blanket default (matching this dict's
+# existing carbon entries): a real per-sp2/sp3 + electron-withdrawing-neighbor-
+# count disambiguation (h1-h5/hx/ha) exists in the DEF file but reworking
+# H-atom typing to go through real rule matching instead of this heuristic
+# lookup is deliberately out of scope here (see plan section B).
+_H_TYPE_ELEMENT_DEFAULT: dict[str, str] = {"N": "hn", "O": "ho", "S": "hs", "P": "hp"}
+
 _BOND_TYPE_SUB = {
     "cx": "c3", "cy": "c3", "c5": "c3", "c6": "c3",
     "cs": "c2", "cz": "c2", "ca": "c2", "cc": "c2", "cd": "c2",
@@ -1122,7 +1164,8 @@ def build_gaff2_ffxml(
                 nb = rdmol.GetAtomWithIdx(bond.GetOtherAtomIdx(atom.GetIdx()))
                 if nb.GetAtomicNum() != 1:
                     heavy_t = idx_to_type.get(nb.GetIdx(), "c3")
-                    h_type = _H_TYPE_BY_HEAVY.get(heavy_t, "hc")
+                    default_h = _H_TYPE_ELEMENT_DEFAULT.get(nb.GetSymbol(), "hc")
+                    h_type = _H_TYPE_BY_HEAVY.get(heavy_t, default_h)
                     break
             idx_to_type[atom.GetIdx()] = h_type
 

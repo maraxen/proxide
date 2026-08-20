@@ -1,4 +1,4 @@
-"""Orchestrator-owned invariant tests, Phase 4 of the GAFF2 bathos-literature-parity
+"""Orchestrator-owned invariant tests, Phases 4-5 of the GAFF2 bathos-literature-parity
 campaign (see .praxia/docs/decisions/260818_gaff2-parity-verdict-policy.md and the
 Phase 5 verdict report at .praxia/docs/audits/260820_gaff2-parity-verdict.md).
 
@@ -6,24 +6,30 @@ Per the campaign's Constraint 1 (orchestrator-owned re-derivation lock): Phase 3
 adversarial-refutation agents proposed two defects. These tests independently
 re-derive both from the source, rather than trusting the agents' reports as-is.
 
-Confirmed defects (xfail, documenting real bugs pending a follow-up fix -- NOT
-accepted deviations like the naphthalene-bridgehead/AR1-AR3 tests in
-test_gaff2_golden.py, which lock in a deliberate reading rather than a known bug):
+Defect 1 (FIXED, follow-up #1): `_bond_category_facts` used to compute lowercase
+`sb`/`db` (inclusive bond-category counts) identically to uppercase `SB`/`DB`
+(exact bond-type identity), silently dropping the "includes aromatic
+single/double" semantics the DEF footer specifies (ATOMTYPE_GFF2.DEF lines
+411-412). Fixed by Kekulizing a local copy before rule matching
+(`assign_gaff2_atom_types`) so `bt.name` reflects the true per-bond Kekule
+identity even for ring bonds, then deriving SB/DB as "kekule-exact AND NOT
+aromatic" and sb/db as "kekule-exact regardless of aromaticity". Locked in below
+as a passing test, not xfail.
 
-1. `_bond_category_facts` computes lowercase `sb`/`db` (inclusive bond-category
-   counts) identically to uppercase `SB`/`DB` (exact bond-type identity), silently
-   dropping the "includes aromatic single/double" semantics the DEF footer
-   specifies (ATOMTYPE_GFF2.DEF lines 411-412) and that the module's own docstring
-   (gaff2.py lines 42-48) claims is implemented.
-2. `_H_TYPE_BY_HEAVY` (the heavy-atom-type -> H-type lookup used by
-   `build_gaff2_ffxml`) is missing most nitrogen ATD family types (only 9 of the
-   ~20+ real N types map to "hn"); an amide nitrogen typed `nt`/`ns` silently
-   falls through to the dict's default of "hc" (same type as a plain alkane C-H)
-   instead of "hn". This is part of the already-deferred H-atom-typing rework
-   (plan section B) but is now a concrete, reproducible instance of it.
+Defect 2 (FIXED, follow-up #2): `_H_TYPE_BY_HEAVY` (the heavy-atom-type -> H-type
+lookup used by `build_gaff2_ffxml`) used to be missing most nitrogen ATD family
+types (only 9 of the ~20+ real N types mapped to "hn"); an amide nitrogen typed
+`nt`/`ns` silently fell through to the dict's default of "hc" (same type as a
+plain alkane C-H) instead of "hn". Fixed via `_H_TYPE_ELEMENT_DEFAULT`: per
+ATOMTYPE_GFF2.DEF lines 79-82, hn/ho/hs/hp are each unconditional on the
+*specific* N/O/S/P sub-type ("(N)"/"(O)"/"(S)"/"(P)", no further constraint),
+so any heavy type not in `_H_TYPE_BY_HEAVY` now falls back to an
+element-derived default instead of a blanket "hc". Locked in below as a
+passing test, not xfail.
 
-Also includes a passing invariant confirming defect 1 does NOT corrupt any atom
-type in the current benchmark set (Phase 3 Attacker #1's core finding).
+Also includes a passing invariant confirming the sb/db fix does NOT change any
+atom type in the current h_ew benchmark set (Phase 3 Attacker #1's core finding,
+still true after the fix since cs/c are actually disambiguated by f9, not f8).
 """
 
 import pytest
@@ -48,34 +54,28 @@ def _types(smiles: str) -> list[tuple[str, str]]:
     ]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Confirmed defect (Phase 3 Attacker #1, re-derived here): "
-        "_bond_category_facts's lowercase sb/db counts are computed identically "
-        "to uppercase SB/DB, omitting the DEF footer's 'includes aromatic "
-        "single/double' inclusive semantics. Toluene's ipso carbon has 3 heavy "
-        "bonds (2 aromatic ring bonds + 1 single bond to the methyl carbon) and "
-        "should satisfy a '3sb' (3-inclusive-single-bond) requirement, but the "
-        "current tally only counts the literal RDKit SINGLE bond, giving sb=1."
-    ),
-    strict=True,
-)
-def test_bond_category_facts_sb_includes_aromatic_confirmed_defect() -> None:
-    from proxide.chem.gaff2 import _atom_bond_facts, atomic_prop_matches, parse_atomic_prop
+def test_bond_category_facts_sb_db_include_aromatic_kekule_identity() -> None:
+    """Locks in follow-up #1's fix: sb/db now reflect the true per-bond Kekule
+    single/double identity (regardless of aromaticity), while SB/DB stay exact
+    (non-aromatic only). Toluene's ipso carbon has 3 heavy bonds: 2 ring bonds
+    (one Kekule-single, one Kekule-double in RDKit's chosen Kekule structure)
+    plus 1 explicit single bond to the methyl carbon -- so sb=2 (the explicit
+    single + the one Kekule-single ring bond), db=1 (the one Kekule-double ring
+    bond), while SB stays 1 (only the explicit non-aromatic single bond).
+    """
+    from proxide.chem.gaff2 import _atom_bond_facts
 
     mol = Chem.MolFromSmiles("Cc1ccccc1")  # toluene
     mol = Chem.AddHs(mol)
     AllChem.SanitizeMol(mol)
+    Chem.Kekulize(mol, clearAromaticFlags=False)
     ipso = mol.GetAtomWithIdx(1)  # ring carbon bonded to the methyl group
     assert ipso.GetSymbol() == "C" and ipso.GetIsAromatic()
 
     facts = _atom_bond_facts(ipso)
-    assert facts.bond_counts["sb"] == 3, (
-        f"expected ipso carbon's inclusive single-bond count (2 aromatic ring "
-        f"bonds + 1 single C-CH3 bond) to be 3 per the DEF footer's 'sb includes "
-        f"aromatic single' rule; got {facts.bond_counts}"
-    )
-    assert atomic_prop_matches(parse_atomic_prop("3sb"), facts)
+    assert facts.bond_counts["SB"] == 1, facts.bond_counts
+    assert facts.bond_counts["sb"] == 2, facts.bond_counts
+    assert facts.bond_counts["db"] == 1, facts.bond_counts
 
 
 def test_f8_bond_count_disambiguation_no_regression_on_h_ew_benchmark_molecules() -> None:
@@ -98,33 +98,33 @@ def test_f8_bond_count_disambiguation_no_regression_on_h_ew_benchmark_molecules(
         )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Confirmed defect (Phase 3 Attacker #3, re-derived here): "
-        "_H_TYPE_BY_HEAVY only maps 9 nitrogen ATD types (n, n2, n3, na, nh, nb, "
-        "nc, nd, n+) to 'hn'. Amide nitrogens typed 'nt'/'ns' are not in the "
-        "dict, so build_gaff2_ffxml's H-typing loop silently falls through to "
-        "the default 'hc' (same as a plain alkane C-H) instead of 'hn'. Part of "
-        "the already-deferred H-atom-typing rework (plan section B); tracked "
-        "here as a concrete, reproducible instance pending that follow-up."
-    ),
-    strict=True,
-)
-def test_h_type_by_heavy_missing_amide_n_types_confirmed_defect() -> None:
-    from proxide.chem.gaff2 import _H_TYPE_BY_HEAVY, assign_gaff2_atom_types
+def test_h_type_by_heavy_amide_n_h_types_as_hn() -> None:
+    """Exercises the real, fixed end-to-end path (build_gaff2_ffxml), not just
+    the lookup table in isolation -- confirms the _H_TYPE_ELEMENT_DEFAULT
+    fallback actually reaches the emitted FFXML for both formamide and
+    N-methylacetamide's amide N-H.
+    """
+    import re
+
+    from proxide.chem.gaff2 import build_gaff2_ffxml
 
     for smiles, n_idx in [("NC=O", 0), ("CC(=O)NC", 3)]:
         mol = Chem.MolFromSmiles(smiles)
-        mol_heavy = Chem.AddHs(mol)
-        AllChem.SanitizeMol(mol_heavy)
-        mol_no_h = Chem.RemoveHs(mol_heavy)
-        heavy_types = assign_gaff2_atom_types(mol_no_h)
-        n_type = heavy_types[n_idx]
-        assert mol_no_h.GetAtomWithIdx(n_idx).GetSymbol() == "N"
+        mol = Chem.AddHs(mol)
+        AllChem.SanitizeMol(mol)
+        n_atom = mol.GetAtomWithIdx(n_idx)
+        assert n_atom.GetSymbol() == "N"
+        h_idx = next(
+            nb.GetIdx() for nb in n_atom.GetNeighbors() if nb.GetAtomicNum() == 1
+        )
 
-        h_type = _H_TYPE_BY_HEAVY.get(n_type, "hc")
-        assert h_type == "hn", (
-            f"{smiles}: amide nitrogen resolved to GAFF2 type {n_type!r}, whose "
-            f"H should be 'hn' but _H_TYPE_BY_HEAVY has no entry for it -> "
-            f"falls back to {h_type!r}"
+        charges = [0.0] * mol.GetNumAtoms()
+        ffxml = build_gaff2_ffxml(mol, resname="LIG", charges=charges)
+
+        type_name = f"LIG_{h_idx}"
+        m = re.search(rf'<Type name="{type_name}" class="([^"]+)"', ffxml)
+        assert m is not None, f"{smiles}: no AtomTypes entry for {type_name}"
+        assert m.group(1) == "hn", (
+            f"{smiles}: amide N-H (atom {h_idx}) resolved to class "
+            f"{m.group(1)!r}, expected 'hn'"
         )
