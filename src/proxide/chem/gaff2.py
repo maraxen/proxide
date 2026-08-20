@@ -259,15 +259,25 @@ def chem_env_matches(
     """Check whether `atom`'s real neighbor graph satisfies a parsed f9 pattern.
 
     Existential, pairwise-distinct matching: each entry in `expr.neighbors` must
-    bind to a different actual heavy-atom neighbor of `atom` (excluding `predecessor`
+    bind to a different actual neighbor of `atom` (excluding `predecessor`
     only for the purpose of *counting this atom itself* -- predecessor loop-back as a
     neighbor candidate is permitted, matching how conjugated-ring patterns like
     `cc`'s `(C3(C3))` are meant to walk back through a ring).
+
+    Candidates include H neighbors, not just heavy atoms: `hw`'s pattern
+    `(O(H1))` is the only f9 pattern anywhere in ATOMTYPE_GFF2.DEF that
+    targets H as an explicit element (confirmed by grep), and it needs to see
+    H neighbors to match at all. This is safe for every other rule: no
+    WILDATOM macro (XX/XA/XB/XC/XD) or plain-element spec anywhere else
+    resolves to "H", so `_neighbor_matches`'s element gate
+    (`cand.GetSymbol() not in resolved`) already rejects an H candidate for
+    every spec except `hw`'s -- including H atoms in the candidate pool only
+    adds (harmless, small) extra iteration for those other rules.
     """
     if expr is None:
         return True
 
-    candidates = [n for n in atom.GetNeighbors() if n.GetAtomicNum() != 1]
+    candidates = list(atom.GetNeighbors())
     return _match_neighbor_specs(expr.neighbors, candidates, atom, wildatom_map)
 
 
@@ -480,6 +490,36 @@ def _prop_token_matches(tok: PropToken, facts: AtomBondFacts) -> bool:
     return False
 
 
+# f7 (H-only electron-withdrawing-neighbor count) grammar note: ATOMTYPE_GFF2.DEF's
+# footer defines f7 ("For hydrogen, number of the electron-withdrawal atoms
+# connected to the atom that the hydrogen attached") and the term "EW" ("Electron-
+# withdraw atom") but never actually enumerates which elements count as EW -- "EW"
+# is never used as a token in any real f8/f9 rule pattern anywhere in the file
+# (confirmed by grep), so this set is a documented judgment call, not read out of
+# the spec. {N, O, F, Cl, Br, I} -- the common electronegative heteroatoms GAFF's
+# own h1-h5 family exists to distinguish (e.g. a chloroform H, 3 EW neighbors on
+# its carbon, vs. a plain alkane H, 0) -- chosen as the defensible starting set.
+_EW_ATOMS = frozenset({"N", "O", "F", "Cl", "Br", "I"})
+
+
+def _h_ew_neighbor_count(h_atom) -> int:
+    """Count electron-withdrawing atoms bonded to h_atom's own heavy attachment.
+
+    f7 is meaningful only for H atoms (per the DEF footer); an H atom has
+    exactly one real neighbor (its attachment atom), whose OTHER neighbors
+    (not the H itself) are what f7 counts.
+    """
+    neighbors = list(h_atom.GetNeighbors())
+    if len(neighbors) != 1:
+        return 0
+    attachment = neighbors[0]
+    return sum(
+        1
+        for nb in attachment.GetNeighbors()
+        if nb.GetIdx() != h_atom.GetIdx() and nb.GetSymbol() in _EW_ATOMS
+    )
+
+
 @dataclass
 class Gaff2Rule:
     """A single GAFF2 atom type assignment rule.
@@ -492,8 +532,8 @@ class Gaff2Rule:
     - f5: num_attached - number of attached atoms (heavy + H, per the footer)
     - f6: num_h - number of hydrogen attachments
     - f7: h_ew_count - H-only electron-withdrawing-neighbor count (meaningful
-      only when atomic_num == 1; currently unused downstream since H atoms are
-      typed via a separate heuristic, not this rule table -- see module notes)
+      only when atomic_num == 1; enforced via _h_ew_neighbor_count/_EW_ATOMS,
+      see that helper's docstring for the EW-element judgment call)
     - f8: atomic_prop - bracketed atomic-property expression (ring/aromaticity/
       bond-type-count facts about the atom itself)
     - f9: chem_env - parenthesized chemical-environment neighbor pattern
@@ -520,6 +560,9 @@ class Gaff2Rule:
         # nodes, so the default (implicit/explicit-count-only) form would return 0.
         num_h = atom.GetTotalNumHs(includeNeighbors=True)
         if self.num_h is not None and self.num_h != num_h:
+            return False
+
+        if self.h_ew_count is not None and self.h_ew_count != _h_ew_neighbor_count(atom):
             return False
 
         if self.atomic_prop is not None:
@@ -795,7 +838,14 @@ def assign_gaff2_atom_types(
         wildatom_map: Pre-parsed WILDATOM map
 
     Returns:
-        List of GAFF2 atom type strings, one per atom
+        List of GAFF2 atom type strings, ONE PER ATOM, in `mol.GetAtoms()` index
+        order -- including H atoms if `mol` has explicit hydrogens (e.g. after
+        `Chem.AddHs`). This is an intentional, index-aligned contract (changed
+        260820): previously H atoms were skipped entirely, so the returned list
+        was shorter than `mol.GetNumAtoms()` and callers had to reconstruct
+        index alignment themselves by re-walking `mol.GetAtoms()` and filtering
+        `GetAtomicNum() != 1` in lockstep -- see `build_gaff2_ffxml`, now
+        simplified to rely on this contract directly.
     """
     if Chem is None:
         raise ImportError("RDKit is required. Install with: pip install rdkit")
@@ -837,13 +887,10 @@ def assign_gaff2_atom_types(
 
     # Precedence: first-match-in-file-order (parse_gaff2_rules preserves DEF-file
     # declaration order), per ATOMTYPE_GFF2.DEF's own "defination order is crucial"
-    # rule. H atoms are skipped here -- they are typed separately via a heavy-type
-    # heuristic (_H_TYPE_BY_HEAVY, used in build_gaff2_ffxml), not via this rule
-    # table; see the module-level note near that map.
+    # rule. H atoms go through the SAME rule loop as heavy atoms (260820 -- the 13
+    # H-rules, ATOMTYPE_GFF2.DEF lines 79-91, are parsed like any other ATD row;
+    # they just never ran before this fix).
     for atom in mol_for_matching.GetAtoms():
-        if atom.GetAtomicNum() == 1:
-            continue
-
         assigned = False
         for rule in rules:
             if rule.matches(atom, wildatom_map):
@@ -853,7 +900,9 @@ def assign_gaff2_atom_types(
 
         if not assigned:
             atomic_num = atom.GetAtomicNum()
-            if atomic_num == 6:
+            if atomic_num == 1:
+                atom_types.append("ha")  # DEF line 91: unconstrained H catch-all
+            elif atomic_num == 6:
                 atom_types.append("c3")
             elif atomic_num == 7:
                 atom_types.append("n3")
@@ -1061,31 +1110,6 @@ _VDW_ELEM_DEFAULT = {
     "S": (2.0000, 0.2500), "P": (2.1000, 0.2000),
 }
 
-_H_TYPE_BY_HEAVY: dict[str, str] = {
-    "c3": "hc", "cx": "hc", "cy": "hc", "c5": "hc", "c6": "hc",
-    "c":  "ha", "c2": "ha", "cs": "ha", "ca": "ha", "cc": "ha",
-    "cd": "ha", "ce": "ha", "cf": "ha", "cp": "ha", "cq": "ha",
-    "cz": "ha", "c1": "ha",
-    "oh": "ho", "op": "ho", "os": "ho", "oq": "ho",
-    "n":  "hn", "n2": "hn", "n3": "hn", "na": "hn", "nh": "hn",
-    "nb": "hn", "nc": "hn", "nd": "hn", "n+": "hn",
-    "sh": "hs", "ss": "hs",
-    "p3": "hp", "p5": "hp",
-}
-
-# Fallback for heavy GAFF2 types not covered above (e.g. n5-n9, ni, nj, nk, nl,
-# nx, ny, nz, no, nu, nv, nm, nn, np, nq, nt, ns, and any other type this dict
-# doesn't enumerate). Per ATOMTYPE_GFF2.DEF lines 79-82, hn/ho/hs/hp are each
-# defined as unconditional on the *specific* heavy atom type -- "(N)"/"(O)"/
-# "(S)"/"(P)" with no further constraint -- so any H attached to a nitrogen
-# should be "hn" regardless of which N ATD type it is, and likewise for O/S/P.
-# Only carbon keeps the coarser "hc" blanket default (matching this dict's
-# existing carbon entries): a real per-sp2/sp3 + electron-withdrawing-neighbor-
-# count disambiguation (h1-h5/hx/ha) exists in the DEF file but reworking
-# H-atom typing to go through real rule matching instead of this heuristic
-# lookup is deliberately out of scope here (see plan section B).
-_H_TYPE_ELEMENT_DEFAULT: dict[str, str] = {"N": "hn", "O": "ho", "S": "hs", "P": "hp"}
-
 _BOND_TYPE_SUB = {
     "cx": "c3", "cy": "c3", "c5": "c3", "c6": "c3",
     "cs": "c2", "cz": "c2", "ca": "c2", "cc": "c2", "cd": "c2",
@@ -1183,26 +1207,15 @@ def build_gaff2_ffxml(
         )
 
     # --- GAFF2 type assignment ---
-    mol_no_h = Chem.RemoveHs(rdmol)
-    heavy_types = assign_gaff2_atom_types(mol_no_h)
-    idx_to_type: dict[int, str] = {}
-    heavy_counter = 0
-    for atom in rdmol.GetAtoms():
-        if atom.GetAtomicNum() != 1:
-            idx_to_type[atom.GetIdx()] = heavy_types[heavy_counter]
-            heavy_counter += 1
-
-    for atom in rdmol.GetAtoms():
-        if atom.GetAtomicNum() == 1:
-            h_type = "hc"
-            for bond in atom.GetBonds():
-                nb = rdmol.GetAtomWithIdx(bond.GetOtherAtomIdx(atom.GetIdx()))
-                if nb.GetAtomicNum() != 1:
-                    heavy_t = idx_to_type.get(nb.GetIdx(), "c3")
-                    default_h = _H_TYPE_ELEMENT_DEFAULT.get(nb.GetSymbol(), "hc")
-                    h_type = _H_TYPE_BY_HEAVY.get(heavy_t, default_h)
-                    break
-            idx_to_type[atom.GetIdx()] = h_type
+    # assign_gaff2_atom_types returns one type per atom index (including H,
+    # via the real DEF rule engine -- see its docstring for the 260820
+    # index-alignment contract change; this used to be a two-pass
+    # heavy-then-heuristic-H construction via a now-deleted
+    # _H_TYPE_BY_HEAVY/_H_TYPE_ELEMENT_DEFAULT lookup).
+    all_types = assign_gaff2_atom_types(rdmol)
+    idx_to_type: dict[int, str] = {
+        atom.GetIdx(): t for atom, t in zip(rdmol.GetAtoms(), all_types, strict=True)
+    }
 
     params = load_gaff2_parameters(
         Path(__file__).parent.parent / "assets" / "gaff" / "dat" / f"{gaff_version}.dat"
