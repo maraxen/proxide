@@ -825,6 +825,159 @@ class TestHAtomTyping:
         return list(zip((a.GetSymbol() for a in mol.GetAtoms()), types, strict=True))
 
 
+class TestFullRuleCoverage:
+    """Real-molecule, antechamber-verified coverage for GAFF2 organic atom types
+    that had no test anywhere in this file before 260820's post-merge audit.
+
+    Scope: proxide's ATOMTYPE_GFF2.DEF has 318 ATD rules / 193 atom-type tokens;
+    193 - 91 are single-rule metal/lanthanide/actinide pass-throughs with no real
+    combinatorial typing logic (out of scope for this class). Of the 91 "organic"
+    (c/n/o/s/p/h-family) types, only 40 had ever been asserted anywhere in this
+    file. This class closes that gap for every type where a real, chemically
+    sensible molecule could be constructed and independently verified against
+    real antechamber (gaff-2.11) output -- 50 types across 47 molecules below
+    (some molecules exercise two target types at once, e.g. methylphosphine's
+    hp H-type and p3 P-type).
+
+    Explicitly excluded, not silently dropped:
+    - `lp` (DEF: `ATD  lp * 0 1 &`, atomic_num=0): a virtual lone-pair
+      pseudo-particle, not a real chemical element. No ordinary RDKit molecule
+      from a SMILES/mol file can ever produce it -- there is no atom to type.
+    - `p4`, `px`: both require a specific trivalent-P-with-a-double-bond
+      structure (DEF fields: 3 total attachments, [db] fact, a specific
+      chem_env). Every real SMILES tried either had RDKit expand P to
+      hypervalent (5-attached, landing on p5) or fall through to the
+      `pc`/`pe` conjugated-alternation family (which is earlier in file
+      order and more general) rather than isolating p4/px's exact pattern --
+      constructing the precise edge case would require an artificial
+      formal-charge trick rather than a real, synthetically sensible ligand
+      fragment, so these are deferred rather than forced.
+
+    Finding this session: the `nv`/`nm`/`nn` mismatches below (aniline-type N
+    adjacent to an aromatic ring, and its RG3/RG4 ring-nitrogen analogs) led to
+    a real parser bug -- see `_parse_neighbor_spec`'s comment on the
+    `(XX[AR1.AR2.AR3])` chem_env pattern for the fix (a "." was being silently
+    treated as AND instead of the DEF footer's own documented OR, making these
+    three rules permanently unsatisfiable and falling through to n8/np/nq).
+    """
+
+    @pytest.mark.parametrize("label,smiles,net_charge,expected_types", [
+        # br
+        ("bromobenzene", "Brc1ccccc1", 0, [("Br", "br"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+        # f
+        ("fluorobenzene", "Fc1ccccc1", 0, [("F", "f"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+        # i
+        ("iodobenzene", "Ic1ccccc1", 0, [("I", "i"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+        # cl
+        ("chlorobenzene", "Clc1ccccc1", 0, [("Cl", "cl"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+        # hs
+        ("ethanethiol", "CCS", 0, [("C", "c3"), ("C", "c3"), ("S", "sh"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "h1"), ("H", "h1"), ("H", "hs")]),
+        # hp + p3
+        ("methylphosphine", "CP", 0, [("C", "c3"), ("P", "p3"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hp"), ("H", "hp")]),
+        # n1
+        ("acetonitrile", "CC#N", 0, [("C", "c3"), ("C", "c1"), ("N", "n1"), ("H", "hc"), ("H", "hc"), ("H", "hc")]),
+        # nx
+        ("trimethylammonium_cation", "C[NH+](C)C", 1, [("C", "c3"), ("N", "nx"), ("C", "c3"), ("C", "c3"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hn"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx")]),
+        # n4
+        ("tetramethylammonium_cation", "C[N+](C)(C)C", 1, [("C", "c3"), ("N", "n4"), ("C", "c3"), ("C", "c3"), ("C", "c3"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx")]),
+        # n5
+        ("aziridine", "C1CN1", 0, [("C", "cx"), ("C", "cx"), ("N", "n5"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "hn")]),
+        # n6
+        ("azetidine", "C1CCN1", 0, [("C", "cy"), ("C", "cy"), ("C", "cy"), ("N", "n6"), ("H", "h1"), ("H", "h1"), ("H", "hc"), ("H", "hc"), ("H", "h1"), ("H", "h1"), ("H", "hn")]),
+        # n2
+        ("n_methylethanimine", "CC=NC", 0, [("C", "c3"), ("C", "c2"), ("N", "n2"), ("C", "c3"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "h4"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # nv
+        ("aniline", "Nc1ccccc1", 0, [("N", "nv"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("H", "hn"), ("H", "hn"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+        # ns
+        ("beta_lactam", "O=C1CCN1", 0, [("O", "o"), ("C", "c"), ("C", "cy"), ("C", "cy"), ("N", "ns"), ("H", "hc"), ("H", "hc"), ("H", "h1"), ("H", "h1"), ("H", "hn")]),
+        # np
+        ("n_methylaziridine", "CN1CC1", 0, [("C", "c3"), ("N", "np"), ("C", "cx"), ("C", "cx"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # nq
+        ("n_methylazetidine", "CN1CCC1", 0, [("C", "c3"), ("N", "nq"), ("C", "cy"), ("C", "cy"), ("C", "cy"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "hc"), ("H", "hc"), ("H", "h1"), ("H", "h1")]),
+        # nm
+        ("n_phenylaziridine", "c1ccc(cc1)N1CC1", 0, [("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("N", "nm"), ("C", "cx"), ("C", "cx"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # nn
+        ("n_phenylazetidine", "c1ccc(cc1)N1CCC1", 0, [("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("N", "nn"), ("C", "cy"), ("C", "cy"), ("C", "cy"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "h1"), ("H", "h1"), ("H", "hc"), ("H", "hc"), ("H", "h1"), ("H", "h1")]),
+        # no
+        ("nitromethane", "C[N+](=O)[O-]", 0, [("C", "c3"), ("N", "no"), ("O", "o"), ("O", "o"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # ny
+        ("dimethylammonium_cation", "C[NH2+]C", 0, [("C", "c3"), ("N", "ny"), ("C", "c3"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hn"), ("H", "hn"), ("H", "hx"), ("H", "hx"), ("H", "hx")]),
+        # n7
+        ("dimethylamine", "CNC", 0, [("C", "c3"), ("N", "n7"), ("C", "c3"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "hn"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # n9
+        ("ammonia", "N", 0, [("N", "n9"), ("H", "hn"), ("H", "hn"), ("H", "hn")]),
+        # n+
+        ("ammonium_cation", "[NH4+]", 1, [("N", "n+"), ("H", "hn"), ("H", "hn"), ("H", "hn"), ("H", "hn")]),
+        # cu
+        ("methylenecyclopropane", "C=C1CC1", 0, [("C", "c2"), ("C", "cu"), ("C", "cx"), ("C", "cx"), ("H", "ha"), ("H", "ha"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc")]),
+        # cv
+        ("methylenecyclobutane", "C=C1CCC1", 0, [("C", "c2"), ("C", "cv"), ("C", "cy"), ("C", "cy"), ("C", "cy"), ("H", "ha"), ("H", "ha"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc")]),
+        # n
+        ("n_n_dimethylacetamide", "CC(=O)N(C)C", 0, [("C", "c3"), ("C", "c"), ("O", "o"), ("N", "n"), ("C", "c3"), ("C", "c3"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # nu
+        ("n_methylaniline", "CNc1ccccc1", 0, [("C", "c3"), ("N", "nu"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "hn"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+        # oq
+        ("oxetane", "C1CCO1", 0, [("C", "cy"), ("C", "cy"), ("C", "cy"), ("O", "oq"), ("H", "h1"), ("H", "h1"), ("H", "hc"), ("H", "hc"), ("H", "h1"), ("H", "h1")]),
+        # s4
+        ("dmso", "CS(=O)C", 0, [("C", "c3"), ("S", "s4"), ("O", "o"), ("C", "c3"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # s6
+        ("dimethyl_sulfone", "CS(=O)(=O)C", 0, [("C", "c3"), ("S", "s6"), ("O", "o"), ("O", "o"), ("C", "c3"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # sp
+        ("thiirane", "C1CS1", 0, [("C", "cx"), ("C", "cx"), ("S", "sp"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # sq
+        ("thietane", "C1CCS1", 0, [("C", "cy"), ("C", "cy"), ("C", "cy"), ("S", "sq"), ("H", "h1"), ("H", "h1"), ("H", "hc"), ("H", "hc"), ("H", "h1"), ("H", "h1")]),
+        # p2
+        ("phosphaacetylene", "C#P", 0, [("C", "c1"), ("P", "p2"), ("H", "ha")]),
+        # p5
+        ("tetramethylphosphonium_cation", "C[P+](C)(C)C", 1, [("C", "c3"), ("P", "p5"), ("C", "c3"), ("C", "c3"), ("C", "c3"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc"), ("H", "hc")]),
+        # pb
+        ("phosphinine", "c1ccpcc1", 0, [("C", "ca"), ("C", "ca"), ("C", "ca"), ("P", "pb"), ("C", "ca"), ("C", "ca"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+        # nc
+        ("triazole", "c1nc[nH]n1", 0, [("C", "cc"), ("N", "nc"), ("C", "cd"), ("N", "na"), ("N", "nd"), ("H", "h5"), ("H", "h5"), ("H", "hn")]),
+        # s2
+        ("methylenemethylsulfonium_cation", "C[S+]=C", 1, [("C", "c3"), ("S", "s2"), ("C", "c2"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h4"), ("H", "h4")]),
+        # nh
+        ("n_n_dimethylaniline", "CN(C)c1ccccc1", 0, [("C", "c3"), ("N", "nh"), ("C", "c3"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("C", "ca"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+        # nj
+        ("n_methyl_beta_lactam", "O=C1CCN1C", 0, [("O", "o"), ("C", "c"), ("C", "cy"), ("C", "cy"), ("N", "nj"), ("C", "c3"), ("H", "hc"), ("H", "hc"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1"), ("H", "h1")]),
+        # nk
+        ("n_n_dimethylaziridinium_cation", "C[N+]1(C)CC1", 1, [("C", "c3"), ("N", "nk"), ("C", "c3"), ("C", "cx"), ("C", "cx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx")]),
+        # nl
+        ("n_n_dimethylazetidinium_cation", "C[N+]1(C)CCC1", 1, [("C", "c3"), ("N", "nl"), ("C", "c3"), ("C", "cy"), ("C", "cy"), ("C", "cy"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hx"), ("H", "hc"), ("H", "hc"), ("H", "hx"), ("H", "hx")]),
+        # sx
+        ("thiophene_1_oxide", "O=S1C=CC=C1", 0, [("O", "o"), ("S", "sx"), ("C", "ce"), ("C", "cf"), ("C", "cf"), ("C", "ce"), ("H", "h4"), ("H", "ha"), ("H", "ha"), ("H", "h4")]),
+        # pc
+        ("phosphole", "p1cc[nH]c1", 0, [("P", "pc"), ("C", "cc"), ("C", "cd"), ("N", "na"), ("C", "cd"), ("H", "ha"), ("H", "h4"), ("H", "hn"), ("H", "h4")]),
+        # ne
+        ("aza_diene_internal", "C=NC=C", 0, [("C", "c2"), ("N", "ne"), ("C", "ce"), ("C", "c2"), ("H", "h4"), ("H", "h4"), ("H", "h4"), ("H", "ha"), ("H", "ha")]),
+        # pe
+        ("phospha_diene_internal", "C=PC=C", 0, [("C", "c2"), ("P", "pe"), ("C", "ce"), ("C", "c2"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+        # sy
+        ("thiophene_1_1_dioxide", "O=S1(=O)C=CC=C1", 0, [("O", "o"), ("S", "sy"), ("O", "o"), ("C", "ce"), ("C", "cf"), ("C", "cf"), ("C", "ce"), ("H", "h4"), ("H", "ha"), ("H", "ha"), ("H", "h4")]),
+        # py
+        ("phosphole_oxide", "O=P1C=CC=C1", 0, [("O", "o"), ("P", "py"), ("C", "ce"), ("C", "cf"), ("C", "cf"), ("C", "ce"), ("H", "hp"), ("H", "ha"), ("H", "ha"), ("H", "ha"), ("H", "ha")]),
+    ])
+    def test_full_rule_coverage(
+        self, label: str, smiles: str, net_charge: int, expected_types: list
+    ) -> None:
+        # net_charge is unused here -- RDKit reads formal charge directly from
+        # the SMILES bracket notation ([N+], [NH+], etc). It's carried in the
+        # parametrize tuple only because the antechamber verification pass
+        # that produced expected_types needed it (antechamber's -nc flag).
+        del net_charge
+        from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+        mol = Chem.MolFromSmiles(smiles)
+        assert mol is not None, f"{label}: failed to parse SMILES {smiles!r}"
+        mol = Chem.AddHs(mol)
+        AllChem.SanitizeMol(mol)
+
+        types = assign_gaff2_atom_types(mol)
+        actual = list(zip((a.GetSymbol() for a in mol.GetAtoms()), types, strict=True))
+        assert actual == expected_types, (
+            f"{label} ({smiles}): expected {expected_types}, got {actual}"
+        )
+
 def validate_implementation(proxide_result: dict, smiles: str) -> dict:
     """Validate proxide results against golden references.
     
