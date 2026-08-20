@@ -396,17 +396,29 @@ def _atom_bond_facts(atom) -> AtomBondFacts:
             in_ring = True
             ring_counts_by_size[len(ring)] = ring_counts_by_size.get(len(ring), 0) + 1
 
-    # AR1-AR5 classification: the DEF footer defines these only as prose targets
-    # ("pure aromatic", "planar ring with 2 sb + >=2 db", etc.) with no algorithm
-    # to compute them, and gives no way to tell AR1 from AR2 from AR3 structurally.
-    # RDKit's own aromaticity perception is the closest available signal, so:
-    # aromatic ring atom -> could be AR1, AR2, or AR3 (all three are treated as
-    # matching, since the DEF's own rule table never distinguishes them for the
-    # same output atom_type -- see the cc/nc/pc family's duplicate AR2/AR3 rows);
+    # AR1-AR5 classification: the DEF footer's prose ("AR1 Pure aromatic atom
+    # (such as benzene and pyridine)"; "AR2 Atom in a planar ring, usually the
+    # ring has two continous single bonds and at least two double bonds"; "AR3
+    # ... one or several double bonds formed between non-ring atoms and the ring
+    # atoms") gives no direct algorithm, but its own canonical examples and a
+    # real external reference (antechamber/GAFFTemplateGenerator, run 260820 on
+    # benzene/pyridine/naphthalene/toluene/biphenyl/anthracene vs.
+    # furan/pyrrole/thiophene) converge on a clean, checkable proxy: every AR1
+    # example is a 6-membered aromatic ring (matching AR1's own "benzene and
+    # pyridine" citation, and confirmed for naphthalene's doubly-ring-membered
+    # bridgeheads too -- ring COUNT doesn't affect AR1 eligibility, only ring
+    # SIZE does); every AR2/AR3 example in scope is a 5-membered heteroaromatic,
+    # whose Kekule structure necessarily has the heteroatom's two ring bonds as
+    # "continuous single bonds" per AR2's own description (the heteroatom
+    # contributes a lone pair, not a pi bond, breaking full delocalization the
+    # way a 6-membered ring's alternating pattern doesn't). AR2 vs AR3 aren't
+    # separately distinguished here because DEF-file rules that read either
+    # token always OR them together for the same output type (e.g. cc's lines
+    # 37-58) -- no case in the current benchmark set needs to tell them apart.
     # non-aromatic ring atom that is sp3 carbon -> AR5; other ring atom -> AR4.
     aromaticity_class: str | None = None
     if atom.GetIsAromatic():
-        aromaticity_class = "AR123"  # sentinel: matches AR1, AR2, and AR3 tokens
+        aromaticity_class = "AR1" if 6 in ring_counts_by_size else "AR23"
     elif in_ring and atom.GetSymbol() == "C" and atom.GetHybridization().name == "SP3":
         aromaticity_class = "AR5"
     elif in_ring:
@@ -436,7 +448,11 @@ def _matches_aromaticity_token(word: str, aromaticity_class: str | None) -> bool
         return False
     if word == "AR4" or word == "AR5":
         return aromaticity_class == word
-    return aromaticity_class == "AR123"  # AR1/AR2/AR3 all resolve to the sentinel
+    if word == "AR1":
+        return aromaticity_class == "AR1"
+    if word in ("AR2", "AR3"):
+        return aromaticity_class == "AR23"
+    return False
 
 
 def _prop_token_matches(tok: PropToken, facts: AtomBondFacts) -> bool:

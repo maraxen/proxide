@@ -223,8 +223,9 @@ def get_reference_charges(smiles: str) -> dict:
     # 10, 12) have 3 aromatic heavy neighbors (satisfying cp's f9 pattern)
     # but are members of TWO six-rings simultaneously, failing cp's exact
     # f8 "1RG6" token -- same bridgehead-exclusion mechanism as naphthalene
-    # (see test_naphthalene_bridgehead_is_documented_ambiguity's docstring
-    # for the underlying reading caveat, which applies equally here). Added
+    # (see test_naphthalene_bridgehead_confirmed_by_external_reference's
+    # docstring -- the exact-ring-count reading is now confirmed, not just
+    # documented, and that confirmation applies equally here). Added
     # 260820 (verdict-report follow-up #4); previously curated in
     # benchmarks/gaff2_parity_molecules.yaml with no assertion.
     ("c1ccc2cc3ccccc3cc2c1", ["ca"] * 14),
@@ -286,24 +287,42 @@ def test_atom_type_ethene_bug_fixed() -> None:
 
 
 @pytest.mark.parametrize("smiles,expected_types", [
-    # ca ("pure aromatic atom", [AR1] only, no neighbor-count constraint) sits
-    # before the cc family in file order, so it wins for any RDKit-aromatic
-    # ring carbon under the current AR1/AR2/AR3 collapse (see the AR-class
-    # note in _atom_bond_facts): the DEF file distinguishes AR1 (pure aromatic,
-    # e.g. benzene/pyridine) from AR2/AR3 (planar conjugated rings with
-    # alternating bonds, e.g. these 5-membered heteroaromatics) structurally,
-    # but gives no algorithm to compute which is which -- confirmed as the
-    # single largest underspecified gap by all three independent
-    # blind-reconstruction lenses of this campaign. These are therefore
-    # locked-in regression tests for CURRENT best-effort behavior, not a claim
-    # that `ca` is the ultimate spec-correct answer for these ring carbons --
-    # revisit if/when AR-class classification is implemented for real.
-    ("c1ccoc1", [("C", "ca"), ("C", "ca"), ("C", "ca"), ("O", "os"), ("C", "ca")]),
-    ("c1cc[nH]c1", [("C", "ca"), ("C", "ca"), ("C", "ca"), ("N", "na"), ("C", "ca")]),
-    ("c1ccsc1", [("C", "ca"), ("C", "ca"), ("C", "ca"), ("S", "ss"), ("C", "ca")]),
+    # FIXED 260820, verified against a real external reference (antechamber /
+    # openmmforcefields.generators.GAFFTemplateGenerator, gaff-2.11, run
+    # 2026-08-20 in the espaloma-smoke conda-forge environment -- see
+    # scripts/validation/gaff2_external_reference.py). Previously these ring
+    # carbons resolved to `ca` because AR1/AR2/AR3 all collapsed to one
+    # sentinel, letting `ca`'s earlier-in-file-order [AR1]-only rule win for
+    # every aromatic ring carbon regardless of ring size (the exact same
+    # "special-before-general defeated by an over-broad sentinel" pattern as
+    # the original cp/ca bug PR #26 fixed). The real fix: AR1 ("pure aromatic
+    # atom (such as benzene and pyridine)" per the DEF footer) now requires
+    # membership in a 6-membered aromatic ring specifically; AR2/AR3 covers
+    # aromatic ring atoms that aren't (5-membered heteroaromatics in every
+    # case this campaign has evidence for). Confirmed correct against real
+    # antechamber output for these 3 molecules AND confirmed to NOT regress
+    # any 6-membered case (benzene/pyridine/toluene/biphenyl/naphthalene/
+    # anthracene all still resolve `ca` -- ring COUNT doesn't gate AR1, only
+    # ring SIZE does, matching naphthalene's real bridgehead behavior too).
+    #
+    # KNOWN REMAINING GAP: real GAFF2 additionally alternates cc/cd around the
+    # ring (antechamber gives furan cc,cc,cd,os,cd, not uniform cc) -- this is
+    # a torsion-parameter bookkeeping convention with NO corresponding ATD
+    # rule in ATOMTYPE_GFF2.DEF (`cd` never appears as a rule's atom_type
+    # field anywhere in the file; grep confirms), so it can't be produced by
+    # rule-matching alone -- it needs a separate ring-traversal alternation
+    # algorithm. Getting the atom-type FAMILY right (cc vs ca) is a real fix;
+    # getting cc/cd bonded-torsion-parameter correctness right is a distinct,
+    # not-yet-implemented follow-up.
+    ("c1ccoc1", [("C", "cc"), ("C", "cc"), ("C", "cc"), ("O", "os"), ("C", "cc")]),
+    ("c1cc[nH]c1", [("C", "cc"), ("C", "cc"), ("C", "cc"), ("N", "na"), ("C", "cc")]),
+    ("c1ccsc1", [("C", "cc"), ("C", "cc"), ("C", "cc"), ("S", "ss"), ("C", "cc")]),
 ])
 def test_atom_type_five_membered_heteroaromatics(smiles: str, expected_types: list) -> None:
-    """Regression test documenting current (AR1/AR2/AR3-collapsed) behavior."""
+    """Ring-carbon typing for 5-membered heteroaromatics, verified against a
+    real external GAFF2 reference (see module-level comment on the
+    parametrize list for the cc/cd-alternation caveat that remains open).
+    """
     from proxide.chem.gaff2 import assign_gaff2_atom_types
 
     mol = Chem.MolFromSmiles(smiles)
@@ -318,17 +337,19 @@ def test_atom_type_five_membered_heteroaromatics(smiles: str, expected_types: li
     assert heavy == expected_types, f"SMILES {smiles}: expected {expected_types}, got {heavy}"
 
 
-def test_naphthalene_bridgehead_is_documented_ambiguity() -> None:
-    """Naphthalene's fused-ring bridgeheads are a genuinely open spec question.
+def test_naphthalene_bridgehead_confirmed_by_external_reference() -> None:
+    """Naphthalene's fused-ring bridgeheads: CONFIRMED 260820, not a guess.
 
     cp's f8 token "1RG6" could mean "member of exactly one 6-ring" (excluding
     naphthalene's bridgeheads, which are each in TWO 6-rings) or "a 6-ring is
     present" as one qualifying condition among others. This implementation
     reads it as an exact ring-count (1RG6 = exactly one 6-membered ring),
-    which excludes bridgeheads from cp -- but this is a documented guess, not
-    a verified answer (needs a real reference: antechamber or the OpenFF GAFF2
-    plugin). This test locks in current behavior and flags the ambiguity
-    rather than silently asserting confidence either way.
+    which excludes bridgeheads from cp. Previously this was flagged as a
+    documented guess pending a real reference; now verified: antechamber /
+    openmmforcefields.generators.GAFFTemplateGenerator (gaff-2.11, run
+    2026-08-20, see scripts/validation/gaff2_external_reference.py) assigns
+    all 10 naphthalene ring carbons -- bridgeheads included -- `ca`, exactly
+    matching this implementation's exact-ring-count reading.
     """
     from proxide.chem.gaff2 import assign_gaff2_atom_types
 
@@ -337,12 +358,14 @@ def test_naphthalene_bridgehead_is_documented_ambiguity() -> None:
     AllChem.SanitizeMol(mol)
     types = [t for atom, t in zip(mol.GetAtoms(), assign_gaff2_atom_types(mol)) if atom.GetAtomicNum() != 1]
 
-    # Current reading: exact-ring-count semantics exclude bridgeheads from cp,
-    # so every naphthalene ring carbon (bridgeheads included) resolves to ca.
+    # Exact-ring-count semantics exclude bridgeheads from cp, so every
+    # naphthalene ring carbon (bridgeheads included) resolves to ca --
+    # confirmed correct against a real external GAFF2 reference.
     assert types == ["ca"] * 10, (
-        f"Naphthalene ring carbons: got {types}. If this changes, it likely means "
-        f"the 1RG6 exact-count reading changed -- re-verify against a real GAFF2 "
-        f"reference before updating this assertion, don't just match new output."
+        f"Naphthalene ring carbons: got {types}, expected all ca (confirmed "
+        f"against antechamber -- see scripts/validation/gaff2_external_reference.py). "
+        f"If this changes, re-verify against the real reference before updating "
+        f"this assertion, don't just match new output."
     )
 
 
