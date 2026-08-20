@@ -16,6 +16,26 @@ metadata:
 
 ---
 
+**UPDATE 2026-08-20 (Update 3 of the verdict report):** the campaign's actual verdict
+has since been upgraded from PARTIAL to **PARITY**
+(`.praxia/docs/audits/260820_gaff2-parity-verdict.md`), after a follow-up sprint (PR
+#28/#29) closed the two remaining registered-hypothesis gaps with a real external
+reference (antechamber/OpenFF). **This changes the gate math below**: the original
+cross-repo plan
+(`demistify/.praxia/docs/specs/260818_scope-sequence-and-priority-for-gaff2-li.md`)
+gates demistify's ligand-extension work (idea-002) on the campaign returning "a PARITY
+or accepted-PARTIAL verdict" — a genuine PARITY verdict satisfies that outright,
+without needing the accepted-PARTIAL approver sign-off this document originally set up.
+**This is flagged here for explicit human confirmation, not treated as self-executing**:
+whether to actually update `demistify/scripts/gaff2_allowlist.txt` to permit
+`proxide.chem.gaff2` imports for idea-002 is a real decision with its own blast radius
+(a live gate, not just a grading exercise), left to whoever owns that call. The PARITY
+grade itself does NOT cover H-atom typing or cc/cd ring-alternation (see the verdict
+report's "What PARITY does and doesn't cover") — factor that into any downstream
+consumption decision if either matters for the specific use case.
+
+---
+
 ## Context
 
 proxide's GAFF2 atom typing implementation (`proxide/chem/gaff2.py`) is a port of AMBER's GAFF2 force field rules. The implementation was not developed under formal parity validation against a published reference (AmberTools/antechamber or OpenFF GAFF2 plugin) — it has been validated informally on the 17-OHP steroid and integrated into the naurmalade biosensors pipeline. However, three targeted bugs were discovered and fixed (detailed in `.praxia/docs/misc/260623_gaff2-typing-debt.md`). Before GAFF2 can be used in a Core-tier campaign (a high-confidence, claim-tier experiment), a formal literature-parity validation must establish that the implementation faithfully reproduces GAFF2 atom type assignment as described in the AMBER/OpenFF specifications.
