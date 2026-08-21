@@ -110,6 +110,7 @@ class TestMoleculeFromMol2:
         the fix, RDKit has no Kekule alternation to perceive aromaticity
         from, and `assign_gaff2_atom_types` mistypes every ring carbon.
         """
+        pytest.importorskip("rdkit")
         from proxide.chem.gaff2 import assign_gaff2_atom_types
 
         with tempfile.NamedTemporaryFile(suffix=".mol2", mode="w", delete=False) as f:

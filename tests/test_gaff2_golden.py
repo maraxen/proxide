@@ -488,6 +488,74 @@ def test_naphthalene_bridgehead_confirmed_by_external_reference() -> None:
     )
 
 
+def test_fused_bicyclic_lone_pair_donor_not_promoted_to_ar1() -> None:
+    """A fused 6+5-ring system whose bridgehead nitrogen has zero double
+    bonds anywhere (a pyrrole-type lone-pair donor, e.g. pyrazolo[3,4-d]
+    pyrimidine-like scaffolds) must NOT be promoted to AR1 (`ca`/`nb`/`cp`)
+    just because RDKit's own aromaticity perception marks the ring
+    aromatic -- confirmed 260820 against real geostd ligand V6X (a real
+    antechamber-typed structure), whose fused ring core reproduced here
+    (bridgeheads `e`/`f`) is typed `cc`/`cd`/`nd`/`na` throughout, matching
+    the DEF footer's own AR2 prose ("usually the ring has two continuous
+    single bonds"). Before the `_ring_has_lone_pair_donor` fix, RDKit's
+    Kekulization placed a double bond on every ring atom except the
+    lone-pair nitrogen, and the six-ring's exocyclic-multibond check alone
+    (ported for 2-pyranone) didn't catch it -- every atom in both rings was
+    wrongly promoted to `ca`/`nb`, and the biphenyl-type `cp` rule then
+    misfired on any real aromatic ring linked to this one by a single bond
+    (since its bridgehead neighbors looked AR1 too).
+
+    The fix must also NOT demote genuinely fused all-carbon aromatics like
+    naphthalene (see `test_naphthalene_bridgehead_confirmed_by_external_
+    reference` immediately above) -- naphthalene's bridgeheads have a real
+    double bond in one of their two rings even when RDKit's Kekulization
+    places the shared bridge bond as formally single, so checking each ring
+    atom's bonds molecule-wide (not just its two bonds internal to the ring
+    under test) is required to tell the two cases apart.
+    """
+    from rdkit import Chem
+
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.RWMol()
+    idx = {}
+    for name, sym in [
+        ("a", "C"), ("b", "C"), ("c", "N"), ("d", "C"), ("e", "C"),
+        ("g", "N"), ("h", "C"), ("i", "C"), ("f", "N"),
+    ]:
+        idx[name] = mol.AddAtom(Chem.Atom(sym))
+
+    bonds = [
+        ("a", "b", Chem.BondType.DOUBLE),
+        ("b", "c", Chem.BondType.SINGLE),
+        ("c", "d", Chem.BondType.DOUBLE),
+        ("d", "e", Chem.BondType.SINGLE),
+        ("e", "f", Chem.BondType.SINGLE),  # shared bridgehead edge
+        ("f", "a", Chem.BondType.SINGLE),
+        ("e", "g", Chem.BondType.DOUBLE),
+        ("g", "h", Chem.BondType.SINGLE),
+        ("h", "i", Chem.BondType.DOUBLE),
+        ("i", "f", Chem.BondType.SINGLE),
+    ]
+    for x, y, bt in bonds:
+        mol.AddBond(idx[x], idx[y], bt)
+
+    m = mol.GetMol()
+    Chem.SanitizeMol(m)
+    m = Chem.AddHs(m)
+
+    types = assign_gaff2_atom_types(m)
+    names = ["a", "b", "c", "d", "e", "g", "h", "i", "f"]
+    heavy = {n: t for n, atom, t in zip(names, m.GetAtoms(), types) if atom.GetAtomicNum() != 1}
+
+    # Real ground-truth types from geostd ligand V6X's identical ring core.
+    expected = {
+        "a": "cc", "b": "cd", "c": "nd", "d": "cc", "e": "cc",
+        "g": "nd", "h": "cd", "i": "cc", "f": "na",
+    }
+    assert heavy == expected, f"got {heavy}, expected {expected} (matches real V6X reference)"
+
+
 class TestGaff2Grammar:
     """Direct unit tests for the f8/f9 DEF-grammar parser, independent of RDKit."""
 

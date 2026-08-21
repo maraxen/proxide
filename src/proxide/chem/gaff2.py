@@ -432,6 +432,34 @@ def _ring_has_exocyclic_multibond(mol: Chem.Mol, ring: tuple[int, ...]) -> bool:
     return False
 
 
+def _ring_has_lone_pair_donor(mol: Chem.Mol, ring: tuple[int, ...]) -> bool:
+    """True if some ring atom has NO double bond anywhere among ITS bonds --
+    AmberTools' real AR2 test, matching the DEF footer's own prose ("AR2
+    Atom in a planar ring, usually the ring has two continuous single bonds
+    and at least two double bonds"). Such an atom (e.g. a pyrrole-type
+    nitrogen in a fused pyrazole/pyrimidinone system) contributes a lone
+    pair rather than a formal pi bond, breaking the strict single/double
+    alternation AR1 ("pure aromatic", benzene/pyridine) requires --
+    RDKit's own aromaticity perception marks such rings aromatic (its model
+    tolerates lone-pair contribution), but real antechamber's bond-
+    alternation-based AR1 test does not.
+
+    Checked over ALL of the atom's bonds, not just its two bonds internal to
+    `ring`: restricting to ring-internal bonds over-fires on a fused
+    bicyclic all-carbon system's shared bridge bond (e.g. naphthalene),
+    where RDKit's Kekulization is free to place that single shared bond as
+    "single" from one ring's perspective even though the bridgehead atom
+    itself has a real double bond, just in its OTHER ring -- that atom must
+    not be treated as an AR2-breaking lone-pair donor. `mol` must already be
+    Kekulized -- see `_atom_bond_facts`'s caller.
+    """
+    for ring_idx in ring:
+        atom = mol.GetAtomWithIdx(ring_idx)
+        if not any(bond.GetBondType().name == "DOUBLE" for bond in atom.GetBonds()):
+            return True
+    return False
+
+
 def _atom_bond_facts(atom) -> AtomBondFacts:
     mol = atom.GetOwningMol()
     ring_info = mol.GetRingInfo()
@@ -493,7 +521,9 @@ def _atom_bond_facts(atom) -> AtomBondFacts:
         # tagged AR1 by any ring", not a single resolved class per atom).
         six_rings = [r for r in ring_info.AtomRings() if idx in r and len(r) == 6]
         has_clean_six_ring = any(
-            not _ring_has_exocyclic_multibond(mol, ring) for ring in six_rings
+            not _ring_has_exocyclic_multibond(mol, ring)
+            and not _ring_has_lone_pair_donor(mol, ring)
+            for ring in six_rings
         )
         aromaticity_class = "AR1" if has_clean_six_ring else "AR23"
     elif in_ring and atom.GetSymbol() == "C" and atom.GetHybridization().name == "SP3":
