@@ -381,10 +381,36 @@ class Molecule:
     # Build editable molecule
     mol = Chem.RWMol()
 
-    # Add atoms
+    # Add atoms. NoImplicit=True (only when the file already lists at least
+    # one explicit hydrogen -- see below): a real all-atom mol2/sdf lists
+    # every hydrogen explicitly, so an atom whose explicit bond count falls
+    # short of RDKit's default neutral valence (e.g. a carboxylate O with a
+    # single bond to its carbon and no H atom anywhere in the file) is
+    # charged or otherwise unusual, not missing a real hydrogen. Without
+    # this, SanitizeMol's default implicit-valence model silently fabricates
+    # an implicit H to fill out neutral valence, inflating that atom's
+    # degree (e.g. from 1 to 2) and corrupting GAFF2's connum-based rule
+    # matching downstream (confirmed 260821: this was the actual cause of
+    # the geostd bulk-sample's largest mismatch buckets, "o"->"oh" and
+    # "c"->"c3" on carboxylate-type groups -- verified against real
+    # antechamber, which reproduces "o"/"c" correctly from the exact same
+    # connectivity, since it never invents atoms a structure file didn't
+    # list).
+    #
+    # Gated on has_explicit_h, not applied unconditionally: a heavy-atom-only
+    # mol2 (no H records at all -- some legacy files, and this module's own
+    # BENZENE_MOL2 test fixture) genuinely relies on implicit-valence H
+    # filling to reach a sane structure; forcing NoImplicit there starves
+    # every ring atom of the hydrogen it needs and breaks aromaticity
+    # perception. A file with even one real H atom has, in practice, listed
+    # all of them (partial H-listing is not a real mol2/sdf convention), so
+    # this heuristic reliably distinguishes the two cases.
+    has_explicit_h = any(elem == "H" for elem in self.elements)
     for i, elem in enumerate(self.elements):
       atom = Chem.Atom(elem)
       atom.SetAtomMapNum(i + 1)
+      if has_explicit_h:
+        atom.SetNoImplicit(True)
       mol.AddAtom(atom)
 
     # Add bonds

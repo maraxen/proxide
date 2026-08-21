@@ -128,6 +128,64 @@ class TestMoleculeFromMol2:
         finally:
             Path(mol2_path).unlink()
 
+    def test_to_rdkit_does_not_fabricate_implicit_hydrogens_when_file_has_explicit_h(self):
+        """A real (explicit-hydrogen) mol2 lists every atom -- a terminal
+        heteroatom with fewer bonds than RDKit's default neutral valence
+        (e.g. a deprotonated carboxylate oxygen, single-bonded to its
+        carbon with no H record anywhere in the file) is charged, not
+        missing a real hydrogen. `_to_rdkit()` must not let RDKit's default
+        implicit-valence model silently invent one -- confirmed 260821 as
+        the actual cause of the geostd bulk-sample's two largest mismatch
+        buckets ("o"->"oh", "c"->"c3" on carboxylate-type groups): the
+        fabricated implicit H inflated the oxygen's degree from 1 to 2,
+        which fails GAFF2's `ATD o * 8 1 &` rule (connum must be exactly 1)
+        and falls through to the generic 2-connection "oh" rule instead.
+        Real antechamber never does this since it treats an ac/mol2 file's
+        atom list as complete.
+        """
+        pytest.importorskip("rdkit")
+
+        acetate_mol2 = """\
+@<TRIPOS>MOLECULE
+acetate
+ 7 6 0 0 0
+SMALL
+bcc
+
+
+@<TRIPOS>ATOM
+      1 C1          0.0000    0.0000    0.0000 c3        1 LIG      0.000000
+      2 H1          1.0000    0.0000    0.0000 hc        1 LIG      0.000000
+      3 H2         -0.5000    0.8660    0.0000 hc        1 LIG      0.000000
+      4 H3         -0.5000   -0.8660    0.0000 hc        1 LIG      0.000000
+      5 C2         -0.5000    0.0000    1.4000 c         1 LIG      0.700000
+      6 O1          0.2000    0.0000    2.3000 o         1 LIG     -0.700000
+      7 O2         -1.8000    0.0000    1.5000 o         1 LIG     -0.700000
+@<TRIPOS>BOND
+     1     1     2 1
+     2     1     3 1
+     3     1     4 1
+     4     1     5 1
+     5     5     6 1
+     6     5     7 1
+@<TRIPOS>SUBSTRUCTURE
+     1 LIG         1 TEMP              0 ****  ****    0 ROOT
+"""
+        with tempfile.NamedTemporaryFile(suffix=".mol2", mode="w", delete=False) as f:
+            f.write(acetate_mol2)
+            mol2_path = f.name
+
+        try:
+            mol = Molecule.from_mol2(mol2_path)
+            rdmol = mol._to_rdkit()
+            o1 = rdmol.GetAtomWithIdx(5)
+            o2 = rdmol.GetAtomWithIdx(6)
+            assert o1.GetSymbol() == "O" and o2.GetSymbol() == "O"
+            assert o1.GetDegree() == 1 and o1.GetTotalNumHs() == 0
+            assert o2.GetDegree() == 1 and o2.GetTotalNumHs() == 0
+        finally:
+            Path(mol2_path).unlink()
+
     def test_real_mol2_file(self):
         """Test parsing a real MOL2 file if available."""
         # Check if imatinib.mol2 exists
