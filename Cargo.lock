@@ -2792,6 +2792,7 @@ dependencies = [
  "log",
  "once_cell",
  "pyo3",
+ "sha2",
  "tempfile",
  "thiserror",
 ]
