@@ -33,6 +33,14 @@
 //! missing-file branch entirely, on purpose: a build with no valid DEF
 //! content simply fails to compile, which is strictly safer than a binary
 //! that runs and silently mistypes every atom.
+//!
+//! **`ATOMTYPE_GFF2.DEF` itself is not committed to this repository** (it is
+//! GPL-licensed, AmberTools/antechamber-derived content, deliberately kept
+//! out of this MIT-licensed repo's git history) -- run
+//! `uv run python scripts/fetch_amber_assets.py` first to populate it before
+//! building this crate. `include_str!` failing to find the file is exactly
+//! the loud, compile-time failure this design wants: see that script's
+//! docstring for the fetch/verify mechanism.
 
 use std::path::Path;
 

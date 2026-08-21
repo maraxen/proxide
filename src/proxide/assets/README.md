@@ -11,8 +11,16 @@ assets/
 ├── amber/          # Amber protein, lipid, nucleic acid force fields (from openmmforcefields)
 ├── charmm/         # CHARMM force fields (from openmmforcefields)
 ├── gaff/           # GAFF small molecule force fields
-│   ├── ffxml/      # OpenMM-format XML files
-│   └── dat/        # Original GAFF .dat parameter files
+│   ├── ffxml/      # OpenMM-format XML files (from openmmforcefields)
+│   └── dat/        # GAFF .dat parameter files (from openmmforcefields) --
+│                   # EXCEPT ATOMTYPE_GFF2.DEF, which is NOT from
+│                   # openmmforcefields (it never shipped that file -- see
+│                   # scripts/sync_forcefields.py's FILE_MAPPINGS, which only
+│                   # globs *.dat/*.xml). ATOMTYPE_GFF2.DEF is antechamber's
+│                   # own GAFF2 atom-typing rule grammar, sourced directly
+│                   # from GPL-licensed Amber-MD/AmberClassic and, unlike
+│                   # every other file here, deliberately NOT committed to
+│                   # this repo -- see scripts/fetch_amber_assets.py.
 ├── implicit/       # Implicit solvent (GBSA-OBC) parameters
 ├── openmm_bundled/ # Force fields bundled with OpenMM itself
 │   ├── amber14/    # Amber ff14SB with water models
