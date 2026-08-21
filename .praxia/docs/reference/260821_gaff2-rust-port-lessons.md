@@ -1,6 +1,86 @@
-# GAFF2 Rust Port -- Running Lessons Log
+---
+title: GAFF2 Rust Port — Lessons Log
+description: Phase-by-phase record of the Python→Rust port of the GAFF2 DEF-grammar atom typer (crates/proxide-gaff2), including per-module adversarial-verify verdicts and the 100%-exact-reproduction regression gate
+status: final
+task_id: 260821_gaff2-rust-port
+date: '260821'
+---
 
-Started 2026-08-21. This file is appended to progressively by each phase of the gaff2-rust-port workflow -- do not remove this header.
+# GAFF2 Rust Port — Lessons Log
+
+Written progressively by each phase of the `gaff2-rust-port` workflow on 2026-08-21,
+then consolidated into this form at synthesis. Branch `gaff2-parity/rust-port`,
+worktree `.claude/worktrees/gaff2-rust-port`.
+
+Sections below are ordered by phase. Per-module sections retain each porter's
+self-reported lesson and each adversarial verifier's verdict verbatim in substance,
+because those two voices disagreeing is the record's main value.
+
+---
+
+## Executive Summary
+
+**What was built.** `crates/proxide-gaff2` — a hand-written Rust port of the GAFF2
+atom-typing engine from `src/proxide/chem/gaff2.py`: the ATOMTYPE_GFF2.DEF grammar
+parser, the f8 atomic-property and f9 chemical-environment matchers, per-atom/per-ring
+fact extraction with AR1–AR5 aromaticity classification, AmberTools' `atadjust()`
+conjugated-alternation relabeling, and the first-match-in-file-order rule ladder.
+13 modules ported by 13 parallel subagents, each independently adversarially verified.
+
+**Headline result.** The port reproduces the Python reference **exactly** — not
+approximately, not better. On a 3,000-ligand geostd sample (seed 42, 2,923 ligands that
+both engines could type), Rust-vs-Python match rate was **100.00%, zero mismatches**, and
+the set of divergence signatures each engine shows against geostd ground truth was
+**identical** (10 signatures, `only_in_python` and `only_in_rust` both empty). That
+second check is the load-bearing one: it proves the port reproduces Python's *known
+remaining bugs* — the `cc`/`cd` alternation and `cp`/`cq` biphenyl quirks documented in
+`.praxia/docs/audits/260820_gaff2-parity-verdict.md` — rather than silently improving on
+them. For a behavior-preservation task, an improved match rate would have been a defect.
+
+**Verdict distribution.** Of 13 modules, 6 came back NOT REFUTED and 7 REFUTED. That
+7 is not a failure rate; it is the adversarial verifier working. Three refutations
+(`orchestrate`, `chem_env`, `atom_bond_facts`) were build/completeness failures —
+the crate genuinely did not compile at the time, so those modules' tests had never
+executed in-tree and the "tests pass" claims were false-green. All three were resolved
+before the gate ran: `cargo test -p proxide-gaff2 --lib` now reports **160 passed,
+0 failed**, including a real end-to-end `full_parameterize_gaff2_runs_end_to_end_against_the_real_bundled_def_and_dat`.
+The remaining four refutations are genuine behavioral divergences, detailed below.
+
+**The structural finding.** Three of the four unresolved behavioral divergences —
+`charges` (Gasteiger constants numerically wrong, sign flip on methanol), `parameterize`
+(aromatic bonds get the wrong order and bond category), `ffxml_builder` (drops
+pre-existing PDB atom names, and re-implements four already-ported modules in-file) —
+live in the six modules the architecture verdict **explicitly instructed the port to
+exclude from this crate**: `param_loader`, `param_lookup`, `ffxml_builder`, `pdb_names`,
+`charges`, `parameterize`. They are force-field parameter generation, which
+`crates/proxide-gaff` already owns. The scaffold planned 9 modules; the crate shipped 17
+files. Scope crept, and the defects concentrated precisely in the crept scope. Worse,
+they are invisible to the gate: the regression gate exercises `assign_gaff2_atom_types`
+only, so nothing in the 100% figure covers `charges`, `parameterize`, or `ffxml_builder`.
+
+**Not merged.** Cutover was **not applied**. The legacy heuristic typer
+`proxide_gaff::gaff::assign_gaff_types` is still live at all four call sites and still
+feeding wrong atom types into force-field parameter selection. See Open Items.
+
+### Module verdict table
+
+| Module | Tests | Verify verdict | Basis |
+|---|---|---|---|
+| `pdb_names` | 9/9 | NOT REFUTED | 300-case differential vs real RDKit, 0 mismatches |
+| `param_lookup` | 17/17 | NOT REFUTED | 37,800-case cross-language fuzz, byte-identical |
+| `alternation` | 3/3 | NOT REFUTED | 4,000-case fuzz + mutation power-check (85/121 mismatches on injected bugs) |
+| `atomic_prop` | 7/7 | NOT REFUTED | 155,292 differential cases, 0 divergences |
+| `def_parser` | 16/16 | NOT REFUTED | Real-corpus dump 322/322 lines byte-identical, in order |
+| `param_loader` | 19/19 | NOT REFUTED | All 7 bundled `.dat` files byte-identical incl. insertion order |
+| `rules_loader` | 7/7 | **REFUTED** | `CARGO_MANIFEST_DIR` path → silent empty ruleset off the build machine |
+| `charges` | 11/11 | **REFUTED** | Gasteiger H-denominator and iteration count wrong; sign flip on methanol |
+| `parameterize` | 10/10 | **REFUTED** | Aromatic bonds mis-ordered — a *silent improvement*, pinned by two tests |
+| `ffxml_builder` | 20/20 | **REFUTED** | Drops pre-existing PDB names; duplicates 4 already-ported modules |
+| `orchestrate` | 6/6 | **REFUTED** (resolved) | Entry point was `todo!()`; crate did not compile |
+| `chem_env` | 6/6 | **REFUTED** (resolved) | Crate did not compile; f9 logic itself survived 600k fuzz cases |
+| `atom_bond_facts` | 22/22 | **REFUTED** (resolved) | Type-seam compile break vs `atomic_prop.rs`; algorithm clean on 1,527 checks |
+
+---
 
 ## Phase 0: Baseline Validation (2026-08-21)
 
@@ -34,61 +114,185 @@ Started 2026-08-21. This file is appended to progressively by each phase of the 
 
 ## Decide Phase (2026-08-21)
 
-### Jury Verdicts (3-Lens Decision Model)
+> **Correction, recorded at synthesis.** The in-flight version of this section, written
+> by the phase's own recorder, materially misdescribed the jury's reasoning and invented
+> a caller list drawn from an unrelated project (`demistify.pipeline`,
+> `replica_extraction.AtomTypeCache`, `tmalign.TypedAlignment` — none of which exist in
+> this repo), a crate name that was never adopted (`proxide-gaff2-rs`), and an
+> architecture involving "distance computation kernels" that has nothing to do with
+> atom typing. It has been replaced below with the authoritative jury and architecture
+> records. **This is itself one of the run's lessons: a cheap-tier phase recorder
+> summarizing a decision it did not participate in will confabulate plausible detail,
+> and nothing downstream catches it because the summary is never executed.** Lesson
+> capture must quote the decision artifact, not paraphrase from memory.
 
-**Lens 1 — Pure Reimplementation (Verdict: ACCEPT)**
-- Confidence: 0.85
-- Rationale: High-quality Rust reimplementation of the DEF-grammar engine is technically achievable and provides optimal long-term maintainability, type safety, and performance. The grammar transformation and distance computation kernels are self-contained and can be cleanly ported without external dependencies.
+### Jury Verdict: `reimplement_manual` (2 of 3 jurors at 0.85; dissent at 0.72)
 
-**Lens 2 — Hybrid (Dissent)**
-- Confidence: 0.72
-- Rationale: A hybrid approach (selective transpilation + manual DEF embedding) could reduce implementation scope at the cost of dual-language maintenance and potential licensing friction. However, the dissent acknowledges that pure-reimplementation on licensing grounds is not its primary concern.
+Three independent jurors evaluated transpilation (via `depyler`), a hybrid, and a manual
+reimplementation. The dissent argued for hybrid **on licensing grounds, not on transpiler
+value** — its technical reasoning against `depyler` for the derived core matched the
+majority's.
 
-**Lens 3 — Pure Transpilation/Depyler (REJECTED)**
-- Confidence: < 0.50
-- Rationale: The DEF-grammar engine uses Python-specific metaprogramming (dynamic class construction, reflection) that depyler cannot reliably translate to idiomatic Rust. Pure transpilation would produce incorrect, unmaintainable code.
+**Where all three agreed — treated as settled:**
 
-**Synthesized Decision: REIMPLEMENT** (2 of 3 lenses)
-- All three lenses agree: (1) depyler is inapplicable to the DEF-grammar engine, (2) licensing rules preclude pure-transpiler on the full codebase, (3) high-quality reimplementation via pyo3 + careful DEF embedding is achievable.
-- Adopted approach: Selective manual reimplementation of core DEF transformation logic in Rust, exposed via pyo3 bindings.
+1. **`depyler` is inapplicable to the bulk of `gaff2.py`.** Independent AST splits by two
+   jurors put 68–80% of the module inside RDKit-touching functions (109–129 call sites),
+   depending on RDKit's kekulization, SSSR ring perception, aromaticity and implicit-H
+   *models*. `depyler` supports annotated Python over stdlib with no third-party
+   C-extension or pyo3 story, so `Chem.Mol` in the entry-point signatures is a category
+   error, not a risk tradeoff.
 
-### Architecture Decision
+2. **The 99.57% parity figure is a *joint* property of `gaff2.py` and RDKit's perception
+   conventions**, so the port must be scoped at the RDKit boundary: keep RDKit in Python,
+   freeze a plain-data perceived-graph struct (atoms, Kekulé bonds in file order, ring
+   sets, per-ring aromatic flags, per-atom H counts), and hand-write only the ~600–900
+   line typing engine in Rust. Any plan that says "port gaff2.py to Rust" without naming
+   this boundary reproduces the earlier proxide-gaff failure.
 
-**Crate Structure**
-- Primary crate: `proxide-gaff2-rs` (Rust DEF engine)
-- Python bridge: pyo3-based extension module compiled into the existing `demistify` namespace (backward-compatible)
-- Core modules: DEF grammar AST → distance matrix pipeline (GAFF2 atom type classification, geometric distance computation)
+3. **The prior hand-port failed for lack of an oracle, not for lack of a transpiler.**
+   `crates/proxide-gaff/src/gaff.rs:312` is a 42-line element-plus-neighbor-count `match`
+   with no DEF grammar at all, authored from intuition against nothing. The repo now has
+   language-agnostic gates (`scripts/validation/gaff2_geostd_sample.py` over ~37k geostd
+   ligands, `gaff2_external_reference.py`, the equivalence-bound policy in
+   `260818_gaff2-parity-verdict-policy.md`, and real AmberTools C compiled standalone as
+   a differential oracle), and the same workspace has two successful hand-written Rust
+   ports (`proxide-confind`, `proxide-tmalign`) that carry parity tests.
 
-**DEF Embedding Strategy**
-- Embed the complete GAFF2 DEF specification (atom types, GAFF hierarchy, parameter defaults) as const Rust data structures with compile-time validation
-- Define-time grammar rules as enum-based pattern matching (faster than runtime parsing in Python)
-- Distance computation kernels (Euclidean, angular penalties) vectorized with ndarray/nalgebra
+**Where they disagreed, and how it resolved.** The hybrid juror would hand `depyler` the
+RDKit-free DEF/chem-env parser. Both majority jurors independently examined that slice
+and found it is a recursive-descent string tokenizer — the single worst shape for
+machine-generated Rust (`String`/`&str` churn, recursive `Option<Box<..>>` enums) — while
+also being about a day of hand-writing with trivially exhaustive verification. Conversely
+the "scary" `_relabel_conjugated_alternation` is already a C-idiom transliteration of
+AmberTools' `atadjust()` (`Vec<bool>`/`Vec<i32>`/index loops, no Python idiom), and its
+load-bearing order dependence is `mol.GetBonds()` file order — an RDKit FFI contract no
+transpiler can cross, and which a manual port makes *safer* by serializing bonds
+explicitly. Hybrid would have bought a 0.x build-time dependency and unreviewed generated
+Rust for near-zero savings, in the one file whose documented failure mode is "shipped code
+nobody understood."
 
-### Caller Blast Radius (Recon Summary)
+### Blocking licensing conditions (adopted from the dissent)
 
-**Modules Analyzed**: 13 total (gaff2.py + dependencies)
+Orthogonal to port method; the port must not merge without them.
 
-**Live Callers of Wrong Heuristic Typer**: 8 identified
-1. `gaff2._type_from_geometry()` — atom type inference (primary path)
-2. `gaff2._validate_assignment()` — validation gate
-3. `gaff2.assign_types()` — public API entry point
-4. `gaff2._bonded_type_correction()` — bond-aware refinement
-5. `demistify.pipeline._preprocess_atoms()` — upstream integration
-6. `replica_extraction.AtomTypeCache.lookup()` — caching layer
-7. `confind.GeometricFeatures._compute_atom_context()` — feature extraction
-8. `tmalign.TypedAlignment.infer_mobility()` — mobility classification
+The parity source self-documents as "a line-for-line port of real AmberTools' `atadjust()`"
+and "a direct, UNCONDITIONAL port" — documented access plus substantial similarity, which
+forecloses clean-room. Exposure verified: `crates/proxide-gaff/Cargo.toml` inherits
+`license = "MIT"` from the workspace and has **no** `publish = false` (unlike
+`proxide-wasm` and `proxide_py`, which both set it), so it is crates.io-publishable today,
+and `dist/` already contains shipped sdists. Therefore:
 
-**Impact Assessment**
-- Direct call sites: 8 (listed above)
-- Transitive callers: ~20 (through public APIs and test fixtures)
-- Test coverage: High (golden test suite exercises all 8 direct call paths)
-- Deprecation complexity: Low (replacement pyo3 binding maintains Python function signature)
+- (a) Land the ported typer in a separate **GPL-3.0-or-later** crate behind an optional
+  feature, not in MIT `proxide-gaff`, and decide deliberately that linking it into the
+  pyo3/WASM bundle makes the distributed combined work GPL.
+- (b) Ship the upstream LICENSE/NOTICE beside
+  `src/proxide/assets/gaff/dat/ATOMTYPE_GFF2.DEF` and fix the README's misattribution to
+  openmmforcefields/OpenMM.
+- (c) Keep the provenance docstrings — they are the honest record and also the
+  translation spec.
+- (d) Revisit `260618_system-prep-scope.md` §5, whose "GPL is data, not code" conclusion
+  is now stale.
 
-**Migration Strategy**
-- Phase 1 (Current): Reimplement core DEF + distance logic in Rust
-- Phase 2: Expose via pyo3 with identical Python API signature
-- Phase 3: Gradual callsite migration (low priority; both implementations coexist initially)
-- Phase 4: Retire Python version after 1+ cycle of validation
+**Status: NOT DONE.** `crates/proxide-gaff2/Cargo.toml` as shipped inherits
+`license.workspace = true` (MIT) and sets `publish = false` for an unrelated reason
+(out-of-root `include_str!`). See Open Items.
+
+### Do first, independent of the port
+
+`proxide_gaff::gaff::assign_gaff_types` is live at four confirmed call sites —
+`crates/proxide_py/src/py_chemistry.rs:29`, `crates/proxide_py/src/py_parsers.rs:1036`,
+`crates/proxide-physics/src/physics/md_params.rs:621,638`, and
+`crates/proxide-wasm/src/gaff2.rs:90` via `gaff_generator.rs:815` — silently feeding wrong
+atom types into force-field parameter selection **right now**. The jury's instruction was
+to deprecate or delete it *before* the port, not after. **Status: NOT DONE**; all four
+call sites remain, verified at synthesis.
+
+### Acceptance gate defined up front
+
+- DEF parser struct-for-struct equality.
+- Per-atom exact match Rust-vs-Python on byte-identical serialized perceived-graph
+  fixtures across the 21-molecule external reference and the full suite.
+- Full-corpus geostd re-run at ≥99.45% with **zero new mismatch signatures** versus the
+  Python baseline.
+- The AmberTools C stays checked in as tiebreaker — the reference is the C, not the Python.
+
+### Architecture Decision (as issued)
+
+**Crate**: `proxide-gaff2`, depending on **nothing** in the workspace — no `proxide-core`,
+no `proxide-geometry`. A pure graph-and-string algorithm over a caller-supplied molecule.
+This buys wasm-compilability for free and keeps the parity surface to DEF logic alone.
+
+**Rejected input type**: `proxide_core::forcefield::topology::Topology`, for two
+parity-fatal properties — it has **no bond orders at all** (just `Bond { i, j }`, so no
+`sb`/`db`/`tb`/`AB`/`DL` discrimination), and its `adjacency` is a
+`HashMap<usize, Vec<usize>>`, so **bond iteration order is nondeterministic**.
+`atadjust()` parity depends on sweeping bonds in molecule/input-file order with exactly
+one reseed per pass. A HashMap-ordered sweep produces a different, run-to-run-unstable
+`cc`/`cd` coloring. This was named up front as "the single most likely way the port passes
+tests locally and is silently wrong in production."
+
+**Owned input instead** (`mol.rs`): `MolGraph { elements, formal_charges, bonds: Vec<Bond>,
+rings: Option<Vec<Vec<usize>>> }` where `Bond { i, j, order: BondOrder, aromatic: bool }`
+and `enum BondOrder { Single, Double, Triple }` — deliberately with **no `Aromatic`
+variant**, so an un-Kekulized aromatic bond read as "not SINGLE" is un-representable
+rather than silently corrupting the coloring. Fail-loud made structural.
+
+**DEF embedding**: `include_str!` of a relative path to the single canonical copy — no
+second file, no `build.rs`. Precedent: `crates/proxide-wasm/src/gaff2.rs:7`. Explicitly
+*not* the `crates/proxide-gaff/src/gaff_generator.rs:730` anti-pattern (runtime
+`format!("../../src/proxide/assets/...")`, cwd-dependent). `publish = false` because
+out-of-root `include_str!` does not survive `cargo package`.
+
+**Ring perception phased**: `mol.GetRingInfo().AtomRings()` is RDKit's *symmetrized* SSSR,
+not textbook SSSR, and a from-scratch cycle basis will disagree on exactly the fused/cage
+systems that were prior bug sources. Phase 1 ships with `rings: Some(...)` supplied by the
+caller from RDKit; Phase 2 adds native perception validated against the Phase-1 oracle as
+a separately gated change. `rings.rs` shipped as a 534-byte stub, correctly deferring
+Phase 2.
+
+**Module scope, as issued — 9 modules**: `mol`, `rings`, `def_parser`, `atomic_prop`,
+`chem_env`, `atom_bond_facts`, `alternation`, `orchestrate`, `rules_loader`.
+
+**Explicitly dropped — 6 modules**: `param_loader`, `param_lookup`, `ffxml_builder`,
+`pdb_names`, `charges`, `parameterize`. These are force-field parameter generation, which
+`crates/proxide-gaff` already does. Porting them here creates a second `.dat` parser
+competing with `proxide-gaff`'s; `charges` is additionally a layering inversion (it falls
+back to calling into Python). **All six were ported anyway.** See Scope Drift, below.
+
+### Caller blast radius and the pyo3 contract
+
+The recon's caller list was gathered on a different branch and was partly stale; the
+architecture pass corrected it. Corrected facts:
+
+- The five Rust caller lines above are all still valid.
+- `tests/test_gaff2.py`'s `ATOM_TYPE_TESTS` table and `test_atom_types()` were **already
+  deleted** on this branch (their expected values were wrong against the real DEF, and the
+  test used `return failed == 0` instead of `assert`, so it could never fail). Atom-type
+  correctness lives in `tests/test_gaff2_golden.py`.
+- Three callers the recon missed: `src/proxide/__init__.py:26` re-exports
+  `assign_gaff_atom_types`, `:99` lists it in `__all__` — **making any signature change a
+  public API break of the `proxide` package**, not an internal refactor — and
+  `scripts/verify_gaff.py` is already dead (it imports `proxide.__proxider`, double
+  underscore; maturin builds `proxide._proxider`).
+
+**The input type cannot stay identical.** The existing
+`assign_gaff_atom_types(coordinates, elements)` derives topology from a 1.3 Å distance
+cutoff, yielding connectivity only: no bond orders, no Kekulé structure, no formal
+charges, no stable bond ordering. Every critical requirement of the port depends on
+exactly what that input lacks. Retaining the old signature would force bond-order
+perception and Kekulization from 3D coordinates — a separate hard problem, and precisely
+the silent-wrong-answer class this port exists to eliminate. The prescribed replacement
+takes `(elements, bonds, formal_charges, aromatic_atoms, rings)` and returns
+`Vec<String>` rather than `Vec<Option<String>>`, with `"x"` as the sentinel — noting that
+`"x"` is **not falsy**, so a naive `if t:` port of an `if t is not None:` check silently
+accepts unrecognized atoms.
+
+**Prescribed migration ordering**: land `proxide-gaff2` plus its Rust unit tests first with
+**no caller rewired**, and add a parity harness over the geostd corpus from the same RDKit
+mol; only flip `py_chemistry.rs:18` once that harness is green. If the swap and the engine
+land together, any geostd disagreement is ambiguous between "port bug" and
+"input-contract bug." **This ordering was followed** — the harness landed as
+`scripts/validation/gaff2_rust_parity.py`, went green at 100%, and no caller was rewired.
 
 ## Scaffold Phase (2026-08-21)
 
@@ -145,13 +349,13 @@ Three-test guard system scaffolded:
 
 ### Surprises vs. Architecture Decision
 
-**None observed** — scaffold execution matched decision exactly:
+**None observed at the time** — scaffold execution matched the decision:
 - Cargo.toml integration seamless; no version conflicts or unusual feature gates
 - Module partitioning clean; no unplanned cross-module dependencies
 - `include_str!()` precedent from proxide-wasm required no adaptation
 - No hidden assumptions about DEF grammar surface
 
-**Implementation detail deferred**: SHA256 digest value will be computed at first test run (requires file I/O outside Rust workflow). Marked as TODO; not a blocker for scaffold validation.
+**Implementation detail deferred**: SHA256 digest value to be computed at first test run. Marked as TODO; judged not a blocker for scaffold validation.
 
 ### Validation Checklist (Phase Closure)
 
@@ -162,6 +366,72 @@ Three-test guard system scaffolded:
 - [x] Module stubs created for all planned components
 - [x] No build.rs; no source tree pollution
 - [x] Lint check passes (`cargo check --workspace`)
+
+### Reconciliation: what the scaffold promised vs. what shipped
+
+Recorded at synthesis, after inspecting the delivered crate. Two of the scaffold's three
+headline guarantees did not survive the port phase, and nobody noticed at the time because
+each was dismantled by a *different* subagent working inside its own module scope.
+
+**1. The `include_str!` embedding was silently reverted for the DEF.** `rules_loader.rs`
+as shipped does **not** embed `ATOMTYPE_GFF2.DEF`. It builds a path from
+`env!("CARGO_MANIFEST_DIR")` — the build machine's absolute source path — and does a
+runtime `std::fs::read_to_string`, falling back to an **empty ruleset** if the file is
+absent. The porter rewrote the scaffold's `include_str!` draft on the (correct) grounds
+that it did not reproduce Python's missing-file-degrades-to-empty branch, and did not
+notice that the substitute reintroduces the exact cwd/path-dependence the scaffold had
+explicitly rejected. The adversarial verifier caught it as D1 (HIGH, silent wrong output):
+any execution where the build-time source tree is absent — CI container, copied `target/`,
+`cargo install`, moved checkout — returns zero rules with no error, and every atom falls
+through to the generic `"x"` placeholder.
+
+Meanwhile `param_loader.rs:51`, `ffxml_builder.rs:143` and `def_parser.rs:632` **do** use
+`include_str!` for their assets, and two sibling modules assert in prose that
+`rules_loader.rs` embeds its asset. The crate now documents two mutually exclusive designs
+and follows the weaker one for the most load-bearing file. **Still unfixed.**
+
+**2. The SHA256 content-digest pin was never implemented.** The "deferred detail" was
+never picked up by any subsequent phase — no phase owned it. The guard whose stated purpose
+was to make an AmberTools DEF bump *a deliberate, reviewed change that forces re-running the
+parity campaign* does not exist. A DEF file swap today is a silent behavior swap.
+
+**3. The cross-language digest test was never implemented either.** It was identified in
+the architecture pass as "the only test that actually catches drift" and "the only check
+that survives the maturin wheel boundary." It does not exist.
+
+The generalizable failure: **a scaffold's promises are not owned by anyone once the
+per-module fan-out starts.** Each module agent's scope was its own file; nothing in the
+pipeline was accountable for "the guards the scaffold said would exist." Guards must
+either be implemented *in* the scaffold phase (not marked TODO) or dispatched as their own
+module with its own verifier.
+
+### Scope drift: 9 planned modules, 17 shipped files
+
+The architecture decision named 9 modules and explicitly instructed that six others —
+`param_loader`, `param_lookup`, `ffxml_builder`, `pdb_names`, `charges`, `parameterize` —
+be **dropped** from this crate as force-field parameter generation already owned by
+`crates/proxide-gaff`. All six were ported anyway, by six separate subagents, each of
+which independently judged its assigned module in-scope because its own dispatch prompt
+said so.
+
+Consequences, all confirmed by the adversarial verifiers:
+
+- **Three of the four unresolved behavioral divergences are in the dropped six**
+  (`charges`, `parameterize`, `ffxml_builder`).
+- `ffxml_builder.rs` re-implements `parse_gaff2_parameters`, `Gaff2Params`,
+  `assign_pdb_atom_names`, `bond_type_sub`, `lookup_bond_params`/`lookup_angle_params` and
+  `py_islower` **from scratch, in-file**, duplicating four sibling modules that had already
+  been ported and verified. `lib.rs` re-exports both sets under aliases; both parsers
+  `include_str!` the same 878 KB `.dat`, so the binary embeds it twice. The twins have
+  already diverged: one uses `HashMap` where the crate's own Cargo.toml explicitly
+  forbids it, and its `py_islower` is not equivalent to the other's.
+- The dropped six are **outside the regression gate's coverage** — the gate exercises
+  `assign_gaff2_atom_types` only. Their defects are unmeasured by the 100% figure.
+
+The generalizable failure: **the module fan-out was generated from the recon inventory,
+not from the architecture verdict's scoped subset.** A per-module pipeline will faithfully
+port whatever list it is handed; the scoping decision has to be applied to the *dispatch
+list*, not merely written down in a document the module agents never read.
 
 ## Port: pdb_names (2026-08-21)
 
@@ -774,7 +1044,7 @@ The Rust port, fed the Kekulized MolGraph its own contract mandates, produces `'
 ## Port: orchestrate (2026-08-21)
 
 ### Module Summary
-- **Status**: REFUTED (tests pass; logic faithful; module ships with critical incompleteness and broken building)
+- **Status**: REFUTED at verify — logic faithful; refuted on incompleteness + broken build. **Resolved before the gate** (see note at end of section).
 - **Module**: `orchestrate` (assign_gaff2_atom_types entry point coordinator — first-match-in-file-order precedence ladder and six-way fallback)
 - **Port Date**: 2026-08-21
 - **Files Changed**: 
@@ -842,10 +1112,20 @@ Consequence: orchestrate.rs:56-62's claim that the trait "lets assign_types_with
 
 **Confidence**: CONFIRMED on algorithm (differential fuzzing 8000 cases + all isolated unit tests pass); REFUTED on completeness/compilation/live execution
 
+> **Resolved before the regression gate.** D2 and D3 are closed as of synthesis:
+> `assign_gaff2_atom_types` is implemented (no longer `todo!()`), the crate compiles, and
+> `cargo test -p proxide-gaff2 --lib` reports 160 passed / 0 failed — including
+> `parameterize::tests::full_parameterize_gaff2_runs_end_to_end_against_the_real_bundled_def_and_dat`,
+> a genuine end-to-end run against the real bundled DEF and `.dat`. The algorithm this
+> verifier cleared under 8,000-case differential fuzzing is the one that then reproduced
+> Python exactly across 2,923 geostd ligands. D1 (the dropped Kekulize fail-loud guard)
+> and D4 (API narrowing) remain open; D1 is now covered structurally by `BondOrder`
+> having no `Aromatic` variant, but nothing enforces it at the `MolGraph` boundary.
+
 ## Port: chem_env (2026-08-21)
 
 ### Module Summary
-- **Status**: REFUTED (tests pass, but module has critical blocking defects — not semantic divergence)
+- **Status**: REFUTED at verify — blocking build defects, not semantic divergence. **Resolved before the gate** (see note at end of section).
 - **Module**: `chem_env` (f9 neighbor-spec grammar: pattern matching over bonded neighbor contexts)
 - **Port Date**: 2026-08-21
 - **Files Changed**: 
@@ -921,6 +1201,15 @@ N4: Test `test_chem_env_matches_hw_pattern_reachable_though_unreached` models me
 **Recommendation**: Do not accept this module as verified until (a) `atomic_prop.rs` compiles so `cargo test -p proxide-gaff2 --lib chem_env` actually runs, (b) `MolGraph::new`'s `todo!()` is implemented so `chem_env_matches` can be exercised against real molecules, and (c) the module is wired into `Gaff2Rule::matches`. The f9 translation itself could not be refuted under 600k parser fuzz inputs and 10,868 real-molecule match checks — no ordering, precedence, or silent-improvement defects found in it.
 
 **Confidence**: UNABLE TO VERIFY (600k parser fuzz + 10,868 real-molecule match checks show 0 divergences; unit tests never executed in-tree due to sibling build breakage)
+
+> **Resolved before the regression gate.** All three blocking defects are closed as of
+> synthesis: `atomic_prop.rs` compiles, `MolGraph::new` is implemented, and `chem_env` is
+> wired into the rule-matching path. The crate's 160 tests pass in-tree, so this module's
+> 6 tests now genuinely execute. The f9 translation the verifier could not refute under
+> 600k parser-fuzz inputs and 10,868 real-molecule match checks is on the live path that
+> subsequently reproduced Python exactly across the geostd sample. This module is the
+> clearest example in the run of a refutation that was **entirely about the deliverable's
+> verifiability, not its logic** — and of why the two must be reported separately.
 
 ## Port: ffxml_builder (2026-08-21)
 
@@ -1008,7 +1297,7 @@ lib.rs re-exports BOTH sets under aliases, and both parsers `include_str!` the s
 ## Port: atom_bond_facts (2026-08-21)
 
 ### Module Summary
-- **Status**: REFUTED (tests pass in isolation, but module does not compile in-tree due to critical seam defect)
+- **Status**: REFUTED at verify — type-seam compile break, algorithm clean. **Resolved before the gate** (see note at end of section).
 - **Module**: `atom_bond_facts` (atom/bond topology facts and aromaticity classification; 22 new unit tests, all pass in isolation)
 - **Port Date**: 2026-08-21
 - **Files Changed**: 
@@ -1088,6 +1377,14 @@ All 7 GAFF-specific first-match AR1..AR5 steps verified exact. HashMap-vs-order 
 
 **Confidence**: CONFIRMED (1527 differential checks + 22 isolated unit tests; compile errors reproduced live on real crate)
 
+> **Resolved before the regression gate.** D1 is closed — the `atomic_prop.rs` seam was
+> reconciled (the mechanical `&usize` / `.as_deref()` fixes the verifier identified), the
+> crate compiles, and this module's 22 tests now run in-tree as part of the 160-test suite.
+> D2 (the stale "both copies cannot diverge" doc block, and the dead private copy at
+> `atomic_prop.rs:152`) remains open and is folded into Open Item 7. The 1,527-assertion
+> differential over 84 molecules stands: the algorithm needed no changes, exactly as the
+> verifier concluded.
+
 ## Regression Gate (2026-08-21)
 
 ### Parity Validation Against Python Reference (geostd 3000-sample run)
@@ -1152,4 +1449,220 @@ For each ligand:
 - Port faithfully reproduces Python's validated behavior, bugs included, with no evidence of new divergence
 
 **Confidence**: HIGH (3000-ligand sampled run at seed=42 reproducible; `--full` available for 37,469-ligand comprehensive run if needed)
+
+### What the gate does and does not cover
+
+Recorded at synthesis, to prevent the 100% figure from being read as broader than it is.
+
+**Covers**: the atom-typing path — `rules_loader` → `def_parser` → `atomic_prop` /
+`chem_env` / `atom_bond_facts` → `alternation` → `orchestrate`, i.e. the nine modules the
+architecture verdict actually scoped. This is the part that matters most and it is
+verified to exact reproduction.
+
+**Does not cover**:
+- `charges`, `parameterize`, `ffxml_builder`, `param_loader`, `param_lookup`, `pdb_names`
+  — none are on the `assign_gaff2_atom_types` path. Three of them carry confirmed,
+  unresolved behavioral divergences. **The gate cannot see them.**
+- `rules_loader`'s D1 path-resolution defect. The gate ran on the build machine with the
+  source tree present, so `exists()` was true and the DEF loaded. The silent-empty-ruleset
+  failure mode is invisible to any run performed where the crate was built.
+- 92% of the corpus. 3,000 of 37,469 ligands were sampled, for time and network budget,
+  not for any correctness reason. The acceptance gate as defined by the jury specified a
+  **full-corpus** re-run. `--full` is wired and unrun.
+- Native ring perception, which is deliberately Phase 2 — the gate feeds RDKit's
+  `AtomRings()` in on both sides, so ring perception is held fixed rather than tested.
+
+### Why the signature-set check is the real gate
+
+The raw match rate answers "does Rust agree with Python here." The signature-set check
+answers the harder question: "does Rust diverge from ground truth in *exactly and only*
+the same ways Python does." Both engines were compared against geostd ground truth
+independently, their mismatch-signature sets aggregated, and the sets compared. Both
+contained exactly the same 10 signatures — `(c2,c)`, `(cc,cd)`, `(cd,cc)`, `(ce,cc)`,
+`(ce,cd)`, `(cf,cd)`, `(cq,cp)`, `(n2,nc)`, `(n2,nd)`, `(nd,nc)` — with `only_in_python`
+and `only_in_rust` both empty.
+
+A new signature in `only_in_rust` would mean the port introduced a novel divergence. A
+missing signature in `only_in_python` would mean the port **silently fixed a bug Python
+still has** — which for a behavior-preservation task is equally a failure, and is the one
+a naive "match rate went up, ship it" gate would wave through. The `parameterize` module's
+refutation is precisely this class: it produced chemically *more correct* aromatic bond
+orders than the reference, and pinned that improvement with two passing tests and a
+module-doc claim asserting the divergence was intentional and checked.
+
+---
+
+## Cutover (2026-08-21)
+
+**Status: NOT APPLIED.**
+
+The migration ordering prescribed by the architecture pass was: land the crate and its
+tests with no caller rewired, prove the parity harness green, *then* flip
+`py_chemistry.rs:18`. The first two steps completed. The third was not taken, and this is
+the correct outcome given the state of the blocking conditions below — but it means the
+port is, as of this writing, dead code with respect to production.
+
+Concretely, at synthesis:
+
+- `crates/proxide-gaff2` builds clean and passes 160 tests.
+- `proxide_gaff::gaff::assign_gaff_types` — the 42-line heuristic `match` with no DEF
+  grammar — is **still live at all four call sites**: `py_chemistry.rs:29`,
+  `py_parsers.rs:1036`, `md_params.rs:638`, and the wasm path via `gaff_generator.rs`.
+  It is still feeding wrong atom types into force-field parameter selection.
+- The pyo3 surface built for this run (`py_validation.rs`, feature `python-validation`)
+  is explicitly a throwaway validation entrypoint, documented as *not* the cutover
+  integration. The real integration point, `crates/proxide_py`, is untouched.
+- The GPL-crate-separation condition (a) is unmet: the crate inherits MIT from the
+  workspace.
+
+---
+
+## Cross-Cutting Synthesis
+
+Nine findings that generalize past this port.
+
+**1. Audit for an existing divergent implementation before assuming greenfield.**
+This port's entire premise came from discovering that a Rust "GAFF typer" had already
+shipped, been exposed through pyo3, and been consumed at four call sites for months —
+and was not a port of anything. `gaff.rs:312` is an element-plus-neighbor-count `match`
+with no DEF grammar, authored from intuition against no oracle. It never failed loudly;
+it returned plausible-looking atom type strings that were simply wrong, and downstream
+force-field parameter selection consumed them silently. The scariest artifact in a port
+project is not the untranslated Python — it is the confident-looking Rust already sitting
+in the repo under the name you were about to use.
+
+**2. Order-dependence is the silent-port killer, and Rust's HashMap is the trap.**
+The reference algorithm's correctness rests on sweeping bonds in molecule/input-file
+order with exactly one reseed per pass. Python inherits that ordering free from RDKit's
+`GetBonds()` and from dict insertion order. Rust does not: `HashMap` iteration is
+deliberately nondeterministic, so a direct-looking translation produces a different — and
+run-to-run *unstable* — `cc`/`cd` coloring that still typechecks, still returns a sensible
+type for every atom, and still passes any test whose molecule happens to be small enough.
+The architecture pass named this hazard before a line was written, rejected
+`Topology` as input specifically because its `adjacency` is a `HashMap`, and mandated an
+owned `Vec<Bond>`. Every module verifier then hunted it independently. Result: **zero
+order-dependence defects in 13 modules.** The hazard was designed out, not tested out.
+
+**3. Not every map is an ordering hazard, and over-applying the rule costs real time.**
+Two porters independently reached for `IndexMap` where the Python dict is only ever
+`.get()`-ed and never iterated, and one of them then had to rewrite a public struct
+because a sibling module had already been verified against a `HashMap`-shaped contract.
+The discriminator is one grep: does any consumer *iterate* this map? If not, `HashMap` is
+behavior-preserving and simpler. Blanket "use IndexMap everywhere" is not caution, it is
+noise that hides the two places where it genuinely matters.
+
+**4. An adversarial verifier blind to the porter's rationale finds what self-review
+cannot.** Every verifier was dispatched with the Python as ground truth and no access to
+the porter's justification, and instructed to hunt four named bug classes and to treat a
+*fixed* Python bug as a defect. This is what caught `parameterize`: the porter had
+written a doc comment explaining why fractional aromatic bond orders were unreachable, and
+two passing tests whose *names* asserted that claim. A self-review, or a reviewer handed
+that rationale, reads a checked-and-dismissed concern and moves on. The verifier instead
+ran real phenol through the real Python, got `db`/1.5 on six bonds where the Rust gives
+`sb`/1.0 and `tb`/2.0, and refuted. The same pattern recurred in `atom_bond_facts`, where a
+doc block reassuringly stated two copies of a function "cannot diverge in practice" and
+the verifier proved by building that one was dead code and the live call site was the one
+failing to compile.
+
+**5. Port bugs faithfully; triage after.** Preserved deliberately and verified preserved:
+`AR2` and `AR3` collapsing to a single `AR23` class; count prefixes on bare `NR`/`RG`
+silently ignored; a body whose tokens all fail to parse becoming an always-true wildcard;
+`f9` having no `*` branch so `*(C4)` silently loses its constraint; the improper-torsion
+table coming out **empty** against the real `.dat` because a presumed-integer periodicity
+column actually holds fractional force constants; `bo >= 1.9` firing before `bo >= 1.4`
+so a Kekulized double bond classifies as `tb`; a `predecessor` parameter accepted and
+never read. Each of these is a bug. Each is *load-bearing* for the 99.57% parity figure,
+because that figure is a property of the Python's behavior including its bugs. Fixing one
+during translation breaks the gate and destroys the ability to attribute any later
+divergence. Fix them in a separate, separately-gated change — where the diff in the
+signature set is the deliverable rather than an accident.
+
+**6. "Tests pass" is a claim about a build, and five verifiers had to prove it false.**
+For much of the port phase the crate did not compile — six type errors in `atomic_prop.rs`
+and one in `rules_loader.rs` — so the "N/N tests pass" line in nearly every porter's
+report was true only of a scratch crate the porter had extracted to `$TMPDIR`. Five
+separate verifiers independently rediscovered this and reported it as a blocking defect.
+That is five duplicated investigations of one fact that a single crate-level build gate
+between the port and verify stages would have surfaced once. The porters' workaround —
+extracting the module plus its stable dependencies into a disposable crate to get
+evidence-backed pass/fail on their own logic — was individually correct and collectively
+wasteful.
+
+**7. Parallel fan-out onto one crate has a real coordination cost, and it is paid in
+interfaces.** Multiple porters reported sibling files changing shape under them mid-task,
+a duplicate `[dev-dependencies]` table producing invalid TOML, one agent's compile fix
+being silently reverted by another, and — twice — discovering mid-task that a sibling had
+already ported the exact function they were writing. The two disciplines that worked:
+read a sibling's *current* content immediately before designing any cross-module
+interface, not once at task start; and when you must patch a file you do not own to get a
+build, revert it byte-for-byte afterward and say so, so your diff stays honestly scoped.
+The structural fix is to sequence shared-type modules (`mol.rs`, `atom_bond_facts.rs`)
+ahead of the fan-out rather than inside it.
+
+**8. Verify against the source tree you are actually porting.** Three separate agents lost
+time to line-number citations that resolved into a different file: the worktree's
+`gaff2.py` is 1,905 lines, the main checkout's is 1,259, and the dispatch prompts' ranges
+were valid only in the worktree. One agent found a sibling's doc comment citing line
+ranges that exist in neither. In a repo with live branches and worktrees, a line citation
+is not an address unless the checkout is named alongside it.
+
+**9. A phase recorder that did not do the work will confabulate.** The Decide-phase
+section of this very log had to be replaced wholesale at synthesis: it invented a caller
+list from an unrelated project, a crate name never adopted, and an architecture involving
+distance kernels that have nothing to do with atom typing. It was fluent, structured, and
+entirely wrong, and nothing downstream depended on it, so nothing caught it. Lesson
+capture must quote or link the decision artifact rather than paraphrase it, and any
+summary written by a tier that did not participate in the decision should be treated as
+unverified until reconciled.
+
+---
+
+## Open Items
+
+Ordered by severity. None of these block the *finding* that the typing engine reproduces
+Python exactly; all of them block merge.
+
+1. **Deprecate or delete `proxide_gaff::gaff::assign_gaff_types`.** The jury's explicit
+   "do first, independent of the port" instruction, still undone. Four live call sites
+   silently feeding wrong atom types into force-field parameter selection today.
+
+2. **Fix `rules_loader.rs` D1.** `env!("CARGO_MANIFEST_DIR")` plus a silent
+   empty-ruleset fallback means any deployment off the build machine types every atom as
+   `"x"` with no error. Either embed via `include_str!` (accepting that this removes
+   Python's missing-file branch — a deliberate, documentable behavior change) or resolve
+   at runtime from the executable, and in either case **log loudly** rather than returning
+   empty rules. Reconcile the two sibling modules that currently assert in prose that this
+   file embeds its asset.
+
+3. **Resolve the licensing conditions.** Move the ported typer into a separate
+   GPL-3.0-or-later crate behind an optional feature; ship the upstream LICENSE/NOTICE
+   beside `ATOMTYPE_GFF2.DEF`; fix the README misattribution; revisit
+   `260618_system-prep-scope.md` §5. The crate currently inherits MIT.
+
+4. **Decide the fate of the six out-of-scope modules.** Either delete `charges`,
+   `parameterize`, `ffxml_builder`, `param_loader`, `param_lookup`, `pdb_names` from this
+   crate per the architecture verdict, or keep them and fix their three confirmed
+   divergences (`charges` Gasteiger constants — H denominator 20.02 and 12 iterations;
+   `parameterize` aromatic bond order via the existing `Bond.aromatic` flag;
+   `ffxml_builder` `existing_names` threading) **and** extend the gate to cover them.
+   Deleting is cheaper and matches the decision on record. Either way, remove
+   `ffxml_builder`'s in-file duplicates of four sibling modules.
+
+5. **Run the full-corpus gate.** The jury's acceptance criterion was a full 37,469-ligand
+   re-run at ≥99.45% with zero new signatures. 3,000 ran. `--full` is wired.
+
+6. **Implement the two drift guards the scaffold promised**: the DEF content-digest pin,
+   and the cross-language digest test that survives the maturin wheel boundary.
+
+7. **Fix the documentation-honesty defects the verifiers logged.** `pdb_names`'s
+   unsupported "tracked against AmberTools" provenance claim; `atom_bond_facts`'s stale
+   "both copies cannot diverge" block plus the dead copy at `atomic_prop.rs:152`;
+   `parameterize`'s two tests whose names assert a false unreachability claim;
+   `def_parser`'s wrong DEF line citation (428, not 1176); `param_loader`'s comment
+   misstating why a Python test never fails. These are individually trivial and
+   collectively the mechanism by which a future reader concludes a live defect was
+   already checked. Tracks with existing task #20.
+
+8. **Phase 2 ring perception.** `rings.rs` is a deliberate stub; native SSSR must be
+   validated against the Phase-1 RDKit-fed oracle as its own gated change.
 
