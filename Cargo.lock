@@ -2784,6 +2784,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxide-gaff2"
+version = "0.1.0-alpha.16"
+dependencies = [
+ "indexmap",
+ "lazy_static",
+ "log",
+ "once_cell",
+ "pyo3",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "proxide-geometry"
 version = "0.1.0-alpha.16"
 dependencies = [
