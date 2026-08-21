@@ -410,54 +410,121 @@ def _bond_category_facts(bond) -> dict[str, bool]:
     }
 
 
-def _ring_has_exocyclic_multibond(mol: Chem.Mol, ring: tuple[int, ...]) -> bool:
-    """True if any atom in `ring` has a post-Kekulization DOUBLE/TRIPLE bond
-    to a neighbor with NO ring membership at all (AmberTools' real AR3
-    "planar rings formed 'outside' double bonds" test, ring.c -- its actual
-    condition is the OTHER atom's total ring-membership count being zero,
-    `arom[bond[j].bondj].rg[0] == 0`, not merely "not in this specific
-    ring": a fused-ring bridgehead's neighbor in the OTHER ring of the fused
-    system is still ring-connected and must NOT count as exocyclic, or
-    naphthalene/anthracene's bridgeheads would be wrongly demoted). `mol`
-    must already be Kekulized -- see `_atom_bond_facts`'s caller.
+def _ring_initarom_atom(atom) -> int:
+    """Per-atom contribution to a ring's aromaticity-classification sum --
+    direct port of `initarom[i]` in AmberTools' `aromatic()` (`ring.c`,
+    Amber-MD/AmberClassic). `connum` must count every real neighbor
+    including hydrogens, whether they're explicit graph atoms (the real
+    ligand/geostd convention -- see `Molecule._to_rdkit()`'s
+    `SetNoImplicit` handling) or RDKit implicit-H atoms on a heavy-atom-
+    only structure (e.g. this module's own hand-authored test molecules) --
+    `GetDegree() + GetNumImplicitHs()` covers both without double-counting,
+    since NoImplicit=True forces the implicit count to 0 exactly when the
+    hydrogens are already explicit.
+    """
+    z = atom.GetAtomicNum()
+    connum = atom.GetDegree() + atom.GetNumImplicitHs()
+    if z == 6:  # carbon
+        if connum == 3:
+            return 2
+        if connum == 4:
+            return -2
+        return 0
+    if z == 7:  # nitrogen
+        return 2 if connum <= 3 else 0
+    if z == 8:  # oxygen
+        return 1 if connum == 2 else 0
+    if z == 15:  # phosphorus
+        if connum == 2:
+            return 2
+        if connum == 3:
+            return 1
+        if connum >= 4:
+            return -1
+        return 0
+    if z == 16:  # sulfur
+        if connum == 2:
+            return 1
+        if connum >= 3:
+            return -1
+        return 0
+    return 0
+
+
+def _classify_ring_aromaticity(mol: Chem.Mol, ring: tuple[int, ...]) -> str:
+    """Classify one ring as AR1/AR2/AR3/AR4/AR5 -- a direct, unconditional
+    port of AmberTools' real per-ring algorithm (`aromatic()`, `ring.c`,
+    Amber-MD/AmberClassic), NOT gated on RDKit's own `GetIsAromatic()`.
+
+    This distinction is load-bearing, confirmed 260821 against real geostd
+    ligand `679`: a genuinely non-aromatic (by RDKit's Huckel-based
+    perception) but planar, conjugated 5-ring -- e.g. a maleimide-like ring
+    with one internal C=C flanked by two exocyclic C=O groups -- is still
+    real antechamber's AR3, which the `cc`/`ce` DEF rules need to tell a
+    "ring" conjugated sp2 carbon (`cc`, requires AR2 or AR3) from a "chain"
+    one (`ce`, no AR requirement) -- gating this whole classification on
+    `GetIsAromatic()` (a materially different, stricter test) left such
+    rings with no AR class at all, silently falling through to `ce`/`cf`.
+
+    Algorithm (`ring.c::aromatic()`, condition order matters -- first match
+    wins, mirrored here as early returns):
+      1. `total = sum(_ring_initarom_atom(a) for a in ring)`.
+      2. `total == -2 * len(ring)` (every atom sp3 carbon): AR5, pure
+         aliphatic ring.
+      3. Any ring atom has a negative contribution (sp3 carbon, or
+         hypervalent P/S): AR4.
+      4. `len(ring) <= total <= 2 * len(ring)` (a "could be planar" range)
+         AND some ring atom has a post-Kekulization DOUBLE bond to a
+         neighbor with NO ring membership at all (`ring_info.NumAtomRings
+         (other) == 0` -- a fused-ring bridgehead's neighbor in its OTHER
+         ring still counts as ring-connected and must not trigger this):
+         AR3 ("planar ring formed by 'outside' double bonds").
+      5. `total == 12 and len(ring) == 6` AND no ring N/P atom lacks a
+         DOUBLE bond anywhere among ALL its bonds (checked molecule-wide,
+         not just the two bonds internal to `ring`, so a naphthalene-style
+         fused bridgehead whose Kekulization places its shared bond as
+         formally single isn't wrongly flagged -- it has a real double bond
+         in its OTHER ring): AR1, pure aromatic (benzene/pyridine-like). A
+         qualifying heteroatom with no double bond anywhere (e.g. a
+         pyrrole-type nitrogen contributing a lone pair, not a pi bond)
+         fails this and falls through instead.
+      6. `total >= len(ring) + 3`: AR2, other planar ring.
+      7. Otherwise: AR4 (fallback).
+    `mol` must already be Kekulized -- see `_atom_bond_facts`'s caller.
     """
     ring_info = mol.GetRingInfo()
-    for ring_idx in ring:
-        for bond in mol.GetAtomWithIdx(ring_idx).GetBonds():
-            other = bond.GetOtherAtomIdx(ring_idx)
-            if ring_info.NumAtomRings(other) > 0:
+    n = len(ring)
+    total = sum(_ring_initarom_atom(mol.GetAtomWithIdx(idx)) for idx in ring)
+
+    if total == -2 * n:
+        return "AR5"
+    if any(_ring_initarom_atom(mol.GetAtomWithIdx(idx)) < 0 for idx in ring):
+        return "AR4"
+
+    if n <= total <= 2 * n:
+        for ring_idx in ring:
+            for bond in mol.GetAtomWithIdx(ring_idx).GetBonds():
+                other = bond.GetOtherAtomIdx(ring_idx)
+                if ring_info.NumAtomRings(other) > 0:
+                    continue
+                if bond.GetBondType().name == "DOUBLE":
+                    return "AR3"
+
+    if total == 12 and n == 6:
+        has_lone_pair_donor = False
+        for ring_idx in ring:
+            atom = mol.GetAtomWithIdx(ring_idx)
+            if atom.GetAtomicNum() not in (7, 15):
                 continue
-            if bond.GetBondType().name in ("DOUBLE", "TRIPLE"):
-                return True
-    return False
+            if not any(b.GetBondType().name == "DOUBLE" for b in atom.GetBonds()):
+                has_lone_pair_donor = True
+                break
+        if not has_lone_pair_donor:
+            return "AR1"
 
-
-def _ring_has_lone_pair_donor(mol: Chem.Mol, ring: tuple[int, ...]) -> bool:
-    """True if some ring atom has NO double bond anywhere among ITS bonds --
-    AmberTools' real AR2 test, matching the DEF footer's own prose ("AR2
-    Atom in a planar ring, usually the ring has two continuous single bonds
-    and at least two double bonds"). Such an atom (e.g. a pyrrole-type
-    nitrogen in a fused pyrazole/pyrimidinone system) contributes a lone
-    pair rather than a formal pi bond, breaking the strict single/double
-    alternation AR1 ("pure aromatic", benzene/pyridine) requires --
-    RDKit's own aromaticity perception marks such rings aromatic (its model
-    tolerates lone-pair contribution), but real antechamber's bond-
-    alternation-based AR1 test does not.
-
-    Checked over ALL of the atom's bonds, not just its two bonds internal to
-    `ring`: restricting to ring-internal bonds over-fires on a fused
-    bicyclic all-carbon system's shared bridge bond (e.g. naphthalene),
-    where RDKit's Kekulization is free to place that single shared bond as
-    "single" from one ring's perspective even though the bridgehead atom
-    itself has a real double bond, just in its OTHER ring -- that atom must
-    not be treated as an AR2-breaking lone-pair donor. `mol` must already be
-    Kekulized -- see `_atom_bond_facts`'s caller.
-    """
-    for ring_idx in ring:
-        atom = mol.GetAtomWithIdx(ring_idx)
-        if not any(bond.GetBondType().name == "DOUBLE" for bond in atom.GetBonds()):
-            return True
-    return False
+    if total >= n + 3:
+        return "AR2"
+    return "AR4"
 
 
 def _atom_bond_facts(atom) -> AtomBondFacts:
@@ -472,64 +539,42 @@ def _atom_bond_facts(atom) -> AtomBondFacts:
             in_ring = True
             ring_counts_by_size[len(ring)] = ring_counts_by_size.get(len(ring), 0) + 1
 
-    # AR1-AR5 classification: the DEF footer's prose ("AR1 Pure aromatic atom
-    # (such as benzene and pyridine)"; "AR2 Atom in a planar ring, usually the
-    # ring has two continous single bonds and at least two double bonds"; "AR3
-    # ... one or several double bonds formed between non-ring atoms and the ring
-    # atoms") gives no direct algorithm, but its own canonical examples and a
-    # real external reference (antechamber/GAFFTemplateGenerator, run 260820 on
-    # benzene/pyridine/naphthalene/toluene/biphenyl/anthracene vs.
-    # furan/pyrrole/thiophene) converge on a clean, checkable proxy: every AR1
-    # example is a 6-membered aromatic ring (matching AR1's own "benzene and
-    # pyridine" citation, and confirmed for naphthalene's doubly-ring-membered
-    # bridgeheads too -- ring COUNT doesn't affect AR1 eligibility, only ring
-    # SIZE does); every AR2/AR3 example in scope is a 5-membered heteroaromatic,
-    # whose Kekule structure necessarily has the heteroatom's two ring bonds as
-    # "continuous single bonds" per AR2's own description (the heteroatom
-    # contributes a lone pair, not a pi bond, breaking full delocalization the
-    # way a 6-membered ring's alternating pattern doesn't). AR2 vs AR3 aren't
-    # separately distinguished here because DEF-file rules that read either
-    # token always OR them together for the same output type (e.g. cc's lines
-    # 37-58) -- no case in the current benchmark set needs to tell them apart.
-    # non-aromatic ring atom that is sp3 carbon -> AR5; other ring atom -> AR4.
-    #
-    # FIXED 260820 (post-merge PARITY audit): the ring-SIZE-only proxy above is
-    # necessary but not sufficient -- confirmed wrong by a real reference on
-    # 2-pyranone (O=C1C=CC=CO1), whose 6-membered ring RDKit marks aromatic but
-    # real antechamber types as the cc/cd family, not ca. Root cause, found in
-    # AmberTools' own ring-classification source (ring.c): its AR3 test
-    # ("planar rings formed 'outside' double bonds") is checked, and can fire,
-    # BEFORE the AR1 "pure aromatic ring" test -- a ring where some ring atom
-    # has an exocyclic double/triple bond to a NON-ring neighbor is AR3
-    # regardless of size or RDKit's own aromaticity perception (matches
-    # pyranone's carbonyl carbon exactly: its ring-internal bonds are
-    # single/aromatic, but its bond to the exocyclic carbonyl O is double).
-    # Ported as a targeted addition (not the full initarom/threshold system in
-    # ring.c, which has its own AR2/AR4/AR5 machinery this module doesn't need
-    # given the cc/cd-family rules never distinguish AR2 from AR3): a
-    # 6-membered otherwise-AR1-eligible ring is demoted to AR23 if ANY of its
-    # atoms has a post-Kekulization DOUBLE/TRIPLE bond to a neighbor outside
-    # the ring. Verified NOT to over-fire on benzaldehyde/styrene (exocyclic
-    # double bond one atom removed from the ring, via a single ring-to-
-    # substituent bond) -- both stay `ca`, matching real antechamber exactly.
+    # AR1-AR5 classification: a direct, UNCONDITIONAL port of AmberTools'
+    # real per-ring algorithm (`_classify_ring_aromaticity`, ported from
+    # `aromatic()` in `ring.c`) -- NOT gated on RDKit's own
+    # `GetIsAromatic()` (a materially different, stricter Huckel-based
+    # test). FIXED 260821: gating this on `GetIsAromatic()` (the prior
+    # implementation) left every genuinely non-aromatic-by-RDKit's-rules
+    # but still planar/conjugated ring (e.g. a maleimide-like 5-ring: one
+    # internal C=C flanked by two exocyclic C=O groups, confirmed against
+    # real geostd ligand 679) with no AR class at all, wrongly failing the
+    # `cc`/`ce` DEF rules' `[sb,db,AR2]`/`[sb,db,AR3]` requirement and
+    # falling through to the "chain" `ce`/`cf` rules instead of the correct
+    # "ring" `cc`/`cd`. Classify EVERY ring this atom belongs to (aromatic
+    # by RDKit's definition or not) and keep the real algorithm's
+    # per-ring, independent-counter semantics: AR1 fires if ANY ring gives
+    # AR1 (this atom_type's DEF rule always precedes the AR2/AR3-requiring
+    # one in file order for every case that needs this -- e.g. `ca`/`AR1`
+    # at DEF line 35 precedes `cc`/`AR2,AR3` at lines 37+ -- so checking
+    # AR1 first here matches what first-match rule precedence would do
+    # with fully independent per-ring counters anyway); else AR23 if ANY
+    # ring gives AR2 or AR3 (collapsed, as before: no current DEF rule
+    # distinguishes them); else AR5/AR4 if some ring gives that.
     aromaticity_class: str | None = None
-    if atom.GetIsAromatic():
-        # An atom can belong to more than one 6-ring (e.g. naphthalene's
-        # bridgeheads); AR1 fires if AT LEAST ONE of its 6-rings is "clean"
-        # (matches real antechamber's per-ring, independent-counter
-        # semantics -- the AR1 token check is a plain "was this atom ever
-        # tagged AR1 by any ring", not a single resolved class per atom).
-        six_rings = [r for r in ring_info.AtomRings() if idx in r and len(r) == 6]
-        has_clean_six_ring = any(
-            not _ring_has_exocyclic_multibond(mol, ring)
-            and not _ring_has_lone_pair_donor(mol, ring)
-            for ring in six_rings
-        )
-        aromaticity_class = "AR1" if has_clean_six_ring else "AR23"
-    elif in_ring and atom.GetSymbol() == "C" and atom.GetHybridization().name == "SP3":
-        aromaticity_class = "AR5"
-    elif in_ring:
-        aromaticity_class = "AR4"
+    if in_ring:
+        ring_classes = {
+            _classify_ring_aromaticity(mol, ring)
+            for ring in ring_info.AtomRings()
+            if idx in ring
+        }
+        if "AR1" in ring_classes:
+            aromaticity_class = "AR1"
+        elif ring_classes & {"AR2", "AR3"}:
+            aromaticity_class = "AR23"
+        elif "AR5" in ring_classes:
+            aromaticity_class = "AR5"
+        elif "AR4" in ring_classes:
+            aromaticity_class = "AR4"
 
     # Bond-type tallies include bonds to hydrogen (unlike f9's neighbor-pattern
     # matching, which is heavy-atom-only): a terminal alkyne carbon's only

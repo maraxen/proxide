@@ -635,6 +635,67 @@ def test_atadjust_reseed_is_pass_scoped_not_per_component() -> None:
     assert heavy == expected, f"got {heavy}, expected {expected} (matches real X4Q reference)"
 
 
+def test_ar23_classification_is_not_gated_on_rdkit_aromaticity() -> None:
+    """A genuinely non-aromatic (by RDKit's Huckel-based perception) but
+    planar, conjugated ring must still be classified AR2/AR3 for GAFF2's
+    "ring" (`cc`/`cd`, AR2-or-AR3-requiring) vs "chain" (`ce`/`cf`, no AR
+    requirement) sp2-carbon distinction -- confirmed 260821 against real
+    geostd ligand 679: a maleimide-like 5-ring (one internal C=C flanked
+    by two exocyclic C=O groups on the ring's other two carbons, bridged by
+    a ring N-H) is real antechamber's AR3 ("planar ring formed by 'outside'
+    double bonds", `ring.c`'s own algorithm, entirely independent of
+    Huckel aromaticity), but RDKit's own aromaticity perception correctly
+    does NOT mark this ring aromatic (it genuinely isn't a 4n+2 pi system).
+
+    Before the `_classify_ring_aromaticity` fix, AR1/AR2/AR3 classification
+    was gated on `atom.GetIsAromatic()`, so this ring's atoms got no AR
+    class at all and silently fell through `cc`'s `[sb,db,AR2/AR3]`
+    requirement to the "chain" `ce`/`cf` rules instead -- this exact
+    signature (`cc`->`ce`, `cd`->`cf`) was the single largest remaining
+    mismatch cluster in the geostd bulk sample (84 atoms) and dropped to
+    ~0 once this fix landed (full re-sample: 98.06% -> 99.45%).
+    """
+    from rdkit import Chem
+
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.RWMol()
+    idx = {}
+    for name, sym in [
+        ("p", "C"), ("q", "C"), ("r", "C"), ("s", "C"), ("t", "N"),
+        ("o_r", "O"), ("o_s", "O"),
+    ]:
+        idx[name] = mol.AddAtom(Chem.Atom(sym))
+
+    bonds = [
+        ("p", "q", Chem.BondType.DOUBLE),   # the "ene" double bond, cc=cd
+        ("p", "s", Chem.BondType.SINGLE),   # closes the 5-ring
+        ("q", "r", Chem.BondType.SINGLE),
+        ("r", "t", Chem.BondType.SINGLE),
+        ("t", "s", Chem.BondType.SINGLE),
+        ("r", "o_r", Chem.BondType.DOUBLE),  # exocyclic carbonyl
+        ("s", "o_s", Chem.BondType.DOUBLE),  # exocyclic carbonyl
+    ]
+    for x, y, bt in bonds:
+        mol.AddBond(idx[x], idx[y], bt)
+
+    m = mol.GetMol()
+    Chem.SanitizeMol(m)
+    assert not m.GetAtomWithIdx(idx["p"]).GetIsAromatic(), (
+        "test precondition: this ring must NOT be RDKit-aromatic -- if RDKit "
+        "starts perceiving it as aromatic, this test no longer exercises the "
+        "AR2/AR3-without-Huckel-aromaticity code path it's designed for."
+    )
+    m = Chem.AddHs(m)
+
+    types = assign_gaff2_atom_types(m)
+    names = ["p", "q", "r", "s", "t", "o_r", "o_s"]
+    heavy = {n: t for n, atom, t in zip(names, m.GetAtoms(), types) if atom.GetAtomicNum() != 1}
+
+    assert heavy["p"] == "cc", f"got {heavy['p']}, expected cc (matches real 679 C8)"
+    assert heavy["q"] == "cd", f"got {heavy['q']}, expected cd (matches real 679 C9)"
+
+
 class TestGaff2Grammar:
     """Direct unit tests for the f8/f9 DEF-grammar parser, independent of RDKit."""
 
