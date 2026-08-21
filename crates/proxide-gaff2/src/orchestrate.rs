@@ -187,8 +187,7 @@ pub fn assign_types_with_rules<R: Gaff2RuleMatch>(
 /// widening of the error surface, not a behavior difference in the success
 /// path.
 pub fn assign_gaff2_atom_types(mol: &MolGraph) -> Result<Vec<String>, String> {
-    let (rules, wildatom_map) =
-        crate::rules_loader::get_default_rules().map_err(|e| e.to_string())?;
+    let (rules, wildatom_map) = crate::rules_loader::get_default_rules()?;
     Ok(assign_types_with_rules(mol, &rules, &wildatom_map))
 }
 
