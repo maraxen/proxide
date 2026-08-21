@@ -968,45 +968,103 @@ def _relabel_conjugated_alternation(
     *,
     single_seed_only: bool = False,
 ) -> None:
-    """Mutate `atom_types` in place: 2-color each connected subgraph of
-    same-"unprimed"-family atoms by Kekule bond parity (single bond = same
-    label, double/triple = flipped label), relabeling flipped atoms to their
-    paired ("primed") type.
+    """Mutate `atom_types` in place: 2-color the family subgraph by Kekule
+    bond parity (single bond = same label, double/triple = flipped label),
+    relabeling flipped atoms to their paired ("primed") type.
+
+    This is a line-for-line port of real AmberTools' `atadjust()`
+    (`src/antechamber/atomtype.c`, `Amber-MD/AmberClassic`) -- NOT a plain
+    per-component BFS 2-coloring, which is a materially different (and, for
+    disconnected multi-component molecules, WRONG) algorithm. Verified
+    260821 by compiling the real `atomtype`/`bondtype` C sources standalone
+    and running them on a real geostd ligand (V6X-derived fused-ring test
+    below): a naive BFS reproduces only the component containing the very
+    first family atom (by index) correctly. Real `atadjust()` uses a
+    GLOBAL, PASS-SCOPED reseed flag, not a per-component one:
+
+    - One atom overall (the first family atom, by ascending atom index) is
+      unconditionally seeded with sign +1 before any bond is examined.
+    - The algorithm then runs UP TO `num_family_atoms - 1` outer passes.
+      Each pass does a single Gauss-Seidel-style sweep over every
+      family-family bond IN MOLECULE BOND ORDER (i.e. `mol.GetBonds()`
+      order, which mirrors the input file's bond order -- not sorted by
+      atom index), propagating sign to any atom whose bonded neighbor
+      already has one, using already-updated values from earlier in the
+      SAME pass.
+    - At most ONE new (still fully-unsigned) connected component may be
+      "reseeded" with sign +1 per pass -- this is gated by a single `flag`
+      that is reset only once at the top of each pass, not per bond or per
+      component. Concretely: the reseed fires on the first still-untouched
+      family-family bond encountered in bond order during a pass, and
+      immediately propagates across that one bond in the same iteration
+      (which sets the flag), blocking any further reseeding for the rest
+      of that pass.
+    - There is no cross-component consistency check: if a molecule's
+      family subgraph is NOT actually 2-colorable as one connected whole
+      (e.g. a genuinely ambiguous fused-ring system), real antechamber
+      does not detect or repair the resulting local contradiction -- it
+      just prints a "may be wrong" warning and keeps the result. This
+      function reproduces that same silently-approximate behavior; it does
+      not attempt to be "more correct" than the reference it ports.
+
+    Net effect: for a molecule whose family atoms form more than one
+    connected component, WHICH atom seeds each later component (and hence
+    that component's overall same/primed orientation) depends on bond
+    file order, not just molecular topology -- reproducing this exactly
+    is why a naive independent-BFS-per-component implementation disagrees
+    with real antechamber on such molecules.
 
     `mol` must already be Kekulized (see `assign_gaff2_atom_types`) -- an
     un-Kekulized aromatic bond reports `AROMATIC`, which this function
     treats as "not SINGLE" (a flip), silently corrupting the coloring for
     ring systems exactly like the sb/db precondition this mirrors.
 
-    `single_seed_only`: when True, color only the FIRST connected component
-    found (by atom index) and leave every other same-family atom untouched --
-    matches real AmberTools' `cpadjust()` (see the module-level comment above
-    `_BIPHENYL_ALTERNATION_PAIR`). When False (default), color every
-    connected component independently -- matches real `atadjust()`.
+    `single_seed_only`: real AmberTools' `cpadjust()` (see the
+    module-level comment above `_BIPHENYL_ALTERNATION_PAIR`) is the same
+    algorithm MINUS the reseed step entirely (no `flag`-gated reseed
+    exists in its source at all) -- only the one atom seeded before the
+    pass loop is ever colored; every other disconnected same-family
+    subgraph is left untouched. Passing `single_seed_only=True` disables
+    the reseed check on every pass (as if `flag` were permanently set) to
+    reproduce that.
     """
     n = mol.GetNumAtoms()
-    visited = [False] * n
-    for start in range(n):
-        if visited[start] or atom_types[start] not in pairs:
-            continue
-        sign = {start: 1}
-        visited[start] = True
-        stack = [start]
-        while stack:
-            cur = stack.pop()
-            for bond in mol.GetAtomWithIdx(cur).GetBonds():
-                other = bond.GetOtherAtomIdx(cur)
-                if visited[other] or atom_types[other] not in pairs:
-                    continue
-                same = bond.GetBondType().name == "SINGLE"
-                sign[other] = sign[cur] if same else -sign[cur]
-                visited[other] = True
-                stack.append(other)
-        for idx, s in sign.items():
-            if s == -1:
-                atom_types[idx] = pairs[atom_types[idx]]
-        if single_seed_only:
-            return
+    in_family = [atom_types[i] in pairs for i in range(n)]
+    sign = [0] * n
+    num = 0
+    seeded = False
+    for i in range(n):
+        if in_family[i]:
+            if not seeded:
+                sign[i] = 1
+                seeded = True
+            num += 1
+    if num == 0:
+        return
+    num -= 1
+
+    bonds = list(mol.GetBonds())
+    while num > 0:
+        num -= 1
+        flag = single_seed_only
+        for bond in bonds:
+            bi = bond.GetBeginAtomIdx()
+            bj = bond.GetEndAtomIdx()
+            if not (in_family[bi] and in_family[bj]):
+                continue
+            if not flag and sign[bi] == 0 and sign[bj] == 0:
+                sign[bi] = 1
+            same = bond.GetBondType().name == "SINGLE"
+            if sign[bi] == 0 and sign[bj] != 0:
+                flag = True
+                sign[bi] = sign[bj] if same else -sign[bj]
+            if sign[bj] == 0 and sign[bi] != 0:
+                flag = True
+                sign[bj] = sign[bi] if same else -sign[bi]
+
+    for idx, s in enumerate(sign):
+        if s == -1:
+            atom_types[idx] = pairs[atom_types[idx]]
 
 
 def assign_gaff2_atom_types(

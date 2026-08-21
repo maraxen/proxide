@@ -556,6 +556,85 @@ def test_fused_bicyclic_lone_pair_donor_not_promoted_to_ar1() -> None:
     assert heavy == expected, f"got {heavy}, expected {expected} (matches real V6X reference)"
 
 
+def test_atadjust_reseed_is_pass_scoped_not_per_component() -> None:
+    """`_relabel_conjugated_alternation` must reproduce real AmberTools'
+    `atadjust()` (`atomtype.c`) exactly, including its non-obvious
+    correctness bug: the reseed that starts coloring a new disconnected
+    family component is gated by a single `flag` that resets only once per
+    OUTER PASS, not once per component -- so at most one new component can
+    be reseeded per pass, and propagation within a pass uses already-
+    updated values from earlier bonds in the SAME pass (Gauss-Seidel, not
+    Jacobi). A naive "2-color each connected component independently via
+    BFS" implementation is NOT equivalent to this and silently disagrees
+    with real antechamber whenever bond file order causes one component's
+    propagation to consume the reseed slot before another component is
+    reached in an early pass.
+
+    Confirmed 260821 by compiling real `atomtype`/`bondtype`
+    (`Amber-MD/AmberClassic`, `src/antechamber/{atomtype,bondtype}.c`)
+    standalone from source and running them on real geostd ligand X4Q: the
+    compiled reference reproduces X4Q's own stored ground truth exactly
+    (and even emits antechamber's own self-diagnostic "atom type ... may be
+    wrong" warning for the one bond where the coloring is locally
+    inconsistent -- confirming real antechamber does NOT guarantee global
+    consistency here, and this port must not try to be "more correct" than
+    what it's reproducing).
+
+    This test reproduces X4Q's minimal fused 6+5-ring cc/cd/nc/nd core
+    (bridgehead nitrogen `x` excluded from the family, mirroring real N24):
+    a single connected chain a-b-c-d-e-f-g-h that a plain independent-BFS
+    2-coloring gets half right, half wrong (matches on a/b/c/d, flips
+    e/f/g/h) -- because bond file order causes the real algorithm to
+    effectively re-seed at `g` partway through, which a naive single-BFS
+    traversal cannot reproduce since the molecule LOOKS fully connected.
+    """
+    from rdkit import Chem
+
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.RWMol()
+    idx = {}
+    for name, sym in [
+        ("a", "C"), ("b", "C"), ("c", "C"), ("d", "N"), ("e", "C"),
+        ("f", "C"), ("g", "C"), ("h", "N"), ("x", "N"),
+    ]:
+        idx[name] = mol.AddAtom(Chem.Atom(sym))
+
+    # Bond ADD order mirrors X4Q's real mol2 bond-file order for this core
+    # (bonds 11, 12, 25, 26, 36, 38, 39, 40, 41, 53) -- order matters here,
+    # it is what the real algorithm's reseed timing depends on.
+    bonds = [
+        ("a", "b", Chem.BondType.DOUBLE),
+        ("a", "x", Chem.BondType.SINGLE),
+        ("g", "f", Chem.BondType.SINGLE),
+        ("g", "h", Chem.BondType.DOUBLE),
+        ("f", "e", Chem.BondType.DOUBLE),
+        ("e", "d", Chem.BondType.SINGLE),
+        ("e", "x", Chem.BondType.SINGLE),
+        ("c", "b", Chem.BondType.SINGLE),
+        ("c", "d", Chem.BondType.DOUBLE),
+        ("h", "x", Chem.BondType.SINGLE),
+    ]
+    for x, y, bt in bonds:
+        mol.AddBond(idx[x], idx[y], bt)
+
+    m = mol.GetMol()
+    Chem.SanitizeMol(m)
+    m = Chem.AddHs(m)
+
+    types = assign_gaff2_atom_types(m)
+    names = ["a", "b", "c", "d", "e", "f", "g", "h", "x"]
+    heavy = {n: t for n, atom, t in zip(names, m.GetAtoms(), types) if atom.GetAtomicNum() != 1}
+
+    # Real ground-truth types from geostd ligand X4Q's identical core
+    # (a..h = C15/C14/C07/N06/C05/C04/C26/N25; x = bridgehead N24).
+    expected = {
+        "a": "cc", "b": "cd", "c": "cd", "d": "nc", "e": "cd",
+        "f": "cc", "g": "cc", "h": "nd", "x": "na",
+    }
+    assert heavy == expected, f"got {heavy}, expected {expected} (matches real X4Q reference)"
+
+
 class TestGaff2Grammar:
     """Direct unit tests for the f8/f9 DEF-grammar parser, independent of RDKit."""
 
