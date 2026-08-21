@@ -1,0 +1,57 @@
+NOTICE
+
+This crate embeds data, and its src/alternation.rs module is a documented
+line-for-line derivative translation of source, originally distributed as
+part of AmberTools / antechamber (Amber-MD organization, ambermd.org),
+specifically:
+
+  - dat/antechamber/ATOMTYPE_GFF2.DEF  (GAFF2 atom-type rule grammar,
+    embedded via src/rules_loader.rs -- fetched at build/CI time by
+    ../../scripts/fetch_amber_assets.py, NOT vendored in this repository's
+    git history)
+  - src/antechamber/atomtype.c          (atadjust() / cpadjust(), ported in
+    src/alternation.rs)
+  - src/antechamber/ring.c, aromatic.c  (ring aromaticity classification,
+    ported in src/atom_bond_facts.rs)
+
+Upstream: https://ambermd.org/AmberTools.php
+Upstream source repository (the one these files were verified against):
+  https://github.com/Amber-MD/AmberClassic
+
+Licensing basis (researched and confirmed 2026-08-21): AmberClassic's root
+LICENSE file (https://github.com/Amber-MD/AmberClassic/blob/main/LICENSE)
+states its code is provided under the GNU General Public License, version
+2, or (at your option) any later version -- GPL-2.0-or-later -- with
+explicit exceptions only for the arpack subdirectory (BSD) and BLAS/LAPACK
+(public domain). antechamber is not among those exceptions, so it falls
+under the repository's GPL-2.0-or-later grant.
+
+Residual ambiguity, documented rather than hidden: antechamber's own
+README (src/antechamber/README in the AmberClassic repository) states
+"The files in the 'AmberTools' subdirectory are covered by a separate,
+open source, license; see ./AmberTools/LICENSE for more information. This
+applies to antechamber." No such subdirectory or LICENSE file exists in
+the AmberClassic repository as of the commit this crate was verified
+against (20e92d4b44e84cc0ca84bdf7f640eba0c1d1f2ed) -- this text appears to
+be boilerplate inherited from the larger, official AmberTools distribution
+(which does bundle an AmberTools/ subdirectory with its own, more
+permissively-mixed LICENSE covering some components) that was not updated
+when AmberClassic was extracted as a narrower standalone repository. This
+crate's GPL-2.0-or-later license reflects the license that actually,
+verifiably governs the files as fetched from AmberClassic -- the concrete
+repository this crate's content was diffed against byte-for-byte -- not
+a guess about what the wider AmberTools distribution's own LICENSE file
+might say about antechamber specifically. If a future primary-source check
+against the canonical AmberTools distribution's own LICENSE file finds a
+more specific (e.g. more permissive) antechamber-specific term, revisit
+this NOTICE and the crate's declared license accordingly.
+
+Because this is a documented, verified line-for-line translation of GPL
+source -- not an independent reimplementation and not inert bundled data
+-- it is treated as a derivative work under copyright: ATOMTYPE_GFF2.DEF's
+rule grammar is execution logic (first-match-in-file-order semantics), and
+the alternation/aromaticity logic in this crate is source-level ported
+from the corresponding AmberTools C functions.
+
+A full copy of the GNU General Public License, version 2, is available at:
+  https://www.gnu.org/licenses/old-licenses/gpl-2.0.html

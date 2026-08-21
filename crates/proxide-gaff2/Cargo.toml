@@ -4,15 +4,38 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 description = "GAFF2 atom typing engine — atom type descriptors (ATD) from ATOMTYPE_GFF2.DEF"
-license.workspace = true
+# NOT license.workspace (MIT) -- deliberately overridden. This crate's
+# alternation.rs is a documented line-for-line port of AmberTools/
+# antechamber's atadjust() (Amber-MD/AmberClassic, src/antechamber/atomtype.c),
+# and rules_loader.rs embeds ATOMTYPE_GFF2.DEF, antechamber's own atom-typing
+# rule grammar. AmberClassic's root LICENSE (confirmed 2026-08-21 by fetching
+# it directly) is GPL-2.0-or-later, with explicit carve-outs only for arpack
+# (BSD) and BLAS/LAPACK (public domain) -- antechamber is not among the
+# carve-outs, so it is covered by that GPL-2.0-or-later grant. (antechamber's
+# own README points to a separate "AmberTools/LICENSE" for a more permissive
+# split -- that path does not exist in this specific repo, so it's stale
+# boilerplate inherited from the larger AmberTools distribution AmberClassic
+# was extracted from, not a live carve-out here. See NOTICE and
+# .praxia/docs/reference/260821_gaff2-rust-port-lessons.md Open Item #3 for
+# the full research trail and residual ambiguity.) A line-for-line source
+# translation is a derivative work regardless of which language it's ported
+# into, so this crate inherits GPL-2.0-or-later rather than the workspace's
+# MIT default.
+license = "GPL-2.0-or-later"
 repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
 keywords = ["protein", "force-field", "amber", "gaff2", "atom-typing"]
 categories = ["science", "algorithms"]
-# include_str!() of paths outside the crate root does not survive cargo package.
-# Until ownership is inverted (canonical DEF moved into crates/proxide-gaff2/assets/),
-# this crate is not publishable. See ARCHITECTURE.md for details.
+# Not publishable for TWO independent reasons, either alone sufficient:
+# (1) include_str!() of paths outside the crate root does not survive cargo
+#     package. Until ownership is inverted (canonical DEF moved into
+#     crates/proxide-gaff2/assets/), this crate cannot be packaged at all.
+# (2) Even if (1) were fixed, this crate's GPL-2.0-or-later license means
+#     publishing it standalone to crates.io needs a deliberate decision this
+#     workspace hasn't made -- most sibling crates default to MIT, and a GPL
+#     crate reachable from the same dependency graph has real implications
+#     for what license any distributed binary linking it must carry.
 publish = false
 
 [package.metadata.docs.rs]
