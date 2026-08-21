@@ -34,11 +34,13 @@ Usage:
     uv run python scripts/validation/gaff2_geostd_sample.py
     uv run python scripts/validation/gaff2_geostd_sample.py --sample-size 1000 --seed 7
     uv run python scripts/validation/gaff2_geostd_sample.py --json-out report.json
+    uv run python scripts/validation/gaff2_geostd_sample.py --full --workers 24 --json-out full.json
 """
 
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import os
@@ -139,24 +141,50 @@ def compare_one(bucket: str, code: str, ref: str, cache_dir: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sample-size", type=int, default=_DEFAULT_SAMPLE_SIZE)
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Sample every discovered candidate instead of --sample-size (for a full-corpus run).",
+    )
     parser.add_argument("--seed", type=int, default=_DEFAULT_SEED)
     parser.add_argument("--geostd-ref", type=str, default=_DEFAULT_REF)
     parser.add_argument("--cache-dir", type=Path, default=_DEFAULT_CACHE_DIR)
     parser.add_argument("--json-out", type=Path, default=None)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=16,
+        help="Concurrent fetch+type workers -- this is I/O-bound (network fetch per ligand), "
+        "so threads (not processes) are used; a full 37k-ligand run is impractical serially.",
+    )
     args = parser.parse_args()
 
     logger.info("Discovering geostd candidates at ref %s ...", args.geostd_ref)
     candidates = discover_candidates(args.geostd_ref)
     logger.info("Found %d candidate ligands with a real .mol2.", len(candidates))
 
-    sample = random.Random(args.seed).sample(candidates, k=min(args.sample_size, len(candidates)))
-    logger.info("Sampling %d (seed=%d).", len(sample), args.seed)
+    if args.full:
+        sample = candidates
+        logger.info("Sampling all %d candidates (--full).", len(sample))
+    else:
+        sample = random.Random(args.seed).sample(
+            candidates, k=min(args.sample_size, len(candidates))
+        )
+        logger.info("Sampling %d (seed=%d).", len(sample), args.seed)
 
-    results = []
-    for i, (bucket, code) in enumerate(sample, start=1):
-        results.append(compare_one(bucket, code, args.geostd_ref, args.cache_dir))
-        if i % 50 == 0:
-            logger.info("  ... %d/%d", i, len(sample))
+    results: list[dict] = [{}] * len(sample)
+    completed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
+        future_to_idx = {
+            executor.submit(compare_one, bucket, code, args.geostd_ref, args.cache_dir): i
+            for i, (bucket, code) in enumerate(sample)
+        }
+        for future in concurrent.futures.as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            results[idx] = future.result()
+            completed += 1
+            if completed % 500 == 0:
+                logger.info("  ... %d/%d", completed, len(sample))
 
     counts: dict[str, int] = defaultdict(int)
     for r in results:
