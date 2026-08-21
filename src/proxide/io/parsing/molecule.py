@@ -381,36 +381,36 @@ class Molecule:
     # Build editable molecule
     mol = Chem.RWMol()
 
-    # Add atoms. NoImplicit=True (only when the file already lists at least
-    # one explicit hydrogen -- see below): a real all-atom mol2/sdf lists
-    # every hydrogen explicitly, so an atom whose explicit bond count falls
-    # short of RDKit's default neutral valence (e.g. a carboxylate O with a
-    # single bond to its carbon and no H atom anywhere in the file) is
-    # charged or otherwise unusual, not missing a real hydrogen. Without
-    # this, SanitizeMol's default implicit-valence model silently fabricates
-    # an implicit H to fill out neutral valence, inflating that atom's
-    # degree (e.g. from 1 to 2) and corrupting GAFF2's connum-based rule
-    # matching downstream (confirmed 260821: this was the actual cause of
-    # the geostd bulk-sample's largest mismatch buckets, "o"->"oh" and
-    # "c"->"c3" on carboxylate-type groups -- verified against real
+    # Add atoms. NoImplicit=True, unconditionally: a `Molecule` parsed from
+    # mol2/sdf is expected to already list every real atom explicitly,
+    # hydrogens included -- GAFF2 atom typing itself depends on this (H
+    # atoms get their own DEF-matched types; a heavy-atom-only structure
+    # can never produce those correctly regardless of this flag). An atom
+    # whose explicit bond count falls short of RDKit's default neutral
+    # valence (e.g. a carboxylate O with a single bond to its carbon and no
+    # H atom anywhere in the file, or a fully-deprotonated ion like PO4^3-
+    # with NO hydrogens at all) is charged or otherwise unusual, not
+    # missing a real hydrogen. Without this, SanitizeMol's default
+    # implicit-valence model silently fabricates an implicit H to fill out
+    # neutral valence, inflating that atom's degree (e.g. from 1 to 2) and
+    # corrupting GAFF2's connum-based rule matching downstream (confirmed
+    # 260821/260822: this was the actual cause of the geostd bulk-sample's
+    # largest mismatch buckets, "o"->"oh" and "c"->"c3" on carboxylate- and
+    # phosphate/fluorophosphate-type groups -- verified against real
     # antechamber, which reproduces "o"/"c" correctly from the exact same
     # connectivity, since it never invents atoms a structure file didn't
-    # list).
-    #
-    # Gated on has_explicit_h, not applied unconditionally: a heavy-atom-only
-    # mol2 (no H records at all -- some legacy files, and this module's own
-    # BENZENE_MOL2 test fixture) genuinely relies on implicit-valence H
-    # filling to reach a sane structure; forcing NoImplicit there starves
-    # every ring atom of the hydrogen it needs and breaks aromaticity
-    # perception. A file with even one real H atom has, in practice, listed
-    # all of them (partial H-listing is not a real mol2/sdf convention), so
-    # this heuristic reliably distinguishes the two cases.
-    has_explicit_h = any(elem == "H" for elem in self.elements)
+    # list). A prior version of this gated on "the file has at least one H
+    # atom", to spare a heavy-atom-only test fixture from starving every
+    # ring atom of implicit H and breaking aromaticity perception -- fixed
+    # forward instead by adding explicit hydrogens to that fixture
+    # (matching real convention) rather than carrying a heuristic that
+    # mis-fires on any real, fully-explicit, zero-hydrogen structure (e.g.
+    # PO4^3-/FPO's fluorophosphate: genuinely has no H anywhere, so the old
+    # gate never activated for them either).
     for i, elem in enumerate(self.elements):
       atom = Chem.Atom(elem)
       atom.SetAtomMapNum(i + 1)
-      if has_explicit_h:
-        atom.SetNoImplicit(True)
+      atom.SetNoImplicit(True)
       mol.AddAtom(atom)
 
     # Add bonds

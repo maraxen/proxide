@@ -38,6 +38,51 @@ bcc
 """
 
 
+# Real-convention (explicit-hydrogen) benzene, for tests that exercise
+# `_to_rdkit()` -- unlike BENZENE_MOL2 above, whose heavy-atom-only shape is
+# a deliberate simplification for the plain-parsing tests around it, and
+# would need `_to_rdkit()` to fall back to RDKit's implicit-valence H
+# filling (a fallback that only ever existed for hand-simplified test
+# fixtures like this one -- see molecule.py's `_to_rdkit()` docstring).
+BENZENE_MOL2_EXPLICIT_H = """\
+@<TRIPOS>MOLECULE
+benzene
+ 12 12 0 0 0
+SMALL
+bcc
+
+
+@<TRIPOS>ATOM
+      1 C1          1.2124    0.7000    0.0000 ca        1 LIG     -0.115000
+      2 C2          1.2124   -0.7000    0.0000 ca        1 LIG     -0.115000
+      3 C3          0.0000   -1.4000    0.0000 ca        1 LIG     -0.115000
+      4 C4         -1.2124   -0.7000    0.0000 ca        1 LIG     -0.115000
+      5 C5         -1.2124    0.7000    0.0000 ca        1 LIG     -0.115000
+      6 C6          0.0000    1.4000    0.0000 ca        1 LIG     -0.115000
+      7 H1          2.1552    1.2445    0.0000 ha        1 LIG      0.115000
+      8 H2          2.1552   -1.2445    0.0000 ha        1 LIG      0.115000
+      9 H3          0.0000   -2.4890    0.0000 ha        1 LIG      0.115000
+     10 H4         -2.1552   -1.2445    0.0000 ha        1 LIG      0.115000
+     11 H5         -2.1552    1.2445    0.0000 ha        1 LIG      0.115000
+     12 H6          0.0000    2.4890    0.0000 ha        1 LIG      0.115000
+@<TRIPOS>BOND
+     1     1     2 ar
+     2     2     3 ar
+     3     3     4 ar
+     4     4     5 ar
+     5     5     6 ar
+     6     6     1 ar
+     7     1     7 1
+     8     2     8 1
+     9     3     9 1
+    10     4    10 1
+    11     5    11 1
+    12     6    12 1
+@<TRIPOS>SUBSTRUCTURE
+     1 LIG         1 TEMP              0 ****  ****    0 ROOT
+"""
+
+
 # Test SDF content (simplified methane)
 METHANE_SDF = """\
 methane
@@ -114,17 +159,18 @@ class TestMoleculeFromMol2:
         from proxide.chem.gaff2 import assign_gaff2_atom_types
 
         with tempfile.NamedTemporaryFile(suffix=".mol2", mode="w", delete=False) as f:
-            f.write(BENZENE_MOL2)
+            f.write(BENZENE_MOL2_EXPLICIT_H)
             mol2_path = f.name
 
         try:
             mol = Molecule.from_mol2(mol2_path)
             rdmol = mol._to_rdkit()
 
-            assert all(atom.GetIsAromatic() for atom in rdmol.GetAtoms())
+            ring_atoms = [a for a in rdmol.GetAtoms() if a.GetSymbol() == "C"]
+            assert all(atom.GetIsAromatic() for atom in ring_atoms)
 
             types = assign_gaff2_atom_types(rdmol)
-            assert types == ["ca"] * 6
+            assert types == ["ca"] * 6 + ["ha"] * 6
         finally:
             Path(mol2_path).unlink()
 
