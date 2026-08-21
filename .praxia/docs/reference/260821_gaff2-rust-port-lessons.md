@@ -1666,3 +1666,143 @@ Python exactly; all of them block merge.
 8. **Phase 2 ring perception.** `rings.rs` is a deliberate stub; native SSSR must be
    validated against the Phase-1 RDKit-fed oracle as its own gated change.
 
+---
+
+## Follow-Up Pass (2026-08-21, same day)
+
+Worked the Open Items punch list above, plus a user-requested vectorization/
+parallelism assessment, in a direct (non-workflow) continuation of this session.
+
+**Open Item #4 (scope decision) -- executed: deleted.** Removed `charges.rs`,
+`parameterize.rs`, `ffxml_builder.rs`, `param_loader.rs`, `param_lookup.rs`,
+`pdb_names.rs` from `crates/proxide-gaff2`. Verified via grep before deletion that
+`assign_gaff2_atom_types` has zero dependency on any of the six (confirmed clean --
+no cross-references from any kept module). This removes all three of the
+Cross-Cutting Synthesis's "unresolved behavioral divergences" (`charges` sign flip,
+`parameterize` mis-ordered aromatic bonds, `ffxml_builder` dropped PDB names) along
+with the code that had them, since they were the excluded scope those defects
+concentrated in. 73/73 remaining tests pass; `cargo check --workspace` and the
+`python-validation` feature build both stay clean.
+
+**Open Item #2 (D1 landmine) -- fixed.** `rules_loader.rs` no longer resolves the
+DEF path via `env!("CARGO_MANIFEST_DIR")` with a silent empty-ruleset fallback.
+Switched to `include_str!` (same pattern as `crates/proxide-wasm/src/gaff2.rs`'s
+`GAFF2_XML`) -- the file can no longer be "missing" at runtime, because it isn't a
+runtime file. A missing/corrupted DEF now fails the *build*, loudly, instead of
+shipping a binary that silently mistypes every atom as `"x"`.
+
+**Mid-pass user redirect, and why it mattered.** While researching Open Item #3's
+licensing, the user interjected: "we should not have antechamber in the repo
+itself, it should be pulled in at runtime for CI (and temporarily we can have it
+while we debug locally)." This caught something the licensing research alone would
+not have: `ATOMTYPE_GFF2.DEF` was git-committed (since a much earlier, unrelated
+commit) and, per this same pass's own README audit, misattributed to
+`openmmforcefields` -- which never shipped it (`scripts/sync_forcefields.py`'s
+`FILE_MAPPINGS` only globs `*.dat`/`*.xml`, never `.DEF`). Fetching the file
+from upstream, on the spot, and diffing it byte-for-byte against the vendored copy
+confirmed they were identical (sha256
+`7a076ac2e667ab87057befc7a5985be4cead83e01ff5d2d3dab9f1d65bff637e`) -- so the
+vendored copy was always a faithful, unmodified copy of the real antechamber file,
+but it had been sitting in this MIT-licensed repo's git history regardless.
+Added `scripts/fetch_amber_assets.py` (pinned AmberClassic commit SHA,
+digest-verified fetch), untracked the file from git (`git rm --cached` -- the file
+stays on disk, satisfying "temporarily while we debug"), wired the fetch into
+`ci.yml`'s `tests` and `rust-checks` jobs, and fixed the README misattribution.
+**Lesson for the rust-port skill draft:** a licensing research pass that only asks
+"what license covers this content" can still miss "should this content be
+committed to git at all" -- those are different questions, and the second one
+was more consequential here. Worth adding as an explicit checklist item.
+
+**Open Item #3 (licensing) -- resolved with primary-source confirmation.** The
+Decide-phase jury assumed GPL-3.0-or-later without checking primary sources; this
+pass's own research agent triangulated GPL-2.0-or-later via `WebSearch` but
+flagged (honestly) that it lacked `WebFetch` and couldn't confirm against the
+actual license text. The orchestrating session *did* have `WebFetch`/`curl`
+access and used it directly: fetched `Amber-MD/AmberClassic`'s actual root
+`LICENSE` file (GPL-2.0-or-later, with explicit carve-outs only for `arpack`
+(BSD) and BLAS/LAPACK (public domain) -- antechamber is not among the
+carve-outs) and confirmed `atomtype.c`/`aromatic.c`/`ring.c` live in that repo's
+`src/antechamber/` with no antechamber-specific license override present.
+Cross-referenced against antechamber's own `README`, which claims a separate
+license at `./AmberTools/LICENSE` -- a path that does not exist in this specific
+repository (stale boilerplate from the larger AmberTools distribution
+AmberClassic was extracted from). `crates/proxide-gaff2/Cargo.toml` now declares
+`license = "GPL-2.0-or-later"` (overriding the workspace's MIT default), with a
+`NOTICE` file documenting the full provenance and the residual ambiguity
+honestly rather than picking a convenient answer. **Lesson:** "the subagent
+reported it couldn't verify X" is not the end of the investigation if the
+orchestrator has a tool the subagent didn't -- check before accepting a
+triangulated-but-unverified answer as final, especially on an IP/legal question.
+
+**Open Item #5 (full-corpus gate) -- done: 100% match, identical signature set.**
+Re-ran `scripts/validation/gaff2_rust_parity.py --full` (37,469 candidates,
+36,297 successfully typed by both engines, 1,172 `python_error` -- RDKit
+valence-parse failures on malformed geostd `.mol2` files that fail identically
+before either engine runs, excluded from both the match-rate denominator and the
+signature comparison, consistent with the original Python-only full-corpus run's
+99.57% headline figure). Result: **match rate 100.00% (36,297/36,297), 0
+mismatches.** The Python-vs-geostd and Rust-vs-geostd divergence-signature sets
+are **identical** (44 distinct signatures each, `only_in_python`/`only_in_rust`
+both empty) -- the strongest form of this evidence the acceptance gate defined,
+now run at full corpus scale rather than the original workflow's 3,000-ligand
+sample. First attempt hit a transient `IncompleteRead` from the GitHub API during
+candidate discovery (one truncated HTTP response walking the 36 bucket subtrees,
+not a systemic issue); a plain retry succeeded cleanly. Full raw results
+(gitignored, not committed -- 5.5MB) at
+`.cache/validation_results/gaff2_rust_parity_full_260821.json`, run log at
+`.cache/validation_results/gaff2_rust_parity_full_260821.log`.
+
+**Open Item #6 (drift guards) -- partially done.** Added the DEF content-digest
+pin (`rules_loader::tests::embedded_default_def_content_digest_is_pinned`, sha256
+of the embedded `ATOMTYPE_GFF2.DEF`). The second guard -- a cross-language digest
+test spanning the maturin wheel boundary -- remains open.
+
+**Net effect on the Cutover gate.** The original gate was
+`regression.signature_set_identical_to_python && flagged.length === 0`. Of the
+original 13 ported modules, `pdb_names`/`param_lookup`/`param_loader` (NOT
+REFUTED) and `charges`/`parameterize`/`ffxml_builder` (REFUTED) are now deleted
+(out of scope); `orchestrate`/`chem_env`/`atom_bond_facts` were already resolved
+build-false-greens; `rules_loader`'s D1 refutation is fixed. **Every module
+remaining in the crate today has either a NOT REFUTED verdict or a since-resolved
+one, and the full-corpus regression now independently confirms exact
+reproduction.** The gate's substance now appears met. What Cutover itself
+(Open Item #1: rewire `assign_gaff_atom_types` in place, deprecate the old
+heuristic typer, update all four call sites and their tests) still needs is
+untouched by this pass -- it is a separate, higher-stakes step (rewiring a live
+production entrypoint) that was deliberately left for an explicit go-ahead rather
+than executed opportunistically just because the gate now reads green.
+
+### Vectorization + orx-parallel assessment (user-requested)
+
+Advisory-only pass, no code changes. Full report in the agent transcript; verdict
+summarized here.
+
+**Vectorization: no.** Every hot loop in this crate (the per-atom rule ladder, the
+f8/f9 predicate matchers, the alternation-pass Gauss-Seidel sweep) is branchy,
+string/enum-comparison-bound, and operates on trip counts in the single-to-low
+tens (bond counts, ring sizes, neighbor-spec depths) -- none of the shape SIMD
+needs (long, branch-free, uniform-arithmetic iteration over contiguous numeric
+buffers). `rustc`'s default auto-vectorization already covers what little
+mechanically-repetitive work exists; `std::simd` would add unsafe-adjacent
+complexity for zero measurable win. One real algorithmic hotspot was flagged in
+passing (not a vectorization issue): `element_atomic_number` is an O(109) linear
+string scan called from the O(300-rule) match loop, and `Gaff2Rule::matches`
+re-parses f8/f9 text and recomputes `atom_bond_facts` on *every* rule-check call
+rather than once per atom -- a real, cheap, unaddressed perf win, larger than
+anything parallelism or vectorization could buy here.
+
+**orx-parallel / rayon: neither, right now.** Two candidate insertion points
+assessed against the project's own `rayon.md`/`orx-parallel.md` reference docs:
+(a) a hypothetical batch "type N molecules" entry point would be a textbook
+rayon `par_iter().map()` -- but that entry point doesn't exist yet (today's only
+concurrency at corpus scale is Python's `ThreadPoolExecutor` over network I/O, not
+over this crate's compute); (b) the per-atom rule ladder itself *looks* like
+orx-parallel's stated specialty (early-exit linear search) but isn't a real fit --
+first-match-in-file-order precedence is load-bearing semantics, so a correct
+parallel version must evaluate past the sequential version's true early exit,
+and individual rule-check cost is sub-to-low-microsecond, below the floor where
+either library's dispatch overhead pays for itself. Recommendation: don't add
+either dependency speculatively; if/when a batch entry point is built and single-
+molecule latency is actually measured as a bottleneck, rayon (not orx-parallel)
+is the right tool for that specific insertion point.
+
