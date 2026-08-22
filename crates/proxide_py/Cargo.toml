@@ -15,6 +15,17 @@ crate-type = ["cdylib"]
 proxide_rs = { workspace = true }
 proxide-units = { workspace = true }
 proxide-gaff = { workspace = true }
+# Optional, NOT in `full`/`default` -- GPL-2.0-or-later (see
+# crates/proxide-gaff2/NOTICE). Linking it into this crate's cdylib output
+# (`_proxider.so`, the actual distributed Python extension -- see
+# .github/workflows/publish.yml) makes that binary a GPL-encumbered combined
+# work. Gated behind the `gaff2-engine` feature so the standard published
+# wheel (built with default features) stays pure MIT with the old heuristic
+# `assign_gaff_atom_types` behavior; only a deliberate
+# `--features gaff2-engine` build gets the real, validated GAFF2 typer. See
+# `assign_gaff_atom_types` in src/py_chemistry.rs and
+# .praxia/docs/reference/260821_gaff2-rust-port-lessons.md's Cutover section.
+proxide-gaff2 = { workspace = true, optional = true }
 proxide-geometry = { workspace = true }
 proxide-jaccard = { workspace = true }
 proxide-tmalign = { workspace = true }
@@ -34,3 +45,6 @@ xtc = ["proxide_rs/xtc", "dep:molly"]
 parallel = ["proxide_rs/parallel"]
 foldcomp = ["proxide_rs/foldcomp"]
 full = ["fetching", "hdf5", "xtc", "parallel", "foldcomp"]
+# Deliberately excluded from `full`/`default` -- see the proxide-gaff2
+# dependency comment above.
+gaff2-engine = ["dep:proxide-gaff2"]

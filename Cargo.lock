@@ -2960,6 +2960,7 @@ dependencies = [
  "nalgebra",
  "numpy",
  "proxide-gaff",
+ "proxide-gaff2",
  "proxide-geometry",
  "proxide-jaccard",
  "proxide-tmalign",
