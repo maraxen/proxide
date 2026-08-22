@@ -58,9 +58,15 @@ files. Scope crept, and the defects concentrated precisely in the crept scope. W
 they are invisible to the gate: the regression gate exercises `assign_gaff2_atom_types`
 only, so nothing in the 100% figure covers `charges`, `parameterize`, or `ffxml_builder`.
 
-**Not merged.** Cutover was **not applied**. The legacy heuristic typer
-`proxide_gaff::gaff::assign_gaff_types` is still live at all four call sites and still
-feeding wrong atom types into force-field parameter selection. See Open Items.
+**Not merged, as of synthesis.** *(Superseded later the same day — see "Cutover
+Executed" below the Cutover section. Short version: `py_chemistry.rs`'s
+`assign_gaff_atom_types` now runs the real engine, but only in an opt-in
+`--features gaff2-engine` build, gated for GPL-licensing reasons; the standard
+published build and the other three call sites still use the legacy heuristic
+typer, for two different reasons documented there.)* Original text: Cutover was
+**not applied**. The legacy heuristic typer `proxide_gaff::gaff::assign_gaff_types`
+is still live at all four call sites and still feeding wrong atom types into
+force-field parameter selection. See Open Items.
 
 ### Module verdict table
 
@@ -1492,9 +1498,9 @@ module-doc claim asserting the divergence was intentional and checked.
 
 ---
 
-## Cutover (2026-08-21)
+## Cutover (2026-08-21, synthesis) / Cutover Executed (2026-08-21, follow-up)
 
-**Status: NOT APPLIED.**
+**Status at synthesis: NOT APPLIED.** (Original text preserved below for the record.)
 
 The migration ordering prescribed by the architecture pass was: land the crate and its
 tests with no caller rewired, prove the parity harness green, *then* flip
@@ -1514,6 +1520,70 @@ Concretely, at synthesis:
   integration. The real integration point, `crates/proxide_py`, is untouched.
 - The GPL-crate-separation condition (a) is unmet: the crate inherits MIT from the
   workspace.
+
+### Executed, in a later same-day follow-up pass, after user go-ahead
+
+By this point the follow-up pass above had already closed the GPL-crate-separation
+condition (Open Item #3) and the full-corpus gate (Open Item #5), and every module
+remaining in the crate's scope had a clean adversarial-verify verdict. The user said
+"go ahead with cutover." Before writing any code, checking `py_parsers.rs`/
+`md_params.rs`/the wasm generator's actual current source (not trusting the possibly-stale
+recon from before) surfaced two things the architecture pass had *already* anticipated but
+that were worth re-confirming firsthand: **all three of those call sites derive `Topology`
+from the same 1.3 A coordinate-distance inference** (`generate_topology`) — connectivity
+only, no bond order, no aromaticity, no rings — structurally incompatible with the real
+engine's input contract for the same reason `py_chemistry.rs`'s old signature was. So
+Cutover's real scope was, and could only be, the single `py_chemistry.rs:assign_gaff_atom_types`
+entrypoint — matching the architecture pass's own plan ("only flip `py_chemistry.rs:18`"),
+not a four-call-site sweep.
+
+**A second consequence had not been priced in yet, and surfaced only by checking the
+actual dependency graph**: `crates/proxide_py` is the crate that compiles into
+`_proxider.so`, the real *distributed* Python extension (`.github/workflows/publish.yml`
+ships it via maturin). Adding `proxide-gaff2` (GPL-2.0-or-later) as a normal dependency
+there would make that shipped binary a GPL-encumbered combined work — a real licensing
+change to the published `proxide` wheel, not an internal refactor. This was surfaced to
+the user directly (a "hard to reverse, affects a distributed artifact" decision) rather
+than assumed away in either direction. **User's decision: gate behind an opt-in,
+non-default Cargo feature** (`gaff2-engine`, not in `full`/`default`) — the standard
+published wheel keeps the old heuristic (MIT, unchanged) by default; a deliberate
+`--features gaff2-engine` build gets the real engine.
+
+**Implementation**: `py_chemistry.rs::assign_gaff_atom_types` is now two `#[cfg]`-gated
+variants under the same Python-visible name (true "replace in place" — no new function
+name, matching the user's original Decide-phase decision) with genuinely different
+signatures, since the signature could not stay identical (the architecture pass's own
+"input type cannot stay identical" finding): the default build keeps
+`(coordinates, elements) -> Vec<Option<String>>`; the `gaff2-engine` build is
+`(elements, bonds: [(i, j, order, is_aromatic)], formal_charges=None, rings=None) ->
+Vec<String>` (mirroring `proxide-gaff2::py_validation`'s already-proven contract exactly),
+with `"x"` — not falsy in Python, unlike the old `None` — as the "no rule matched"
+sentinel. Grepped every Python call site before touching anything: zero real callers exist
+today (`src/proxide/__init__.py` only re-exports the name; `scripts/verify_gaff.py`'s call
+was already dead code, a stale double-underscore import), so the signature change breaks
+nothing in practice despite being a real API change on paper.
+
+**Verified end-to-end, not just compiled**: built with `--features gaff2-engine`, swapped
+the resulting `.so` into this worktree's editable install, and confirmed methane and
+Kekulized benzene through the *real* `proxide._proxider` binding (not the throwaway
+`py_validation.rs` copy) match `proxide-gaff2`'s own test expectations exactly, plus a
+`ValueError` on an invalid bond order. Reverted to the default-feature build afterward so
+the local install matches what CI/the published wheel actually produce. Both configurations
+clean on `cargo check`/`clippy -D warnings`/`cargo test`; full `cargo test --workspace`
+(with the pre-existing, documented `HDF5_USE_FILE_LOCKING=FALSE` workaround) at 76 test
+groups, 0 failures. Running `cargo clippy --features gaff2-engine` for the first time (CI's
+plain `cargo clippy --workspace` never compiles this feature) surfaced one real,
+pre-existing `clippy::needless_lifetimes` warning in `chem_env.rs` and confirmed
+`cargo fmt --all -- --check` had six files of pre-existing formatting drift across
+`proxide-gaff2` — both fixed, neither introduced by this pass, both invisible to CI until
+someone actually built the feature.
+
+**Still open, deliberately not attempted this pass**: the other three call sites
+(`py_parsers.rs`, `md_params.rs`, the wasm GAFF generator) remain on the old heuristic —
+cutting them over needs its own RDKit-equivalent bond-order/aromaticity perception bridge
+from coordinate-only input, a separate, larger problem. `proxide_gaff::gaff::assign_gaff_types`
+is therefore NOT deprecated/deleted (Open Item #1's other half) — it is still the only
+option those three call sites have.
 
 ---
 
