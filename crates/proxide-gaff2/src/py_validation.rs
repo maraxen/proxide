@@ -113,8 +113,8 @@ fn assign_gaff2_atom_types_rs(
         .collect::<Result<_, String>>()
         .map_err(PyValueError::new_err)?;
 
-    let mol =
-        MolGraph::new(elements, bonds, formal_charges, None, rings).map_err(PyValueError::new_err)?;
+    let mol = MolGraph::new(elements, bonds, formal_charges, None, rings)
+        .map_err(PyValueError::new_err)?;
 
     assign_gaff2_atom_types(&mol).map_err(PyValueError::new_err)
 }

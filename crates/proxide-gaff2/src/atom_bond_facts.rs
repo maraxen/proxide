@@ -493,7 +493,12 @@ mod tests {
     }
 
     fn bond(i: usize, j: usize, order: BondOrder, aromatic: bool) -> Bond {
-        Bond { i, j, order, aromatic }
+        Bond {
+            i,
+            j,
+            order,
+            aromatic,
+        }
     }
 
     // -- ring_initarom_atom ---------------------------------------------
@@ -529,7 +534,11 @@ mod tests {
 
     #[test]
     fn ring_initarom_atom_carbon_other_connum_is_0() {
-        let mol = mg(&["C", "C"], vec![bond(0, 1, BondOrder::Single, false)], None);
+        let mol = mg(
+            &["C", "C"],
+            vec![bond(0, 1, BondOrder::Single, false)],
+            None,
+        );
         assert_eq!(ring_initarom_atom(&mol, 0), 0); // connum 1
     }
 
@@ -571,7 +580,11 @@ mod tests {
         );
         assert_eq!(ring_initarom_atom(&o2, 0), 1);
 
-        let o1 = mg(&["O", "C"], vec![bond(0, 1, BondOrder::Single, false)], None);
+        let o1 = mg(
+            &["O", "C"],
+            vec![bond(0, 1, BondOrder::Single, false)],
+            None,
+        );
         assert_eq!(ring_initarom_atom(&o1, 0), 0);
     }
 

@@ -301,7 +301,7 @@ fn neighbor_indices(mol: &MolGraph, atom_idx: usize) -> Vec<usize> {
 /// The bond directly connecting atoms `a` and `b`, if any. Mirrors RDKit's
 /// `GetOwningMol().GetBondBetweenAtoms(a, b)`, used by `edge_bond_reqs`
 /// matching.
-fn find_bond<'a>(mol: &'a MolGraph, a: usize, b: usize) -> Option<&'a Bond> {
+fn find_bond(mol: &MolGraph, a: usize, b: usize) -> Option<&Bond> {
     mol.bonds
         .iter()
         .find(|bond| (bond.i == a && bond.j == b) || (bond.i == b && bond.j == a))
@@ -580,7 +580,13 @@ mod tests {
         // onto atom_idx 1 itself is a permitted candidate, per the Python
         // docstring) must be a 1-attached H -- atom_idx 1 itself satisfies
         // this.
-        assert!(chem_env_matches(Some(&expr), &water, 1, &wildatom_map, None));
+        assert!(chem_env_matches(
+            Some(&expr),
+            &water,
+            1,
+            &wildatom_map,
+            None
+        ));
 
         // Sanity check the negative: methane's H has no O neighbor at all.
         // C(0) bonded to H(1), mirroring

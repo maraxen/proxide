@@ -271,10 +271,7 @@ mod tests {
         // real candidates for real DEF rules, not skipped or shunted to a
         // separate heuristic. A rule that only ever matches H atoms must
         // fire for the H atom here, proving it entered the loop at all.
-        let mol = mol_graph(
-            vec!["C", "H"],
-            vec![(0, 1, BondOrder::Single)],
-        );
+        let mol = mol_graph(vec!["C", "H"], vec![(0, 1, BondOrder::Single)]);
         let rules = vec![
             MockRule {
                 atom_type: "c3",
@@ -423,8 +420,14 @@ mod tests {
         let mut elements = vec!["C".to_string(); 6];
         elements.extend(vec!["H".to_string(); 6]);
 
-        let mol = MolGraph::new(elements, bonds, None, None, Some(vec![vec![0, 1, 2, 3, 4, 5]]))
-            .expect("well-formed benzene MolGraph");
+        let mol = MolGraph::new(
+            elements,
+            bonds,
+            None,
+            None,
+            Some(vec![vec![0, 1, 2, 3, 4, 5]]),
+        )
+        .expect("well-formed benzene MolGraph");
 
         let types = assign_gaff2_atom_types(&mol).expect("real bundled DEF should parse and match");
 

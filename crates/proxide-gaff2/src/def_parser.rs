@@ -42,7 +42,9 @@
 
 use indexmap::IndexMap;
 
-use crate::atom_bond_facts::{atom_bond_facts, attached_count, h_ew_neighbor_count, num_h_neighbors};
+use crate::atom_bond_facts::{
+    atom_bond_facts, attached_count, h_ew_neighbor_count, num_h_neighbors,
+};
 use crate::atomic_prop::{atomic_prop_matches, parse_atomic_prop};
 use crate::chem_env::{chem_env_matches, parse_chem_env};
 use crate::mol::MolGraph;
@@ -293,10 +295,7 @@ fn parse_rule_fields(parts: &[&str]) -> Option<Gaff2Rule> {
     if let Some(rest) = remaining.strip_prefix('*') {
         remaining = rest.trim().to_string();
     } else {
-        let digit_len = remaining
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .count();
+        let digit_len = remaining.chars().take_while(|c| c.is_ascii_digit()).count();
         if digit_len > 0 {
             let (num_str, rest) = remaining.split_at(digit_len);
             h_ew_count = Some(num_str.parse().ok()?);
@@ -561,9 +560,8 @@ mod tests {
         // Real DEF fixture (cp): f8 is "[AR1,1RG6]", f9 is
         // "(XX[AR1],XX[AR1],XX[AR1])" -- the "[" inside f9's neighbor spec
         // must NOT be mistaken for a second f8 field or truncate chem_env_raw.
-        let content = wrap_def(
-            "ATD  cp    *   6   3   *   *   [AR1,1RG6]       (XX[AR1],XX[AR1],XX[AR1]) &",
-        );
+        let content =
+            wrap_def("ATD  cp    *   6   3   *   *   [AR1,1RG6]       (XX[AR1],XX[AR1],XX[AR1]) &");
         let (rules, _) = parse_gaff2_rules(&content).unwrap();
         assert_eq!(rules.len(), 1);
         let rule = &rules[0];

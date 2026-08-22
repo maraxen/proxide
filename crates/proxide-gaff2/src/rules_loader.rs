@@ -78,7 +78,11 @@ static DEFAULT_RULES: OnceCell<(Vec<Gaff2Rule>, WildatomMap)> = OnceCell::new();
 /// safer Rust-idiomatic deviation -- nothing in the Python call sites relies
 /// on that aliasing).
 pub fn get_default_rules() -> Result<(Vec<Gaff2Rule>, WildatomMap), String> {
-    get_default_rules_with(&DEFAULT_RULES, ATOMTYPE_GFF2_DEF, def_parser::parse_gaff2_rules)
+    get_default_rules_with(
+        &DEFAULT_RULES,
+        ATOMTYPE_GFF2_DEF,
+        def_parser::parse_gaff2_rules,
+    )
 }
 
 /// Read `path` and parse it via `parse`. Used by [`load_gaff2_rules`]'s
