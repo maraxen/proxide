@@ -156,6 +156,8 @@ pub fn extract_ligand_frame_coordinates(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pucker::RingPucker;
+    use std::f64::consts::PI;
 
     fn two_atom_topology() -> LigandTopology {
         LigandTopology {
@@ -270,5 +272,135 @@ mod tests {
         let result = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
         assert_eq!(result.frame_validity, vec![false]);
         assert!(result.torsions[0][0].is_nan());
+    }
+
+    #[test]
+    fn bond_lengths_are_index_aligned_with_topology_bonds() {
+        // Global Constraints (plan): bonds<->bond_lengths must be
+        // index-aligned by construction and covered by a test asserting
+        // that alignment, not just lengths matching. A length-only check
+        // (`bond_lengths.len() == bonds.len()`) cannot distinguish correct
+        // alignment from a transposition bug (e.g. swapping bond_lengths[0]
+        // and bond_lengths[1]) -- so this fixture uses a 4-atom chain with
+        // THREE bonds of distinct, hand-computed lengths (1.0, 1.5, 2.0 A),
+        // placed on the x-axis so each bond's Euclidean length is an exact,
+        // easily-verified value:
+        //   A=(0,0,0), B=(1.0,0,0)  -> |A-B| = 1.0  (bond 0)
+        //   C=(2.5,0,0)             -> |B-C| = 1.5  (bond 1)
+        //   D=(4.5,0,0)             -> |C-D| = 2.0  (bond 2)
+        // A swap of any two of bond_lengths[0..3] produces a mismatch
+        // against a *specific* bond's known length, which this test would
+        // catch (verified via RED/GREEN in the task-8 fix-round report).
+        let mut topology = two_atom_topology();
+        topology.canonical_order = vec![0, 1, 2, 3];
+        topology.elements = vec!["C".to_string(); 4];
+        topology.atom_names = topology.elements.clone();
+        topology.gaff2_types = vec!["c3".to_string(); 4];
+        topology.formal_charges = vec![0; 4];
+        topology.partial_charges = vec![0.0; 4];
+        topology.aromaticity = vec![false; 4];
+        topology.bonds = vec![(0, 1, 1, false, false), (1, 2, 1, false, false), (2, 3, 1, false, false)];
+
+        let frame = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.5, 0.0, 0.0], [4.5, 0.0, 0.0]];
+        let positions = vec![frame];
+        let input_elements = topology.elements.clone();
+
+        let result = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
+        assert_eq!(result.bond_lengths.len(), 3);
+        assert!(
+            (result.bond_lengths[0][0] - 1.0).abs() < 1e-9,
+            "bond 0 (A-B) expected length 1.0, got {}",
+            result.bond_lengths[0][0]
+        );
+        assert!(
+            (result.bond_lengths[1][0] - 1.5).abs() < 1e-9,
+            "bond 1 (B-C) expected length 1.5, got {}",
+            result.bond_lengths[1][0]
+        );
+        assert!(
+            (result.bond_lengths[2][0] - 2.0).abs() < 1e-9,
+            "bond 2 (C-D) expected length 2.0, got {}",
+            result.bond_lengths[2][0]
+        );
+    }
+
+    #[test]
+    fn pucker_phase_is_index_aligned_with_topology_pucker_definitions() {
+        // Global Constraints (plan): pucker_definitions<->pucker_phase must
+        // be index-aligned by construction and covered by a test asserting
+        // that alignment. A single ring can't prove alignment (there's
+        // nothing to transpose against with n_rings=1), so this fixture
+        // uses TWO independent 6-membered rings (atoms 0-5 and 6-11) with
+        // deliberately different, hand-derived Cremer-Pople phases.
+        //
+        // Derivation: for a planar regular hexagon (atoms at
+        // theta_j = 2*pi*j/6, radius R, in the xy-plane) displaced
+        // out-of-plane by a pure m=2 Fourier mode
+        //   zeta_j = A*cos(2*theta_j) + B*sin(2*theta_j),
+        // the mode is orthogonal (over the 6-point discrete Fourier basis)
+        // to the m=1 harmonics that would otherwise tilt the fitted mean
+        // plane, so the Cremer-Pople normal vector comes out exactly along
+        // the z-axis (verified by hand: r_prime_z = r_double_prime_z = 0
+        // for any A, B). That makes the per-atom CP height
+        // z[j] = -zeta_j exactly, and the dominant-mode coefficients:
+        //   a = sum_j z[j]*cos(2*theta_j) = -3A
+        //   b = -sum_j z[j]*sin(2*theta_j) = 3B
+        // (using sum_j cos^2(2*theta_j) = sum_j sin^2(2*theta_j) = 3 and
+        // sum_j cos(2*theta_j)*sin(2*theta_j) = 0 for n=6), giving
+        // phase = atan2(b, a) = atan2(B, -A).
+        //
+        // Ring 0: A=-S, B=S  -> atan2(S, S)   = pi/4
+        // Ring 1: A= S, B=S  -> atan2(S, -S)  = 3*pi/4
+        // for any scale S != 0 (S=0.3 here) -- two well-separated,
+        // hand-computable phases far from the atan2 branch cut, so a
+        // transposition of pucker_phase[0] and pucker_phase[1] fails this
+        // test by ~pi/2, far outside the 1e-6 tolerance.
+        let mut topology = two_atom_topology();
+        topology.canonical_order = (0..12).collect();
+        topology.elements = vec!["C".to_string(); 12];
+        topology.atom_names = topology.elements.clone();
+        topology.gaff2_types = vec!["c3".to_string(); 12];
+        topology.formal_charges = vec![0; 12];
+        topology.partial_charges = vec![0.0; 12];
+        topology.aromaticity = vec![false; 12];
+        topology.bonds = vec![];
+        topology.pucker_definitions = vec![
+            RingPucker { ring_atoms: (0..6).collect(), ring_size: 6 },
+            RingPucker { ring_atoms: (6..12).collect(), ring_size: 6 },
+        ];
+
+        let radius = 1.4;
+        let scale = 0.3;
+        let ring0: Vec<[f64; 3]> = (0..6)
+            .map(|j| {
+                let theta = 2.0 * PI * j as f64 / 6.0;
+                let zeta = scale * (-(2.0 * theta).cos() + (2.0 * theta).sin());
+                [radius * theta.cos(), radius * theta.sin(), zeta]
+            })
+            .collect();
+        let ring1: Vec<[f64; 3]> = (0..6)
+            .map(|j| {
+                let theta = 2.0 * PI * j as f64 / 6.0;
+                let zeta = scale * ((2.0 * theta).cos() + (2.0 * theta).sin());
+                [radius * theta.cos(), radius * theta.sin(), zeta]
+            })
+            .collect();
+        let mut frame = ring0;
+        frame.extend(ring1);
+        let positions = vec![frame];
+        let input_elements = topology.elements.clone();
+
+        let result = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
+        assert_eq!(result.pucker_phase.len(), 2);
+        assert!(
+            (result.pucker_phase[0][0] - PI / 4.0).abs() < 1e-6,
+            "ring 0 expected phase pi/4, got {}",
+            result.pucker_phase[0][0]
+        );
+        assert!(
+            (result.pucker_phase[1][0] - 3.0 * PI / 4.0).abs() < 1e-6,
+            "ring 1 expected phase 3*pi/4, got {}",
+            result.pucker_phase[1][0]
+        );
     }
 }
