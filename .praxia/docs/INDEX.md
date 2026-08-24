@@ -1,4 +1,4 @@
-# gaff2-cc-cd-alternation Internal Docs
+# gaff2-rust-port Internal Docs
 
 ## Daily
 
@@ -17,6 +17,7 @@
 - [260416_phase2-plan](plans/260416_phase2-plan.md)
 
 ## Specs
+- [260821_rust-port-skill-draft](specs/260821_rust-port-skill-draft.md) — Proposal for a reusable skill covering Python→Rust ports of validated algorithmic code, distilled from the GAFF2 atom-typer port (260821)
 - [260729_proxide-tmalign-phases-2-5](specs/260729_proxide-tmalign-phases-2-5.md) — Remaining seeds, parity harness, orx-parallel, PyO3 bindings, bathos benchmark for the TM-align port
 - [260630_proxide-jaccard](specs/260630_proxide-jaccard.md) — proxide-jaccard crate — pairwise Jaccard distance matrices over scaled-MinHash genome sketches, parallelized with orx-parallel
 - [260618_system-prep-scope](specs/260618_system-prep-scope.md) — #977 EPIC RESEARCH: full system-prep audit — 12-component inventory (present/partial/missing), reference-tool matrix, MIT licensing survey, prioritized child DAG (C1–C13)
@@ -52,6 +53,7 @@
 ## Preregistration
 
 ## Reference
+- [260821_gaff2-rust-port-lessons](reference/260821_gaff2-rust-port-lessons.md) — Phase-by-phase record of the Python→Rust port of the GAFF2 DEF-grammar atom typer (crates/proxide-gaff2), including per-module adversarial-verify verdicts and the 100%-exact-reproduction regression gate
 
 ## Roadmaps
 

@@ -13,7 +13,31 @@ pub fn assign_masses(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
     Ok(chem::masses::assign_masses(&atom_names))
 }
 
-/// Assign GAFF atom types to a structure (exposed to Python)
+/// Assign GAFF atom types to a structure (exposed to Python).
+///
+/// **Two structurally different implementations, selected at build time by
+/// the `gaff2-engine` Cargo feature** (off by default -- see this crate's
+/// Cargo.toml). This is not a stopgap; it is the deliberate outcome of the
+/// `gaff2-rust-port` Cutover decision
+/// (`.praxia/docs/reference/260821_gaff2-rust-port-lessons.md`): the real,
+/// geostd-corpus-validated GAFF2 engine (`proxide-gaff2`, 100% Rust-vs-Python
+/// match on 36,297 real ligands) is GPL-2.0-or-later (see
+/// `crates/proxide-gaff2/NOTICE`), and linking it into this crate's cdylib
+/// output makes the distributed `_proxider.so` wheel a GPL-encumbered
+/// combined work -- not acceptable as the *default* published build. Building
+/// with `--features gaff2-engine` opts into that tradeoff deliberately; the
+/// default build keeps `proxide-gaff`'s coordinate-only heuristic typer
+/// (MIT, unchanged behavior, but NOT a validated port of any reference
+/// implementation -- see that crate's own module docs).
+///
+/// The two variants also have genuinely different *signatures*, not just
+/// different bodies behind the same one: the heuristic path only ever had
+/// coordinates + elements to work with (bond order/aromaticity/rings were
+/// never available to it), while the real engine requires them -- retrofitting
+/// bond-order perception onto the coordinate-only path is a separate, unsolved
+/// problem (see the Cutover section's "input type cannot stay identical"
+/// finding), not something this cutover attempts.
+#[cfg(not(feature = "gaff2-engine"))]
 #[pyfunction]
 pub fn assign_gaff_atom_types(
     py: Python<'_>,
@@ -29,6 +53,76 @@ pub fn assign_gaff_atom_types(
     let types = proxide_gaff::gaff::assign_gaff_types(&elements, &topology, &gaff);
 
     Ok(types)
+}
+
+/// `1`/`2`/`3` -> Kekule bond order. Mirrors
+/// `proxide-gaff2::py_validation::bond_order_from_u8` exactly (this function
+/// supersedes that module's throwaway validation entrypoint as the real
+/// production binding; that module is left in place since
+/// `scripts/validation/gaff2_rust_parity.py` still builds against it
+/// independently of the full `proxide_py` dependency graph).
+#[cfg(feature = "gaff2-engine")]
+fn bond_order_from_u8(order: u8) -> Result<proxide_gaff2::mol::BondOrder, String> {
+    use proxide_gaff2::mol::BondOrder;
+    match order {
+        1 => Ok(BondOrder::Single),
+        2 => Ok(BondOrder::Double),
+        3 => Ok(BondOrder::Triple),
+        other => Err(format!(
+            "invalid bond order {other}: expected 1 (single), 2 (double), or 3 (triple) \
+             -- pass the true Kekule bond identity, not an aromatic/1.5 order"
+        )),
+    }
+}
+
+/// Real, validated GAFF2 atom typer (see the module-level doc comment above
+/// for why this is feature-gated). Caller contract mirrors
+/// `proxide-gaff2::py_validation::assign_gaff2_atom_types_rs` exactly:
+///
+/// - `elements: list[str]` -- element symbols, index-aligned atom order. H
+///   atoms must be explicit (`Chem.AddHs(mol)` on the caller's RDKit side
+///   first).
+/// - `bonds: list[tuple[int, int, int, bool]]` -- `(atom_i, atom_j,
+///   bond_order, is_aromatic)`, already Kekulized (`Chem.Kekulize(mol,
+///   clearAromaticFlags=False)` on the caller's side -- see
+///   `proxide-gaff2::orchestrate`'s module doc for why Kekulization must
+///   happen before this call, not inside it).
+/// - `formal_charges` / `rings`: optional; see
+///   `proxide-gaff2::mol::MolGraph::new`'s doc for the omission contract.
+///
+/// Returns one GAFF2 atom type per atom (including H), `"x"` (not `None`)
+/// for any atom no DEF rule matched -- this is a deliberate signature change
+/// from the pre-cutover `Vec<Option<String>>` contract (see the Cutover
+/// section's `"x"` sentinel note: a naive `if t:`-style Python check would
+/// silently treat `"x"` as truthy/matched).
+#[cfg(feature = "gaff2-engine")]
+#[pyfunction]
+#[pyo3(signature = (elements, bonds, formal_charges=None, rings=None))]
+pub fn assign_gaff_atom_types(
+    elements: Vec<String>,
+    bonds: Vec<(usize, usize, u8, bool)>,
+    formal_charges: Option<Vec<i8>>,
+    rings: Option<Vec<Vec<usize>>>,
+) -> PyResult<Vec<String>> {
+    use proxide_gaff2::mol::{Bond, MolGraph};
+
+    let bonds: Vec<Bond> = bonds
+        .into_iter()
+        .map(|(i, j, order, aromatic)| {
+            bond_order_from_u8(order).map(|order| Bond {
+                i,
+                j,
+                order,
+                aromatic,
+            })
+        })
+        .collect::<Result<_, String>>()
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+
+    let mol = MolGraph::new(elements, bonds, formal_charges, None, rings)
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+
+    proxide_gaff2::assign_gaff2_atom_types(&mol).map_err(pyo3::exceptions::PyValueError::new_err)
 }
 
 /// Assign intrinsic radii using the MBondi2 scheme
