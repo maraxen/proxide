@@ -77,11 +77,11 @@ pub fn canonicalize_ligand_topology(
                 1 => proxide_gaff2::mol::BondOrder::Single,
                 2 => proxide_gaff2::mol::BondOrder::Double,
                 3 => proxide_gaff2::mol::BondOrder::Triple,
-                other => panic!("invalid bond order {other}: expected 1, 2, or 3"),
+                other => return Err(LigandFrameError::InvalidBondOrder { order: other }),
             };
-            proxide_gaff2::mol::Bond { i, j, order, aromatic }
+            Ok(proxide_gaff2::mol::Bond { i, j, order, aromatic })
         })
-        .collect();
+        .collect::<Result<Vec<_>, LigandFrameError>>()?;
     let mol = proxide_gaff2::mol::MolGraph::new(
         elements.to_vec(),
         gaff2_bonds,
@@ -137,11 +137,15 @@ pub fn canonicalize_ligand_topology(
         .map(|((i, j, order, aromatic, _), &r)| (i, j, order, aromatic, r))
         .collect();
 
-    let ring_membership_set: std::collections::HashSet<usize> =
-        canon_ring_membership.iter().flatten().copied().collect();
+    // A bond is ring-internal only if both endpoints belong to a *common*
+    // SSSR ring (matches torsions.rs's own doc comment on
+    // `torsion_definitions`'s `bond_in_ring` parameter) -- not merely "each
+    // endpoint is in *some* ring", which would wrongly mark the acyclic
+    // bond joining two separate rings (e.g. bicyclohexyl's connecting C-C
+    // bond) as ring-internal and silently drop a real rotatable-torsion DOF.
     let bond_in_ring: Vec<bool> = canon_bonds
         .iter()
-        .map(|&(i, j, ..)| ring_membership_set.contains(&i) && ring_membership_set.contains(&j))
+        .map(|&(i, j, ..)| canon_ring_membership.iter().any(|ring| ring.contains(&i) && ring.contains(&j)))
         .collect();
     let torsion_definitions =
         crate::torsions::torsion_definitions(&canon_elements, &canon_bonds, &bond_in_ring);
@@ -375,6 +379,78 @@ mod tests {
         assert_eq!(topology.pucker_definitions[0].ring_size, 6);
         assert!(topology.torsion_definitions.is_empty());
         assert!(topology.unrepresented_ring_dof.is_empty());
+    }
+
+    /// Finding 3 (260824 final-review fix round): a bond order outside
+    /// {1,2,3} -- e.g. TRIPOS "nc" (not-connected), which
+    /// `_parse_mol2_bond_type` in `molecule.py` maps to `0` -- must return a
+    /// clean `Err`, not `panic!` across the FFI boundary (a panic there
+    /// crashes the whole Python process, not just this call).
+    #[test]
+    fn invalid_bond_order_is_rejected_not_panicked() {
+        let elements = vec!["C".to_string(), "C".to_string()];
+        let atom_names = elements.clone();
+        let bonds_in = vec![(0, 1, 0u8)]; // order 0: outside {1, 2, 3}
+        let bond_is_aromatic = vec![false];
+        let ref_positions = vec![[0.0, 0.0, 0.0], [1.53, 0.0, 0.0]];
+        let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 2];
+
+        let err = canonicalize_ligand_topology(
+            "bad-bond-order", &elements, &atom_names, &bonds_in, &bond_is_aromatic, &[], None,
+            &ref_positions, &features, &[], &[], 0.0,
+        )
+        .unwrap_err();
+        assert_eq!(err, LigandFrameError::InvalidBondOrder { order: 0 });
+    }
+
+    /// Finding 2 (260824 final-review fix round): the acyclic C-C bond
+    /// joining two separate 6-membered rings (a bicyclohexyl-like
+    /// structure: two cyclohexanes, each atom-disjoint, connected by one
+    /// single bond) is a genuine rotatable torsion DOF -- neither endpoint
+    /// is ring-internal, since no *single* SSSR ring contains both. The
+    /// pre-fix implementation flattened all rings into one `HashSet` and
+    /// asked "is each endpoint in *some* ring", which wrongly said yes for
+    /// this bond (atom 0 is in ring A, atom 6 is in ring B) and silently
+    /// dropped the real DOF (`torsion_definitions.len() == 0` instead of 1).
+    #[test]
+    fn interring_bond_between_two_disjoint_rings_gets_a_torsion_not_dropped_as_ring_internal() {
+        let elements = vec!["C"; 12].into_iter().map(String::from).collect::<Vec<_>>();
+        let atom_names = elements.clone();
+
+        // Ring A: 0-1-2-3-4-5-0. Ring B: 6-7-8-9-10-11-6. Connecting bond: 0-6.
+        let mut bonds_in: Vec<(usize, usize, u8)> = (0..6).map(|i| (i, (i + 1) % 6, 1u8)).collect();
+        bonds_in.extend((0..6).map(|i| (6 + i, 6 + (i + 1) % 6, 1u8)));
+        bonds_in.push((0, 6, 1u8));
+        let bond_is_aromatic = vec![false; bonds_in.len()];
+        let rings = vec![vec![0, 1, 2, 3, 4, 5], vec![6, 7, 8, 9, 10, 11]];
+
+        // Two regular hexagons (side length == circumradius R=1.51, a
+        // typical C-C ring bond length) sharing an axis, with ring A's
+        // atom 0 and ring B's atom 6 -- the connecting bond's endpoints --
+        // facing each other exactly `1.53` A apart (a typical C-C bond
+        // length), and the ring centers far enough apart that no other
+        // interring atom pair comes anywhere near the geometry gate's
+        // clash threshold (0.7 * 1.52 A =~ 1.06 A for C-C).
+        let r = 1.51;
+        let bond_len = 1.53;
+        let center_b_x = 2.0 * r + bond_len;
+        let mut ref_positions = Vec::with_capacity(12);
+        for i in 0..6 {
+            let angle = std::f64::consts::PI * (i as f64) / 3.0; // i * 60 deg, ring A base 0 deg
+            ref_positions.push([r * angle.cos(), r * angle.sin(), 0.0]);
+        }
+        for i in 0..6 {
+            let angle = std::f64::consts::PI + std::f64::consts::PI * (i as f64) / 3.0; // ring B base 180 deg
+            ref_positions.push([center_b_x + r * angle.cos(), r * angle.sin(), 0.0]);
+        }
+
+        let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 12];
+        let topology = canonicalize_ligand_topology(
+            "bicyclohexyl", &elements, &atom_names, &bonds_in, &bond_is_aromatic, &rings, None,
+            &ref_positions, &features, &[], &[], 0.0f32,
+        )
+        .expect("bicyclohexyl-shaped topology should canonicalize");
+        assert_eq!(topology.torsion_definitions.len(), 1);
     }
 
     #[test]

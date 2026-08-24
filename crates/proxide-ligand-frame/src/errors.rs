@@ -19,6 +19,9 @@ pub enum LigandFrameError {
     #[error("SSSR/aromaticity input inconsistent with bonds_in: {reason}")]
     SssrInputInvalid { reason: String },
 
+    #[error("invalid bond order {order}: expected 1 (single), 2 (double), or 3 (triple)")]
+    InvalidBondOrder { order: u8 },
+
     #[error("Espaloma charge inference failed: {reason}")]
     ChargeInferenceFailure { reason: String },
 

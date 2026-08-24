@@ -54,6 +54,77 @@ class LigandFrameCoordinates:
   bond_angles: np.ndarray
 
 
+def _assert_explicit_hydrogens(molecule: Molecule) -> None:
+  """Reject a `molecule` that appears to be missing explicit hydrogens.
+
+  `build_ligand_reference_frame` passes `molecule.elements`/`molecule.bonds`
+  straight through to gaff2 typing, whose contract (`assign_gaff_atom_types`
+  in `py_chemistry.rs`) requires H atoms to already be explicit and
+  index-aligned with the caller's `trajectory_positions`. `Molecule._to_rdkit`
+  sets `NoImplicit=True` on every atom (deliberately -- see that method's
+  docstring), which means a silently H-deficient input sails through typing
+  as a wrong, lower-valence atom type (e.g. a benzene ring carbon typed
+  `c1`, sp1, instead of `ca`, aromatic) rather than failing loudly. Because
+  `Chem.AddHs` is a no-op on a `NoImplicit=True` atom (it only fills the
+  *implicit* valence gap, which is forced to zero), that check must run
+  against a fresh graph built *without* `NoImplicit`.
+
+  Raises:
+      ValueError: if RDKit's standard (neutral) valence model expects more
+          atoms, once hydrogens are added, than `molecule.elements` has --
+          i.e. some heavy atom has an unfilled valence that a real
+          hydrogen should occupy. A structure that is correctly charged
+          with intentionally no H (e.g. a fully-deprotonated ion) would
+          need a formal charge on the relevant atom to avoid a false
+          positive here; `Molecule` does not currently track formal
+          charges, so this check assumes neutral valence, consistent with
+          the rest of this module (`formal_charges` is likewise derived
+          downstream as all-zero unless RDKit's sanitizer perceives
+          otherwise).
+  """
+  from rdkit import Chem
+
+  check_mol = Chem.RWMol()
+  for elem in molecule.elements:
+    check_mol.AddAtom(Chem.Atom(elem))
+
+  bond_type_map = {
+    1: Chem.BondType.SINGLE,
+    2: Chem.BondType.DOUBLE,
+    3: Chem.BondType.TRIPLE,
+  }
+  aromatic_atoms: set[int] = set()
+  for k, ((i, j), order) in enumerate(zip(molecule.bonds, molecule.bond_orders, strict=True)):
+    is_aromatic = k < len(molecule.bond_aromatic) and molecule.bond_aromatic[k]
+    if is_aromatic:
+      bond_type = Chem.BondType.AROMATIC
+      aromatic_atoms.add(i)
+      aromatic_atoms.add(j)
+    else:
+      bond_type = bond_type_map.get(order, Chem.BondType.SINGLE)
+    check_mol.AddBond(i, j, bond_type)
+  for idx in aromatic_atoms:
+    check_mol.GetAtomWithIdx(idx).SetIsAromatic(True)
+
+  check_mol = check_mol.GetMol()
+  Chem.SanitizeMol(check_mol)
+
+  expected_n_atoms = Chem.AddHs(check_mol).GetNumAtoms()
+  actual_n_atoms = len(molecule.elements)
+  if expected_n_atoms != actual_n_atoms:
+    raise ValueError(
+      f"molecule '{molecule.name}' appears to be missing explicit hydrogens: "
+      f"standard valence for its heavy-atom graph expects {expected_n_atoms} "
+      f"total atoms once hydrogens are filled in, but `molecule.elements` "
+      f"has {actual_n_atoms}. `build_ligand_reference_frame` requires the "
+      "caller-supplied `molecule` to already have explicit H atoms whose "
+      "count and order are consistent with `trajectory_positions` -- add "
+      "explicit hydrogens on the caller's side (e.g. via `Chem.AddHs(mol)` "
+      "with a 3D embedding) before constructing/parsing `molecule`, rather "
+      "than passing a heavy-atom-only structure here."
+    )
+
+
 def _espaloma_graph_features(mol) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
   """RDKit-based Espaloma featurization -- the same `expaloma.featurize`
   path `assign_espaloma_charges_rdkit` (`partial_charges.py`) already uses.
@@ -88,6 +159,8 @@ def build_ligand_reference_frame(
   """
   from proxide._proxider import canonicalize_ligand_topology as _canonicalize
   from proxide._proxider import extract_ligand_frame_coordinates as _extract
+
+  _assert_explicit_hydrogens(molecule)
 
   mol = molecule._to_rdkit()
   ring_info = mol.GetRingInfo()
