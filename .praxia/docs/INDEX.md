@@ -1,4 +1,4 @@
-# gaff2-cc-cd-alternation Internal Docs
+# license-provenance-spec Internal Docs
 
 ## Daily
 
@@ -17,6 +17,7 @@
 - [260416_phase2-plan](plans/260416_phase2-plan.md)
 
 ## Specs
+- [260824_license-provenance-verification](specs/260824_license-provenance-verification.md) — CI tripwire + agentic primary-source license verification for reimplemented/ported external code, plus the retroactive crate sweep that motivated it
 - [260729_proxide-tmalign-phases-2-5](specs/260729_proxide-tmalign-phases-2-5.md) — Remaining seeds, parity harness, orx-parallel, PyO3 bindings, bathos benchmark for the TM-align port
 - [260630_proxide-jaccard](specs/260630_proxide-jaccard.md) — proxide-jaccard crate — pairwise Jaccard distance matrices over scaled-MinHash genome sketches, parallelized with orx-parallel
 - [260618_system-prep-scope](specs/260618_system-prep-scope.md) — #977 EPIC RESEARCH: full system-prep audit — 12-component inventory (present/partial/missing), reference-tool matrix, MIT licensing survey, prioritized child DAG (C1–C13)
