@@ -188,6 +188,41 @@ mod tests {
         // No selectable torsion yet (Task 5 adds the machinery).
         assert!(topology.torsion_definitions.is_empty());
         assert_eq!(topology.partial_charges, vec![0.0; 6]);
+
+        // Content assertions on the actual index-remap direction (not just
+        // lengths): the three methyl H's (input 2,3,4) and hydroxyl H
+        // (input 5) are automorphic-tie-broken to canonical 0-3, C (input 0)
+        // to canonical 4, O (input 1) to canonical 5.
+        assert_eq!(topology.canonical_order, vec![4, 5, 0, 1, 2, 3]);
+        assert_eq!(
+            topology.elements,
+            vec!["H", "H", "H", "H", "C", "O"]
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            topology.atom_names,
+            vec!["H1", "H2", "H3", "H4", "C1", "O1"]
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>()
+        );
+
+        // Canonical-space bonds, order-independent (i < j within each tuple
+        // by construction; compare as a sorted set since the emission order
+        // follows input-bond order, not canonical order).
+        let mut expected_bonds: Vec<(usize, usize, u8, bool, bool)> = vec![
+            (4, 5, 1, false, false),
+            (0, 4, 1, false, false),
+            (1, 4, 1, false, false),
+            (2, 4, 1, false, false),
+            (3, 5, 1, false, false),
+        ];
+        expected_bonds.sort();
+        let mut actual_bonds = topology.bonds.clone();
+        actual_bonds.sort();
+        assert_eq!(actual_bonds, expected_bonds);
     }
 
     #[test]
