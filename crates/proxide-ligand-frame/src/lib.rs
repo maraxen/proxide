@@ -11,8 +11,12 @@ pub mod canon;
 pub mod connectivity;
 pub mod errors;
 pub mod geometry_gate;
+pub mod pucker;
+pub mod typing;
 
 pub use errors::LigandFrameError;
+pub use pucker::RingPucker;
+pub use typing::{canonicalize_ligand_topology, LigandTopology};
 
 #[cfg(test)]
 mod smoke_tests {
