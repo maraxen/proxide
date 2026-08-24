@@ -142,6 +142,14 @@ pub fn canonicalize_ligand_topology(
     let torsion_definitions =
         crate::torsions::torsion_definitions(&canon_elements, &canon_bonds, &bond_in_ring);
 
+    let mut canon_adjacency: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(i, j, ..) in &canon_bonds {
+        canon_adjacency[i].push(j);
+        canon_adjacency[j].push(i);
+    }
+    let (pucker_definitions, unrepresented_ring_dof) =
+        crate::pucker::build_ring_puckers(&canon_ring_membership, &canon_adjacency);
+
     Ok(LigandTopology {
         ligand_id: ligand_id.to_string(),
         canonical_order: canon,
@@ -154,8 +162,8 @@ pub fn canonicalize_ligand_topology(
         ring_membership: canon_ring_membership,
         bonds: canon_bonds,
         torsion_definitions,
-        pucker_definitions: Vec::new(),
-        unrepresented_ring_dof: Vec::new(),
+        pucker_definitions,
+        unrepresented_ring_dof,
     })
 }
 
@@ -303,5 +311,29 @@ mod tests {
         )
         .expect("should canonicalize");
         assert_eq!(topology.torsion_definitions.len(), 1);
+    }
+
+    #[test]
+    fn aromatic_ring_gets_a_pucker_definition_and_no_torsions() {
+        let elements = vec!["C"; 6].into_iter().map(String::from).collect::<Vec<_>>();
+        let atom_names = elements.clone();
+        let bonds_in: Vec<(usize, usize, u8)> = (0..6).map(|i| (i, (i + 1) % 6, 1u8)).collect();
+        let bond_is_aromatic = vec![true; 6];
+        let ring = vec![vec![0, 1, 2, 3, 4, 5]];
+        let radius = 1.4;
+        let ref_positions: Vec<[f64; 3]> = (0..6)
+            .map(|j| {
+                let angle = 2.0 * std::f64::consts::PI * j as f64 / 6.0;
+                [radius * angle.cos(), radius * angle.sin(), 0.0]
+            })
+            .collect();
+        let topology = canonicalize_ligand_topology(
+            "benzene", &elements, &atom_names, &bonds_in, &bond_is_aromatic, &ring, None, &ref_positions,
+        )
+        .expect("benzene should canonicalize");
+        assert_eq!(topology.pucker_definitions.len(), 1);
+        assert_eq!(topology.pucker_definitions[0].ring_size, 6);
+        assert!(topology.torsion_definitions.is_empty());
+        assert!(topology.unrepresented_ring_dof.is_empty());
     }
 }
