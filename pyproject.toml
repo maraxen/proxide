@@ -19,6 +19,9 @@ dependencies = [
     # until flax catches up; verified 0.10.0-0.10.2 all work with flax 0.12.1/0.12.8.
     "jax<0.11",
     "numpy",
+    # user cache-dir resolution for fetch-on-demand force field assets
+    # (proxide.assets._fetch) -- see .praxia/docs/specs/260824_license-provenance-verification.md
+    "platformdirs",
     "hydride",
     "grain",
     "jax-md",
@@ -113,13 +116,23 @@ include = [
     "src/proxide/**/*",
     "LICENSE",
 ]
-# CGenFF requires a signed not-for-profit license agreement from the
-# MacKerell lab (mackerell.umaryland.edu/charmm_ff.shtml) -- not a
-# redistributable-by-default license, unlike everything else the `include`
-# wildcard above pulls in. Must not ship in the wheel until that agreement
-# is in place. See .praxia/docs/specs/260824_license-provenance-verification.md.
+# src/proxide/assets/charmm/ (CGenFF + base CHARMM36 toppar) is bring-your-own
+# only -- CGenFF requires a signed not-for-profit license agreement from the
+# MacKerell lab (mackerell.umaryland.edu/charmm_ff.shtml), and no positive
+# redistribution grant was found for the base toppar files either. Never
+# ships in the wheel; see proxide.assets._fetch and
+# .praxia/docs/specs/260824_license-provenance-verification.md.
+#
+# amber/, water/, implicit/, and openmm_bundled/ are fetched-and-cached at
+# runtime instead (proxide.assets._fetch) rather than bundled -- no
+# licensing restriction found on audit, but excluded here to keep the wheel
+# small and avoid vendoring from an unpinned upstream clone.
 exclude = [
-    "src/proxide/assets/charmm/charmm36_cgenff.xml",
+    "src/proxide/assets/charmm/**/*",
+    "src/proxide/assets/amber/**/*",
+    "src/proxide/assets/water/**/*",
+    "src/proxide/assets/implicit/**/*",
+    "src/proxide/assets/openmm_bundled/**/*",
 ]
 
 [tool.pytest.ini_options]

@@ -1,6 +1,18 @@
 .codex
 eph
 
+# Fetch-on-demand / bring-your-own force field assets -- no longer
+# git-vendored (see .praxia/docs/specs/260824_license-provenance-verification.md).
+# Populated locally only by scripts/sync_forcefields.py, for regenerating
+# src/proxide/assets/_asset_index.py -- never meant to be committed.
+src/proxide/assets/amber/
+src/proxide/assets/water/
+src/proxide/assets/implicit/
+src/proxide/assets/openmm_bundled/
+src/proxide/assets/charmm/
+src/proxide/assets/protein.ff14SB.xml
+src/proxide/assets/protein.ff19SB.xml
+
 # Python
 __pycache__/
 *.pyc

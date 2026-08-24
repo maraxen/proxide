@@ -468,3 +468,79 @@ sweep above — it's a structurally different problem (bundled data files, not
 ported/reimplemented code), which is itself evidence that tier 1/tier 2 as
 scoped (crate-focused) needs a sibling pass over `src/proxide/assets/`
 specifically, not just crates going forward.
+
+## Appendix C: final architecture -- runtime-fetch + bring-your-own (2026-08-24)
+
+Implemented and verified against the live repo, not just designed. Two
+decisions that shaped this, both worth recording since they overturned an
+earlier plan:
+
+**Why not "get MIT a not-for-profit CGenFF license"?** The original plan
+(draft an email requesting a not-for-profit license) doesn't actually solve
+proxide's problem: proxide is a general-use open-source package, and a
+license signed by one institution for its own use doesn't grant proxide the
+right to redistribute to every downstream user, including commercial ones.
+Getting the maintainer a personal license would have solved a problem
+proxide doesn't have.
+
+**Why not "fetch from openmmforcefields' GitHub at runtime instead of
+bundling"?** This was floated as a way to avoid "redistributing" -- the
+theory being that pointing a runtime fetch at openmmforcefields' own copy
+means proxide never holds/ships the content itself. Rejected: (a)
+openmmforcefields' own redistribution isn't established as authorized either
+(Appendix B found no documented grant), so there's nothing clean to "just
+link to"; (b) the functional-effect distinction that matters isn't which
+server bytes come from, it's whether software automates the reproduction --
+proxide's own code performing an HTTP fetch, writing bytes to disk, and
+using them is a reproduction either way, timing (build vs. runtime) doesn't
+change that. Recorded here because it's a tempting-sounding shortcut that
+doesn't actually hold up, and a future contributor may reach for it again.
+
+**What's actually built:**
+
+- `proxide.assets._fetch`: fetch-and-cache for `amber/`, `water/`,
+  `implicit/`, and the non-CHARMM parts of `openmm_bundled/` -- pinned
+  commits (not branches) of `openmm/openmmforcefields` and `openmm/openmm`,
+  cached under `platformdirs.user_cache_dir("proxide")` (overridable via
+  `PROXIDE_ASSET_CACHE_DIR`). No per-file sha256 pinning (unlike
+  `ATOMTYPE_GFF2.DEF`'s single-file case) -- a pinned commit SHA is already
+  content-addressed, and hashing ~90 individual files for this batch wasn't
+  proportionate; re-pin deliberately, don't float on a branch.
+- `is_charmm_restricted(path)`: deny-by-default for anything under `charmm/`
+  or with "charmm" in the path, with a narrow, explicitly-audited allowlist
+  for exactly the two confirmed-water-only subdirectories
+  (`openmm_bundled/charmm36/`, `openmm_bundled/charmm36_2024/`). Caught a
+  real near-miss during implementation: `openmm_bundled/charmm36.xml` and
+  `charmm36_2024.xml` (flat top-level files, distinct from the
+  already-audited water-only *subdirectories* of the same name) turned out
+  to contain the full CGenFF-including CHARMM36 force field -- confirmed by
+  inspecting actual residue content (thousands of non-water residue names)
+  before trusting the name similarity. A broad, path-based deny rule with a
+  narrow allowlist is safer here than an enumerated restricted-file list.
+- `resolve_charmm_toppar(name)`: bring-your-own via `PROXIDE_CHARMM_TOPPAR_DIR`;
+  raises `CharmmLicenseRequiredError` with a pointer to this doc when unset.
+- `proxide.assets._asset_index.ASSET_INDEX`: static, committed name to path
+  map (76 entries) generated from the tree as it existed before conversion --
+  lets `load_force_field("protein.ff14SB")`-style bare-name lookups resolve
+  without any files present on disk (the old code used `rglob`, which can't
+  find what isn't vendored anymore). Regenerate via
+  `scripts/generate_asset_index.py` if the pinned commits are ever bumped.
+- 116 files removed from git tracking and from the wheel (`amber/`, `water/`,
+  `implicit/`, `openmm_bundled/`, all of `charmm/` including the two loose
+  `protein.ff{14,19}SB.xml` duplicates) -- verified via a real `maturin build`
+  that none of it ships anymore, `gaff/` unaffected.
+- Fixed a real, unrelated bug found while rewriting the collection-time test
+  (`tests/assets/test_load_all_forcefields.py` used to `rglob` the assets
+  dir inside a `@pytest.mark.parametrize` decorator argument, which runs at
+  *collection* time -- silently unworkable once these dirs aren't vendored):
+  rewritten to parametrize over the static index (no I/O at collection
+  time) and fetch lazily inside each test body, skipping (not failing) on
+  network unavailability. Full pass, cold cache, real network: 96 passed, 25
+  skipped, 0 failures.
+- `sync_forcefields.py`'s role narrowed to "populate a local scratch copy for
+  `generate_asset_index.py` to walk" (its actual asset-vendoring purpose is
+  gone) -- also fixed a pre-existing dead `ASSETS_DIR = Path("src/priox/assets")`
+  typo (stale project-rename leftover, unrelated to this task but found
+  while touching the file) and removed a `generate_readme()` step that would
+  have overwritten the now-hand-maintained `src/proxide/assets/README.md`
+  with stale generic content on next run.

@@ -2,8 +2,14 @@
 """Script to sync force field XML files from openmmforcefields and OpenMM.
 
 This script clones/updates the openmmforcefields repository and copies
-the relevant XML files into the priox assets directory structure.
-It also copies bundled force field files from OpenMM itself.
+the relevant XML files into a local scratch copy of the proxide assets
+directory structure. It also copies bundled force field files from OpenMM
+itself.
+
+These directories are gitignored and no longer vendored/bundled in the
+package (see src/proxide/assets/README.md) -- this script exists to
+populate a local scratch copy for scripts/generate_asset_index.py to walk,
+not to prepare files for committing.
 
 Usage:
     uv run python scripts/sync_forcefields.py [--clone-path /path/to/clone] [--force]
@@ -23,7 +29,7 @@ from pathlib import Path
 REPO_URL = "https://github.com/openmm/openmmforcefields.git"
 
 # Asset directory relative to project root
-ASSETS_DIR = Path("src/priox/assets")
+ASSETS_DIR = Path("src/proxide/assets")
 
 # Source paths relative to cloned repo, with organization
 FILE_MAPPINGS = {
@@ -246,87 +252,6 @@ def copy_openmm_bundled_files(
   return results
 
 
-def generate_readme(assets_path: Path) -> None:
-  """Generate a README documenting the force field assets."""
-  readme_content = """# Force Field Assets
-
-This directory contains force field XML files from:
-- [openmmforcefields](https://github.com/openmm/openmmforcefields)
-- [OpenMM](https://github.com/openmm/openmm) bundled data
-
-## Directory Structure
-
-```
-assets/
-├── amber/          # Amber protein, lipid, nucleic acid force fields (from openmmforcefields)
-├── charmm/         # CHARMM force fields (from openmmforcefields)
-├── gaff/           # GAFF small molecule force fields
-│   ├── ffxml/      # OpenMM-format XML files
-│   └── dat/        # Original GAFF .dat parameter files
-├── implicit/       # Implicit solvent (GBSA-OBC) parameters
-├── openmm_bundled/ # Force fields bundled with OpenMM itself
-│   ├── amber14/    # Amber ff14SB with water models
-│   ├── amber19/    # Amber ff19SB with water models
-│   └── charmm36/   # CHARMM36 with water models
-└── water/          # Water models and ion parameters
-```
-
-## Supported Force Fields
-
-### Amber Protein Force Fields (openmmforcefields)
-- `ff14SB.xml` - Amber ff14SB (recommended for proteins)
-- `protein.ff19SB.xml` - Amber ff19SB (latest)
-- `ff99SBildn.xml` - Amber ff99SB-ILDN
-
-### Amber Protein Force Fields (OpenMM bundled)
-- `amber14/` - ff14SB with tip3p, tip3pfb, tip4pew, tip4pfb
-- `amber19/` - ff19SB with opc, opc3
-
-### GAFF (Small Molecules)
-- `gaff-2.11.xml` - GAFF 2.11 (recommended)
-- `gaff-2.2.20.xml` - GAFF 2.2.20 (latest)
-- `gaff-1.81.xml` - GAFF 1.81 (legacy)
-
-### Water Models
-- `tip3p_standard.xml` - TIP3P
-- `opc_standard.xml` - OPC (recommended)
-- `tip4pew_standard.xml` - TIP4P-Ew
-
-### Implicit Solvent (GBSA-OBC)
-- `amber99_obc.xml` - GBSA-OBC parameters for Amber99
-- `amber03_obc.xml` - GBSA-OBC parameters for Amber03
-- `amber10_obc.xml` - GBSA-OBC parameters for Amber10
-- `amber96_obc.xml` - GBSA-OBC parameters for Amber96
-
-### CHARMM
-- `charmm36.xml` - CHARMM36 (complete)
-- `charmm36_protein.xml` - CHARMM36 proteins only
-
-## Updating Assets
-
-To update these files from the source repositories:
-
-```bash
-uv run python scripts/sync_forcefields.py
-```
-
-To force a fresh clone:
-
-```bash
-uv run python scripts/sync_forcefields.py --force
-```
-
-## License
-
-Force field files are distributed under the terms of their original licenses.
-See the respective repositories for details.
-"""
-
-  readme_path = assets_path / "README.md"
-  readme_path.write_text(readme_content)
-  print(f"Generated {readme_path}")
-
-
 def main() -> int:
   """Main entry point."""
   parser = argparse.ArgumentParser(
@@ -390,12 +315,11 @@ def main() -> int:
   if results["errors"]:
     print(f"Errors: {len(results['errors'])}")
 
-  if not args.dry_run:
-    print()
-    generate_readme(assets_path)
-
   print()
-  print("Done!")
+  print("Done! This populates a local scratch copy only -- these directories are")
+  print("gitignored and not vendored/bundled anymore (fetch-on-demand, see")
+  print("src/proxide/assets/README.md). Typically you'd run this only to")
+  print("regenerate _asset_index.py: uv run scripts/generate_asset_index.py")
   return 0
 
 

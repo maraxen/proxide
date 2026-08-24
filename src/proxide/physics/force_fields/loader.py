@@ -9,6 +9,8 @@ import jax.numpy as jnp
 import numpy as np
 from flax.struct import dataclass, field
 
+from proxide.assets import _asset_index
+from proxide.assets import _fetch as _asset_fetch
 from proxide.io.parsing import backend as rw
 from proxide.physics.constants import DEFAULT_EPSILON, DEFAULT_SIGMA
 from proxide.physics.force_fields.components import (
@@ -329,51 +331,81 @@ def _convert_rust_ff_to_full(ff_data: rw.ForceFieldData, source_file: str) -> Fu
 def load_force_field(
   name_or_path: str,
 ) -> FullForceField:
-  """Load force field from disk or assets."""
+  """Load force field from disk, the still-vendored assets (e.g. gaff/), or fetch-on-demand.
+
+  Resolution order:
+  1. `name_or_path` is itself an existing file path -- used directly (covers a
+     user-supplied CHARMM toppar path, or any explicit path).
+  2. It matches a still-git-vendored asset (currently just `gaff/`) under the
+     package's `assets/` directory -- used directly, unchanged behavior.
+  3. It matches `proxide.assets._asset_index.ASSET_INDEX` -- resolved via
+     `proxide.assets._fetch.resolve_asset`, which fetches-and-caches
+     non-CHARMM content on first use, or raises `CharmmLicenseRequiredError`
+     for CGenFF/CHARMM36-derived names (see that module's docstring).
+  4. Otherwise: `ValueError`.
+  """
   path = Path(name_or_path)
+  if path.exists():
+    ff_data = rw.load_forcefield_rust(path)
+    return _convert_rust_ff_to_full(ff_data, str(path))
 
-  # If not absolute/exists, check assets
-  if not path.exists():
-    # Try known assets location
-    # Assuming module path structure: src/priox/assets
-    # We function is in src/priox/physics/force_fields/loader.py
-    # Assets in src/priox/assets
-    # Relative: ../../assets
-    asset_dir = Path(__file__).parent.parent.parent / "assets"
-
-    # Try direct match in root
-    potential_path = asset_dir / path.name
-    if potential_path.exists():
-      path = potential_path
-    elif (asset_dir / f"{path.name}.xml").exists():
-      path = asset_dir / f"{path.name}.xml"
+  asset_dir = Path(__file__).parent.parent.parent / "assets"
+  potential_path = asset_dir / path.name
+  if potential_path.exists():
+    path = potential_path
+  elif (asset_dir / f"{path.name}.xml").exists():
+    path = asset_dir / f"{path.name}.xml"
+  else:
+    found = list(asset_dir.rglob(f"{path.name}")) or list(asset_dir.rglob(f"{path.name}.xml"))
+    if found:
+      path = found[0]
     else:
-      # Search recursively in subdirectories
-      found = list(asset_dir.rglob(f"{path.name}"))
-      if not found:
-        found = list(asset_dir.rglob(f"{path.name}.xml"))
-      if found:
-        path = found[0]
+      relative_path = _asset_index.ASSET_INDEX.get(path.name) or _asset_index.ASSET_INDEX.get(
+        path.stem
+      )
+      if relative_path is None:
+        raise ValueError(
+          f"Force field file not found: {name_or_path} (checked {asset_dir}, "
+          "and the fetchable/CHARMM-restricted asset index)"
+        )
+      if _asset_fetch.is_charmm_restricted(relative_path):
+        path = _asset_fetch.resolve_charmm_toppar(path.stem)
       else:
-        raise ValueError(f"Force field file not found: {name_or_path} (checked {asset_dir})")
+        path = _asset_fetch.resolve_asset(relative_path)
 
   ff_data = rw.load_forcefield_rust(path)
   return _convert_rust_ff_to_full(ff_data, str(path))
 
 
 def list_available_force_fields() -> list[str]:
-  """List available force fields in assets (recursively)."""
+  """List force fields available (still-vendored + fetchable). Excludes CHARMM-restricted names.
+
+  CHARMM-restricted names (see `proxide.assets._fetch.is_charmm_restricted`)
+  are omitted here since listing them as "available" would be misleading --
+  they require `PROXIDE_CHARMM_TOPPAR_DIR` to be set to a user-supplied,
+  properly-licensed copy. Use `list_charmm_restricted_names()` for those.
+  """
   asset_dir = Path(__file__).parent.parent.parent / "assets"
-  if not asset_dir.exists():
-    return []
-  # Get all XML files recursively, return relative paths without .xml extension
   result = []
-  for xml_file in asset_dir.rglob("*.xml"):
-    # Get path relative to assets directory
-    rel_path = xml_file.relative_to(asset_dir)
-    # Return stem (filename without .xml) with parent path if in subdir
-    if rel_path.parent != Path():
-      result.append(str(rel_path.parent / rel_path.stem))
-    else:
-      result.append(rel_path.stem)
-  return sorted(result)
+  if asset_dir.exists():
+    for xml_file in asset_dir.rglob("*.xml"):
+      rel_path = xml_file.relative_to(asset_dir)
+      if rel_path.parent != Path():
+        result.append(str(rel_path.parent / rel_path.stem))
+      else:
+        result.append(rel_path.stem)
+
+  for stem, relative_path in _asset_index.ASSET_INDEX.items():
+    if not _asset_fetch.is_charmm_restricted(relative_path):
+      result.append(stem)
+
+  return sorted(set(result))
+
+
+def list_charmm_restricted_names() -> list[str]:
+  """Names requiring PROXIDE_CHARMM_TOPPAR_DIR -- see load_force_field's docstring."""
+  return sorted(
+    stem
+    for stem, relative_path in _asset_index.ASSET_INDEX.items()
+    if _asset_fetch.is_charmm_restricted(relative_path)
+  )
