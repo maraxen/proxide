@@ -38,6 +38,51 @@ bcc
 """
 
 
+# Real-convention (explicit-hydrogen) benzene, for tests that exercise
+# `_to_rdkit()` -- unlike BENZENE_MOL2 above, whose heavy-atom-only shape is
+# a deliberate simplification for the plain-parsing tests around it, and
+# would need `_to_rdkit()` to fall back to RDKit's implicit-valence H
+# filling (a fallback that only ever existed for hand-simplified test
+# fixtures like this one -- see molecule.py's `_to_rdkit()` docstring).
+BENZENE_MOL2_EXPLICIT_H = """\
+@<TRIPOS>MOLECULE
+benzene
+ 12 12 0 0 0
+SMALL
+bcc
+
+
+@<TRIPOS>ATOM
+      1 C1          1.2124    0.7000    0.0000 ca        1 LIG     -0.115000
+      2 C2          1.2124   -0.7000    0.0000 ca        1 LIG     -0.115000
+      3 C3          0.0000   -1.4000    0.0000 ca        1 LIG     -0.115000
+      4 C4         -1.2124   -0.7000    0.0000 ca        1 LIG     -0.115000
+      5 C5         -1.2124    0.7000    0.0000 ca        1 LIG     -0.115000
+      6 C6          0.0000    1.4000    0.0000 ca        1 LIG     -0.115000
+      7 H1          2.1552    1.2445    0.0000 ha        1 LIG      0.115000
+      8 H2          2.1552   -1.2445    0.0000 ha        1 LIG      0.115000
+      9 H3          0.0000   -2.4890    0.0000 ha        1 LIG      0.115000
+     10 H4         -2.1552   -1.2445    0.0000 ha        1 LIG      0.115000
+     11 H5         -2.1552    1.2445    0.0000 ha        1 LIG      0.115000
+     12 H6          0.0000    2.4890    0.0000 ha        1 LIG      0.115000
+@<TRIPOS>BOND
+     1     1     2 ar
+     2     2     3 ar
+     3     3     4 ar
+     4     4     5 ar
+     5     5     6 ar
+     6     6     1 ar
+     7     1     7 1
+     8     2     8 1
+     9     3     9 1
+    10     4    10 1
+    11     5    11 1
+    12     6    12 1
+@<TRIPOS>SUBSTRUCTURE
+     1 LIG         1 TEMP              0 ****  ****    0 ROOT
+"""
+
+
 # Test SDF content (simplified methane)
 METHANE_SDF = """\
 methane
@@ -93,9 +138,100 @@ class TestMoleculeFromMol2:
             
             # Check bond orders (aromatic -> 1)
             assert all(o == 1 for o in mol.bond_orders)
+
+            # Check aromaticity is tracked separately from bond_orders --
+            # this is what lets _to_rdkit() distinguish a real aromatic
+            # ring from a plain single-bonded (e.g. cyclohexane) ring.
+            assert all(mol.bond_aromatic)
         finally:
             Path(mol2_path).unlink()
-    
+
+    def test_to_rdkit_perceives_aromaticity(self):
+        """`_to_rdkit()` must round-trip TRIPOS "ar" bonds as real RDKit
+        aromaticity, not silently flatten them to a uniform-single-bonded
+        (non-aromatic) ring -- confirmed post-260820 audit as a real,
+        already-shipped bug affecting every existing `_to_rdkit()` caller
+        (e.g. `proxide.chem.partial_charges`), not just new code. Without
+        the fix, RDKit has no Kekule alternation to perceive aromaticity
+        from, and `assign_gaff2_atom_types` mistypes every ring carbon.
+        """
+        pytest.importorskip("rdkit")
+        from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+        with tempfile.NamedTemporaryFile(suffix=".mol2", mode="w", delete=False) as f:
+            f.write(BENZENE_MOL2_EXPLICIT_H)
+            mol2_path = f.name
+
+        try:
+            mol = Molecule.from_mol2(mol2_path)
+            rdmol = mol._to_rdkit()
+
+            ring_atoms = [a for a in rdmol.GetAtoms() if a.GetSymbol() == "C"]
+            assert all(atom.GetIsAromatic() for atom in ring_atoms)
+
+            types = assign_gaff2_atom_types(rdmol)
+            assert types == ["ca"] * 6 + ["ha"] * 6
+        finally:
+            Path(mol2_path).unlink()
+
+    def test_to_rdkit_does_not_fabricate_implicit_hydrogens_when_file_has_explicit_h(self):
+        """A real (explicit-hydrogen) mol2 lists every atom -- a terminal
+        heteroatom with fewer bonds than RDKit's default neutral valence
+        (e.g. a deprotonated carboxylate oxygen, single-bonded to its
+        carbon with no H record anywhere in the file) is charged, not
+        missing a real hydrogen. `_to_rdkit()` must not let RDKit's default
+        implicit-valence model silently invent one -- confirmed 260821 as
+        the actual cause of the geostd bulk-sample's two largest mismatch
+        buckets ("o"->"oh", "c"->"c3" on carboxylate-type groups): the
+        fabricated implicit H inflated the oxygen's degree from 1 to 2,
+        which fails GAFF2's `ATD o * 8 1 &` rule (connum must be exactly 1)
+        and falls through to the generic 2-connection "oh" rule instead.
+        Real antechamber never does this since it treats an ac/mol2 file's
+        atom list as complete.
+        """
+        pytest.importorskip("rdkit")
+
+        acetate_mol2 = """\
+@<TRIPOS>MOLECULE
+acetate
+ 7 6 0 0 0
+SMALL
+bcc
+
+
+@<TRIPOS>ATOM
+      1 C1          0.0000    0.0000    0.0000 c3        1 LIG      0.000000
+      2 H1          1.0000    0.0000    0.0000 hc        1 LIG      0.000000
+      3 H2         -0.5000    0.8660    0.0000 hc        1 LIG      0.000000
+      4 H3         -0.5000   -0.8660    0.0000 hc        1 LIG      0.000000
+      5 C2         -0.5000    0.0000    1.4000 c         1 LIG      0.700000
+      6 O1          0.2000    0.0000    2.3000 o         1 LIG     -0.700000
+      7 O2         -1.8000    0.0000    1.5000 o         1 LIG     -0.700000
+@<TRIPOS>BOND
+     1     1     2 1
+     2     1     3 1
+     3     1     4 1
+     4     1     5 1
+     5     5     6 1
+     6     5     7 1
+@<TRIPOS>SUBSTRUCTURE
+     1 LIG         1 TEMP              0 ****  ****    0 ROOT
+"""
+        with tempfile.NamedTemporaryFile(suffix=".mol2", mode="w", delete=False) as f:
+            f.write(acetate_mol2)
+            mol2_path = f.name
+
+        try:
+            mol = Molecule.from_mol2(mol2_path)
+            rdmol = mol._to_rdkit()
+            o1 = rdmol.GetAtomWithIdx(5)
+            o2 = rdmol.GetAtomWithIdx(6)
+            assert o1.GetSymbol() == "O" and o2.GetSymbol() == "O"
+            assert o1.GetDegree() == 1 and o1.GetTotalNumHs() == 0
+            assert o2.GetDegree() == 1 and o2.GetTotalNumHs() == 0
+        finally:
+            Path(mol2_path).unlink()
+
     def test_real_mol2_file(self):
         """Test parsing a real MOL2 file if available."""
         # Check if imatinib.mol2 exists

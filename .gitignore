@@ -17,6 +17,11 @@ pip-delete-this-directory.txt
 .coverage.*
 .cache
 nosetests.xml
+# AmberTools/antechamber-derived, GPL-licensed, deliberately not vendored --
+# fetched by scripts/fetch_amber_assets.py at dev-setup/CI time instead. See
+# that script's docstring and .praxia/docs/reference/260821_gaff2-rust-port-lessons.md
+# Open Item #3 for why.
+/src/proxide/assets/gaff/dat/ATOMTYPE_GFF2.DEF
 coverage.xml
 *.cover
 *.log

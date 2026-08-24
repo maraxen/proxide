@@ -9,6 +9,8 @@ members = [
     "crates/proxide-physics",
     "crates/proxide-io",
     "crates/proxide-gaff",
+    "crates/proxide-gaff2",
+    "crates/proxide-ligand-frame",
     "crates/proxide-units",
     "crates/proxide-wasm",
     "crates/proxide-rotlib",
@@ -36,6 +38,8 @@ proxide-geometry = { path = "crates/proxide-geometry", version = "0.1.0-alpha.15
 proxide-physics = { path = "crates/proxide-physics", version = "0.1.0-alpha.15" }
 proxide-io = { path = "crates/proxide-io", version = "0.1.0-alpha.15" }
 proxide-gaff = { path = "crates/proxide-gaff", version = "0.1.0-alpha.15" }
+proxide-gaff2 = { path = "crates/proxide-gaff2", version = "0.1.0-alpha.16" }
+proxide-ligand-frame = { path = "crates/proxide-ligand-frame", version = "0.1.0-alpha.16" }
 proxide-units = { path = "crates/proxide-units", version = "0.1.0-alpha.15" }
 proxide-rotlib = { path = "crates/proxide-rotlib", version = "0.1.0-alpha.15" }
 proxide-confind = { path = "crates/proxide-confind", version = "0.1.0-alpha.15" }

@@ -13,6 +13,11 @@ from proxide.chem.partial_charges import (
   assign_espaloma_charges_rdkit,
 )
 from proxide.chem.properties import assign_masses
+from proxide.chem.reference_frame import (
+  LigandFrameCoordinates,
+  LigandTopology,
+  build_ligand_reference_frame,
+)
 
 __all__ = [
   "assign_masses",
@@ -24,4 +29,7 @@ __all__ = [
   "CHI_SYMMETRY_CLASS",
   "get_chi_symmetry_class",
   "verify_four_distinct_atoms",
+  "LigandFrameCoordinates",
+  "LigandTopology",
+  "build_ligand_reference_frame",
 ]

@@ -271,8 +271,8 @@ mod tests {
         // frame is no longer its own nearest neighbour and every selection below is
         // suspect -- cheap to check, and it catches an inverted d0/l_norm convention.
         let q = helix(30, 0.0);
-        let scores = tm_scores_fixed_correspondence(&q.coords, &[q.coords.clone()])
-            .expect("valid input");
+        let scores =
+            tm_scores_fixed_correspondence(&q.coords, &[q.coords.clone()]).expect("valid input");
         assert_eq!(scores.len(), 1);
         assert!(
             (scores[0] - 1.0).abs() < 1e-4,
@@ -290,8 +290,7 @@ mod tests {
             .iter()
             .map(|p| p + Vector3::new(17.0, -4.0, 9.5))
             .collect();
-        let scores =
-            tm_scores_fixed_correspondence(&q.coords, &[shifted]).expect("valid input");
+        let scores = tm_scores_fixed_correspondence(&q.coords, &[shifted]).expect("valid input");
         assert!(
             (scores[0] - 1.0).abs() < 1e-4,
             "translated copy scored {} not 1.0",
@@ -326,8 +325,7 @@ mod tests {
         let q = helix(40, 0.0);
         let near = bent(&q, 1.0);
         let far = bent(&q, 12.0);
-        let scores =
-            tm_scores_fixed_correspondence(&q.coords, &[near, far]).expect("valid input");
+        let scores = tm_scores_fixed_correspondence(&q.coords, &[near, far]).expect("valid input");
         assert!(
             scores[0] > scores[1],
             "near ({}) should outrank far ({})",
@@ -341,8 +339,10 @@ mod tests {
         // Stronger than the ranking test: the metric must be monotone in the
         // deformation it is meant to measure, or "nearest" is not meaningful.
         let q = helix(40, 0.0);
-        let cands: Vec<Vec<Vector3<f32>>> =
-            [0.0f32, 1.0, 3.0, 6.0, 12.0].iter().map(|a| bent(&q, *a)).collect();
+        let cands: Vec<Vec<Vector3<f32>>> = [0.0f32, 1.0, 3.0, 6.0, 12.0]
+            .iter()
+            .map(|a| bent(&q, *a))
+            .collect();
         let scores = tm_scores_fixed_correspondence(&q.coords, &cands).expect("valid input");
         for w in scores.windows(2) {
             assert!(
@@ -391,8 +391,8 @@ mod tests {
         // than skipping redundant work.
         let q = helix(40, 0.0);
         let c = helix(40, 5.0);
-        let fast = tm_scores_fixed_correspondence(&q.coords, &[c.coords.clone()])
-            .expect("valid input")[0];
+        let fast =
+            tm_scores_fixed_correspondence(&q.coords, &[c.coords.clone()]).expect("valid input")[0];
         let full = tmalign_pair_serial(&q.coords, &c.coords).expect("valid input");
         assert!(
             (fast - full.tm_score_norm1).abs() < 0.05,

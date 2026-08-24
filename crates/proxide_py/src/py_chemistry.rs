@@ -13,7 +13,31 @@ pub fn assign_masses(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
     Ok(chem::masses::assign_masses(&atom_names))
 }
 
-/// Assign GAFF atom types to a structure (exposed to Python)
+/// Assign GAFF atom types to a structure (exposed to Python).
+///
+/// **Two structurally different implementations, selected at build time by
+/// the `gaff2-engine` Cargo feature** (off by default -- see this crate's
+/// Cargo.toml). This is not a stopgap; it is the deliberate outcome of the
+/// `gaff2-rust-port` Cutover decision
+/// (`.praxia/docs/reference/260821_gaff2-rust-port-lessons.md`): the real,
+/// geostd-corpus-validated GAFF2 engine (`proxide-gaff2`, 100% Rust-vs-Python
+/// match on 36,297 real ligands) is GPL-2.0-or-later (see
+/// `crates/proxide-gaff2/NOTICE`), and linking it into this crate's cdylib
+/// output makes the distributed `_proxider.so` wheel a GPL-encumbered
+/// combined work -- not acceptable as the *default* published build. Building
+/// with `--features gaff2-engine` opts into that tradeoff deliberately; the
+/// default build keeps `proxide-gaff`'s coordinate-only heuristic typer
+/// (MIT, unchanged behavior, but NOT a validated port of any reference
+/// implementation -- see that crate's own module docs).
+///
+/// The two variants also have genuinely different *signatures*, not just
+/// different bodies behind the same one: the heuristic path only ever had
+/// coordinates + elements to work with (bond order/aromaticity/rings were
+/// never available to it), while the real engine requires them -- retrofitting
+/// bond-order perception onto the coordinate-only path is a separate, unsolved
+/// problem (see the Cutover section's "input type cannot stay identical"
+/// finding), not something this cutover attempts.
+#[cfg(not(feature = "gaff2-engine"))]
 #[pyfunction]
 pub fn assign_gaff_atom_types(
     py: Python<'_>,
@@ -29,6 +53,76 @@ pub fn assign_gaff_atom_types(
     let types = proxide_gaff::gaff::assign_gaff_types(&elements, &topology, &gaff);
 
     Ok(types)
+}
+
+/// `1`/`2`/`3` -> Kekule bond order. Mirrors
+/// `proxide-gaff2::py_validation::bond_order_from_u8` exactly (this function
+/// supersedes that module's throwaway validation entrypoint as the real
+/// production binding; that module is left in place since
+/// `scripts/validation/gaff2_rust_parity.py` still builds against it
+/// independently of the full `proxide_py` dependency graph).
+#[cfg(feature = "gaff2-engine")]
+fn bond_order_from_u8(order: u8) -> Result<proxide_gaff2::mol::BondOrder, String> {
+    use proxide_gaff2::mol::BondOrder;
+    match order {
+        1 => Ok(BondOrder::Single),
+        2 => Ok(BondOrder::Double),
+        3 => Ok(BondOrder::Triple),
+        other => Err(format!(
+            "invalid bond order {other}: expected 1 (single), 2 (double), or 3 (triple) \
+             -- pass the true Kekule bond identity, not an aromatic/1.5 order"
+        )),
+    }
+}
+
+/// Real, validated GAFF2 atom typer (see the module-level doc comment above
+/// for why this is feature-gated). Caller contract mirrors
+/// `proxide-gaff2::py_validation::assign_gaff2_atom_types_rs` exactly:
+///
+/// - `elements: list[str]` -- element symbols, index-aligned atom order. H
+///   atoms must be explicit (`Chem.AddHs(mol)` on the caller's RDKit side
+///   first).
+/// - `bonds: list[tuple[int, int, int, bool]]` -- `(atom_i, atom_j,
+///   bond_order, is_aromatic)`, already Kekulized (`Chem.Kekulize(mol,
+///   clearAromaticFlags=False)` on the caller's side -- see
+///   `proxide-gaff2::orchestrate`'s module doc for why Kekulization must
+///   happen before this call, not inside it).
+/// - `formal_charges` / `rings`: optional; see
+///   `proxide-gaff2::mol::MolGraph::new`'s doc for the omission contract.
+///
+/// Returns one GAFF2 atom type per atom (including H), `"x"` (not `None`)
+/// for any atom no DEF rule matched -- this is a deliberate signature change
+/// from the pre-cutover `Vec<Option<String>>` contract (see the Cutover
+/// section's `"x"` sentinel note: a naive `if t:`-style Python check would
+/// silently treat `"x"` as truthy/matched).
+#[cfg(feature = "gaff2-engine")]
+#[pyfunction]
+#[pyo3(signature = (elements, bonds, formal_charges=None, rings=None))]
+pub fn assign_gaff_atom_types(
+    elements: Vec<String>,
+    bonds: Vec<(usize, usize, u8, bool)>,
+    formal_charges: Option<Vec<i8>>,
+    rings: Option<Vec<Vec<usize>>>,
+) -> PyResult<Vec<String>> {
+    use proxide_gaff2::mol::{Bond, MolGraph};
+
+    let bonds: Vec<Bond> = bonds
+        .into_iter()
+        .map(|(i, j, order, aromatic)| {
+            bond_order_from_u8(order).map(|order| Bond {
+                i,
+                j,
+                order,
+                aromatic,
+            })
+        })
+        .collect::<Result<_, String>>()
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+
+    let mol = MolGraph::new(elements, bonds, formal_charges, None, rings)
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+
+    proxide_gaff2::assign_gaff2_atom_types(&mol).map_err(pyo3::exceptions::PyValueError::new_err)
 }
 
 /// Assign intrinsic radii using the MBondi2 scheme
@@ -275,6 +369,212 @@ pub fn assign_espaloma_charges(
     });
 
     Ok(PyArray1::from_vec_bound(py, charges).into_py(py))
+}
+
+/// Opaque handle around a built `LigandTopology`, so
+/// `extract_ligand_frame_coordinates` can consume it without round-tripping
+/// through a dict (avoids the exact field-order bugs the spec's
+/// index-alignment contract warns against).
+#[cfg(feature = "ligand-frame")]
+#[pyclass]
+pub struct PyLigandTopology {
+    pub(crate) inner: proxide_ligand_frame::LigandTopology,
+}
+
+#[cfg(feature = "ligand-frame")]
+#[pymethods]
+impl PyLigandTopology {
+    #[getter]
+    fn ligand_id(&self) -> String {
+        self.inner.ligand_id.clone()
+    }
+    #[getter]
+    fn canonical_order(&self) -> Vec<usize> {
+        self.inner.canonical_order.clone()
+    }
+    #[getter]
+    fn elements(&self) -> Vec<String> {
+        self.inner.elements.clone()
+    }
+    #[getter]
+    fn atom_names(&self) -> Vec<String> {
+        self.inner.atom_names.clone()
+    }
+    #[getter]
+    fn gaff2_types(&self) -> Vec<String> {
+        self.inner.gaff2_types.clone()
+    }
+    #[getter]
+    fn formal_charges(&self) -> Vec<i8> {
+        self.inner.formal_charges.clone()
+    }
+    #[getter]
+    fn partial_charges(&self, py: Python<'_>) -> PyObject {
+        PyArray1::from_slice_bound(py, &self.inner.partial_charges).into_py(py)
+    }
+    #[getter]
+    fn aromaticity(&self) -> Vec<bool> {
+        self.inner.aromaticity.clone()
+    }
+    #[getter]
+    fn ring_membership(&self) -> Vec<Vec<usize>> {
+        self.inner.ring_membership.clone()
+    }
+    #[getter]
+    fn bonds(&self) -> Vec<(usize, usize, u8, bool, bool)> {
+        self.inner.bonds.clone()
+    }
+    #[getter]
+    fn torsion_definitions(&self) -> Vec<[usize; 4]> {
+        self.inner.torsion_definitions.clone()
+    }
+    #[getter]
+    fn pucker_definitions(&self) -> Vec<(Vec<usize>, usize)> {
+        self.inner
+            .pucker_definitions
+            .iter()
+            .map(|p| (p.ring_atoms.clone(), p.ring_size))
+            .collect()
+    }
+    #[getter]
+    fn unrepresented_ring_dof(&self) -> Vec<Vec<usize>> {
+        self.inner.unrepresented_ring_dof.clone()
+    }
+}
+
+/// PyO3 binding for `proxide_ligand_frame::canonicalize_ligand_topology`,
+/// gated the same way `assign_gaff_atom_types`'s real engine is
+/// (`#[cfg(feature = "gaff2-engine")]`), plus `ligand-frame`.
+#[cfg(feature = "ligand-frame")]
+#[pyfunction]
+#[pyo3(signature = (
+    ligand_id, elements, atom_names, bonds, bond_is_aromatic, rings,
+    formal_charges, ref_positions, espaloma_features, espaloma_senders,
+    espaloma_receivers, espaloma_total_charge
+))]
+#[allow(clippy::too_many_arguments)]
+pub fn canonicalize_ligand_topology(
+    py: Python<'_>,
+    ligand_id: String,
+    elements: Vec<String>,
+    atom_names: Vec<String>,
+    bonds: Vec<(usize, usize, u8, bool)>,
+    bond_is_aromatic: Vec<bool>,
+    rings: Vec<Vec<usize>>,
+    formal_charges: Option<Vec<i8>>,
+    ref_positions: PyObject,
+    espaloma_features: PyObject,
+    espaloma_senders: Vec<u32>,
+    espaloma_receivers: Vec<u32>,
+    espaloma_total_charge: f32,
+) -> PyResult<PyLigandTopology> {
+    let bonds_in: Vec<(usize, usize, u8)> = bonds
+        .iter()
+        .map(|&(i, j, order, _)| (i, j, order))
+        .collect();
+    let ref_positions = extract_coords(py, &ref_positions)?
+        .into_iter()
+        .map(|p| [p[0] as f64, p[1] as f64, p[2] as f64])
+        .collect::<Vec<_>>();
+
+    let feat_array = espaloma_features
+        .bind(py)
+        .downcast::<PyArray2<f32>>()
+        .map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err(
+                "espaloma_features must be a 2D float32 numpy array",
+            )
+        })?;
+    let binding = feat_array.readonly();
+    let feat_view = binding.as_array();
+    if feat_view.shape()[1] != chem::inference::FEATURE_UNITS {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "espaloma_features must have {} columns, got {}",
+            chem::inference::FEATURE_UNITS,
+            feat_view.shape()[1]
+        )));
+    }
+    let n_atoms = feat_view.shape()[0];
+    let mut features = vec![[0.0f32; chem::inference::FEATURE_UNITS]; n_atoms];
+    for i in 0..n_atoms {
+        for j in 0..chem::inference::FEATURE_UNITS {
+            features[i][j] = feat_view[[i, j]];
+        }
+    }
+
+    let inner = proxide_ligand_frame::canonicalize_ligand_topology(
+        &ligand_id,
+        &elements,
+        &atom_names,
+        &bonds_in,
+        &bond_is_aromatic,
+        &rings,
+        formal_charges.as_deref(),
+        &ref_positions,
+        &features,
+        &espaloma_senders,
+        &espaloma_receivers,
+        espaloma_total_charge,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+    Ok(PyLigandTopology { inner })
+}
+
+/// PyO3 binding for `proxide_ligand_frame::extract_ligand_frame_coordinates`.
+#[cfg(feature = "ligand-frame")]
+#[pyfunction]
+pub fn extract_ligand_frame_coordinates(
+    py: Python<'_>,
+    topology: &PyLigandTopology,
+    positions: PyObject,
+    input_elements: Vec<String>,
+) -> PyResult<PyObject> {
+    let pos_array = positions
+        .bind(py)
+        .downcast::<numpy::PyArray3<f64>>()
+        .map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err(
+                "positions must be a (n_frames, n_atoms, 3) float64 numpy array",
+            )
+        })?;
+    let binding = pos_array.readonly();
+    let view = binding.as_array();
+    let (n_frames, n_atoms) = (view.shape()[0], view.shape()[1]);
+    let mut frames = Vec::with_capacity(n_frames);
+    for f in 0..n_frames {
+        let mut frame = vec![[0.0f64; 3]; n_atoms];
+        for a in 0..n_atoms {
+            frame[a] = [view[[f, a, 0]], view[[f, a, 1]], view[[f, a, 2]]];
+        }
+        frames.push(frame);
+    }
+
+    let coords = proxide_ligand_frame::extract_ligand_frame_coordinates(
+        &topology.inner,
+        &frames,
+        &input_elements,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+    let dict = PyDict::new_bound(py);
+    let mut flat = Vec::with_capacity(n_frames * n_atoms * 3);
+    for frame in &coords.positions {
+        for p in frame {
+            flat.extend_from_slice(p);
+        }
+    }
+    let pos_out = PyArray1::from_vec_bound(py, flat)
+        .reshape((n_frames, n_atoms, 3))
+        .unwrap();
+    dict.set_item("positions", pos_out)?;
+    dict.set_item("torsions", &coords.torsions)?;
+    dict.set_item("feature_mask", &coords.feature_mask)?;
+    dict.set_item("frame_validity", &coords.frame_validity)?;
+    dict.set_item("pucker_phase", &coords.pucker_phase)?;
+    dict.set_item("bond_lengths", &coords.bond_lengths)?;
+    dict.set_item("bond_angles", &coords.bond_angles)?;
+    Ok(dict.into_py(py))
 }
 
 pub(crate) fn extract_coords(py: Python<'_>, obj: &PyObject) -> PyResult<Vec<[f32; 3]>> {

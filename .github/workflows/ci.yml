@@ -60,6 +60,10 @@ jobs:
         run: |
           source .venv/bin/activate
           uv pip install .[dev]
+      - name: Fetch AmberTools/antechamber assets (not vendored in git)
+        run: |
+          source .venv/bin/activate
+          python scripts/fetch_amber_assets.py
       - name: Run Smoke Tests
         run: |
           source .venv/bin/activate
@@ -81,6 +85,19 @@ jobs:
       HDF5_USE_FILE_LOCKING: "FALSE"
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch AmberTools/antechamber assets (not vendored in git)
+        # Kept as a raw curl+digest-verify step (rather than
+        # scripts/fetch_amber_assets.py) because this job's Python setup
+        # step runs late (only needed for numpy), well after the Rust steps
+        # below that compile crates/proxide-gaff2 and need this file
+        # present first. Ref + digest here MUST stay in sync with
+        # scripts/fetch_amber_assets.py's ASSETS list -- see that script's
+        # docstring for why this file is fetched, not committed.
+        run: |
+          mkdir -p src/proxide/assets/gaff/dat
+          curl -sSL -o src/proxide/assets/gaff/dat/ATOMTYPE_GFF2.DEF \
+            https://raw.githubusercontent.com/Amber-MD/AmberClassic/20e92d4b44e84cc0ca84bdf7f640eba0c1d1f2ed/dat/antechamber/ATOMTYPE_GFF2.DEF
+          echo "7a076ac2e667ab87057befc7a5985be4cead83e01ff5d2d3dab9f1d65bff637e  src/proxide/assets/gaff/dat/ATOMTYPE_GFF2.DEF" | sha256sum -c -
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:

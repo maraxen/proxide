@@ -488,6 +488,214 @@ def test_naphthalene_bridgehead_confirmed_by_external_reference() -> None:
     )
 
 
+def test_fused_bicyclic_lone_pair_donor_not_promoted_to_ar1() -> None:
+    """A fused 6+5-ring system whose bridgehead nitrogen has zero double
+    bonds anywhere (a pyrrole-type lone-pair donor, e.g. pyrazolo[3,4-d]
+    pyrimidine-like scaffolds) must NOT be promoted to AR1 (`ca`/`nb`/`cp`)
+    just because RDKit's own aromaticity perception marks the ring
+    aromatic -- confirmed 260820 against real geostd ligand V6X (a real
+    antechamber-typed structure), whose fused ring core reproduced here
+    (bridgeheads `e`/`f`) is typed `cc`/`cd`/`nd`/`na` throughout, matching
+    the DEF footer's own AR2 prose ("usually the ring has two continuous
+    single bonds"). Before the `_ring_has_lone_pair_donor` fix, RDKit's
+    Kekulization placed a double bond on every ring atom except the
+    lone-pair nitrogen, and the six-ring's exocyclic-multibond check alone
+    (ported for 2-pyranone) didn't catch it -- every atom in both rings was
+    wrongly promoted to `ca`/`nb`, and the biphenyl-type `cp` rule then
+    misfired on any real aromatic ring linked to this one by a single bond
+    (since its bridgehead neighbors looked AR1 too).
+
+    The fix must also NOT demote genuinely fused all-carbon aromatics like
+    naphthalene (see `test_naphthalene_bridgehead_confirmed_by_external_
+    reference` immediately above) -- naphthalene's bridgeheads have a real
+    double bond in one of their two rings even when RDKit's Kekulization
+    places the shared bridge bond as formally single, so checking each ring
+    atom's bonds molecule-wide (not just its two bonds internal to the ring
+    under test) is required to tell the two cases apart.
+    """
+    from rdkit import Chem
+
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.RWMol()
+    idx = {}
+    for name, sym in [
+        ("a", "C"), ("b", "C"), ("c", "N"), ("d", "C"), ("e", "C"),
+        ("g", "N"), ("h", "C"), ("i", "C"), ("f", "N"),
+    ]:
+        idx[name] = mol.AddAtom(Chem.Atom(sym))
+
+    bonds = [
+        ("a", "b", Chem.BondType.DOUBLE),
+        ("b", "c", Chem.BondType.SINGLE),
+        ("c", "d", Chem.BondType.DOUBLE),
+        ("d", "e", Chem.BondType.SINGLE),
+        ("e", "f", Chem.BondType.SINGLE),  # shared bridgehead edge
+        ("f", "a", Chem.BondType.SINGLE),
+        ("e", "g", Chem.BondType.DOUBLE),
+        ("g", "h", Chem.BondType.SINGLE),
+        ("h", "i", Chem.BondType.DOUBLE),
+        ("i", "f", Chem.BondType.SINGLE),
+    ]
+    for x, y, bt in bonds:
+        mol.AddBond(idx[x], idx[y], bt)
+
+    m = mol.GetMol()
+    Chem.SanitizeMol(m)
+    m = Chem.AddHs(m)
+
+    types = assign_gaff2_atom_types(m)
+    names = ["a", "b", "c", "d", "e", "g", "h", "i", "f"]
+    heavy = {n: t for n, atom, t in zip(names, m.GetAtoms(), types) if atom.GetAtomicNum() != 1}
+
+    # Real ground-truth types from geostd ligand V6X's identical ring core.
+    expected = {
+        "a": "cc", "b": "cd", "c": "nd", "d": "cc", "e": "cc",
+        "g": "nd", "h": "cd", "i": "cc", "f": "na",
+    }
+    assert heavy == expected, f"got {heavy}, expected {expected} (matches real V6X reference)"
+
+
+def test_atadjust_reseed_is_pass_scoped_not_per_component() -> None:
+    """`_relabel_conjugated_alternation` must reproduce real AmberTools'
+    `atadjust()` (`atomtype.c`) exactly, including its non-obvious
+    correctness bug: the reseed that starts coloring a new disconnected
+    family component is gated by a single `flag` that resets only once per
+    OUTER PASS, not once per component -- so at most one new component can
+    be reseeded per pass, and propagation within a pass uses already-
+    updated values from earlier bonds in the SAME pass (Gauss-Seidel, not
+    Jacobi). A naive "2-color each connected component independently via
+    BFS" implementation is NOT equivalent to this and silently disagrees
+    with real antechamber whenever bond file order causes one component's
+    propagation to consume the reseed slot before another component is
+    reached in an early pass.
+
+    Confirmed 260821 by compiling real `atomtype`/`bondtype`
+    (`Amber-MD/AmberClassic`, `src/antechamber/{atomtype,bondtype}.c`)
+    standalone from source and running them on real geostd ligand X4Q: the
+    compiled reference reproduces X4Q's own stored ground truth exactly
+    (and even emits antechamber's own self-diagnostic "atom type ... may be
+    wrong" warning for the one bond where the coloring is locally
+    inconsistent -- confirming real antechamber does NOT guarantee global
+    consistency here, and this port must not try to be "more correct" than
+    what it's reproducing).
+
+    This test reproduces X4Q's minimal fused 6+5-ring cc/cd/nc/nd core
+    (bridgehead nitrogen `x` excluded from the family, mirroring real N24):
+    a single connected chain a-b-c-d-e-f-g-h that a plain independent-BFS
+    2-coloring gets half right, half wrong (matches on a/b/c/d, flips
+    e/f/g/h) -- because bond file order causes the real algorithm to
+    effectively re-seed at `g` partway through, which a naive single-BFS
+    traversal cannot reproduce since the molecule LOOKS fully connected.
+    """
+    from rdkit import Chem
+
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.RWMol()
+    idx = {}
+    for name, sym in [
+        ("a", "C"), ("b", "C"), ("c", "C"), ("d", "N"), ("e", "C"),
+        ("f", "C"), ("g", "C"), ("h", "N"), ("x", "N"),
+    ]:
+        idx[name] = mol.AddAtom(Chem.Atom(sym))
+
+    # Bond ADD order mirrors X4Q's real mol2 bond-file order for this core
+    # (bonds 11, 12, 25, 26, 36, 38, 39, 40, 41, 53) -- order matters here,
+    # it is what the real algorithm's reseed timing depends on.
+    bonds = [
+        ("a", "b", Chem.BondType.DOUBLE),
+        ("a", "x", Chem.BondType.SINGLE),
+        ("g", "f", Chem.BondType.SINGLE),
+        ("g", "h", Chem.BondType.DOUBLE),
+        ("f", "e", Chem.BondType.DOUBLE),
+        ("e", "d", Chem.BondType.SINGLE),
+        ("e", "x", Chem.BondType.SINGLE),
+        ("c", "b", Chem.BondType.SINGLE),
+        ("c", "d", Chem.BondType.DOUBLE),
+        ("h", "x", Chem.BondType.SINGLE),
+    ]
+    for x, y, bt in bonds:
+        mol.AddBond(idx[x], idx[y], bt)
+
+    m = mol.GetMol()
+    Chem.SanitizeMol(m)
+    m = Chem.AddHs(m)
+
+    types = assign_gaff2_atom_types(m)
+    names = ["a", "b", "c", "d", "e", "f", "g", "h", "x"]
+    heavy = {n: t for n, atom, t in zip(names, m.GetAtoms(), types) if atom.GetAtomicNum() != 1}
+
+    # Real ground-truth types from geostd ligand X4Q's identical core
+    # (a..h = C15/C14/C07/N06/C05/C04/C26/N25; x = bridgehead N24).
+    expected = {
+        "a": "cc", "b": "cd", "c": "cd", "d": "nc", "e": "cd",
+        "f": "cc", "g": "cc", "h": "nd", "x": "na",
+    }
+    assert heavy == expected, f"got {heavy}, expected {expected} (matches real X4Q reference)"
+
+
+def test_ar23_classification_is_not_gated_on_rdkit_aromaticity() -> None:
+    """A genuinely non-aromatic (by RDKit's Huckel-based perception) but
+    planar, conjugated ring must still be classified AR2/AR3 for GAFF2's
+    "ring" (`cc`/`cd`, AR2-or-AR3-requiring) vs "chain" (`ce`/`cf`, no AR
+    requirement) sp2-carbon distinction -- confirmed 260821 against real
+    geostd ligand 679: a maleimide-like 5-ring (one internal C=C flanked
+    by two exocyclic C=O groups on the ring's other two carbons, bridged by
+    a ring N-H) is real antechamber's AR3 ("planar ring formed by 'outside'
+    double bonds", `ring.c`'s own algorithm, entirely independent of
+    Huckel aromaticity), but RDKit's own aromaticity perception correctly
+    does NOT mark this ring aromatic (it genuinely isn't a 4n+2 pi system).
+
+    Before the `_classify_ring_aromaticity` fix, AR1/AR2/AR3 classification
+    was gated on `atom.GetIsAromatic()`, so this ring's atoms got no AR
+    class at all and silently fell through `cc`'s `[sb,db,AR2/AR3]`
+    requirement to the "chain" `ce`/`cf` rules instead -- this exact
+    signature (`cc`->`ce`, `cd`->`cf`) was the single largest remaining
+    mismatch cluster in the geostd bulk sample (84 atoms) and dropped to
+    ~0 once this fix landed (full re-sample: 98.06% -> 99.45%).
+    """
+    from rdkit import Chem
+
+    from proxide.chem.gaff2 import assign_gaff2_atom_types
+
+    mol = Chem.RWMol()
+    idx = {}
+    for name, sym in [
+        ("p", "C"), ("q", "C"), ("r", "C"), ("s", "C"), ("t", "N"),
+        ("o_r", "O"), ("o_s", "O"),
+    ]:
+        idx[name] = mol.AddAtom(Chem.Atom(sym))
+
+    bonds = [
+        ("p", "q", Chem.BondType.DOUBLE),   # the "ene" double bond, cc=cd
+        ("p", "s", Chem.BondType.SINGLE),   # closes the 5-ring
+        ("q", "r", Chem.BondType.SINGLE),
+        ("r", "t", Chem.BondType.SINGLE),
+        ("t", "s", Chem.BondType.SINGLE),
+        ("r", "o_r", Chem.BondType.DOUBLE),  # exocyclic carbonyl
+        ("s", "o_s", Chem.BondType.DOUBLE),  # exocyclic carbonyl
+    ]
+    for x, y, bt in bonds:
+        mol.AddBond(idx[x], idx[y], bt)
+
+    m = mol.GetMol()
+    Chem.SanitizeMol(m)
+    assert not m.GetAtomWithIdx(idx["p"]).GetIsAromatic(), (
+        "test precondition: this ring must NOT be RDKit-aromatic -- if RDKit "
+        "starts perceiving it as aromatic, this test no longer exercises the "
+        "AR2/AR3-without-Huckel-aromaticity code path it's designed for."
+    )
+    m = Chem.AddHs(m)
+
+    types = assign_gaff2_atom_types(m)
+    names = ["p", "q", "r", "s", "t", "o_r", "o_s"]
+    heavy = {n: t for n, atom, t in zip(names, m.GetAtoms(), types) if atom.GetAtomicNum() != 1}
+
+    assert heavy["p"] == "cc", f"got {heavy['p']}, expected cc (matches real 679 C8)"
+    assert heavy["q"] == "cd", f"got {heavy['q']}, expected cd (matches real 679 C9)"
+
+
 class TestGaff2Grammar:
     """Direct unit tests for the f8/f9 DEF-grammar parser, independent of RDKit."""
 

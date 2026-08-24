@@ -161,6 +161,26 @@ pub fn dihedral_angle_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3], d: &[f64; 3]
     y.atan2(x)
 }
 
+/// Compute the angle between three points (A, B, C) using f64 precision.
+/// Returns angle at B in radians. f64 counterpart of [`bond_angle`], for
+/// callers (e.g. ligand bond-angle extraction) that need MDTraj-parity
+/// precision throughout.
+pub fn bond_angle_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> f64 {
+    let ba = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let bc = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
+
+    let dot_product = dot_f64(&ba, &bc);
+    let mag_ba = magnitude_f64(&ba);
+    let mag_bc = magnitude_f64(&bc);
+
+    if mag_ba < 1e-12 || mag_bc < 1e-12 {
+        return 0.0;
+    }
+
+    let cos_angle = (dot_product / (mag_ba * mag_bc)).clamp(-1.0, 1.0);
+    cos_angle.acos()
+}
+
 /// High-precision backbone dihedrals
 #[derive(Debug, Clone, Copy)]
 pub struct BackboneDihedrals64 {
@@ -277,6 +297,15 @@ mod tests {
 
         let angle = bond_angle(&a, &b, &c);
         assert!((angle - PI / 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_bond_angle_f64_matches_f32_precision() {
+        let a = [1.0, 0.0, 0.0];
+        let b = [0.0, 0.0, 0.0];
+        let c = [0.0, 1.0, 0.0];
+        let angle = bond_angle_f64(&a, &b, &c);
+        assert!((angle - PI_F64 / 2.0).abs() < 1e-9);
     }
 
     #[test]
