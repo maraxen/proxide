@@ -34,6 +34,7 @@ from proxide._proxider import (  # ty: ignore[unresolved-import]
   get_water_model,
   # Geometry
   kabsch_rmsd,
+  kabsch_rmsd_batch,
   # Force fields
   load_forcefield,
   n_atoms,
@@ -88,6 +89,7 @@ __all__ = [
   "radius_of_gyration",
   "weighted_radius_of_gyration",
   "kabsch_rmsd",
+  "kabsch_rmsd_batch",
   # HDF5
   "parse_mdtraj_h5_metadata",
   "parse_mdtraj_h5_frame",

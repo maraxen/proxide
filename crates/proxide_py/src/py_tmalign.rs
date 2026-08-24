@@ -2,10 +2,11 @@
 //! alignment between two Cα coordinate sets.
 
 use nalgebra::Vector3;
-use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray2};
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray2, PyReadonlyArray3};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+use proxide_tmalign::parallel::tm_scores_fixed_correspondence as tm_scores_fixed_rs;
 use proxide_tmalign::pipeline::tmalign_pair_serial;
 
 fn to_vector3_coords(arr: &PyReadonlyArray2<'_, f32>) -> PyResult<Vec<Vector3<f32>>> {
@@ -70,4 +71,67 @@ pub fn tm_align(
     dict.set_item("tm_score_norm2", result.tm_score_norm2)?;
     dict.set_item("n_aligned", result.n_aligned)?;
     Ok(dict.into_py(py))
+}
+
+/// TM-scores of one query conformation against many same-topology candidates.
+///
+/// `query` is `(n_res, 3)` float32 Cα positions (Å); `candidates` is
+/// `(n_frames, n_res, 3)`. Returns `(n_frames,)` float32 TM-scores, each
+/// normalized by `n_res`, so a candidate identical to the query scores `1.0`.
+///
+/// The residue correspondence is taken to be the **identity** — residue `i` of
+/// the query corresponds to residue `i` of every candidate. That is what makes
+/// this O(n_frames) rather than O(n_frames) full alignment searches: for frames
+/// of one MD trajectory the correspondence is already known, and rediscovering
+/// it costs far more than the scoring it feeds. Use [`tm_align`] instead when
+/// the correspondence is genuinely unknown (different constructs, different
+/// lengths, unknown residue ordering).
+///
+/// Every candidate must have exactly `n_res` residues; a mismatch raises
+/// `ValueError` rather than being padded or truncated around, since silently
+/// comparing residue `i` to a different residue would still return a plausible
+/// number.
+///
+/// Non-finite coordinates are rejected, as in [`tm_align`]: callers holding a
+/// partially-observed structure must select the shared residues explicitly
+/// rather than relying on NaN to propagate.
+#[pyfunction]
+pub fn tm_scores_fixed_correspondence(
+    py: Python<'_>,
+    query: PyReadonlyArray2<'_, f32>,
+    candidates: PyReadonlyArray3<'_, f32>,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let q = to_vector3_coords(&query)?;
+
+    let cview = candidates.as_array();
+    let shape = cview.shape();
+    if shape[2] != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "expected an (n_frames, n_res, 3) candidate array, got shape {shape:?}"
+        )));
+    }
+    if let Some(bad) = cview.iter().find(|v| !v.is_finite()) {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "candidate array contains a non-finite value ({bad}); NaN/Inf coordinates \
+             would silently corrupt the score instead of erroring"
+        )));
+    }
+
+    let cands: Vec<Vec<Vector3<f32>>> = (0..shape[0])
+        .map(|f| {
+            (0..shape[1])
+                .map(|r| Vector3::new(cview[[f, r, 0]], cview[[f, r, 1]], cview[[f, r, 2]]))
+                .collect()
+        })
+        .collect();
+
+    let scores = py
+        .allow_threads(|| tm_scores_fixed_rs(&q, &cands))
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "tm_scores_fixed_correspondence failed: {e}"
+            ))
+        })?;
+
+    Ok(PyArray1::from_vec_bound(py, scores).unbind())
 }

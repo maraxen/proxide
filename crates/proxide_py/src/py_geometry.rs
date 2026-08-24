@@ -78,3 +78,91 @@ pub fn kabsch_rmsd(py: Python<'_>, coords_a: PyObject, coords_b: PyObject) -> Py
     )?;
     Ok(dict.into_py(py))
 }
+
+/// Kabsch RMSD of one query conformation against many same-topology candidates.
+///
+/// `query` is `(n_res, 3)` float32; `candidates` is `(n_frames, n_res, 3)`.
+/// Returns `(n_frames,)` float32 RMSDs in the input's units (Å for coordinates
+/// read from a PDB or XTC), each computed after optimal superposition, so a
+/// candidate related to the query by any rigid motion scores `0.0`.
+///
+/// The batch form exists because the motivating use -- selecting the frame of an
+/// MD trajectory nearest a given conformation -- calls this once per frame, and a
+/// Python-level loop over `kabsch_rmsd` pays per-call conversion overhead on
+/// every one of a five-figure number of frames. The correspondence is the
+/// identity (residue `i` to residue `i`), matching
+/// `tm_scores_fixed_correspondence`; a length mismatch is an error rather than
+/// something to pad around.
+///
+/// Non-finite coordinates are rejected. `kabsch_rmsd` returns `inf` on degenerate
+/// input rather than raising, and that is preserved here per-candidate -- an
+/// `inf` entry means that frame's superposition was degenerate, not that the
+/// batch failed.
+#[pyfunction]
+pub fn kabsch_rmsd_batch(
+    py: Python<'_>,
+    query: numpy::PyReadonlyArray2<'_, f32>,
+    candidates: numpy::PyReadonlyArray3<'_, f32>,
+) -> PyResult<Py<numpy::PyArray1<f32>>> {
+    use numpy::PyArray1;
+
+    let qview = query.as_array();
+    if qview.shape()[1] != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "expected an (n_res, 3) query array, got shape {:?}",
+            qview.shape()
+        )));
+    }
+    let n_res = qview.shape()[0];
+    if n_res == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "query has no residues",
+        ));
+    }
+    if let Some(bad) = qview.iter().find(|v| !v.is_finite()) {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "query contains a non-finite value ({bad}); select the observed residues \
+             explicitly rather than relying on NaN to propagate"
+        )));
+    }
+
+    let cview = candidates.as_array();
+    let shape = cview.shape();
+    if shape[2] != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "expected an (n_frames, n_res, 3) candidate array, got shape {shape:?}"
+        )));
+    }
+    if shape[1] != n_res {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "expected {n_res} residues to match the query's topology, found {}",
+            shape[1]
+        )));
+    }
+    if let Some(bad) = cview.iter().find(|v| !v.is_finite()) {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "candidate array contains a non-finite value ({bad}); NaN/Inf coordinates \
+             would silently corrupt the superposition instead of erroring"
+        )));
+    }
+
+    let q: Vec<[f32; 3]> = (0..n_res)
+        .map(|r| [qview[[r, 0]], qview[[r, 1]], qview[[r, 2]]])
+        .collect();
+    let cands: Vec<Vec<[f32; 3]>> = (0..shape[0])
+        .map(|f| {
+            (0..n_res)
+                .map(|r| [cview[[f, r, 0]], cview[[f, r, 1]], cview[[f, r, 2]]])
+                .collect()
+        })
+        .collect();
+
+    let out: Vec<f32> = py.allow_threads(|| {
+        cands
+            .iter()
+            .map(|c| proxide_geometry::geometry::rmsd::rmsd_with_centering(&q, c).rmsd)
+            .collect()
+    });
+
+    Ok(PyArray1::from_vec_bound(py, out).unbind())
+}

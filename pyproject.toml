@@ -118,6 +118,7 @@ include = [
 markers = [
     "smoke: marks tests as smoke tests (fast and critical)",
     "espaloma: needs expaloma (JAX) + rdkit; run with pytest -m espaloma",
+    "ligand_frame: needs proxide built with --features ligand-frame; run with pytest -m ligand_frame",
 ]
 
 [tool.ruff]
@@ -175,6 +176,21 @@ include = ["src/proxide/core/projector.py"]
 unresolved-import = "ignore"
 unresolved-attribute = "ignore"
 unsupported-operator = "ignore"
+
+# `canonicalize_ligand_topology`/`extract_ligand_frame_coordinates` are
+# PyO3 bindings gated behind the `ligand-frame` Cargo feature (see
+# `crates/proxide_py/src/py_chemistry.rs`'s `#[cfg(feature = "ligand-frame")]`),
+# exposed on the compiled `proxide._proxider` extension module with no
+# `.pyi` stub -- ty has no way to see them regardless of whether the
+# feature was built in. Same root cause as the `_proxider` imports already
+# tolerated in the override below (gaff2.py/partial_charges.py/molecule.py),
+# just not folded into that block since this one isn't about optional
+# rdkit/expaloma imports.
+[[tool.ty.overrides]]
+include = ["src/proxide/chem/reference_frame.py"]
+
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
 
 # `Protein` (proxide.core.containers) is a flax.struct.dataclass whose
 # coulomb14scale/lj14scale fields have `default=None` via

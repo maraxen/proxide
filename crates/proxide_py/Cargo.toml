@@ -26,6 +26,9 @@ proxide-gaff = { workspace = true }
 # `assign_gaff_atom_types` in src/py_chemistry.rs and
 # .praxia/docs/reference/260821_gaff2-rust-port-lessons.md's Cutover section.
 proxide-gaff2 = { workspace = true, optional = true }
+# Optional, same GPL-linking rationale as proxide-gaff2 above -- this crate
+# unconditionally depends on proxide-gaff2 itself.
+proxide-ligand-frame = { workspace = true, optional = true }
 proxide-geometry = { workspace = true }
 proxide-jaccard = { workspace = true }
 proxide-tmalign = { workspace = true }
@@ -48,3 +51,7 @@ full = ["fetching", "hdf5", "xtc", "parallel", "foldcomp"]
 # Deliberately excluded from `full`/`default` -- see the proxide-gaff2
 # dependency comment above.
 gaff2-engine = ["dep:proxide-gaff2"]
+# Requires gaff2-engine too: whoever opts into the real reference-frame
+# builder should get the real (non-heuristic) GAFF2 typer wired into
+# assign_gaff_atom_types as well, not just the MIT heuristic default.
+ligand-frame = ["dep:proxide-ligand-frame", "gaff2-engine"]

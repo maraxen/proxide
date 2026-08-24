@@ -1,4 +1,4 @@
-# gaff2-rust-port Internal Docs
+# ligand-reference-frame Internal Docs
 
 ## Daily
 
@@ -35,6 +35,7 @@
 ## Actuation Surfaces
 
 ## Audits
+- [260824_ligand-reference-frame-final-review](audits/260824_ligand-reference-frame-final-review.md) — Final review verdict and disposition for the 10-task proxide-ligand-frame implementation plan (branch feat/ligand-reference-frame-spec)
 - [260820_gaff2-parity-verdict](audits/260820_gaff2-parity-verdict.md) — Phase 5 graded verdict (PARITY, as of the PR
 
 ## Research
