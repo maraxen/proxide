@@ -2,7 +2,9 @@
 //! (spec §3, closes Finding 5 and Finding 15).
 
 use nalgebra::DMatrix;
-use proxide_core::chem::inference::{infer_charges, EspalomaWeights, EMBEDDED_WEIGHTS, FEATURE_UNITS};
+use proxide_core::chem::inference::{
+    infer_charges, EspalomaWeights, EMBEDDED_WEIGHTS, FEATURE_UNITS,
+};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -116,8 +118,14 @@ mod tests {
         let a = vec![[0.0, 0.0, 0.0], [1.089, 0.0, 0.0]];
         let a_plus_noise = vec![[0.0, 0.0, 0.0], [1.089_000_000_1, 0.0, 0.0]];
         let b_moved = vec![[0.0, 0.0, 0.0], [1.10, 0.0, 0.0]];
-        assert_eq!(compute_ref_frame_geometry_hash(&a), compute_ref_frame_geometry_hash(&a_plus_noise));
-        assert_ne!(compute_ref_frame_geometry_hash(&a), compute_ref_frame_geometry_hash(&b_moved));
+        assert_eq!(
+            compute_ref_frame_geometry_hash(&a),
+            compute_ref_frame_geometry_hash(&a_plus_noise)
+        );
+        assert_ne!(
+            compute_ref_frame_geometry_hash(&a),
+            compute_ref_frame_geometry_hash(&b_moved)
+        );
     }
 
     /// Load-bearing regression test for Finding 5: same graph, different

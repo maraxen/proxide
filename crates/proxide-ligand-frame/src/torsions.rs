@@ -3,7 +3,12 @@
 //! definitions (spec §2). Operates in canonical index space -- "highest
 //! canonical rank" reduces to "largest canonical index."
 
-fn heavy_degree_excluding(elements: &[String], adjacency: &[Vec<usize>], atom: usize, exclude: usize) -> usize {
+fn heavy_degree_excluding(
+    elements: &[String],
+    adjacency: &[Vec<usize>],
+    atom: usize,
+    exclude: usize,
+) -> usize {
     adjacency[atom]
         .iter()
         .filter(|&&nb| nb != exclude && elements[nb] != "H")
@@ -12,7 +17,10 @@ fn heavy_degree_excluding(elements: &[String], adjacency: &[Vec<usize>], atom: u
 
 /// `bonds`: canonical-index `(i, j, order, is_aromatic)`. Returns one flag
 /// per bond, aligned by position (index-alignment contract, spec §4).
-pub fn detect_restricted_rotation(elements: &[String], bonds: &[(usize, usize, u8, bool)]) -> Vec<bool> {
+pub fn detect_restricted_rotation(
+    elements: &[String],
+    bonds: &[(usize, usize, u8, bool)],
+) -> Vec<bool> {
     let n = elements.len();
     let mut adjacency: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n]; // (neighbor, bond_idx)
     for (b_idx, &(i, j, _, _)) in bonds.iter().enumerate() {
@@ -106,7 +114,10 @@ mod tests {
     #[test]
     fn amide_bond_is_flagged_restricted_plain_single_bond_is_not() {
         // O=C(0)-N(2), C(0)-C(1) also present (plain single bond).
-        let elements = vec!["O", "C", "N", "C"].into_iter().map(String::from).collect::<Vec<_>>();
+        let elements = vec!["O", "C", "N", "C"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
         let bonds = vec![(0, 1, 2u8, false), (1, 2, 1, false), (1, 3, 1, false)];
         let flags = detect_restricted_rotation(&elements, &bonds);
         assert_eq!(flags, vec![false, true, false]);
@@ -115,7 +126,10 @@ mod tests {
     #[test]
     fn terminal_methyl_bond_excluded_from_torsions() {
         // C(0)-C(1), C(1)'s only heavy neighbor besides C(0) is none (methyl).
-        let elements = vec!["C", "C", "H", "H", "H"].into_iter().map(String::from).collect::<Vec<_>>();
+        let elements = vec!["C", "C", "H", "H", "H"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
         let bonds = vec![
             (0, 1, 1u8, false, false),
             (1, 2, 1, false, false),
@@ -131,7 +145,10 @@ mod tests {
         // Central bond 0-1; atom 0 also bonded to heavy atoms 2 and 5
         // (5 > 2, so 5 is the deterministic branch atom); atom 1 bonded to
         // heavy atom 3.
-        let elements = vec!["C"; 6].into_iter().map(String::from).collect::<Vec<_>>();
+        let elements = vec!["C"; 6]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
         let bonds = vec![
             (0, 1, 1u8, false, false),
             (0, 2, 1, false, false),
@@ -145,7 +162,10 @@ mod tests {
     #[test]
     fn ring_bond_excluded_even_when_not_aromatic() {
         // Cyclohexane-like: 6 carbons in a ring, all single, non-aromatic.
-        let elements = vec!["C"; 6].into_iter().map(String::from).collect::<Vec<_>>();
+        let elements = vec!["C"; 6]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
         let bonds: Vec<(usize, usize, u8, bool, bool)> = (0..6)
             .map(|i| (i, (i + 1) % 6, 1u8, false, false))
             .collect();

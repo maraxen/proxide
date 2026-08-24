@@ -102,7 +102,8 @@ pub fn cremer_pople_phase(ring_positions: &[[f64; 3]]) -> f64 {
         r_prime[2] * r_double_prime[0] - r_prime[0] * r_double_prime[2],
         r_prime[0] * r_double_prime[1] - r_prime[1] * r_double_prime[0],
     ];
-    let norm_mag = (normal_unnorm[0].powi(2) + normal_unnorm[1].powi(2) + normal_unnorm[2].powi(2)).sqrt();
+    let norm_mag =
+        (normal_unnorm[0].powi(2) + normal_unnorm[1].powi(2) + normal_unnorm[2].powi(2)).sqrt();
     let normal = [
         normal_unnorm[0] / norm_mag,
         normal_unnorm[1] / norm_mag,
@@ -193,9 +194,7 @@ mod tests {
     #[test]
     fn rings_ge_9_atoms_flagged_as_unrepresented() {
         let ring: Vec<usize> = (0..9).collect();
-        let adjacency: Vec<Vec<usize>> = (0..9)
-            .map(|i| vec![(i + 8) % 9, (i + 1) % 9])
-            .collect();
+        let adjacency: Vec<Vec<usize>> = (0..9).map(|i| vec![(i + 8) % 9, (i + 1) % 9]).collect();
         let (puckers, unrepresented) = build_ring_puckers(std::slice::from_ref(&ring), &adjacency);
         assert!(puckers.is_empty());
         assert_eq!(unrepresented, vec![ring]);
@@ -205,8 +204,9 @@ mod tests {
     fn rings_5_to_8_atoms_get_pucker_definitions() {
         for size in 5..=8 {
             let ring: Vec<usize> = (0..size).collect();
-            let adjacency: Vec<Vec<usize>> =
-                (0..size).map(|i| vec![(i + size - 1) % size, (i + 1) % size]).collect();
+            let adjacency: Vec<Vec<usize>> = (0..size)
+                .map(|i| vec![(i + size - 1) % size, (i + 1) % size])
+                .collect();
             let (puckers, unrepresented) = build_ring_puckers(&[ring], &adjacency);
             assert_eq!(puckers.len(), 1);
             assert_eq!(puckers[0].ring_size, size);

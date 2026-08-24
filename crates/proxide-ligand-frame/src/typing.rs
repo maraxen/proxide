@@ -47,7 +47,9 @@ pub fn canonicalize_ligand_topology(
     validate_connected(n, &pairs)?;
     crate::geometry_gate::validate_reference_geometry(elements, bonds_in, ref_positions)?;
 
-    let formal_charges_vec: Vec<i8> = formal_charges.map(|f| f.to_vec()).unwrap_or_else(|| vec![0; n]);
+    let formal_charges_vec: Vec<i8> = formal_charges
+        .map(|f| f.to_vec())
+        .unwrap_or_else(|| vec![0; n]);
 
     // Per-atom aromaticity/ring-membership derived from the caller-supplied
     // per-bond/per-ring inputs (spec §1).
@@ -65,7 +67,13 @@ pub fn canonicalize_ligand_topology(
         }
     }
 
-    let canon = canonical_order(elements, &pairs, &formal_charges_vec, &atom_aromatic, &atom_in_ring);
+    let canon = canonical_order(
+        elements,
+        &pairs,
+        &formal_charges_vec,
+        &atom_aromatic,
+        &atom_in_ring,
+    );
 
     // gaff2 typing runs in INPUT index space (matches assign_gaff_atom_types's
     // own contract), then results are reordered into canonical space.
@@ -79,7 +87,12 @@ pub fn canonicalize_ligand_topology(
                 3 => proxide_gaff2::mol::BondOrder::Triple,
                 other => return Err(LigandFrameError::InvalidBondOrder { order: other }),
             };
-            Ok(proxide_gaff2::mol::Bond { i, j, order, aromatic })
+            Ok(proxide_gaff2::mol::Bond {
+                i,
+                j,
+                order,
+                aromatic,
+            })
         })
         .collect::<Result<Vec<_>, LigandFrameError>>()?;
     let mol = proxide_gaff2::mol::MolGraph::new(
@@ -87,12 +100,18 @@ pub fn canonicalize_ligand_topology(
         gaff2_bonds,
         Some(formal_charges_vec.clone()),
         None,
-        if rings.is_empty() { None } else { Some(rings.to_vec()) },
+        if rings.is_empty() {
+            None
+        } else {
+            Some(rings.to_vec())
+        },
     )
     .map_err(|reason| LigandFrameError::SssrInputInvalid { reason })?;
     let gaff2_types_input_order =
-        proxide_gaff2::assign_gaff2_atom_types(&mol).map_err(|reason| LigandFrameError::InvalidValence {
-            atom_index: reason.len(), // best-effort: orchestrate returns a String, not an index
+        proxide_gaff2::assign_gaff2_atom_types(&mol).map_err(|reason| {
+            LigandFrameError::InvalidValence {
+                atom_index: reason.len(), // best-effort: orchestrate returns a String, not an index
+            }
         })?;
 
     // Reorder every per-atom/per-bond field into canonical index space.
@@ -130,7 +149,8 @@ pub fn canonicalize_ligand_topology(
         .iter()
         .map(|&(i, j, order, aromatic, _)| (i, j, order, aromatic))
         .collect();
-    let restricted = crate::torsions::detect_restricted_rotation(&canon_elements, &bonds_no_restriction);
+    let restricted =
+        crate::torsions::detect_restricted_rotation(&canon_elements, &bonds_no_restriction);
     let canon_bonds: Vec<(usize, usize, u8, bool, bool)> = canon_bonds
         .into_iter()
         .zip(restricted.iter())
@@ -145,7 +165,11 @@ pub fn canonicalize_ligand_topology(
     // bond) as ring-internal and silently drop a real rotatable-torsion DOF.
     let bond_in_ring: Vec<bool> = canon_bonds
         .iter()
-        .map(|&(i, j, ..)| canon_ring_membership.iter().any(|ring| ring.contains(&i) && ring.contains(&j)))
+        .map(|&(i, j, ..)| {
+            canon_ring_membership
+                .iter()
+                .any(|ring| ring.contains(&i) && ring.contains(&j))
+        })
         .collect();
     let torsion_definitions =
         crate::torsions::torsion_definitions(&canon_elements, &canon_bonds, &bond_in_ring);
@@ -295,7 +319,12 @@ mod tests {
         let atom_names = elements.clone();
         let bonds_in = vec![(0, 1, 1u8), (2, 3, 1)];
         let bond_is_aromatic = vec![false; 2];
-        let ref_positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [5.0, 0.0, 0.0], [6.0, 0.0, 0.0]];
+        let ref_positions = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [5.0, 0.0, 0.0],
+            [6.0, 0.0, 0.0],
+        ];
 
         let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 4];
         let err = canonicalize_ligand_topology(
@@ -313,7 +342,10 @@ mod tests {
             0.0f32,
         )
         .unwrap_err();
-        assert_eq!(err, LigandFrameError::DisconnectedGraph { component_count: 2 });
+        assert_eq!(
+            err,
+            LigandFrameError::DisconnectedGraph { component_count: 2 }
+        );
     }
 
     #[test]
@@ -357,7 +389,10 @@ mod tests {
 
     #[test]
     fn aromatic_ring_gets_a_pucker_definition_and_no_torsions() {
-        let elements = vec!["C"; 6].into_iter().map(String::from).collect::<Vec<_>>();
+        let elements = vec!["C"; 6]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
         let atom_names = elements.clone();
         let bonds_in: Vec<(usize, usize, u8)> = (0..6).map(|i| (i, (i + 1) % 6, 1u8)).collect();
         let bond_is_aromatic = vec![true; 6];
@@ -371,8 +406,18 @@ mod tests {
             .collect();
         let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 6];
         let topology = canonicalize_ligand_topology(
-            "benzene", &elements, &atom_names, &bonds_in, &bond_is_aromatic, &ring, None, &ref_positions,
-            &features, &[], &[], 0.0f32,
+            "benzene",
+            &elements,
+            &atom_names,
+            &bonds_in,
+            &bond_is_aromatic,
+            &ring,
+            None,
+            &ref_positions,
+            &features,
+            &[],
+            &[],
+            0.0f32,
         )
         .expect("benzene should canonicalize");
         assert_eq!(topology.pucker_definitions.len(), 1);
@@ -396,8 +441,18 @@ mod tests {
         let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 2];
 
         let err = canonicalize_ligand_topology(
-            "bad-bond-order", &elements, &atom_names, &bonds_in, &bond_is_aromatic, &[], None,
-            &ref_positions, &features, &[], &[], 0.0,
+            "bad-bond-order",
+            &elements,
+            &atom_names,
+            &bonds_in,
+            &bond_is_aromatic,
+            &[],
+            None,
+            &ref_positions,
+            &features,
+            &[],
+            &[],
+            0.0,
         )
         .unwrap_err();
         assert_eq!(err, LigandFrameError::InvalidBondOrder { order: 0 });
@@ -414,7 +469,10 @@ mod tests {
     /// dropped the real DOF (`torsion_definitions.len() == 0` instead of 1).
     #[test]
     fn interring_bond_between_two_disjoint_rings_gets_a_torsion_not_dropped_as_ring_internal() {
-        let elements = vec!["C"; 12].into_iter().map(String::from).collect::<Vec<_>>();
+        let elements = vec!["C"; 12]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
         let atom_names = elements.clone();
 
         // Ring A: 0-1-2-3-4-5-0. Ring B: 6-7-8-9-10-11-6. Connecting bond: 0-6.
@@ -446,8 +504,18 @@ mod tests {
 
         let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 12];
         let topology = canonicalize_ligand_topology(
-            "bicyclohexyl", &elements, &atom_names, &bonds_in, &bond_is_aromatic, &rings, None,
-            &ref_positions, &features, &[], &[], 0.0f32,
+            "bicyclohexyl",
+            &elements,
+            &atom_names,
+            &bonds_in,
+            &bond_is_aromatic,
+            &rings,
+            None,
+            &ref_positions,
+            &features,
+            &[],
+            &[],
+            0.0f32,
         )
         .expect("bicyclohexyl-shaped topology should canonicalize");
         assert_eq!(topology.torsion_definitions.len(), 1);
@@ -465,10 +533,23 @@ mod tests {
         let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 2];
 
         let err = canonicalize_ligand_topology(
-            "bad-geom", &elements, &atom_names, &bonds_in, &bond_is_aromatic, &[], None,
-            &ref_positions, &features, &[], &[], 0.0,
+            "bad-geom",
+            &elements,
+            &atom_names,
+            &bonds_in,
+            &bond_is_aromatic,
+            &[],
+            None,
+            &ref_positions,
+            &features,
+            &[],
+            &[],
+            0.0,
         )
         .unwrap_err();
-        assert!(matches!(err, LigandFrameError::InvalidReferenceGeometry { .. }));
+        assert!(matches!(
+            err,
+            LigandFrameError::InvalidReferenceGeometry { .. }
+        ));
     }
 }

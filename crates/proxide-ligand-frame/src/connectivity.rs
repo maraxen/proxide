@@ -41,7 +41,10 @@ fn count_components(n_atoms: usize, bonds: &[(usize, usize)]) -> usize {
 /// Connectivity validation (spec §4, closes Finding 9): errors on any
 /// multi-fragment input rather than silently canonicalizing a disconnected
 /// graph.
-pub fn validate_connected(n_atoms: usize, bonds: &[(usize, usize)]) -> Result<(), LigandFrameError> {
+pub fn validate_connected(
+    n_atoms: usize,
+    bonds: &[(usize, usize)],
+) -> Result<(), LigandFrameError> {
     let component_count = count_components(n_atoms, bonds);
     if component_count > 1 {
         return Err(LigandFrameError::DisconnectedGraph { component_count });
@@ -63,6 +66,9 @@ mod tests {
     fn two_fragments_reported_with_correct_count() {
         // 0-1 and 2-3, two disjoint fragments.
         let err = validate_connected(4, &[(0, 1), (2, 3)]).unwrap_err();
-        assert_eq!(err, LigandFrameError::DisconnectedGraph { component_count: 2 });
+        assert_eq!(
+            err,
+            LigandFrameError::DisconnectedGraph { component_count: 2 }
+        );
     }
 }

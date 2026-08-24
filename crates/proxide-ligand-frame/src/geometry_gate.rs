@@ -89,7 +89,10 @@ mod tests {
     use super::*;
 
     fn ch4_elements() -> Vec<String> {
-        vec!["C", "H", "H", "H", "H"].into_iter().map(String::from).collect()
+        vec!["C", "H", "H", "H", "H"]
+            .into_iter()
+            .map(String::from)
+            .collect()
     }
 
     #[test]
@@ -111,7 +114,10 @@ mod tests {
         let positions = [[f64::NAN, 0.0, 0.0], [1.0, 0.0, 0.0]];
         let elements = vec!["C".to_string(), "H".to_string()];
         let err = validate_reference_geometry(&elements, &[(0, 1, 1)], &positions).unwrap_err();
-        assert!(matches!(err, LigandFrameError::InvalidReferenceGeometry { .. }));
+        assert!(matches!(
+            err,
+            LigandFrameError::InvalidReferenceGeometry { .. }
+        ));
     }
 
     #[test]
@@ -119,7 +125,10 @@ mod tests {
         let positions = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]];
         let elements = vec!["C".to_string(), "C".to_string()];
         let err = validate_reference_geometry(&elements, &[(0, 1, 1)], &positions).unwrap_err();
-        assert!(matches!(err, LigandFrameError::InvalidReferenceGeometry { .. }));
+        assert!(matches!(
+            err,
+            LigandFrameError::InvalidReferenceGeometry { .. }
+        ));
     }
 
     #[test]
@@ -128,7 +137,10 @@ mod tests {
         let positions = [[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]];
         let elements = vec!["C".to_string(), "C".to_string()];
         let err = validate_reference_geometry(&elements, &[], &positions).unwrap_err();
-        assert!(matches!(err, LigandFrameError::InvalidReferenceGeometry { .. }));
+        assert!(matches!(
+            err,
+            LigandFrameError::InvalidReferenceGeometry { .. }
+        ));
     }
 
     #[test]

@@ -18,7 +18,11 @@ pub struct LigandFrameCoordinates {
 const COLLINEAR_EPSILON_RAD: f64 = 1e-3;
 
 fn bond_angle_triples(bonds: &[(usize, usize, u8, bool, bool)]) -> Vec<[usize; 3]> {
-    let n = bonds.iter().map(|&(i, j, ..)| i.max(j)).max().map_or(0, |m| m + 1);
+    let n = bonds
+        .iter()
+        .map(|&(i, j, ..)| i.max(j))
+        .max()
+        .map_or(0, |m| m + 1);
     let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); n];
     for &(i, j, ..) in bonds {
         adjacency[i].push(j);
@@ -97,7 +101,8 @@ pub fn extract_ligand_frame_coordinates(
             }
             let abc = bond_angle_f64(&frame[a], &frame[b], &frame[c]);
             let bcd = bond_angle_f64(&frame[b], &frame[c], &frame[d]);
-            let near_collinear = |theta: f64| theta.min(std::f64::consts::PI - theta) < COLLINEAR_EPSILON_RAD;
+            let near_collinear =
+                |theta: f64| theta.min(std::f64::consts::PI - theta) < COLLINEAR_EPSILON_RAD;
             if near_collinear(abc) || near_collinear(bcd) {
                 frame_validity[f] = false;
                 torsions[t_idx][f] = f64::NAN;
@@ -182,8 +187,12 @@ mod tests {
         let topology = two_atom_topology();
         let positions = vec![vec![[0.0, 0.0, 0.0]]]; // only 1 atom, topology expects 2
         let input_elements = vec!["C".to_string()];
-        let err = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap_err();
-        assert!(matches!(err, LigandFrameError::TopologyPositionMismatch { .. }));
+        let err =
+            extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap_err();
+        assert!(matches!(
+            err,
+            LigandFrameError::TopologyPositionMismatch { .. }
+        ));
     }
 
     #[test]
@@ -196,8 +205,12 @@ mod tests {
         // the correct/accepted order), so H, C is inconsistent and must be
         // rejected.
         let input_elements = vec!["H".to_string(), "C".to_string()];
-        let err = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap_err();
-        assert!(matches!(err, LigandFrameError::TopologyPositionMismatch { .. }));
+        let err =
+            extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap_err();
+        assert!(matches!(
+            err,
+            LigandFrameError::TopologyPositionMismatch { .. }
+        ));
     }
 
     #[test]
@@ -206,7 +219,8 @@ mod tests {
         // Input order: atom0=C at (1,0,0), atom1=H at (0,0,0).
         let positions = vec![vec![[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]];
         let input_elements = vec!["C".to_string(), "H".to_string()];
-        let result = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
+        let result =
+            extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
         // canonical index 0 = H (input 1) = (0,0,0); canonical index 1 = C (input 0) = (1,0,0)
         assert_eq!(result.positions[0][0], [0.0, 0.0, 0.0]);
         assert_eq!(result.positions[0][1], [1.0, 0.0, 0.0]);
@@ -217,7 +231,8 @@ mod tests {
         let topology = two_atom_topology();
         let positions = vec![vec![[f64::NAN, 0.0, 0.0], [1.0, 0.0, 0.0]]];
         let input_elements = vec!["C".to_string(), "H".to_string()];
-        let result = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
+        let result =
+            extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
         assert_eq!(result.frame_validity, vec![false]);
     }
 
@@ -231,16 +246,26 @@ mod tests {
         topology.formal_charges = vec![0; 4];
         topology.partial_charges = vec![0.0; 4];
         topology.aromaticity = vec![false; 4];
-        topology.bonds = vec![(0, 1, 1, false, false), (1, 2, 1, false, false), (2, 3, 1, false, false)];
+        topology.bonds = vec![
+            (0, 1, 1, false, false),
+            (1, 2, 1, false, false),
+            (2, 3, 1, false, false),
+        ];
         topology.torsion_definitions = vec![[0, 1, 2, 3]];
 
         // Same 90-degree dihedral fixture as angles.rs's own
         // test_dihedral_angle_perpendicular.
-        let frame = vec![[0.0, 1.0, 0.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 1.0]];
+        let frame = vec![
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+        ];
         let positions = vec![frame];
         let input_elements = topology.elements.clone();
 
-        let result = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
+        let result =
+            extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
         assert!((result.torsions[0][0].abs() - std::f64::consts::FRAC_PI_2).abs() < 0.1);
     }
 
@@ -259,17 +284,27 @@ mod tests {
         topology.formal_charges = vec![0; 4];
         topology.partial_charges = vec![0.0; 4];
         topology.aromaticity = vec![false; 4];
-        topology.bonds = vec![(0, 1, 1, false, false), (1, 2, 1, false, false), (2, 3, 1, false, false)];
+        topology.bonds = vec![
+            (0, 1, 1, false, false),
+            (1, 2, 1, false, false),
+            (2, 3, 1, false, false),
+        ];
         topology.torsion_definitions = vec![[0, 1, 2, 3]];
 
         // A=(0,0,0), B=(1,0,0), C=(2,0,0) are exactly collinear (angle
         // A-B-C = PI, well inside the epsilon band); D is off-axis so only
         // the A-B-C leg triggers the guard.
-        let frame = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 1.0, 1.0]];
+        let frame = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [2.0, 1.0, 1.0],
+        ];
         let positions = vec![frame];
         let input_elements = topology.elements.clone();
 
-        let result = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
+        let result =
+            extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
         assert_eq!(result.frame_validity, vec![false]);
         assert!(result.torsions[0][0].is_nan());
     }
@@ -299,13 +334,23 @@ mod tests {
         topology.formal_charges = vec![0; 4];
         topology.partial_charges = vec![0.0; 4];
         topology.aromaticity = vec![false; 4];
-        topology.bonds = vec![(0, 1, 1, false, false), (1, 2, 1, false, false), (2, 3, 1, false, false)];
+        topology.bonds = vec![
+            (0, 1, 1, false, false),
+            (1, 2, 1, false, false),
+            (2, 3, 1, false, false),
+        ];
 
-        let frame = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.5, 0.0, 0.0], [4.5, 0.0, 0.0]];
+        let frame = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.5, 0.0, 0.0],
+            [4.5, 0.0, 0.0],
+        ];
         let positions = vec![frame];
         let input_elements = topology.elements.clone();
 
-        let result = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
+        let result =
+            extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
         assert_eq!(result.bond_lengths.len(), 3);
         assert!(
             (result.bond_lengths[0][0] - 1.0).abs() < 1e-9,
@@ -365,8 +410,14 @@ mod tests {
         topology.aromaticity = vec![false; 12];
         topology.bonds = vec![];
         topology.pucker_definitions = vec![
-            RingPucker { ring_atoms: (0..6).collect(), ring_size: 6 },
-            RingPucker { ring_atoms: (6..12).collect(), ring_size: 6 },
+            RingPucker {
+                ring_atoms: (0..6).collect(),
+                ring_size: 6,
+            },
+            RingPucker {
+                ring_atoms: (6..12).collect(),
+                ring_size: 6,
+            },
         ];
 
         let radius = 1.4;
@@ -390,7 +441,8 @@ mod tests {
         let positions = vec![frame];
         let input_elements = topology.elements.clone();
 
-        let result = extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
+        let result =
+            extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
         assert_eq!(result.pucker_phase.len(), 2);
         assert!(
             (result.pucker_phase[0][0] - PI / 4.0).abs() < 1e-6,
