@@ -19,6 +19,12 @@ METHODS: tuple[str, ...] = (
 )
 METRICS: tuple[str, ...] = ("rmsd", "tm_score")
 
+# Metric-appropriate "these donors are tied" windows. RMSD is an unbounded distance in
+# Angstroms, so 0.05 A is a genuinely tight window. TM-score is bounded above by 1.0 and
+# saturates for frames of one protein, so the same 0.05 spans a large fraction of any
+# realistic pool -- 0.002 is the comparable window there.
+DEFAULT_DEGENERACY_EPSILON: dict[str, float] = {"rmsd": 0.05, "tm_score": 0.002}
+
 
 @dataclass(frozen=True, kw_only=True)
 class ImputeConfig:
@@ -67,7 +73,14 @@ class ImputeConfig:
       an optimisation and can change the answer if the two metrics disagree about
       which donors are plausible, so it is recorded in the provenance.
     degeneracy_epsilon: donors scoring within this of the best count as tied. In
-      metric units: Angstroms for ``rmsd``, TM-score units for ``tm_score``.
+      metric units, and the two metrics have completely different natural scales,
+      so ``None`` (the default) resolves per metric via
+      :data:`DEFAULT_DEGENERACY_EPSILON`. Setting one number for both is the trap:
+      TM-scores between frames of the same protein cluster just under 1.0, so an
+      Angstrom-appropriate 0.05 window swallows most of the pool and reports near-
+      total degeneracy no matter how well-determined the choice actually was.
+      Measured on 280 donors: median 2 tied under ``rmsd``, 241.5 under
+      ``tm_score``, for the same frames.
     random_seed: reserved for deterministic tie-breaking. Selection is currently
       first-index-wins among ties, which is already deterministic.
   """
@@ -80,7 +93,7 @@ class ImputeConfig:
   min_shared_residues: int = 50
   coverage_floor: float = 0.60
   prefilter_keep: int = 256
-  degeneracy_epsilon: float = 0.05
+  degeneracy_epsilon: float | None = None
   random_seed: int = 0
 
   def __post_init__(self) -> None:
@@ -105,10 +118,17 @@ class ImputeConfig:
         f"min_shared_residues must be >= 3, got {self.min_shared_residues}; "
         "a rotation is not determined by fewer points"
       )
-    if self.degeneracy_epsilon < 0.0:
+    if self.degeneracy_epsilon is not None and self.degeneracy_epsilon < 0.0:
       raise ValueError("degeneracy_epsilon must be >= 0")
     if self.flank_width < 1:
       raise ValueError("flank_width must be >= 1")
+
+  @property
+  def epsilon(self) -> float:
+    """The tied-donor window actually in force, resolved for this metric."""
+    if self.degeneracy_epsilon is not None:
+      return self.degeneracy_epsilon
+    return DEFAULT_DEGENERACY_EPSILON[self.metric]
 
   def as_dict(self) -> dict:
     return {
@@ -120,7 +140,8 @@ class ImputeConfig:
       "min_shared_residues": self.min_shared_residues,
       "coverage_floor": self.coverage_floor,
       "prefilter_keep": self.prefilter_keep,
-      "degeneracy_epsilon": self.degeneracy_epsilon,
+      "degeneracy_epsilon": self.epsilon,
+      "degeneracy_epsilon_was_default": self.degeneracy_epsilon is None,
       "random_seed": self.random_seed,
     }
 
