@@ -404,20 +404,47 @@ CHARMM protein or CGenFF content. Standard published water models, already
 bundled and redistributed by the upstream OpenMM project itself. A NOTICE
 crediting the bundling is good practice but not urgent.
 
-### `water/`, `implicit/`, `openmm_bundled/implicit/` — pending
+### `water/` — OK, needs-NOTICE-only
 
-Third parallel pass still in flight as of this revision; will be appended
-once it returns. Not blocking the CGenFF finding above, which stands
-independent of this section.
+`assets/water/*.xml` (tip3p/tip4pew/tip4pfb/spce/opc standard + ion
+parameter files) — confirmed via openmmforcefields' full recursive repo tree
+as their own XML-encoding of published water-model parameters
+(TIP3P/TIP4P-Ew/OPC/SPC-E), not a redistribution of separately-licensed
+software. Same root MIT `LICENSE` already confirmed for this repo, no
+per-file carve-out exists. **Safe to vendor as-is — needs a NOTICE crediting
+openmmforcefields/OpenMM, nothing more.**
+
+### `implicit/` and `openmm_bundled/implicit/` — OK, needs-NOTICE-only
+
+Neither comes from openmmforcefields (confirmed: zero "obc"/"implicit" hits
+in its full tree). Both trace directly to `openmm/openmm`'s own repo —
+`wrappers/python/openmm/app/data/{amber03_obc,amber10_obc,amber96_obc,amber99_obc}.xml`
+and `implicit/{obc1,obc2}.xml`, exact filename match. OpenMM's GitHub API
+license field reports `null` (same detector-miss pattern as Mosaist earlier
+this session — the real answer isn't in a field GitHub can auto-detect).
+The actual answer is in OpenMM's own `docs-source/licenses/Licenses.txt`
+(OpenMM has no single root `LICENSE` — it's a multi-section document because
+OpenMM genuinely mixes licenses by component), fetched directly: **Section 1
+states "The OpenMM API, the Reference Platform, and the CPU platform may be
+used under the terms of the MIT License"**, and these `app/data/` files are
+Python-layer bundled data under that same component, not the separately
+LGPL-licensed CUDA/OpenCL platform code (Section 2). **Safe to vendor as-is
+— needs a NOTICE citing OpenMM `Licenses.txt` §1 specifically** (citing
+"OpenMM is MIT" without the section would be wrong if ever applied to
+anything actually sourced from the GPU platform code).
 
 ### Net effect
 
-One confirmed live violation (CGenFF, actively shipping — needs immediate,
-separate attention), one genuinely ambiguous case worth a NOTICE stating the
-ambiguity honestly (main CHARMM36 toppar), one reasonably-founded-but-not
-airtight OK (AMBER protein family, plus two carve-outs needing their own
-check), and one clean lower-risk OK (openmm_bundled CHARMM36 water models).
-None of this was caught by the crate sweep above — it's a structurally
-different problem (bundled data files, not ported/reimplemented code), which
-is itself evidence that tier 1/tier 2 as scoped (crate-focused) needs a
-sibling pass over `src/proxide/assets/` specifically, not just crates.
+**One confirmed live violation** (CGenFF, actively shipping in every
+published wheel — needs immediate, separate attention, not resolved by this
+doc). **One genuinely ambiguous case** worth a NOTICE stating the ambiguity
+honestly (main CHARMM36 toppar — no positive redistribution grant found, but
+no confirmed block either). **Everything else in the tree is OK**, needing
+only NOTICE files it currently lacks: AMBER protein family
+(absence-of-restriction basis, two still-unverified carve-outs — GLYCAM,
+DNA/RNA-OL lineage), `openmm_bundled/charmm36` water models, `water/`, and
+`implicit/`+`openmm_bundled/implicit/`. None of this was caught by the crate
+sweep above — it's a structurally different problem (bundled data files, not
+ported/reimplemented code), which is itself evidence that tier 1/tier 2 as
+scoped (crate-focused) needs a sibling pass over `src/proxide/assets/`
+specifically, not just crates going forward.
