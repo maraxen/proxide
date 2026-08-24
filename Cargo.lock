@@ -2860,6 +2860,7 @@ name = "proxide-ligand-frame"
 version = "0.1.0-alpha.16"
 dependencies = [
  "approx",
+ "nalgebra",
  "proxide-core",
  "proxide-gaff2",
  "proxide-geometry",

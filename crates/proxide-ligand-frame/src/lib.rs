@@ -8,6 +8,7 @@
 //! `proxide_gaff2::assign_gaff2_atom_types`, not an extension of it.
 
 pub mod canon;
+pub mod charges;
 pub mod connectivity;
 pub mod errors;
 pub mod geometry_gate;

@@ -21,6 +21,7 @@ crate-type = ["rlib"]
 proxide-gaff2 = { workspace = true }
 proxide-core = { workspace = true }
 proxide-geometry = { workspace = true }
+nalgebra.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

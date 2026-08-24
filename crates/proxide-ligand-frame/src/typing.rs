@@ -23,8 +23,8 @@ pub struct LigandTopology {
 /// Builds the frame-invariant topology: canonical ordering, gaff2 typing
 /// (calls into `proxide_gaff2`). Rings/aromaticity are caller-supplied
 /// (RDKit-derived in the Python layer, spec §1) rather than computed here.
-/// `partial_charges` is populated in Task 7; this task leaves it
-/// `vec![0.0; n]`. `torsion_definitions` is now populated (Task 5, via
+/// `partial_charges` is populated via Espaloma charge inference (Task 7,
+/// `crate::charges`). `torsion_definitions` is populated (Task 5, via
 /// `crate::torsions`); `pucker_definitions`/`unrepresented_ring_dof` are
 /// populated in Task 6.
 #[allow(clippy::too_many_arguments)] // matches proxide-confind/-tmalign/-rotlib's existing convention
@@ -37,6 +37,10 @@ pub fn canonicalize_ligand_topology(
     rings: &[Vec<usize>],
     formal_charges: Option<&[i8]>,
     ref_positions: &[[f64; 3]],
+    espaloma_features: &[[f32; proxide_core::chem::inference::FEATURE_UNITS]],
+    espaloma_senders: &[u32],
+    espaloma_receivers: &[u32],
+    espaloma_total_charge: f32,
 ) -> Result<LigandTopology, LigandFrameError> {
     let n = elements.len();
     let pairs: Vec<(usize, usize)> = bonds_in.iter().map(|&(i, j, _)| (i, j)).collect();
@@ -150,6 +154,20 @@ pub fn canonicalize_ligand_topology(
     let (pucker_definitions, unrepresented_ring_dof) =
         crate::pucker::build_ring_puckers(&canon_ring_membership, &canon_adjacency);
 
+    // Reference-geometry gate already ran above (Task 4); charge inference
+    // runs on ref_positions in INPUT atom order (features arrive
+    // pre-ordered to match), independent of canonical reordering.
+    let partial_charges = crate::charges::infer_partial_charges(
+        espaloma_features,
+        espaloma_senders,
+        espaloma_receivers,
+        espaloma_total_charge,
+    )?;
+    let mut canon_partial_charges = vec![0.0f64; n];
+    for input_idx in 0..n {
+        canon_partial_charges[canon[input_idx]] = partial_charges[input_idx];
+    }
+
     Ok(LigandTopology {
         ligand_id: ligand_id.to_string(),
         canonical_order: canon,
@@ -157,7 +175,7 @@ pub fn canonicalize_ligand_topology(
         atom_names: canon_atom_names,
         gaff2_types: canon_gaff2_types,
         formal_charges: canon_formal_charges,
-        partial_charges: vec![0.0; n],
+        partial_charges: canon_partial_charges,
         aromaticity: canon_aromaticity,
         ring_membership: canon_ring_membership,
         bonds: canon_bonds,
@@ -197,6 +215,7 @@ mod tests {
             [1.94, 0.75, 0.0],
         ];
 
+        let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 6];
         let topology = canonicalize_ligand_topology(
             "methanol",
             &elements,
@@ -206,6 +225,10 @@ mod tests {
             &[],
             None,
             &ref_positions,
+            &features,
+            &[],
+            &[],
+            0.0f32,
         )
         .expect("well-formed methanol should canonicalize");
 
@@ -216,7 +239,12 @@ mod tests {
         assert_eq!(topology.bonds.len(), 5);
         // No selectable torsion yet (Task 5 adds the machinery).
         assert!(topology.torsion_definitions.is_empty());
-        assert_eq!(topology.partial_charges, vec![0.0; 6]);
+        // Zero-filled features + no message-passing edges + total_charge=0.0
+        // -> deterministic near-zero charges (f32-precision noise, not
+        // exact 0.0; see charges::infer_partial_charges).
+        for &c in &topology.partial_charges {
+            assert!(c.abs() < 1e-6, "expected near-zero partial charge, got {c}");
+        }
 
         // Content assertions on the actual index-remap direction (not just
         // lengths): the three methyl H's (input 2,3,4) and hydroxyl H
@@ -265,6 +293,7 @@ mod tests {
         let bond_is_aromatic = vec![false; 2];
         let ref_positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [5.0, 0.0, 0.0], [6.0, 0.0, 0.0]];
 
+        let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 4];
         let err = canonicalize_ligand_topology(
             "two-fragments",
             &elements,
@@ -274,6 +303,10 @@ mod tests {
             &[],
             None,
             &ref_positions,
+            &features,
+            &[],
+            &[],
+            0.0f32,
         )
         .unwrap_err();
         assert_eq!(err, LigandFrameError::DisconnectedGraph { component_count: 2 });
@@ -299,6 +332,7 @@ mod tests {
             [2.03, 1.4, 0.0],
             [2.03, -1.4, 0.0],
         ];
+        let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 6];
         let topology = canonicalize_ligand_topology(
             "dimethylbutane",
             &elements,
@@ -308,6 +342,10 @@ mod tests {
             &[],
             None,
             &ref_positions,
+            &features,
+            &[],
+            &[],
+            0.0f32,
         )
         .expect("should canonicalize");
         assert_eq!(topology.torsion_definitions.len(), 1);
@@ -327,13 +365,34 @@ mod tests {
                 [radius * angle.cos(), radius * angle.sin(), 0.0]
             })
             .collect();
+        let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 6];
         let topology = canonicalize_ligand_topology(
             "benzene", &elements, &atom_names, &bonds_in, &bond_is_aromatic, &ring, None, &ref_positions,
+            &features, &[], &[], 0.0f32,
         )
         .expect("benzene should canonicalize");
         assert_eq!(topology.pucker_definitions.len(), 1);
         assert_eq!(topology.pucker_definitions[0].ring_size, 6);
         assert!(topology.torsion_definitions.is_empty());
         assert!(topology.unrepresented_ring_dof.is_empty());
+    }
+
+    #[test]
+    fn invalid_reference_geometry_blocks_charge_inference() {
+        let elements = vec!["C".to_string(), "C".to_string()];
+        let atom_names = elements.clone();
+        let bonds_in = vec![(0, 1, 1u8)];
+        let bond_is_aromatic = vec![false];
+        // Declared bond, but positions are 10 A apart -- fails the
+        // reference-geometry gate before charge inference ever runs.
+        let ref_positions = vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]];
+        let features = vec![[0.0f32; proxide_core::chem::inference::FEATURE_UNITS]; 2];
+
+        let err = canonicalize_ligand_topology(
+            "bad-geom", &elements, &atom_names, &bonds_in, &bond_is_aromatic, &[], None,
+            &ref_positions, &features, &[], &[], 0.0,
+        )
+        .unwrap_err();
+        assert!(matches!(err, LigandFrameError::InvalidReferenceGeometry { .. }));
     }
 }
