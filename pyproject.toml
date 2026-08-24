@@ -118,6 +118,7 @@ include = [
 markers = [
     "smoke: marks tests as smoke tests (fast and critical)",
     "espaloma: needs expaloma (JAX) + rdkit; run with pytest -m espaloma",
+    "ligand_frame: needs proxide built with --features ligand-frame; run with pytest -m ligand_frame",
 ]
 
 [tool.ruff]
