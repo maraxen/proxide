@@ -96,6 +96,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_parsers::read_newick, m)?)?;
     m.add_function(wrap_pyfunction!(py_jaccard::jaccard_distance_matrix, m)?)?;
     m.add_function(wrap_pyfunction!(py_tmalign::tm_align, m)?)?;
+    m.add_function(wrap_pyfunction!(py_tmalign::tm_scores_fixed_correspondence, m)?)?;
 
     // Force field functions (from py_forcefield)
     m.add_function(wrap_pyfunction!(py_forcefield::load_forcefield, m)?)?;
@@ -150,6 +151,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(py_geometry::kabsch_rmsd, m)?)?;
+    m.add_function(wrap_pyfunction!(py_geometry::kabsch_rmsd_batch, m)?)?;
 
     // Register Python wrappers
     m.add_class::<PyAtomicSystem>()?;

@@ -10,9 +10,13 @@
 //! [`tmalign_pair_serial`] — never [`crate::pipeline::tmalign_pair`]'s own
 //! `.into_par()`, to avoid nesting orx-parallel dispatches.
 
+use crate::d0::{d0_final, d0_search};
 use crate::error::TmAlignError;
 use crate::pipeline::tmalign_pair_serial;
+use crate::score::get_score_fast;
+use crate::seed::AlignmentMap;
 use crate::structure::CaTrace;
+use nalgebra::Vector3;
 use ndarray::Array2;
 use orx_parallel::{IntoParIter, ParIter};
 
@@ -78,6 +82,66 @@ pub fn pairwise_tm_scores(traces: &[CaTrace]) -> Result<Array2<f32>, TmAlignErro
     }
 
     Ok(mat)
+}
+
+/// One-vs-many TM-scores under a **fixed residue correspondence**.
+///
+/// [`pairwise_tm_scores`] is O(n²) and re-derives the residue correspondence from
+/// scratch for every pair, via the full five-strategy seeding search. Both are the
+/// wrong shape for the motivating case: scoring one query conformation against every
+/// frame of an MD trajectory, where all candidates share the query's topology and the
+/// correspondence is therefore the identity, already known. Running a seeding search to
+/// rediscover residue `i` maps to residue `i` costs orders of magnitude more than the
+/// scoring it feeds, and a search that returns anything else on same-topology input
+/// would be a bug we would rather not silently absorb.
+///
+/// So: identity correspondence, then [`get_score_fast`]'s three-iteration Kabsch
+/// refinement per candidate, parallel over candidates. O(n) in the candidate count.
+///
+/// All candidates must have exactly `query.len()` residues — that is what "same
+/// topology" means here, and a length mismatch is a caller error rather than something
+/// to pad or truncate around. Use [`pairwise_tm_scores`] or
+/// [`crate::pipeline::tmalign_pair_serial`] when the correspondence is genuinely
+/// unknown.
+///
+/// Scores are normalized by `query.len()`, so a candidate identical to the query scores
+/// `1.0`.
+///
+/// # Errors
+///
+/// [`TmAlignError::EmptyStructure`] if `query` is empty, and
+/// [`TmAlignError::LengthMismatch`] if any candidate's length differs from the query's.
+pub fn tm_scores_fixed_correspondence(
+    query: &[Vector3<f32>],
+    candidates: &[Vec<Vector3<f32>>],
+) -> Result<Vec<f32>, TmAlignError> {
+    let n_res = query.len();
+    if n_res == 0 {
+        return Err(TmAlignError::EmptyStructure);
+    }
+    // Checked up front, before any alignment work, for the same reason
+    // pairwise_tm_scores validates eagerly: one bad candidate should not waste the
+    // whole batch.
+    if let Some(bad) = candidates.iter().find(|c| c.len() != n_res) {
+        return Err(TmAlignError::LengthMismatch {
+            expected: n_res,
+            found: bad.len(),
+        });
+    }
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let alignment: AlignmentMap = (0..n_res).map(|i| (Some(i), Some(i))).collect();
+    let d0 = d0_final(n_res);
+    let (_, d0_srch) = d0_search(n_res);
+
+    let par = candidates
+        .into_par()
+        .map(|cand| get_score_fast(query, cand, &alignment, d0, d0_srch, n_res));
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let par = par.num_threads(proxide_parallel_rt::num_threads());
+    Ok(par.collect())
 }
 
 #[cfg(test)]
@@ -196,5 +260,144 @@ mod tests {
             pairwise_tm_scores(&traces),
             Err(TmAlignError::EmptyStructure)
         ));
+    }
+
+    // ---------------- tm_scores_fixed_correspondence ----------------
+
+    #[test]
+    fn fixed_correspondence_self_scores_one() {
+        // The invariant that makes the whole donor-selection path trustworthy: a
+        // candidate identical to the query must score exactly 1.0. If this drifts, a
+        // frame is no longer its own nearest neighbour and every selection below is
+        // suspect -- cheap to check, and it catches an inverted d0/l_norm convention.
+        let q = helix(30, 0.0);
+        let scores = tm_scores_fixed_correspondence(&q.coords, &[q.coords.clone()])
+            .expect("valid input");
+        assert_eq!(scores.len(), 1);
+        assert!(
+            (scores[0] - 1.0).abs() < 1e-4,
+            "self-score was {} not 1.0",
+            scores[0]
+        );
+    }
+
+    #[test]
+    fn fixed_correspondence_is_invariant_to_rigid_motion() {
+        // TM-score superposes, so translating a candidate must not change its score.
+        let q = helix(24, 0.0);
+        let shifted: Vec<Vector3<f32>> = q
+            .coords
+            .iter()
+            .map(|p| p + Vector3::new(17.0, -4.0, 9.5))
+            .collect();
+        let scores =
+            tm_scores_fixed_correspondence(&q.coords, &[shifted]).expect("valid input");
+        assert!(
+            (scores[0] - 1.0).abs() < 1e-4,
+            "translated copy scored {} not 1.0",
+            scores[0]
+        );
+    }
+
+    /// Bend the tail half of a trace outward by `amplitude` A.
+    ///
+    /// Note `helix(n, seed)` cannot be used to make conformationally distinct traces:
+    /// varying its seed rotates every point by the same angle about z, so the results
+    /// are congruent and TM-score is correctly 1.0 for all of them. A real
+    /// conformational difference has to be a non-rigid deformation.
+    fn bent(base: &CaTrace, amplitude: f32) -> Vec<Vector3<f32>> {
+        let n = base.coords.len();
+        base.coords
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                if i * 2 < n {
+                    *p
+                } else {
+                    let t = (i * 2 - n) as f32 / n as f32;
+                    p + Vector3::new(amplitude * t, 0.0, 0.0)
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn fixed_correspondence_ranks_nearer_conformations_higher() {
+        let q = helix(40, 0.0);
+        let near = bent(&q, 1.0);
+        let far = bent(&q, 12.0);
+        let scores =
+            tm_scores_fixed_correspondence(&q.coords, &[near, far]).expect("valid input");
+        assert!(
+            scores[0] > scores[1],
+            "near ({}) should outrank far ({})",
+            scores[0],
+            scores[1]
+        );
+    }
+
+    #[test]
+    fn fixed_correspondence_score_decreases_monotonically_with_deformation() {
+        // Stronger than the ranking test: the metric must be monotone in the
+        // deformation it is meant to measure, or "nearest" is not meaningful.
+        let q = helix(40, 0.0);
+        let cands: Vec<Vec<Vector3<f32>>> =
+            [0.0f32, 1.0, 3.0, 6.0, 12.0].iter().map(|a| bent(&q, *a)).collect();
+        let scores = tm_scores_fixed_correspondence(&q.coords, &cands).expect("valid input");
+        for w in scores.windows(2) {
+            assert!(
+                w[0] >= w[1],
+                "scores not monotonically decreasing: {scores:?}"
+            );
+        }
+        assert!((scores[0] - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn fixed_correspondence_rejects_length_mismatch() {
+        // Silently scoring a differently-sized candidate would compare residue i to a
+        // different residue i and still return a plausible number.
+        let q = helix(30, 0.0);
+        let wrong = helix(29, 0.0);
+        assert!(matches!(
+            tm_scores_fixed_correspondence(&q.coords, &[wrong.coords]),
+            Err(TmAlignError::LengthMismatch {
+                expected: 30,
+                found: 29
+            })
+        ));
+    }
+
+    #[test]
+    fn fixed_correspondence_rejects_empty_query() {
+        assert!(matches!(
+            tm_scores_fixed_correspondence(&[], &[helix(8, 0.0).coords]),
+            Err(TmAlignError::EmptyStructure)
+        ));
+    }
+
+    #[test]
+    fn fixed_correspondence_empty_candidate_list_is_empty_not_an_error() {
+        let q = helix(8, 0.0);
+        let scores = tm_scores_fixed_correspondence(&q.coords, &[]).expect("not an error");
+        assert!(scores.is_empty());
+    }
+
+    #[test]
+    fn fixed_correspondence_agrees_with_full_alignment_on_same_topology() {
+        // The fast path exists only because the correspondence is already known. If it
+        // disagreed with the full seeding search on input where that search should
+        // recover the identity anyway, the shortcut would be changing the answer rather
+        // than skipping redundant work.
+        let q = helix(40, 0.0);
+        let c = helix(40, 5.0);
+        let fast = tm_scores_fixed_correspondence(&q.coords, &[c.coords.clone()])
+            .expect("valid input")[0];
+        let full = tmalign_pair_serial(&q.coords, &c.coords).expect("valid input");
+        assert!(
+            (fast - full.tm_score_norm1).abs() < 0.05,
+            "fixed-correspondence {fast} vs full-search {}",
+            full.tm_score_norm1
+        );
     }
 }
