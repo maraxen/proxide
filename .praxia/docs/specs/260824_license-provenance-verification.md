@@ -331,8 +331,28 @@ the most urgent finding in this document: worse than `proxide-confind`/
 `proxide-rotlib` in mechanism (compiled wheel distribution via PyPI, not just
 source-visible-on-GitHub) and comparable or worse in severity (a required
 signed agreement plus a named-vendor commercial carve-out, versus CC BY-NC-SA's
-blanket noncommercial clause). **Not resolved by this doc — needs immediate
-attention, independent of everything else here.**
+blanket noncommercial clause).
+
+**Resolved for future releases (2026-08-24)**: `pyproject.toml`'s
+`[tool.maturin]` now excludes the file from the built wheel (verified via a
+real `maturin build` — confirmed absent from the resulting wheel, sibling
+CHARMM files unaffected); the file was `git rm`'d from the working tree; and
+`scripts/sync_forcefields.py`'s CHARMM mapping no longer references it, so a
+future re-sync won't reintroduce it.
+
+**Deliberately not purged from git history.** The file is present in the
+repo's true initial commit and untouched since — removing it via
+`git filter-repo` rewrites that commit's hash and therefore every
+descendant: all 587 commits on `main` and every one of 60+ local/60+ remote
+branches built on top, including 30+ worktrees active in this session alone.
+Weighed against that cost: the working-tree removal + packaging fix already
+stop it reaching anyone who clones or installs going forward, and anyone who
+cloned before today already has a local copy regardless of what happens to
+the remote's history — a full rewrite doesn't retroactively un-ship
+anything already downloaded, including the PyPI wheels published before this
+fix. Decided (2026-08-24, explicit choice, not a default) to hold off unless
+a concrete reason forces it later — e.g. a specific request once in contact
+with the MacKerell lab.
 
 ### Main CHARMM36 toppar (protein/nowaters/waters_ions) — NEEDS-HUMAN
 
