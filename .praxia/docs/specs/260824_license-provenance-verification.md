@@ -139,38 +139,84 @@ this session):
   upstream license itself ambiguous, or evidence couldn't be resolved
 
 **Audit record**: write via `transduction_log(action="append_audit",
-payload={audit_id, verdict, issues/findings})` — reuses the existing
-`.praxia/audits.jsonl` infra (queryable via `transduction_query`) rather than
-inventing a parallel record format. For `MISMATCH`/`NEEDS-HUMAN` verdicts,
-additionally file a narrative doc under `.praxia/docs/audits/` per the
-existing internal-docs convention, since those need a human-readable writeup
-a reviewer can act on, not just a JSONL row.
+payload={audit_id, verdict, issues/findings})` when the MCP tool is bound to
+this workspace, else append directly to `.praxia/audits.jsonl` in the same
+shape — reuses existing infra rather than inventing a parallel record
+format. The payload **must** carry `license_provenance_crate: "<crate>"` as
+a top-level key — see the false-positive note below for why. For
+`MISMATCH`/`NEEDS-HUMAN` verdicts, additionally file a narrative doc under
+`.praxia/docs/audits/` per the existing internal-docs convention, since
+those need a human-readable writeup a reviewer can act on, not just a JSONL
+row.
+
+**Both tiers are implemented and tested against this repo, not just
+designed**: tier 1 is `scripts/check_license_provenance.py`; tier 2 is the
+`.claude/skills/license-provenance-check` skill (fully specifies the method
+above, including the exact audit-record shape). Building and testing tier 1
+against the live repo surfaced two real bugs worth recording as evidence for
+the "why a lint alone doesn't fix this" argument above, not just the abstract
+case:
+
+- **First cut matched "audited" by substring-containment** (crate name
+  appears anywhere in an `.praxia/audits.jsonl` record) — this is a
+  general project-wide log with plenty of unrelated entries that mention a
+  crate name in passing (a functional code review, a bugfix), so it produced
+  false "resolved" readings. Fixed by requiring an explicit
+  `license_provenance_crate` marker field, not a substring match.
+- **First cut matched provenance phrases anywhere in a spec doc that
+  mentioned the crate name anywhere** — this doc's own Appendix names every
+  crate in result tables and is full of exactly the phrase vocabulary
+  ("reimplementation", "port of", "derived from") the lint watches for,
+  so nearly every crate got flagged by this doc's own prose. Fixed by
+  scoping signal-matching to the paragraph containing the crate-name
+  mention, not the whole document.
+- **Even after both fixes, the lint still misses `proxide-frag`'s real (weak)
+  signal** — its spec says "MASTER-style backbone fragment search," which is
+  a bare proper-noun allusion, not phrased as a porting claim the regex
+  watches for. This is accepted, not treated as a bug to chase: catching
+  every possible allusion to a tool name would need a maintained registry of
+  "external tools this org's labs have built," which defeats tier 1's "cheap
+  deterministic tripwire" purpose. It's exactly what tier 2's periodic
+  full-sweep (not just flag-triggered) mode exists to catch instead — and did,
+  in today's sweep.
 
 ## Rollout
 
-- **Phase 0 (today)**: retroactive full-crate sweep, run manually via the
-  Agent tool — see Appendix for results once complete. No CI wiring yet.
-- **Phase 1 (available now, no new infra)**: for any new crate or provenance
-  signal, dispatch tier 2 manually/on-demand — this is exactly what the sweep
-  in the Appendix does, just not yet gated by a lint.
-- **Phase 2 (needs a decision)**: wire tier 1 into CI (cheap — a grep-based
-  GitHub Actions step) and tier 2 into an automated dispatch on flag. Tier 2
-  in CI needs either headless Claude Code CI access (a `claude -p` invocation
-  with a fixed prompt + structured output) or routing through
-  `rig_run`/workflow infra if that's preferred to be kept in-house — this is
-  an open decision, not resolved by this doc.
+- **Phase 0 (done today)**: retroactive full-crate sweep via the Agent tool
+  (see Appendix) — no additional mismatches beyond the two already known.
+- **Phase 1 (done today, no CI wiring)**: tier 1 (`scripts/check_license_provenance.py`)
+  and tier 2 (`.claude/skills/license-provenance-check`) both exist and are
+  developer-invoked — run the script locally/pre-push, and run the skill in
+  a Claude Code session on any flag or before merging a crate that ports
+  external code.
+- **Phase 2 (deliberately deferred, tracked as debt #1397)**: CI-wiring was
+  scoped and decided against for now, not left ambiguous. GitHub's Copilot
+  coding agent needs a paid Copilot plan (Pro/Pro+/Business/Enterprise) plus
+  explicit org policy enablement — not available on this repo's account
+  tier, and headless Claude Code in CI was explicitly ruled out too. GitHub
+  Models (`actions/ai-inference`) is a better structural fit — free, runs on
+  the default `GITHUB_TOKEN` (`models:read` scope auto-granted to any
+  Action), no paid plan or org policy gate the way Copilot coding agent
+  needs — but it's a plain chat-completion API with no autonomous tool/web
+  access, so a CI workflow would need a deterministic `curl` step to fetch
+  primary-source license text first and hand it to the model for judgment
+  only; that plumbing hasn't been built or live-tested end-to-end in this
+  repo. Rather than block Phase 1 on resolving that, or wire something
+  unverified into a merge gate, it's filed as debt (#1397) and tier 2 stays
+  developer-side until someone picks it up.
 
 ## Open decisions
 
 - Does a `MISMATCH` verdict **block merge**, or just require a filed
-  `.praxia/docs/audits/` writeup + explicit sign-off comment? (Recommend:
-  block — matches how the GPL-gating and pending-Mosaist decisions were
-  actually handled, as stop-and-ask, not silent-merge-with-a-note.)
-- Phase 2 CI auth/dispatch mechanism (headless Claude Code vs. `rig_run`) —
-  needs a call from whoever owns CI secrets/billing for this repo.
+  `.praxia/docs/audits/` writeup + explicit sign-off comment? Moot for now
+  with no CI gate to block — but worth deciding before Phase 2 is built, so
+  debt #1397 inherits an answer instead of picking one implicitly.
+  (Recommend: block — matches how the GPL-gating and pending-Mosaist
+  decisions were actually handled, as stop-and-ask, not
+  silent-merge-with-a-note.)
 - Retention: audit records never expire, but should a crate's `NOTICE` state
   be considered stale after N months and re-verified? (Not urgent — flag for
-  later, don't block Phase 1/2 on it.)
+  later, don't block Phase 1 on it.)
 
 ## Appendix: retroactive sweep inventory
 
@@ -223,19 +269,11 @@ Physics/algorithm pass (complete):
 | `proxide-parallel-rt` | CLEAN | — | Minimal thread-count registry for wasm32 builds, pure infra |
 | `proxide-frag` | **OK, weak NEEDS-HUMAN flag** | MASTER (Grigoryan lab, same lab as Mosaist) — cited by name in `.praxia/docs/specs/260602_proxide-master-spec.md` as "MASTER-style backbone fragment search" | Unlike confind/rotlib, this spec has **no** source-reference pin, no function/line correspondence to MASTER's source — it implements Kabsch RMSD (standard public-domain 1976 algorithm) over its own `proxide-confind` dependency. Reads as an independent implementation of a published *approach*, not a translation of copyrighted expression. Attempted to verify MASTER's own license directly (same primary-source method): **no `MASTER` repo exists under the `Grigoryanlab` GitHub org** (confirmed via `api.github.com/orgs/Grigoryanlab/repos`) — it isn't distributed there, so this can't be closed out the same way confind/rotlib were. Current evidence doesn't support treating this as a derivative, but the same-lab pattern (2-for-2 on Mosaist/CC-BY-NC-SA elsewhere) means someone should track down MASTER's actual distribution terms (lab website or direct contact) before calling this fully closed. |
 
-**Cross-cutting flag surfaced by this pass, outside its assigned scope:**
-`src/proxide/assets/` (`amber/`, `water/`, `implicit/`, `charmm/`,
-`openmm_bundled/{amber14,amber19,charmm36,charmm36_2024,implicit}`,
-`gaff/ffxml`, `gaff/dat`) has **no `LICENSE`/`NOTICE` files anywhere**,
-despite `260618_system-prep-scope.md`'s own stated policy that each vendored
-force field should live in its own dir with its upstream `LICENSE`/`NOTICE`.
-Only `gaff/dat/ATOMTYPE_GFF2.DEF` has been resolved (this session). Both
-`proxide_fixer` (`amber_ff` feature) and `proxide-wasm` (`gaff2.rs`) read
-from this tree, and `proxide-physics` (still-running pass) almost certainly
-does too. CHARMM in particular has historically carried more restrictive
-academic-use terms than AMBER and hasn't been checked. **Recommend this as
-its own follow-up sweep — not pulled into this doc's scope**, since it's a
-distinct asset-tree audit rather than a code-provenance one.
+**Cross-cutting flag surfaced by this pass:** `src/proxide/assets/` had no
+`LICENSE`/`NOTICE` files anywhere despite `260618_system-prep-scope.md`'s own
+stated policy that each vendored force field should live in its own dir with
+its upstream `LICENSE`/`NOTICE`. Followed up as its own audit — see
+**Appendix B** below, which found a live, actively-shipping violation.
 
 Also surfaced by the physics/algorithm pass: `.praxia/docs/specs/260618_system-prep-scope.md`
 already contains a prior ADR for exactly this class of problem on the
@@ -256,3 +294,130 @@ never actually executed for most of the bundled assets it describes.
 unreachable primary source. No new MISMATCH beyond the two already known
 (`proxide-confind`, `proxide-rotlib`) — the sweep's value was closing out
 uncertainty on the other 16, not finding a third incident.
+
+## Appendix B: `src/proxide/assets/` force-field data audit
+
+Follow-up to the cross-cutting flag above. This is asset *data*, not crate
+*code* — a distinct audit from the crate sweep, using the same primary-source
+method. Three parallel passes (CHARMM, AMBER protein FF, water/implicit —
+the last one still in flight as of this revision).
+
+### CGenFF — live, actively-shipping violation, most urgent finding in this doc
+
+`src/proxide/assets/charmm/charmm36_cgenff.xml` (2.3MB, git-tracked since the
+repo's initial commit) is the CGenFF (CHARMM General Force Field)
+parameter set, converted to OpenMM XML by openmmforcefields. Its actual
+upstream terms, fetched directly from `mackerell.umaryland.edu/charmm_ff.shtml`
+(primary source, quoted verbatim):
+
+> "The CGenFF topology and parameter files are included with the full
+> release of the CHARMM additive toppar files... Frequent users of the
+> CGenFF program may wish to obtain a binary license. The procedure for
+> obtaining a free-of-charge not-for-profit license is initiated by
+> e-mailing us; it may take up to a few weeks and will require someone
+> with signature authority at your institution to sign a license
+> agreement... For-profit users may obtain the CGenFF program from
+> SilcsBio, LLC."
+
+This is a bilateral signed agreement, not a permissive or even a standard
+copyleft license — not-for-profit use requires an institutional signature,
+commercial use requires purchasing from a named third-party vendor. **And
+this file is not just sitting in git**: `pyproject.toml`'s packaging config
+(`include = ["src/proxide/**/*", "LICENSE"]`) wildcards in the entire assets
+tree, so `charmm36_cgenff.xml` has been built into every published wheel
+since the initial commit — this is actively distributed to every `pip
+install proxide` user today, unconditionally, with no license gate. This is
+the most urgent finding in this document: worse than `proxide-confind`/
+`proxide-rotlib` in mechanism (compiled wheel distribution via PyPI, not just
+source-visible-on-GitHub) and comparable or worse in severity (a required
+signed agreement plus a named-vendor commercial carve-out, versus CC BY-NC-SA's
+blanket noncommercial clause). **Not resolved by this doc — needs immediate
+attention, independent of everything else here.**
+
+### Main CHARMM36 toppar (protein/nowaters/waters_ions) — NEEDS-HUMAN
+
+Same two locations (`assets/charmm/charmm36{,_nowaters,_protein}.xml`,
+`assets/charmm/waters_ions_*.xml`) checked against the MacKerell lab page and
+openmmforcefields' own `charmm/README.md` (fetched from
+`raw.githubusercontent.com/openmm/openmmforcefields/main/charmm/README.md`).
+Neither states an explicit grant to redistribute the converted parameter
+files — the lab page's only license language found is the CGenFF warning
+above; the "free for nonprofit/academic use" statement associated with
+CHARMM licenses the *program*, registered separately at
+`brooks.chem.lsa.umich.edu/register/`, not the parameter data files
+themselves. Widely redistributed by convention (openmmforcefields does
+exactly this, and many other tools follow suit) but no positive written
+grant found to point to. **Genuinely ambiguous — not a confirmed clean
+permission and not a confirmed violation the way CGenFF is.**
+
+### AMBER protein/nucleic force-field family — OK-by-absence-of-restriction
+
+`assets/amber/*.xml` (ff14SB, ff19SB, ff99SB, lipid17/21, DNA/RNA-OL series)
+and `assets/openmm_bundled/amber14/`, `amber19/` (confirmed exact file-list
+match against `openmm/openmm`'s own `wrappers/python/openmm/app/data/`).
+openmmforcefields' repo tree has exactly one license-related file — its root
+MIT `LICENSE` — with no per-forcefield carve-out anywhere under
+`ffxml/amber/`, unlike AmberClassic (whose own README explicitly flags
+per-component license exceptions). OpenMM's own `docs-source/licenses/Licenses.txt`
+itemizes component licenses (MIT for the API/Reference/CPU platforms, LGPL
+for CUDA/OpenCL, separate notices for a few named third-party algorithms) and
+has no item covering bundled force-field data — it ships as part of the
+MIT-licensed `openmm.app` package with no carve-out. This is a real
+primary-source basis (an upstream MIT project with no stated exception,
+bundling and redistributing the data itself) but it's an *absence of a
+restriction*, not a positive "yes this is MIT" statement the way
+`ATOMTYPE_GFF2.DEF`'s GPL determination was positive — worth documenting the
+reasoning explicitly in a NOTICE rather than treating it as fully closed.
+
+Two exceptions inside this same family, **not** covered by the reasoning
+above:
+- `GLYCAM_06j-1.xml` — actual upstream is the Woods Lab (`glycam.org`), a
+  different origin from AmberTools proper, with a documented history of its
+  own separate academic-use terms. Not verified this pass (the lab's license
+  page wasn't locatable at the URL guessed) — **NEEDS-HUMAN**.
+- DNA/RNA-OL series (`DNA.OL15.xml`, `RNA.OL3.xml`, etc.) — separate
+  publication lineage (Ivani/Orozco lab), not independently traced beyond
+  the blanket AMBER-family reasoning — **NEEDS-HUMAN, lower priority** (no
+  known history of restrictive terms, just genuinely unverified).
+
+Also found: `assets/protein.ff19SB.xml` (top-level, outside `amber/`) is
+byte-identical to `amber/protein.ff19SB.xml` — a duplicate for a different
+load path. `assets/protein.ff14SB.xml` is a **different** file (230KB vs
+343KB) from `amber/ff14SB.xml`, sizes suggesting it actually came from
+`openmm_bundled/amber14/` instead — not a licensing concern (same
+OK-by-absence-of-restriction verdict either way) but an untracked provenance
+gap worth closing.
+
+Separately: `scripts/sync_forcefields.py` clones openmmforcefields' default
+branch with **no commit pin** — there is no record of which snapshot is
+actually vendored right now, and re-running the script would silently drift
+to whatever's current upstream. A packaging-hygiene gap, not a licensing one,
+but worth fixing alongside.
+
+### `openmm_bundled/charmm36{,_2024}/` — OK, lower risk
+
+Distinct from the main CHARMM36 toppar above: confirmed via `openmm/openmm`'s
+repo tree that these files exactly match OpenMM's own bundled
+`wrappers/python/openmm/app/data/charmm36{,_2024}/` and are **water models
+only** (spce, tip3p variants, tip4p variants, tip5p variants) — not
+CHARMM protein or CGenFF content. Standard published water models, already
+bundled and redistributed by the upstream OpenMM project itself. A NOTICE
+crediting the bundling is good practice but not urgent.
+
+### `water/`, `implicit/`, `openmm_bundled/implicit/` — pending
+
+Third parallel pass still in flight as of this revision; will be appended
+once it returns. Not blocking the CGenFF finding above, which stands
+independent of this section.
+
+### Net effect
+
+One confirmed live violation (CGenFF, actively shipping — needs immediate,
+separate attention), one genuinely ambiguous case worth a NOTICE stating the
+ambiguity honestly (main CHARMM36 toppar), one reasonably-founded-but-not
+airtight OK (AMBER protein family, plus two carve-outs needing their own
+check), and one clean lower-risk OK (openmm_bundled CHARMM36 water models).
+None of this was caught by the crate sweep above — it's a structurally
+different problem (bundled data files, not ported/reimplemented code), which
+is itself evidence that tier 1/tier 2 as scoped (crate-focused) needs a
+sibling pass over `src/proxide/assets/` specifically, not just crates.
