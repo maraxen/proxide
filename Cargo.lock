@@ -2856,6 +2856,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxide-ligand-frame"
+version = "0.1.0-alpha.16"
+dependencies = [
+ "approx",
+ "proxide-core",
+ "proxide-gaff2",
+ "proxide-geometry",
+ "thiserror",
+]
+
+[[package]]
 name = "proxide-parallel-rt"
 version = "0.1.0-alpha.16"
 
@@ -2963,6 +2974,7 @@ dependencies = [
  "proxide-gaff2",
  "proxide-geometry",
  "proxide-jaccard",
+ "proxide-ligand-frame",
  "proxide-tmalign",
  "proxide-units",
  "proxide_rs",
