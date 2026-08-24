@@ -1,0 +1,27 @@
+[package]
+name = "proxide-ligand-frame"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Canonical topology and per-frame geometric feature extraction for ligand reference frames"
+# Unconditionally links proxide-gaff2 (GPL-2.0-or-later) -- same rationale
+# as that crate's own Cargo.toml license override.
+license = "GPL-2.0-or-later"
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords = ["ligand", "force-field", "gaff2", "reference-frame"]
+categories = ["science", "algorithms"]
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+proxide-gaff2 = { workspace = true }
+proxide-core = { workspace = true }
+proxide-geometry = { workspace = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+approx.workspace = true
