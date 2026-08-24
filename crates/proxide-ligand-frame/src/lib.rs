@@ -11,12 +11,14 @@ pub mod canon;
 pub mod charges;
 pub mod connectivity;
 pub mod errors;
+pub mod frame;
 pub mod geometry_gate;
 pub mod pucker;
 pub mod torsions;
 pub mod typing;
 
 pub use errors::LigandFrameError;
+pub use frame::{extract_ligand_frame_coordinates, LigandFrameCoordinates};
 pub use pucker::RingPucker;
 pub use typing::{canonicalize_ligand_topology, LigandTopology};
 
