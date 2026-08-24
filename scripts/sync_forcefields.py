@@ -67,11 +67,15 @@ FILE_MAPPINGS = {
     "openmmforcefields/ffxml/amber/tip3p_IOD_multivalent.xml",
   ],
   # CHARMM force fields
+  # NOTE: charmm36_cgenff.xml deliberately excluded -- CGenFF requires a
+  # signed not-for-profit license agreement from the MacKerell lab
+  # (mackerell.umaryland.edu/charmm_ff.shtml), not redistributable by
+  # default. See .praxia/docs/specs/260824_license-provenance-verification.md.
+  # Do not re-add without that agreement in place.
   "charmm": [
     "openmmforcefields/ffxml/charmm/charmm36.xml",
     "openmmforcefields/ffxml/charmm/charmm36_nowaters.xml",
     "openmmforcefields/ffxml/charmm/charmm36_protein.xml",
-    "openmmforcefields/ffxml/charmm/charmm36_cgenff.xml",
     "openmmforcefields/ffxml/charmm/waters_ions_default.xml",
     "openmmforcefields/ffxml/charmm/waters_ions_tip3p_pme_b.xml",
   ],
