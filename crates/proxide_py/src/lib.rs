@@ -96,6 +96,10 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_parsers::read_newick, m)?)?;
     m.add_function(wrap_pyfunction!(py_jaccard::jaccard_distance_matrix, m)?)?;
     m.add_function(wrap_pyfunction!(py_tmalign::tm_align, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        py_tmalign::tm_scores_fixed_correspondence,
+        m
+    )?)?;
 
     // Force field functions (from py_forcefield)
     m.add_function(wrap_pyfunction!(py_forcefield::load_forcefield, m)?)?;
@@ -142,6 +146,18 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_chemistry::get_water_model, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::compute_bicubic_params, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::parameterize_molecule, m)?)?;
+    #[cfg(feature = "ligand-frame")]
+    m.add_class::<py_chemistry::PyLigandTopology>()?;
+    #[cfg(feature = "ligand-frame")]
+    m.add_function(wrap_pyfunction!(
+        py_chemistry::canonicalize_ligand_topology,
+        m
+    )?)?;
+    #[cfg(feature = "ligand-frame")]
+    m.add_function(wrap_pyfunction!(
+        py_chemistry::extract_ligand_frame_coordinates,
+        m
+    )?)?;
 
     // General geometry utilities (from py_geometry)
     m.add_function(wrap_pyfunction!(py_geometry::radius_of_gyration, m)?)?;
@@ -150,6 +166,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(py_geometry::kabsch_rmsd, m)?)?;
+    m.add_function(wrap_pyfunction!(py_geometry::kabsch_rmsd_batch, m)?)?;
 
     // Register Python wrappers
     m.add_class::<PyAtomicSystem>()?;
