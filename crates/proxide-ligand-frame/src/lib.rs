@@ -12,6 +12,7 @@ pub mod connectivity;
 pub mod errors;
 pub mod geometry_gate;
 pub mod pucker;
+pub mod torsions;
 pub mod typing;
 
 pub use errors::LigandFrameError;

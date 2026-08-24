@@ -24,8 +24,9 @@ pub struct LigandTopology {
 /// (calls into `proxide_gaff2`). Rings/aromaticity are caller-supplied
 /// (RDKit-derived in the Python layer, spec §1) rather than computed here.
 /// `partial_charges` is populated in Task 7; this task leaves it
-/// `vec![0.0; n]`. `torsion_definitions`/`pucker_definitions`/
-/// `unrepresented_ring_dof` are populated in Tasks 5-6.
+/// `vec![0.0; n]`. `torsion_definitions` is now populated (Task 5, via
+/// `crate::torsions`); `pucker_definitions`/`unrepresented_ring_dof` are
+/// populated in Task 6.
 #[allow(clippy::too_many_arguments)] // matches proxide-confind/-tmalign/-rotlib's existing convention
 pub fn canonicalize_ligand_topology(
     ligand_id: &str,
@@ -117,9 +118,29 @@ pub fn canonicalize_ligand_topology(
         .zip(bond_is_aromatic.iter())
         .map(|(&(i, j, order), &aromatic)| {
             let (ci, cj) = (canon[i], canon[j]);
-            (ci.min(cj), ci.max(cj), order, aromatic, false) // restricted_rotation: Task 5
+            (ci.min(cj), ci.max(cj), order, aromatic, false) // restricted_rotation: filled in below
         })
         .collect();
+
+    let bonds_no_restriction: Vec<(usize, usize, u8, bool)> = canon_bonds
+        .iter()
+        .map(|&(i, j, order, aromatic, _)| (i, j, order, aromatic))
+        .collect();
+    let restricted = crate::torsions::detect_restricted_rotation(&canon_elements, &bonds_no_restriction);
+    let canon_bonds: Vec<(usize, usize, u8, bool, bool)> = canon_bonds
+        .into_iter()
+        .zip(restricted.iter())
+        .map(|((i, j, order, aromatic, _), &r)| (i, j, order, aromatic, r))
+        .collect();
+
+    let ring_membership_set: std::collections::HashSet<usize> =
+        canon_ring_membership.iter().flatten().copied().collect();
+    let bond_in_ring: Vec<bool> = canon_bonds
+        .iter()
+        .map(|&(i, j, ..)| ring_membership_set.contains(&i) && ring_membership_set.contains(&j))
+        .collect();
+    let torsion_definitions =
+        crate::torsions::torsion_definitions(&canon_elements, &canon_bonds, &bond_in_ring);
 
     Ok(LigandTopology {
         ligand_id: ligand_id.to_string(),
@@ -132,7 +153,7 @@ pub fn canonicalize_ligand_topology(
         aromaticity: canon_aromaticity,
         ring_membership: canon_ring_membership,
         bonds: canon_bonds,
-        torsion_definitions: Vec::new(),
+        torsion_definitions,
         pucker_definitions: Vec::new(),
         unrepresented_ring_dof: Vec::new(),
     })
@@ -248,5 +269,39 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err, LigandFrameError::DisconnectedGraph { component_count: 2 });
+    }
+
+    #[test]
+    fn molecule_with_real_rotatable_bond_gets_a_torsion_definition() {
+        // 2,3-dimethylbutane skeleton: (CH3)2CH-CH(CH3)2 central bond is
+        // rotatable (each central carbon has 2 heavy substituents besides
+        // its partner).
+        let elements = vec!["C", "C", "C", "C", "C", "C"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
+        let atom_names = elements.clone();
+        let bonds_in = vec![(0, 1, 1u8), (0, 2, 1), (0, 3, 1), (1, 4, 1), (1, 5, 1)];
+        let bond_is_aromatic = vec![false; 5];
+        let ref_positions = vec![
+            [0.0, 0.0, 0.0],
+            [1.53, 0.0, 0.0],
+            [-0.5, 1.4, 0.0],
+            [-0.5, -1.4, 0.0],
+            [2.03, 1.4, 0.0],
+            [2.03, -1.4, 0.0],
+        ];
+        let topology = canonicalize_ligand_topology(
+            "dimethylbutane",
+            &elements,
+            &atom_names,
+            &bonds_in,
+            &bond_is_aromatic,
+            &[],
+            None,
+            &ref_positions,
+        )
+        .expect("should canonicalize");
+        assert_eq!(topology.torsion_definitions.len(), 1);
     }
 }
