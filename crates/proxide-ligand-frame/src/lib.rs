@@ -7,6 +7,8 @@
 //! torsion/pucker definition, and charge wiring live here as a *caller* of
 //! `proxide_gaff2::assign_gaff2_atom_types`, not an extension of it.
 
+pub mod canon;
+
 #[cfg(test)]
 mod smoke_tests {
     #[test]
