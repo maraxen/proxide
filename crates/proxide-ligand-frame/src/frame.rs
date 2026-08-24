@@ -29,8 +29,7 @@ fn bond_angle_triples(bonds: &[(usize, usize, u8, bool, bool)]) -> Vec<[usize; 3
         adjacency[j].push(i);
     }
     let mut triples = Vec::new();
-    for center in 0..n {
-        let neighbors = &adjacency[center];
+    for (center, neighbors) in adjacency.iter().enumerate() {
         for x in 0..neighbors.len() {
             for y in (x + 1)..neighbors.len() {
                 triples.push([neighbors[x], center, neighbors[y]]);
