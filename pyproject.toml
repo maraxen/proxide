@@ -113,6 +113,14 @@ include = [
     "src/proxide/**/*",
     "LICENSE",
 ]
+# CGenFF requires a signed not-for-profit license agreement from the
+# MacKerell lab (mackerell.umaryland.edu/charmm_ff.shtml) -- not a
+# redistributable-by-default license, unlike everything else the `include`
+# wildcard above pulls in. Must not ship in the wheel until that agreement
+# is in place. See .praxia/docs/specs/260824_license-provenance-verification.md.
+exclude = [
+    "src/proxide/assets/charmm/charmm36_cgenff.xml",
+]
 
 [tool.pytest.ini_options]
 markers = [
