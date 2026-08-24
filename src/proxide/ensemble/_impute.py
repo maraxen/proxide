@@ -178,10 +178,10 @@ def select_donors(
   runner_up = float(scores[order[1]]) if n_donors > 1 else float("nan")
 
   if better_is_lower:
-    tied = scores <= best_val + config.degeneracy_epsilon
+    tied = scores <= best_val + config.epsilon
     margin = runner_up - best_val if n_donors > 1 else float("nan")
   else:
-    tied = scores >= best_val - config.degeneracy_epsilon
+    tied = scores >= best_val - config.epsilon
     margin = best_val - runner_up if n_donors > 1 else float("nan")
 
   selection = DonorSelection(

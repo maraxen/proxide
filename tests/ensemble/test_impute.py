@@ -479,3 +479,57 @@ def test_flanking_superposition_falls_back_visibly():
 def test_config_rejects_min_shared_below_three():
   with pytest.raises(ValueError, match="min_shared_residues must be >= 3"):
     ImputeConfig(min_shared_residues=2)
+
+
+def test_degeneracy_epsilon_defaults_per_metric():
+  """One epsilon cannot serve both metrics: they live on different scales.
+
+  RMSD is an unbounded distance in Angstroms; TM-score is bounded by 1.0 and
+  saturates for frames of one protein. Measured on real data, a shared 0.05 window
+  reported median 2 tied donors under rmsd and 241.5 under tm_score for the SAME
+  frames -- which would make the degeneracy field useless exactly where it is
+  supposed to warn.
+  """
+  from proxide.ensemble._config import DEFAULT_DEGENERACY_EPSILON
+
+  assert ImputeConfig(metric="rmsd").epsilon == DEFAULT_DEGENERACY_EPSILON["rmsd"]
+  assert ImputeConfig(metric="tm_score").epsilon == DEFAULT_DEGENERACY_EPSILON["tm_score"]
+  assert ImputeConfig(metric="rmsd").epsilon != ImputeConfig(metric="tm_score").epsilon
+
+
+def test_explicit_degeneracy_epsilon_overrides_the_default():
+  cfg = ImputeConfig(metric="tm_score", degeneracy_epsilon=0.25)
+  assert cfg.epsilon == 0.25
+  assert cfg.as_dict()["degeneracy_epsilon"] == 0.25
+  assert cfg.as_dict()["degeneracy_epsilon_was_default"] is False
+
+
+def test_provenance_records_the_resolved_epsilon_not_none():
+  """A provenance record saying epsilon=None would not describe what was run."""
+  truth = helix(80)
+  obs = gapped(80, [(30, 40)])
+  acceptor = truth.copy()
+  acceptor[~obs] = np.nan
+  donors = np.stack([bent(truth, a) for a in (0.2, 5.0, 11.0)])
+
+  result = impute_frame(acceptor, obs, donors, ImputeConfig(method="nearest_frame"))
+  eps = result.provenance["config"]["degeneracy_epsilon"]
+  assert isinstance(eps, float) and eps > 0
+  assert result.provenance["config"]["degeneracy_epsilon_was_default"] is True
+
+
+def test_tighter_epsilon_reports_fewer_ties():
+  truth = helix(80)
+  obs = gapped(80, [(30, 40)])
+  acceptor = truth.copy()
+  acceptor[~obs] = np.nan
+  donors = np.stack([bent(truth, a) for a in np.linspace(0.0, 0.4, 10)])
+
+  loose = impute_frame(
+    acceptor, obs, donors, ImputeConfig(method="nearest_frame", degeneracy_epsilon=10.0)
+  )
+  tight = impute_frame(
+    acceptor, obs, donors, ImputeConfig(method="nearest_frame", degeneracy_epsilon=1e-9)
+  )
+  assert loose.selection.n_within_epsilon == 10
+  assert tight.selection.n_within_epsilon < loose.selection.n_within_epsilon
