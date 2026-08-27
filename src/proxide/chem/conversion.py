@@ -5,6 +5,7 @@ from collections.abc import Mapping
 import jax
 import jax.numpy as jnp
 import numpy as np
+from alphex import Policy, known, perm
 
 from proxide.chem.residues import (
   restype_order,
@@ -13,15 +14,15 @@ from proxide.chem.residues import (
 )
 from proxide.core.types import ProteinSequence
 
-MPNN_ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
-AF_ALPHABET = "ARNDCQEGHILKMFPSTWYVX"
+MPNN_ALPHABET = known.MPNN_X_21.symbols + "X"
+AF_ALPHABET = known.AF_X_21.symbols + "X"
 
-_AF_TO_MPNN_PERM = jnp.array(
-  [MPNN_ALPHABET.index(k) for k in AF_ALPHABET],
+_AF_TO_MPNN_PERM = jnp.asarray(
+  perm(known.AF_X_21, known.MPNN_X_21, policy=Policy.RAISE, dtype=np.int8),
 )
 
-_MPNN_TO_AF_PERM = jnp.array(
-  [AF_ALPHABET.index(k) for k in MPNN_ALPHABET],
+_MPNN_TO_AF_PERM = jnp.asarray(
+  perm(known.MPNN_X_21, known.AF_X_21, policy=Policy.RAISE, dtype=np.int8),
 )
 
 
