@@ -111,3 +111,53 @@ def test_restypes_with_x_and_gap_is_alphafold_ordered() -> None:
   assert "".join(restypes_with_x_and_gap[:20]) == known.AF_20.symbols
   assert restypes_with_x_and_gap[20] == "X"
   assert restypes_with_x_and_gap[21] == "-"
+
+
+def test_af_mpnn_perm_tables_match_hand_rolled_literals_exhaustively() -> None:
+  """Exhaustive 21-symbol round-trip parity gate for the alphex migration (Work Package 1).
+
+  Work Package 1 (260827_alphex-ecosystem-migration-plan) replaces `chem/conversion.py`'s and
+  `io/parsing/mappings.py`'s hand-rolled `MPNN_ALPHABET`/`AF_ALPHABET` literals and the
+  `[...].index(k) for k in ...]`-built permutation tables with values derived from
+  `alphex.known` and `alphex.perm`.
+
+  "Expected" is deliberately hardcoded to the pre-migration literal strings rather than read
+  off `conversion.AF_ALPHABET`/`mappings.AF_ALPHABET` at test time: those module attributes
+  are exactly what the migration replaces with alphex-derived values, so deriving "expected"
+  from them would make this test check the migrated implementation against itself
+  (tautological) once the migration lands, rather than against the ordering it must preserve.
+  This is what keeps this test a real regression gate for steps 3-4 of the migration, as
+  distinct from `test_conversion_declares_both_base_orderings_with_x_at_20` above, which pins
+  the module attribute against `alphex`'s declaration and necessarily becomes tautological
+  itself once that attribute is constructed from `alphex.known` directly.
+
+  Run against the unmodified hand-rolled implementation, this passes because it is then
+  checking each literal against itself -- establishing the pre-migration baseline this test
+  guards.
+  """
+  import numpy as np
+
+  from proxide.chem import conversion
+  from proxide.io.parsing import mappings
+
+  # Hand-rolled literals exactly as they read immediately before this migration. Hardcoded
+  # (not imported) so that migrating conversion.py/mappings.py to derive these from `alphex`
+  # cannot silently make this assertion vacuous.
+  hand_rolled_mpnn = "ACDEFGHIKLMNPQRSTVWYX"
+  hand_rolled_af = "ARNDCQEGHILKMFPSTWYVX"
+
+  expected_af_to_mpnn = [hand_rolled_mpnn.index(k) for k in hand_rolled_af]
+  expected_mpnn_to_af = [hand_rolled_af.index(k) for k in hand_rolled_mpnn]
+
+  for site in (conversion, mappings):
+    # The module's public alphabet strings must still equal the pre-migration literals,
+    # whether they are still literals (pre-migration) or now derived from `alphex.known`
+    # (post-migration) -- either way, byte-for-byte, or the migration changed the ordering.
+    assert site.AF_ALPHABET == hand_rolled_af
+    assert site.MPNN_ALPHABET == hand_rolled_mpnn
+
+    got_af_to_mpnn = np.asarray(site.af_to_mpnn(np.arange(21)))
+    got_mpnn_to_af = np.asarray(site.mpnn_to_af(np.arange(21)))
+
+    np.testing.assert_array_equal(got_af_to_mpnn, expected_af_to_mpnn)
+    np.testing.assert_array_equal(got_mpnn_to_af, expected_mpnn_to_af)

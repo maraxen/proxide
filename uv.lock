@@ -3091,6 +3091,7 @@ name = "proxide"
 version = "0.1.0a16"
 source = { editable = "." }
 dependencies = [
+    { name = "alphex" },
     { name = "array-record" },
     { name = "equinox" },
     { name = "grain" },
@@ -3162,7 +3163,6 @@ trajectories = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "alphex" },
     { name = "chex" },
     { name = "expaloma" },
     { name = "openmm" },
@@ -3176,6 +3176,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "alphex", specifier = ">=0.1.0a1" },
     { name = "array-record" },
     { name = "biotite", marker = "extra == 'trajectories'" },
     { name = "chex", marker = "extra == 'dev'" },
@@ -3224,7 +3225,6 @@ provides-extras = ["cuda", "tpu", "cpu", "ml", "molecules", "espaloma", "espalom
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "alphex", specifier = ">=0.1.0a1" },
     { name = "chex" },
     { name = "expaloma", specifier = ">=0.1.0" },
     { name = "openmm", specifier = ">=8.4.0.post2" },
