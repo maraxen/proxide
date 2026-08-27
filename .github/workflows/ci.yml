@@ -103,10 +103,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
       - name: Install protoc (required by proxide-rotlib prost-build)
         run: sudo apt-get install -y protobuf-compiler
       - name: Install cargo-hack
-        run: cargo install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
       - name: Rustfmt Check
         run: cargo fmt --all -- --check
       - name: Clippy
