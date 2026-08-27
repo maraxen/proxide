@@ -6,8 +6,10 @@ prxteinmpnn.io.parsing.mappings
 import logging
 import pathlib
 from collections.abc import Mapping
+from typing import cast
 
 import numpy as np
+from alphex import Policy, known, perm
 
 from proxide.chem.residues import (
   atom_order,
@@ -20,14 +22,21 @@ from proxide.chem.residues import (
 logger = logging.getLogger(__name__)
 
 
-MPNN_ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
-AF_ALPHABET = "ARNDCQEGHILKMFPSTWYVX"
-_AF_TO_MPNN_PERM = np.array(
-  [MPNN_ALPHABET.index(k) for k in AF_ALPHABET],
-)
+MPNN_ALPHABET = known.MPNN_X_21.symbols + "X"
+AF_ALPHABET = known.AF_X_21.symbols + "X"
 
-_MPNN_TO_AF_PERM = np.array(
-  [AF_ALPHABET.index(k) for k in MPNN_ALPHABET],
+# perm()'s return type is `np.ndarray | MaskedPerm`; MaskedPerm is only ever returned when a
+# position resolves under Policy.MASK (see alphex.convert.perm docstring). Policy.RAISE never
+# masks -- it raises immediately on any unmappable index instead -- so this is always a plain
+# ndarray at runtime. cast() documents that guarantee for the type checker without pulling in
+# jax (this module is numpy-only by design).
+_AF_TO_MPNN_PERM = cast(
+  "np.ndarray",
+  perm(known.AF_X_21, known.MPNN_X_21, policy=Policy.RAISE, dtype=np.int8),
+)
+_MPNN_TO_AF_PERM = cast(
+  "np.ndarray",
+  perm(known.MPNN_X_21, known.AF_X_21, policy=Policy.RAISE, dtype=np.int8),
 )
 
 
