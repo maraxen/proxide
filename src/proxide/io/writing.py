@@ -11,6 +11,40 @@ if TYPE_CHECKING:
   from proxide.core.containers import Protein
 
 
+def _reject_if_batched(protein: Protein, fn_name: str) -> None:
+  """Raise loudly if `protein` looks like a batched (multi-row) Protein.
+
+  write_pdb/write_mmcif write a single structure to a single file. Since the
+  `_stack_padded_proteins` fix, a batched Protein's `chain_ids` is
+  `list[list[str] | None]` (one entry per batch row) rather than the single
+  structure's `list[str]`. Indexing that per-row list as if it were a flat
+  per-atom chain-letter list would silently stamp a Python list repr (e.g.
+  "['A', 'B']") into the fixed-width PDB/mmCIF chain-ID column, corrupting the
+  file rather than merely mislabeling it. Batched coordinates (an extra
+  leading batch axis) are an independent, equally-unsupported case -- reject
+  both rather than attempt to guess which row was meant.
+  """
+  chain_ids = getattr(protein, "chain_ids", None)
+  if chain_ids and isinstance(chain_ids[0], (list, tuple)):
+    msg = (
+      f"{fn_name}() writes a single structure, but `protein.chain_ids` is "
+      f"list[list[str]] -- this looks like a batched Protein (e.g. the output "
+      f"of pad_and_collate_proteins). Index into the batch first, e.g. "
+      f"`protein.replace(chain_ids=protein.chain_ids[row], "
+      f"coordinates=protein.coordinates[row], ...)` for the fields you need, "
+      f"or write each row separately."
+    )
+    raise ValueError(msg)
+  coords = getattr(protein, "coordinates", None)
+  if coords is not None and coords.ndim == 4:
+    msg = (
+      f"{fn_name}() writes a single structure, but `protein.coordinates` has "
+      f"{coords.ndim} dimensions (expected 3, (N_res, atoms_per_res, 3)) -- "
+      f"this looks like a batched Protein. Index into the batch axis first."
+    )
+    raise ValueError(msg)
+
+
 def write_pdb(protein: Protein, path: str | Path) -> Path:
   """Write a Protein structure to a PDB file.
 
@@ -22,6 +56,7 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
       Path to the written file.
   """
   path = Path(path)
+  _reject_if_batched(protein, "write_pdb")
 
   # Ensure we have coordinates in Angstroms (Protein is already in Angstroms)
   coords = protein.coordinates
@@ -103,6 +138,7 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
       Path to the written file.
   """
   path = Path(path)
+  _reject_if_batched(protein, "write_mmcif")
 
   coords = protein.coordinates
   if coords.ndim == 3:
