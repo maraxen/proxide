@@ -526,7 +526,9 @@ def _stack_padded_proteins(
     padded_proteins (list[Protein]): List of padded proteins.
 
   Returns:
-    Protein: Batched protein.
+    Protein: Batched protein. ``chain_ids`` becomes ``list[list[str] | None]``, one entry
+    per batch row, in the same order as ``padded_proteins`` -- see the note below for why
+    this is assembled separately rather than through the generic ``stack_fn`` below.
 
   """
 
@@ -542,7 +544,29 @@ def _stack_padded_proteins(
       return None
     return np.stack(non_none, axis=0)
 
-  return jax.tree_util.tree_map(stack_fn, *padded_proteins)
+  # chain_ids is a variable-length, per-structure list[str] -- genuinely ragged data with no
+  # natural "stack" operation, not a fixed-shape array. `list` is a JAX pytree CONTAINER by
+  # default, so `jax.tree_util.tree_map(stack_fn, *padded_proteins)` does not call `stack_fn`
+  # once per protein with each one's whole `chain_ids` list -- it recurses INTO each list and
+  # calls `stack_fn` once per matched POSITION, on the individual chain-letter STRINGS at that
+  # position across every protein being combined. Strings have no `.shape`, so `stack_fn`'s
+  # fallback (`return first`) fires and silently keeps only the FIRST protein's letter at every
+  # position -- e.g. batching a 2-chain {A,B} structure with a 2-chain {C,D} structure yields
+  # chain_ids == ['A', 'B'] for BOTH rows, discarding the second structure's real chain
+  # identity with no error. When chain COUNTS differ across proteins, `tree_map` instead raises
+  # a pytree-structure-mismatch `ValueError` before any stacking happens -- a crash, not a
+  # silent wrong answer, but still blocks batching structures with different chain counts.
+  # Assemble chain_ids separately, outside `tree_map`, so each row keeps its own true value.
+  # Copy (not alias) each row's list: Protein is frozen=True, but that only blocks attribute
+  # rebinding, not mutation of a contained mutable list -- aliasing the original objects here
+  # would let an in-place mutation of one protein's chain_ids silently corrupt the batched
+  # result (or vice versa) through a class that otherwise presents itself as immutable.
+  chain_ids_per_row = [
+    list(p.chain_ids) if p.chain_ids is not None else None for p in padded_proteins
+  ]
+  proteins_without_chain_ids = [p.replace(chain_ids=None) for p in padded_proteins]
+  batched = jax.tree_util.tree_map(stack_fn, *proteins_without_chain_ids)
+  return batched.replace(chain_ids=chain_ids_per_row)
 
 
 def pad_and_collate_proteins(

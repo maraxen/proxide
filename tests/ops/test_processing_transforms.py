@@ -58,3 +58,83 @@ class TestPadAndCollate:
         """Test that collating an empty list raises a ValueError."""
         with pytest.raises(ValueError, match="Cannot collate an empty list"):
             pad_and_collate_proteins([])
+
+    def test_chain_ids_preserved_per_row_same_chain_count(self) -> None:
+        """Regression: batching structures with the same chain COUNT but different chain
+        LETTERS must keep each row's own chain_ids, not silently collapse to row 0's.
+
+        Before the fix, `_stack_padded_proteins` passed `chain_ids` through the generic
+        `jax.tree_util.tree_map(stack_fn, *padded_proteins)` call. `list` is a JAX pytree
+        container, so tree_map recursed into the individual chain-letter strings at each
+        matched position across proteins; strings have no `.shape`, so `stack_fn`'s fallback
+        (`return first`) silently kept only the FIRST protein's letter at every position --
+        batching a 2-chain {"A", "B"} structure with a 2-chain {"C", "D"} structure produced
+        `chain_ids == ["A", "B"]` for BOTH rows, discarding the second structure's real chain
+        identity with no exception, no warning, and a valid-shaped result.
+        """
+        p1 = Protein(
+            coordinates=np.ones((4, 37, 3)),
+            aatype=np.ones(4, dtype=np.int8),
+            one_hot_sequence=np.eye(21)[np.zeros(4, dtype=np.int32)],
+            mask=np.ones((4,)),
+            atom_mask=np.ones((4, 37)),
+            residue_index=np.arange(4),
+            chain_index=np.array([0, 0, 1, 1], dtype=np.int32),
+            chain_ids=["A", "B"],
+            dihedrals=None,
+            mapping=None,
+        )
+        p2 = Protein(
+            coordinates=np.ones((4, 37, 3)),
+            aatype=np.ones(4, dtype=np.int8),
+            one_hot_sequence=np.eye(21)[np.zeros(4, dtype=np.int32)],
+            mask=np.ones((4,)),
+            atom_mask=np.ones((4, 37)),
+            residue_index=np.arange(4),
+            chain_index=np.array([0, 0, 1, 1], dtype=np.int32),
+            chain_ids=["C", "D"],
+            dihedrals=None,
+            mapping=None,
+        )
+
+        batch: Protein = pad_and_collate_proteins([p1, p2])
+
+        assert isinstance(batch, Protein)
+        assert batch.chain_ids == [["A", "B"], ["C", "D"]], (
+            "each row must keep its OWN chain_ids, not row 0's for every row"
+        )
+
+    def test_chain_ids_preserved_per_row_different_chain_count(self) -> None:
+        """Regression: batching structures with DIFFERENT chain counts must not crash --
+        before the fix, differing chain_ids list lengths made tree_map raise a pytree
+        structure-mismatch ValueError before any stacking happened.
+        """
+        p1 = Protein(
+            coordinates=np.ones((4, 37, 3)),
+            aatype=np.ones(4, dtype=np.int8),
+            one_hot_sequence=np.eye(21)[np.zeros(4, dtype=np.int32)],
+            mask=np.ones((4,)),
+            atom_mask=np.ones((4, 37)),
+            residue_index=np.arange(4),
+            chain_index=np.array([0, 0, 1, 1], dtype=np.int32),
+            chain_ids=["A", "B"],
+            dihedrals=None,
+            mapping=None,
+        )
+        p2 = Protein(
+            coordinates=np.ones((3, 37, 3)),
+            aatype=np.ones(3, dtype=np.int8),
+            one_hot_sequence=np.eye(21)[np.zeros(3, dtype=np.int32)],
+            mask=np.ones((3,)),
+            atom_mask=np.ones((3, 37)),
+            residue_index=np.arange(3),
+            chain_index=np.zeros(3, dtype=np.int32),
+            chain_ids=["A"],
+            dihedrals=None,
+            mapping=None,
+        )
+
+        batch: Protein = pad_and_collate_proteins([p1, p2])
+
+        assert isinstance(batch, Protein)
+        assert batch.chain_ids == [["A", "B"], ["A"]]
