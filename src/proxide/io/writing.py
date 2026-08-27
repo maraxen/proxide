@@ -45,6 +45,45 @@ def _reject_if_batched(protein: Protein, fn_name: str) -> None:
     raise ValueError(msg)
 
 
+def _resolve_chain_letters(protein: Protein, n_rows: int) -> list[str]:
+  """Resolve a chain letter for each of the `n_rows` flattened coordinate rows.
+
+  `chain_ids` is a per-CHAIN vocabulary (Shape (N_chains,), e.g. ["A", "B"]) --
+  see `Protein.from_rust_dict`, which populates it from `unique_chain_ids` -- and
+  `chain_index` is per-RESIDUE (Shape (N_res,)) for Atom37/Atom14-format Proteins.
+  Neither is safe to index directly by a flattened per-atom-slot row index: the
+  previous code did `chain_ids[i]` for `i` up to `len(coords) - 1`, which for an
+  Atom37 Protein is `len(full_coordinates) == N_res * atoms_per_residue`, far
+  larger than `len(chain_ids) == N_chains` -- so every residue past the first
+  `N_chains` atom-slots silently fell back to "A".
+
+  Resolve through `chain_index`, expanded to match whatever per-residue-slot
+  flattening produced `n_rows` rows of coordinates, then look up each row's
+  chain letter in `chain_ids`.
+  """
+  chain_ids = getattr(protein, "chain_ids", None)
+  chain_index = getattr(protein, "chain_index", None)
+  if not chain_ids or chain_index is None:
+    return ["A"] * n_rows
+
+  chain_index = np.asarray(chain_index)
+  n_res = chain_index.shape[0]
+  if n_res == 0:
+    return ["A"] * n_rows
+  if n_rows == n_res:
+    # Already per-residue-aligned (e.g. the flat "Full" format).
+    row_chain_index = chain_index
+  elif n_rows % n_res == 0:
+    # Atom37/Atom14: each residue expands to n_rows // n_res atom slots.
+    row_chain_index = np.repeat(chain_index, n_rows // n_res)
+  else:
+    # Cannot align chain_index to the coordinate rows -- degrade to the
+    # single-chain default rather than guess at a misaligned mapping.
+    return ["A"] * n_rows
+
+  return [chain_ids[idx] if 0 <= idx < len(chain_ids) else "A" for idx in row_chain_index]
+
+
 def write_pdb(protein: Protein, path: str | Path) -> Path:
   """Write a Protein structure to a PDB file.
 
@@ -71,7 +110,6 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
   atom_names = getattr(protein, "atom_names", None)
   res_names = getattr(protein, "res_names", None)
   res_ids = getattr(protein, "residue_index", None)
-  chain_ids = getattr(protein, "chain_ids", None)
   elements = getattr(protein, "elements", None)
 
   # Fallbacks
@@ -81,10 +119,9 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
     res_names = ["UNK"] * len(coords)
   if res_ids is None:
     res_ids = np.arange(1, len(coords) + 1)
-  if chain_ids is None:
-    chain_ids = ["A"] * len(coords)
   if elements is None:
     elements = [name[0] for name in atom_names]
+  resolved_chain_ids = _resolve_chain_letters(protein, len(coords))
 
   with open(path, "w") as f:
     for i in range(len(coords)):
@@ -108,11 +145,7 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
       atom_name = atom_names[i] if i < len(atom_names) else "CA"
       res_name = res_names[i] if i < len(res_names) else "UNK"
       res_id = res_ids[i] if i < len(res_ids) else (i + 1)
-      chain_id = (
-        chain_ids[0]
-        if chain_ids and len(chain_ids) == 1
-        else (chain_ids[i] if i < len(chain_ids) else "A")
-      )
+      chain_id = resolved_chain_ids[i]
       element = elements[i] if i < len(elements) else atom_name[0]
 
       x, y, z = coords[i]
@@ -149,7 +182,6 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
   atom_names = getattr(protein, "atom_names", None)
   res_names = getattr(protein, "res_names", None)
   res_ids = getattr(protein, "residue_index", None)
-  chain_ids = getattr(protein, "chain_ids", None)
   elements = getattr(protein, "elements", None)
 
   if atom_names is None:
@@ -158,10 +190,9 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
     res_names = ["UNK"] * len(coords)
   if res_ids is None:
     res_ids = np.arange(1, len(coords) + 1)
-  if chain_ids is None:
-    chain_ids = ["A"] * len(coords)
   if elements is None:
     elements = [name[0] for name in atom_names]
+  resolved_chain_ids = _resolve_chain_letters(protein, len(coords))
 
   with open(path, "w") as f:
     f.write(f"data_{path.stem}\n")
@@ -184,11 +215,7 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
       atom_name = atom_names[i] if i < len(atom_names) else "CA"
       res_name = res_names[i] if i < len(res_names) else "UNK"
       res_id = res_ids[i] if i < len(res_ids) else (i + 1)
-      chain_id = (
-        chain_ids[0]
-        if chain_ids and len(chain_ids) == 1
-        else (chain_ids[i] if i < len(chain_ids) else "A")
-      )
+      chain_id = resolved_chain_ids[i]
       element = elements[i] if i < len(elements) else atom_name[0]
 
       x, y, z = coords[i]
