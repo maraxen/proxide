@@ -12,7 +12,17 @@ proxide also has **three** alphabet declaration sites, not the two an earlier ce
 the others copy from, and it was missed because the first census regexed string literals and
 `restypes` is a list.
 
-Phase 0 (decision D4): **dev-dependency-only**. Nothing under `src/` imports the library.
+Phase 0 (decision D4) scoped `alphex` to **dev-dependency-only**: nothing under `src/` imported
+the library, and these tests only checked proxide's hand-rolled tables against it. That scoping
+is superseded for proxide specifically — see
+`.praxia/docs/decisions/260827_alphex-runtime-dependency-d4-superseded.md`. `alphex` is now a
+**runtime** dependency: `chem/conversion.py` and `io/parsing/mappings.py` import it directly at
+module scope and delegate their `af_to_mpnn`/`mpnn_to_af` permutation-table construction to
+`alphex.perm`, rather than building those tables from local literals. Consequently, the tests in
+this file no longer gate *whether* delegation should happen (that decision is made); they
+validate the *result* of that delegation — that the alphabet constants proxide exposes still
+match the ecosystem's canonical declarations now that they're derived through `alphex` rather
+than hand-rolled.
 
 If a test here fails, do NOT edit it to match. One of the two sides is wrong, and which one is
 the finding.
