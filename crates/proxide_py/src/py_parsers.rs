@@ -339,6 +339,8 @@ pub fn parse_structure(
                         physics::md_params::MissingResidueMode::ClosestMatch
                     }
                 },
+                water_model: spec.water_model.clone(),
+                strict: spec.strict_parameterization,
             };
 
             let topology = geometry::topology::generate_topology(
@@ -1018,6 +1020,18 @@ pub fn parse_structure(
         dict_bound.set_item("atom_types", atom_types)?;
         dict_bound.set_item("num_parameterized", params.num_parameterized)?;
         dict_bound.set_item("num_skipped", params.num_skipped)?;
+
+        // Never let a caller silently receive charge=0/sigma=0/epsilon=0 for
+        // atoms this pipeline didn't confidently parameterize (see
+        // `MDParameters::unparameterized_atoms`). Always emit the field --
+        // an empty array is the positive "everything was parameterized"
+        // signal -- and always warn loudly when it's non-empty (strict mode
+        // already turned this into a hard error before we got here).
+        dict_bound.set_item(
+            "unparameterized_atoms",
+            PyArray1::from_slice_bound(py, &params.unparameterized_atoms),
+        )?;
+        dict_bound.set_item("num_unparameterized", params.unparameterized_atoms.len())?;
     }
 
     // --- GAFF Typing (if requested) ---
