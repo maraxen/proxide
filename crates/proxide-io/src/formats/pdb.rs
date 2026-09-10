@@ -3,6 +3,7 @@
 //! High-performance parser for Protein Data Bank (PDB) files.
 //! Returns raw atom data matching the proxide format.
 
+use proxide_core::chem::masses::infer_element;
 use proxide_core::structure::{AtomRecord, RawAtomData};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -47,16 +48,27 @@ fn parse_atom_line(line: &str) -> Option<AtomRecord> {
         } else {
             0.0
         },
-        element: if line.len() >= 78 {
-            line[76..78].trim().to_string()
-        } else {
-            // Infer from atom name (first character)
-            line[12..16]
-                .trim()
-                .chars()
-                .next()
-                .map(|c| c.to_string())
-                .unwrap_or_default()
+        element: {
+            // Columns 77-78 (0-indexed 76..78) hold the element symbol per the PDB
+            // spec, but many writers (including OpenMM's PDBFile, used for the
+            // Modeller-generated solvent/ion atoms that exposed this) either omit
+            // the column entirely (short line) or leave it blank (long-enough line,
+            // empty after trim). Either way, fall back to name-based inference --
+            // and that inference must be the two-letter-aware `infer_element`
+            // (shared with mass assignment), not a naive first-character slice.
+            // The naive version previously here mis-elementized "Cl" as "C" (and
+            // would do the same for Br/Na/Mg/Zn/Fe/Cu/Mn/Se) -- see backlog #5052
+            // (prolix).
+            let from_column = if line.len() >= 78 {
+                line[76..78].trim().to_string()
+            } else {
+                String::new()
+            };
+            if from_column.is_empty() {
+                infer_element(line[12..16].trim()).to_string()
+            } else {
+                from_column
+            }
         },
         charge: None,
         radius: None,
@@ -228,6 +240,25 @@ mod tests {
         let atom = parse_atom_line(line).unwrap();
         assert_eq!(atom.occupancy, 1.0);
         assert_eq!(atom.temp_factor, 0.0);
+    }
+
+    #[test]
+    fn test_two_letter_element_fallback_not_truncated() {
+        // backlog #5052 (prolix): a chloride ion named "Cl" on a short line (no
+        // element column at all) used to infer element "C" (first character only)
+        // instead of "Cl". Also cover a long-enough line whose element column is
+        // present but blank -- that must fall back to name-based inference too,
+        // not silently accept an empty element string.
+        let short_line =
+            "HETATM 7506  Cl  CL  A 500      12.000   3.000   4.000  1.00  0.00";
+        let atom = parse_atom_line(short_line).unwrap();
+        assert_eq!(atom.atom_name, "Cl");
+        assert_eq!(atom.element, "Cl");
+
+        let blank_column_line =
+            "HETATM 7506  Cl  CL  A 500      12.000   3.000   4.000  1.00  0.00              ";
+        let atom = parse_atom_line(blank_column_line).unwrap();
+        assert_eq!(atom.element, "Cl");
     }
 
     #[test]

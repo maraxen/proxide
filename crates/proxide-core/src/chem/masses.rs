@@ -54,8 +54,13 @@ pub fn assign_masses(atom_names: &[String]) -> Vec<f32> {
 
 /// Infer element from atom name
 ///
-/// Follows PDB conventions where element is typically the first 1-2 characters
-fn infer_element(atom_name: &str) -> &str {
+/// Follows PDB conventions where element is typically the first 1-2 characters.
+/// Public so format parsers (e.g. `proxide-io`'s PDB reader) can reuse this
+/// two-letter-aware logic instead of reimplementing a naive first-character-only
+/// fallback -- see backlog #5052 (prolix), where a duplicated, wrong version of
+/// this exact inference in `proxide-io/src/formats/pdb.rs` mis-elementized a
+/// chloride ion ("Cl") as carbon ("C").
+pub fn infer_element(atom_name: &str) -> &str {
     let name = atom_name.trim();
     if name.is_empty() {
         return "C";
