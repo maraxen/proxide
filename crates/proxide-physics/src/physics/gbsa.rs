@@ -4,6 +4,7 @@
 //! for GB calculations.
 
 use std::collections::HashMap;
+use proxide_core::chem::masses::infer_element;
 
 /// Assign intrinsic radii using the MBondi2 scheme.
 ///
@@ -36,10 +37,10 @@ pub fn assign_mbondi2_radii(atom_names: &[String], bonds: &[[usize; 2]]) -> Vec<
     }
 
     for (i, name) in atom_names.iter().enumerate() {
-        let element = name.chars().next().unwrap_or('X');
+        let element = infer_element(name);
 
         match element {
-            'H' => {
+            "H" => {
                 // Check if bonded to Nitrogen
                 let is_bound_to_nitrogen = adj
                     .get(&i)
@@ -55,20 +56,18 @@ pub fn assign_mbondi2_radii(atom_names: &[String], bonds: &[[usize; 2]]) -> Vec<
 
                 radii[i] = if is_bound_to_nitrogen { 1.30 } else { 1.20 };
             }
-            'C' => radii[i] = 1.70,
-            'N' => radii[i] = 1.55,
-            'O' => radii[i] = 1.50,
-            'S' => radii[i] = 1.80,
-            'P' => radii[i] = 1.85,
-            'F' => radii[i] = 1.50,
+            "C" => radii[i] = 1.70,
+            "N" => radii[i] = 1.55,
+            "O" => radii[i] = 1.50,
+            "S" => radii[i] = 1.80,
+            "P" => radii[i] = 1.85,
+            "F" => radii[i] = 1.50,
+            "Cl" => radii[i] = 1.70,
+            "Br" => radii[i] = 1.85,
+            "I" => radii[i] = 1.98,
             _ => {
-                // Check for Cl (two-letter element)
-                if name.starts_with("Cl") || name.starts_with("CL") {
-                    radii[i] = 1.70;
-                } else {
-                    // Default fallback
-                    radii[i] = 1.50;
-                }
+                // Default fallback for unknown elements
+                radii[i] = 1.50;
             }
         }
     }
@@ -94,16 +93,16 @@ pub fn assign_obc2_scaling_factors(atom_names: &[String]) -> Vec<f32> {
     atom_names
         .iter()
         .map(|name| {
-            let element = name.chars().next().unwrap_or('X');
+            let element = infer_element(name);
             match element {
-                'H' => 0.85,
-                'C' => 0.72,
-                'N' => 0.79,
-                'O' => 0.85,
-                'F' => 0.88,
-                'P' => 0.86,
-                'S' => 0.96,
-                _ => 0.80,
+                "H" => 0.85,
+                "C" => 0.72,
+                "N" => 0.79,
+                "O" => 0.85,
+                "F" => 0.88,
+                "P" => 0.86,
+                "S" => 0.96,
+                _ => 0.80, // Other elements: default as documented
             }
         })
         .collect()
@@ -153,5 +152,30 @@ mod tests {
         assert!((factors[2] - 0.85).abs() < 0.01); // H
         assert!((factors[3] - 0.85).abs() < 0.01); // O
         assert!((factors[4] - 0.96).abs() < 0.01); // S
+    }
+
+    #[test]
+    fn test_mbondi2_radii_chlorine() {
+        // Regression test: "CL" (all uppercase) should resolve to Cl (chlorine) radius 1.70,
+        // not C (carbon) radius 1.70. While the radius value is coincidentally the same,
+        // the semantic correctness and consistency with other element inference matters.
+        let atom_names = vec!["CL".to_string()];
+        let bonds = vec![];
+
+        let radii = assign_mbondi2_radii(&atom_names, &bonds);
+
+        assert!((radii[0] - 1.70).abs() < 0.01); // Cl radius
+    }
+
+    #[test]
+    fn test_obc2_scaling_chlorine() {
+        // Regression test: "CL" (all uppercase) should resolve to Cl (chlorine) scaling 0.80 (Other),
+        // not C (carbon) scaling 0.72. This catches the element inference bug.
+        let atom_names = vec!["CL".to_string()];
+
+        let factors = assign_obc2_scaling_factors(&atom_names);
+
+        // Cl is not in the tabulated set, so it should get the default "Other: 0.80"
+        assert!((factors[0] - 0.80).abs() < 0.01);
     }
 }
