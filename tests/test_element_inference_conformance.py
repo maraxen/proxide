@@ -38,6 +38,29 @@ import re
 from pathlib import Path
 
 
+# Known violations accepted for a stated reason, keyed by path prefix.
+#
+# An entry here is a debt record, not a silence: the scan still finds the site,
+# still prints it, and the justification must say what makes the deferral
+# acceptable and what ends it. A path listed here that no longer violates fails
+# the test -- an exemption outliving its cause is itself a silent hole.
+DEFERRED_VIOLATIONS: dict[str, str] = {
+    "proxide-physics/src/physics/gbsa.rs": (
+        "Deferred by repository-owner decision 2026-09-10 (task 260910_proxide_observability). "
+        "Routing the GBSA tables through infer_element is correct in shape but changes physics "
+        "for five elements that had each been silently receiving a DIFFERENT element's tabulated "
+        "parameters via first-character dispatch: Cl (carbon's), Na (nitrogen's), Fe (fluorine's), "
+        "Cu (carbon's) and Se (sulfur's). Selenium is the blocking case -- it had been borrowing "
+        "sulfur's 1.80 A radius, which is close to selenium's true Bondi value of ~1.90 A, and the "
+        "corrected code drops it to the 1.50 A unknown-element default. That is a numeric "
+        "regression on the selenomethionine (MSE) path, which is ubiquitous in the PDB because "
+        "selenium is the standard heavy atom for experimental phasing. "
+        "EXPIRES when authoritative mbondi2 parameters for Se, Na, Cu and Fe are sourced and the "
+        "tables completed; at that point apply the infer_element fix and delete this entry."
+    ),
+}
+
+
 def test_comprehensive_element_inference() -> None:
     """Comprehensive element inference conformance (behavioural + structural).
 
@@ -72,12 +95,32 @@ def test_comprehensive_element_inference() -> None:
     print("=" * 70)
 
     violations = _scan_for_element_inference_antipatterns()
-    if violations:
-        msg = "\n".join(violations)
-        print(f"✗ FAILED — Found {len(violations)} violations:\n{msg}")
+
+    unexempted: list[str] = []
+    fired: set[str] = set()
+    for violation in violations:
+        for deferred_path in DEFERRED_VIOLATIONS:
+            if violation.startswith(deferred_path):
+                fired.add(deferred_path)
+                break
+        else:
+            unexempted.append(violation)
+
+    if unexempted:
+        msg = "\n".join(unexempted)
+        print(f"✗ FAILED — Found {len(unexempted)} violations:\n{msg}")
         raise AssertionError(msg)
 
-    print("✓ PASS — No hand-rolled element inference detected")
+    stale = sorted(set(DEFERRED_VIOLATIONS) - fired)
+    if stale:
+        raise AssertionError(
+            "Stale entries in DEFERRED_VIOLATIONS — these paths no longer violate, "
+            "so their exemption must be deleted:\n  " + "\n  ".join(stale)
+        )
+
+    for deferred_path in sorted(fired):
+        print(f"[DEFERRED] {deferred_path}\n    {DEFERRED_VIOLATIONS[deferred_path]}")
+    print("✓ PASS — No unexempted hand-rolled element inference detected")
 
 
 def _scan_for_element_inference_antipatterns() -> list[str]:
