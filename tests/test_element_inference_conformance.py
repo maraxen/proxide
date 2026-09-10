@@ -44,8 +44,14 @@ from pathlib import Path
 # still prints it, and the justification must say what makes the deferral
 # acceptable and what ends it. A path listed here that no longer violates fails
 # the test -- an exemption outliving its cause is itself a silent hole.
-DEFERRED_VIOLATIONS: dict[str, str] = {
-    "proxide-physics/src/physics/gbsa.rs": (
+# `expected_findings` bounds the exemption to the violations that were actually
+# reviewed. A path prefix alone would blanket the file forever, so a violation
+# added tomorrow would inherit today's justification silently. More findings
+# than recorded fails as an unreviewed addition; zero fails as stale.
+DEFERRED_VIOLATIONS: dict[str, dict[str, object]] = {
+    "proxide-physics/src/physics/gbsa.rs": {
+        "expected_findings": 2,
+        "reason": (
         "Deferred by repository-owner decision 2026-09-10 (task 260910_proxide_observability). "
         "Routing the GBSA tables through infer_element is correct in shape but changes physics "
         "for five elements that had each been silently receiving a DIFFERENT element's tabulated "
@@ -55,9 +61,10 @@ DEFERRED_VIOLATIONS: dict[str, str] = {
         "corrected code drops it to the 1.50 A unknown-element default. That is a numeric "
         "regression on the selenomethionine (MSE) path, which is ubiquitous in the PDB because "
         "selenium is the standard heavy atom for experimental phasing. "
-        "EXPIRES when authoritative mbondi2 parameters for Se, Na, Cu and Fe are sourced and the "
-        "tables completed; at that point apply the infer_element fix and delete this entry."
-    ),
+            "EXPIRES when authoritative mbondi2 parameters for Se, Na, Cu and Fe are sourced and "
+            "the tables completed; at that point apply the infer_element fix and delete this entry."
+        ),
+    },
 }
 
 
@@ -97,11 +104,11 @@ def test_comprehensive_element_inference() -> None:
     violations = _scan_for_element_inference_antipatterns()
 
     unexempted: list[str] = []
-    fired: set[str] = set()
+    counts: dict[str, int] = {path: 0 for path in DEFERRED_VIOLATIONS}
     for violation in violations:
         for deferred_path in DEFERRED_VIOLATIONS:
             if violation.startswith(deferred_path):
-                fired.add(deferred_path)
+                counts[deferred_path] += 1
                 break
         else:
             unexempted.append(violation)
@@ -111,15 +118,23 @@ def test_comprehensive_element_inference() -> None:
         print(f"✗ FAILED — Found {len(unexempted)} violations:\n{msg}")
         raise AssertionError(msg)
 
-    stale = sorted(set(DEFERRED_VIOLATIONS) - fired)
-    if stale:
-        raise AssertionError(
-            "Stale entries in DEFERRED_VIOLATIONS — these paths no longer violate, "
-            "so their exemption must be deleted:\n  " + "\n  ".join(stale)
-        )
+    for deferred_path, entry in sorted(DEFERRED_VIOLATIONS.items()):
+        expected = entry["expected_findings"]
+        found = counts[deferred_path]
+        if found == 0:
+            raise AssertionError(
+                f"Stale entry in DEFERRED_VIOLATIONS: {deferred_path} no longer "
+                "violates, so its exemption must be deleted."
+            )
+        if found != expected:
+            raise AssertionError(
+                f"{deferred_path} now yields {found} findings but its exemption "
+                f"covers {expected}. An exemption only excuses the violations that "
+                "were actually reviewed — fix the new one, or review it and update "
+                "expected_findings with a reason."
+            )
+        print(f"[DEFERRED] {deferred_path} ({found} reviewed findings)\n    {entry['reason']}")
 
-    for deferred_path in sorted(fired):
-        print(f"[DEFERRED] {deferred_path}\n    {DEFERRED_VIOLATIONS[deferred_path]}")
     print("✓ PASS — No unexempted hand-rolled element inference detected")
 
 
@@ -160,8 +175,19 @@ def _scan_for_element_inference_antipatterns() -> list[str]:
             content = f.read()
             lines = content.split("\n")
 
-        # Exclusion: file already uses canonical infer_element()
-        if "infer_element" in content or "use proxide_core::chem::masses" in content:
+        # Exclusion: file already uses canonical infer_element().
+        #
+        # Checked against comment-stripped source, not raw content. A substring
+        # test over raw content lets a COMMENT switch the detector off for a
+        # whole file: adding "// TODO: route through infer_element" to a
+        # defective file makes its violations vanish, which then reads as
+        # "fixed" to the stale-exemption check below and retires the exemption
+        # on a file that never changed. The detector could not tell fixed from
+        # invisible. Requiring a call or an import, in code, closes that.
+        code_only = "\n".join(
+            line for line in lines if not line.lstrip().startswith(("//", "*", "/*"))
+        )
+        if "infer_element(" in code_only or "use proxide_core::chem::masses" in code_only:
             continue
 
         # Exclusion: masses.rs is the canonical implementation
