@@ -678,6 +678,33 @@ pub fn parameterize_structure(
         exclusions_123.insert((i, k));
     }
 
+    // Solvent atoms (water, per `ProcessedStructure::solvent_atoms`) never carry
+    // torsion terms in any standard water model (TIP3P/TIP4P/...), so a *real*
+    // 1-4 nonbonded exception can never involve one. `topology` here is built
+    // purely from distance + covalent-radius inference over the WHOLE system
+    // at once (see `proxide_geometry::geometry::topology::infer_bonds`), with
+    // no residue-boundary or force-field-template awareness -- so a geometric
+    // dihedral chain that touches a solvent atom only exists because two
+    // different molecules got spuriously bonded together (e.g. a water's H
+    // sitting anomalously close to another water's O, or to a protein atom).
+    // Without this filter, such a spurious bond silently fabricates a "scaled
+    // 1-4" nonbonded exception with a nonzero energy for atoms that have no
+    // real covalent relationship at all. Found via prolix's
+    // dhfr_pme_exclusion_census.py (task 260909_dhfr_gap_tranche2): a solvated
+    // 1VII system (7507 atoms, only 596 of them protein) reported ~1563-1564
+    // `pairs_14` entries, reproduced consistently across separate runs --
+    // implausibly high for a 596-atom protein alone (low hundreds at most)
+    // *and* including water, which must structurally contribute exactly zero
+    // real 1-4 pairs (no water model has torsion terms) -- and at least one
+    // entry referenced an atom index that didn't even exist in the 7507-atom
+    // system. (An initial OpenMM-side "~40 exceptions" comparison baseline
+    // for the same run was later retracted as unreliable -- a separate,
+    // unrelated OpenMM/SWIG binding issue on that environment, prolix
+    // backlog #5055 -- so it is deliberately not cited here; the anomaly
+    // stands on proxide's own numbers alone.) See
+    // `test_pairs_14_excludes_spurious_cross_water_bond` below.
+    let solvent_set: HashSet<usize> = processed.solvent_atoms.iter().copied().collect();
+
     let mut pairs_14 = Vec::new();
     let mut seen_14_pairs = HashSet::new();
     let mut nonbonded_exceptions = Vec::new();
@@ -692,6 +719,22 @@ pub fn parameterize_structure(
     }
 
     for dih in &topology.proper_dihedrals {
+        if solvent_set.contains(&dih.i)
+            || solvent_set.contains(&dih.j)
+            || solvent_set.contains(&dih.k)
+            || solvent_set.contains(&dih.l)
+        {
+            continue;
+        }
+        // Defensive: `dih.i`/`dih.l` should always be < n_atoms by construction
+        // (they originate from the same coordinate/element arrays passed to
+        // `generate_topology`), but a `topology` built against a different
+        // atom count than this `processed` (a caller-side inconsistency) must
+        // never leak an out-of-range index into `pairs_14` -- silently skip
+        // rather than let a bad index reach the Python boundary.
+        if dih.i >= n_atoms || dih.l >= n_atoms {
+            continue;
+        }
         let pair_key = if dih.i < dih.l {
             (dih.i, dih.l)
         } else {
@@ -1825,6 +1868,138 @@ mod tests {
 
         // Sanity: the ordinary protein path is untouched by the solvent fix.
         assert!((params.charges[0] - (-0.4157)).abs() < 1e-4); // ALA N
+    }
+
+    #[test]
+    fn test_pairs_14_excludes_spurious_cross_water_bond() {
+        // Bug 2 (task 260909_dhfr_gap_tranche2, proxide side of a prolix-reported
+        // anomaly): a solvated 1VII system (7507 atoms, only 596 of them
+        // protein) reported ~1563-1564 `pairs_14` entries, reproduced across
+        // separate runs -- implausibly high for a 596-atom protein alone, and
+        // definitely wrong insofar as it includes any water atom at all
+        // (water has zero real 1-4 pairs in every standard water model,
+        // independent of any protein-side count) -- and at least one
+        // prolix-reported pair referenced an atom index that didn't exist in
+        // the 7507-atom system. (A same-run OpenMM-side "~40 exceptions"
+        // comparison baseline was later retracted as unreliable -- an
+        // unrelated OpenMM/SWIG binding issue, prolix backlog #5055 -- so
+        // it's deliberately not relied on here.) Root cause: `topology`
+        // is built by pure distance + covalent-radius bond inference over the
+        // WHOLE system at once (`infer_bonds`, no residue-boundary or
+        // force-field-template awareness), so two DIFFERENT water molecules
+        // placed close enough together get a spurious inter-molecular "bond" --
+        // and, before the fix, `pairs_14` was built directly from raw geometric
+        // `topology.proper_dihedrals` with no check that the resulting chain
+        // stayed within a single, real, force-field-bonded molecule. Since water
+        // has zero real torsions in every standard water model, ANY water-
+        // touching entry in `pairs_14` is definitionally spurious.
+        //
+        // This test manufactures exactly that spurious bond (water 1's H2 placed
+        // 1.0 A from water 2's O -- well inside the O-H bonding threshold of
+        // (0.66+0.31)*1.3 = 1.261 A -- while every other inter-water distance
+        // stays outside any bonding threshold) and asserts:
+        //   1. the spurious bond really does form (sanity: the mechanism fires);
+        //   2. it really does create a geometric proper dihedral entirely among
+        //      water atoms (sanity: the dihedral-generation step is exercised);
+        //   3. `parameterize_structure`'s `pairs_14` contains NO entry touching
+        //      any solvent atom (the actual fix -- this would have failed
+        //      before it, since the raw geometric dihedral from point 2 would
+        //      have been pushed straight into `pairs_14`).
+        let ff = make_test_forcefield();
+        let mut raw = RawAtomData::with_capacity(6);
+
+        // Water 1: standard TIP3P geometry at the origin.
+        let water1_geom: [[f32; 3]; 3] = [
+            [0.0, 0.0, 0.0],
+            [0.9572, 0.0, 0.0],
+            [-0.2397, 0.9266, 0.0],
+        ];
+        // Water 2: translated so its O sits exactly 1.0 A from water 1's H2
+        // (spurious-bond distance), with every other cross-molecule pair kept
+        // outside any bonding threshold (see test docstring for the arithmetic).
+        let water2_origin = [-0.2397_f32, 1.9266_f32, 0.0_f32];
+        let water2_geom: [[f32; 3]; 3] = [
+            water2_origin,
+            [water2_origin[0] + 0.9572, water2_origin[1], water2_origin[2]],
+            [
+                water2_origin[0] - 0.2397,
+                water2_origin[1] + 0.9266,
+                water2_origin[2],
+            ],
+        ];
+        let names = ["O", "H1", "H2"];
+        let elements = ["O", "H", "H"];
+        for (water_idx, geom) in [water1_geom, water2_geom].iter().enumerate() {
+            for atom_idx in 0..3usize {
+                raw.add_atom(AtomRecord {
+                    serial: (water_idx * 3 + atom_idx + 1) as i32,
+                    atom_name: names[atom_idx].to_string(),
+                    res_name: "HOH".to_string(),
+                    chain_id: "W".to_string(),
+                    res_seq: 100 + water_idx as i32,
+                    x: geom[atom_idx][0],
+                    y: geom[atom_idx][1],
+                    z: geom[atom_idx][2],
+                    element: elements[atom_idx].to_string(),
+                    is_hetatm: true,
+                    ..AtomRecord::default()
+                });
+            }
+        }
+
+        let structure = ProcessedStructure::from_raw(raw).unwrap();
+        assert_eq!(structure.solvent_atoms.len(), 6);
+        let solvent_set: HashSet<usize> = structure.solvent_atoms.iter().copied().collect();
+
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        // Sanity 1: the spurious cross-molecule bond (water1 H2 [index 2] --
+        // water2 O [index 3]) really did form.
+        let has_spurious_bond = topology
+            .bonds
+            .iter()
+            .any(|b| (b.i == 2 && b.j == 3) || (b.i == 3 && b.j == 2));
+        assert!(
+            has_spurious_bond,
+            "expected the manufactured close contact to be inferred as a bond; \
+             got bonds: {:?}",
+            topology.bonds
+        );
+
+        // Sanity 2: that spurious bond really does create a geometric proper
+        // dihedral entirely among water atoms (all 4 chain atoms in
+        // solvent_set).
+        let has_all_water_dihedral = topology.proper_dihedrals.iter().any(|d| {
+            solvent_set.contains(&d.i)
+                && solvent_set.contains(&d.j)
+                && solvent_set.contains(&d.k)
+                && solvent_set.contains(&d.l)
+        });
+        assert!(
+            has_all_water_dihedral,
+            "expected the spurious bond to produce an all-water geometric \
+             dihedral; got dihedrals: {:?}",
+            topology.proper_dihedrals
+        );
+
+        // The actual fix: parameterize_structure must never surface a pairs_14
+        // entry touching a solvent atom, no matter what spurious geometric
+        // dihedral the raw distance-based topology contains.
+        let options = ParamOptions::default();
+        let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
+        for pair in &params.pairs_14 {
+            assert!(
+                !solvent_set.contains(&pair[0]) && !solvent_set.contains(&pair[1]),
+                "pairs_14 must never include a solvent atom (spurious 1-4 \
+                 exception), got pair {:?}",
+                pair
+            );
+        }
     }
 
     #[test]
