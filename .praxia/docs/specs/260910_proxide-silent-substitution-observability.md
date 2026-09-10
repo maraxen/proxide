@@ -378,12 +378,27 @@ impl DiagPolicy {
 
 `Severity::Never` is a terminal variant above `Error` that no finding can carry, so `lenient()`
 cannot promote by construction. Selection is explicit at the call site; there is no environment
-variable and no global. **A lenient `Untabulated` mass is `f32::NAN`, not a number** — under
-lenient policy the caller has asserted it wants a value it can render rather than a refusal, and
-NaN is the only `f32` that cannot be mistaken for a measurement. This is not a contradiction of
-the "rejected NaN" note below: NaN is rejected as a *default* return; it is correct as the
-*explicitly-requested lenient* return, where the finding is already recorded alongside it. The
-wasm viewer is the intended and currently only consumer.
+variable and no global.
+
+**OWNER RULING 2026-09-10 — no `NaN` fill, under any policy. An error is raised before the fill.**
+This supersedes the earlier design in which a lenient `Untabulated` mass was `f32::NAN`. The
+argument for NaN was that it is the only `f32` that cannot be mistaken for a measurement. That is
+true and insufficient: a NaN does not fail where it was created. It propagates through
+parameterisation and detonates during integration, far from the parse, with the evidence gone —
+the "rejected NaN" note below applies to the lenient path exactly as it applies to the default one,
+and carving out an exception for an explicitly-requested lenient return reintroduced the failure
+mode this document exists to remove. The distinction between a *default* NaN and an
+*explicitly-requested* NaN is a distinction in the caller's intent, not in the debugging experience
+of whoever hits the detonation three stages downstream.
+
+Consequently `lenient()` does **not** yield a value for `Untabulated`. It yields a recorded finding
+and an error at the point of determination, exactly as `strict()` does; what `lenient()` still
+changes is promotion of *recoverable* diagnostics (`Defaulted` where a documented default is
+legitimate, coercions carrying `// COERCION-OK:`), never the fabrication of a physical constant.
+A caller that genuinely needs to render an incomplete structure — the wasm viewer is the intended
+and currently only such consumer — must handle the error and decide what to draw, which is a
+rendering decision and belongs in the renderer, not a fabricated mass smuggled through the physics
+layer. See the project ledger entry A1 in `CLAUDE.md`.
 
 `DiagPolicy::default() == DiagPolicy::strict()`, with **`max_findings = 1024`**. The value is
 specified rather than left open because under `lenient()` the report is the *only* evidence a
@@ -391,22 +406,29 @@ substitution occurred, so an unspecified bound is an unspecified evidence loss. 
 exceed any plausible per-structure distinct-finding count while bounding memory; overflow is never
 silent (D14's `PROX-DIAG-TRUNCATED`).
 
-> **OWNER DECISION PENDING — and my round-2 cost estimate for it was wrong.** §11 called shipping
-> `lenient()` as the default "a one-line change to `DiagPolicy::default()`". That is **not
-> accurate**, and the correction belongs here at the decision point rather than only in a log:
+> **OWNER DECISION — RULED 2026-09-10. Strict by default, and no `NaN` fill under any policy.**
+> This decision is closed; the paragraphs above implement it. The ruling was stated as: *fail fast
+> and loud — before a NaN is filled, an error should be raised.*
 >
-> - It makes **`f32::NAN` the default return** for an unknown element reaching MD integration —
->   promoting to the default exactly the design D6's own rejection paragraph argues against
->   ("detonates during integration, far from the parse, with no evidence attached"). Choosing
->   lenient-by-default therefore requires either accepting that, or defining a *third* lenient
->   behaviour for `Untabulated` that is neither refusal nor NaN.
-> - It **falsifies OBS-104's acceptance criterion verbatim** (which asserts `Err` under the default
->   policy).
-> - It falsifies the "under the default `DiagPolicy`" clauses in **OBS-113** and **D16**.
+> It settles what had been left open, and it settles it more broadly than the question was asked.
+> The pending question was only strict-vs-lenient *as the default*. The ruling additionally removes
+> the lenient `f32::NAN` return entirely, which had been specified as a legitimate escape hatch for
+> an explicitly-opted-in caller. So the "third lenient behaviour for `Untabulated` that is neither
+> refusal nor NaN" contemplated below is now the required one, and it is: refusal, with the finding
+> recorded. `lenient()` survives for recoverable diagnostics only and may never fabricate a
+> physical constant.
 >
-> Realistic cost: four requirement edits, one new design decision about the lenient `Untabulated`
-> value, and a stated NaN consequence — not one line. The spec's position remains strict-by-default;
-> the alternative is legitimate but is a design change, and round 2 understated it.
+> Downstream consequences, all now consistent rather than conditional: **OBS-104**'s criterion
+> (`Err` under the default policy) holds as written; the "under the default `DiagPolicy`" clauses in
+> **OBS-113** and **D16** hold as written; **D16**'s `strict: bool = True` on the Python surface is
+> no longer conditional on this ruling. The one requirement that *does* change is any wasm-viewer
+> path that assumed a renderable NaN — see D16 and OBS-206, where the renderer must now handle the
+> error and decide what to draw.
+>
+> For the record, since it bore on the ruling: round 2's estimate that lenient-by-default was "a
+> one-line change to `DiagPolicy::default()`" was wrong — it would have been four requirement edits
+> plus a new design decision. The correction is kept here rather than only in the revision log
+> because a cost estimate that reaches a decision-maker late is itself a silent substitution.
 
 **Rejected: substituting `f32::NAN`.** It is loud, but it detonates during integration, far from
 the parse that caused it, with no evidence attached — the same debugging pathology as `12.0`,
@@ -1377,7 +1399,8 @@ five in-repo precedents at the cited lines. What follows records what changed an
 (§C2, OBS-201, A4). N2 false-positive budget and a `calibration/clean/` corpus added (OBS-003).
 N3 ground truth derivation *(superseded in round 3 — derivation dropped, see §11.1 item 3)*, and the inconsistent six/four/three
 violation counts removed rather than reconciled (D12, Z1). N4 lenient policy specified as
-`DiagPolicy::lenient()` with `Severity::Never`, a lenient `Untabulated` mass defined as `f32::NAN`,
+`DiagPolicy::lenient()` with `Severity::Never`, a lenient `Untabulated` mass defined as `f32::NAN`
+*(the NaN half superseded by the owner ruling — see §11.2)*,
 and the `Option<f32>`/`Sourced<f32>` spelling unified (D6). N5 `pythonize` named as the
 `ErasedReport` → Python converter (D16, B7). N6 OBS-102 restated as a `git diff --stat` assertion
 against the merge base. N7 OBS-106 widened to `forcefield/**` and `physics/**`, with
@@ -1465,3 +1488,34 @@ The review closes here, so these are the residue and they are deliberate:
 6. **The `never` expiry kind is an escape hatch.** It requires a second owner and separate
    reporting, but a determined maintainer can mark anything permanent. That is intentional: the
    mechanism makes permanence *visible and attributable*, which is the most a ledger can do.
+
+## 11.2 Owner ruling — 2026-09-10 (closes decision 2 of 2)
+
+> *"we want to fail fast and loud, before NaN is filled an error should be raised"*
+
+**Ruled: `DiagPolicy::default()` is `strict()`, and no policy may fill `f32::NAN` for an
+undeterminable physical constant. The error is raised at the point of determination.**
+
+This closes the second of the two decisions §11 recorded as owner-pending, and closes it wider than
+it was posed. The open question was strict-vs-lenient *as the default*. The ruling also removes the
+lenient `f32::NAN` return that D6 had specified as a legitimate escape hatch for an explicitly
+opted-in caller — so `lenient()` now governs promotion of *recoverable* diagnostics only, and may
+never fabricate a physical constant.
+
+What changed in the document: D6's lenient-`Untabulated`-is-NaN paragraph is replaced by refusal
+with a recorded finding; the OWNER DECISION PENDING block at D6 becomes a ruling; and the
+conditional markers this ruling resolves are now unconditional — OBS-104's `Err`-under-default
+criterion, the "under the default `DiagPolicy`" clauses in OBS-113 and D16, and D16's
+`strict: bool = True`. The `Rejected: substituting f32::NAN` note at D6 and the `Rejected: sentinel
+values` note at D14 were already correct and now apply without exception.
+
+What this ruling *creates*: any consumer that needs to render a structure containing an
+undeterminable constant must handle the error rather than receive a renderable non-number. The wasm
+viewer is the only such consumer today (D16, OBS-206). That is deliberate — what to draw for an
+unknown atom is a rendering decision, and it belongs in the renderer rather than travelling through
+the physics layer disguised as a mass.
+
+Decision 1 of 2 — whether the Python surface breaks to carry provenance (D16) — **remains open**.
+
+The rationale is recorded as hard rules and ledger entry A1 in the project `CLAUDE.md`, which is
+now the interim home for the failure-mode ledger this specification produced.
