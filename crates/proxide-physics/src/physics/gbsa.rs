@@ -63,10 +63,8 @@ pub fn assign_mbondi2_radii(atom_names: &[String], bonds: &[[usize; 2]]) -> Vec<
             "P" => radii[i] = 1.85,
             "F" => radii[i] = 1.50,
             "Cl" => radii[i] = 1.70,
-            "Br" => radii[i] = 1.85,
-            "I" => radii[i] = 1.98,
             _ => {
-                // Default fallback for unknown elements
+                // Default fallback for unknown elements (including Br, I)
                 radii[i] = 1.50;
             }
         }
