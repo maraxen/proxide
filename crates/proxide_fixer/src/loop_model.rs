@@ -488,15 +488,8 @@ fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedL
 /// columns 77-78 are blank.
 fn extract_element_from_name(name: &str) -> &str {
     let trimmed = name.trim_start_matches(|c: char| c.is_ascii_digit());
-    match trimmed.chars().next() {
-        Some('C') => "C",
-        Some('N') => "N",
-        Some('O') => "O",
-        Some('S') => "S",
-        Some('H') => "H",
-        Some('P') => "P",
-        _ => "C", // safe default
-    }
+    // Delegate to proxide_core's two-letter-aware inference
+    proxide_core::chem::masses::infer_element(trimmed)
 }
 
 // ── Helper: splice loops into topology ───────────────────────────────────────
@@ -770,7 +763,7 @@ mod tests {
     fn make_atom(name: &str, serial: i32) -> Atom {
         Atom {
             name: name.to_string(),
-            element: name[..1].to_string(),
+            element: extract_element_from_name(name).to_string(),
             coords: [0.0, 0.0, 0.0],
             alt_loc: ' ',
             serial,
@@ -1381,5 +1374,21 @@ mod tests {
             .build_loops(&[loop_])
             .expect("build_loops failed in smoke test");
         assert_eq!(report.loops_built.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_element_from_name_chlorine() {
+        // Regression test: "CL" (all uppercase) should resolve to "Cl" (chlorine),
+        // not "C" (carbon). This is a known bug fix for two-letter element inference.
+        // PDB convention uses uppercase element names, so we test uppercase and mixed-case.
+        assert_eq!(extract_element_from_name("CL"), "Cl");
+        assert_eq!(extract_element_from_name("Cl"), "Cl");
+        // Also test with leading digits (common in PDB)
+        assert_eq!(extract_element_from_name("1CL"), "Cl");
+        assert_eq!(extract_element_from_name("2Cl"), "Cl");
+        // Test other two-letter elements
+        assert_eq!(extract_element_from_name("BR"), "Br");
+        assert_eq!(extract_element_from_name("NA"), "Na");
+        assert_eq!(extract_element_from_name("FE"), "Fe");
     }
 }

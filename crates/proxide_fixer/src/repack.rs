@@ -118,20 +118,8 @@ fn extract_element(atom_name: &str) -> String {
         return "C".to_string();
     }
 
-    // Take first character, uppercase
-    let first_char = trimmed.chars().next().unwrap();
-    if first_char.is_alphabetic() {
-        let upper = first_char.to_uppercase().to_string();
-        // Check if second character suggests a two-letter element
-        if let Some(second_char) = trimmed.chars().nth(1) {
-            if second_char.is_lowercase() && second_char.is_alphabetic() {
-                return format!("{}{}", upper, second_char);
-            }
-        }
-        return upper;
-    }
-
-    "C".to_string() // Fallback
+    // Delegate to proxide_core's two-letter-aware inference
+    proxide_core::chem::masses::infer_element(trimmed).to_string()
 }
 
 /// Derive φ (phi) and ψ (psi) angles from backbone N, CA, C atoms of a residue and its neighbors.
@@ -1783,5 +1771,21 @@ mod tests {
             result.is_ok(),
             "repack_neighbourhood should succeed for valid input"
         );
+    }
+
+    #[test]
+    fn test_extract_element_chlorine() {
+        // Regression test: "CL" (all uppercase) should resolve to "Cl" (chlorine),
+        // not "C" (carbon). This is a known bug fix for two-letter element inference.
+        // PDB convention uses uppercase element names, so we test uppercase and mixed-case.
+        assert_eq!(extract_element("CL"), "Cl");
+        assert_eq!(extract_element("Cl"), "Cl");
+        // Also test with leading digits (common in PDB)
+        assert_eq!(extract_element("1CL"), "Cl");
+        assert_eq!(extract_element("2Cl"), "Cl");
+        // Test other two-letter elements
+        assert_eq!(extract_element("BR"), "Br");
+        assert_eq!(extract_element("NA"), "Na");
+        assert_eq!(extract_element("FE"), "Fe");
     }
 }
