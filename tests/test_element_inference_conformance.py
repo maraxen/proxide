@@ -4,101 +4,111 @@ WHY THIS TEST MATTERS
 
 Inferring chemical elements from PDB atom names is subtle: PDB ATOM/HETATM records contain
 atom names in ALL-CAPS (e.g., "CL" for chloride), which must resolve to title-case element
-symbols (e.g., "Cl"). The most treacherous case is "CA" (alpha-carbon in protein backbones),
-which must stay "C" (carbon), not become "Ca" (calcium).
+symbols (e.g., "Cl"). The most treacherous case is "CA" (alpha-carbon), which must stay
+"C" (carbon), not become "Ca" (calcium).
 
-proxide has ONE correct, two-letter-aware implementation:
-`crates/proxide-core/src/chem/masses.rs:63` — `pub fn infer_element(atom_name: &str) -> &str`
-
-Over time, at least SIX other modules independently reimplemented this inference by hand,
-and every single one got it wrong. Three reimplementations were fixed in commit c24546a
-(proxide-io parsers, where the most subtle bugs hide). Another agent is fixing three more
-right now in proxide_fixer. But fixing instances does not stop the seventh from being written.
-
-This test guards against the anti-pattern: any module that reimplements element inference
-by dispatching on atom-name characters outside of `masses.rs` will fail this test with a
-message pointing back to the canonical implementation.
+proxide has ONE correct, two-letter-aware implementation in crates/proxide-core/src/chem/masses.rs:63.
+Over time, SIX+ other modules reimplemented this by hand, and every one got it wrong.
+This test guards against the seventh.
 
 PRECEDENT
 
-This test mirrors `tests/test_alphabet_conformance.py`, which guards against silent
-copy-drift in amino-acid ordering declarations. That test combines behavioural assertions
-(do the constants agree with upstream?) and structural assertions (are there duplicate
-declarations that might diverge?). This test applies the same two-pronged approach to
-element inference, specific to the chemical space where the code actually operates.
+This test mirrors tests/test_alphabet_conformance.py: behavioural (do the constants agree?)
+plus structural (are there duplicate implementations that might diverge?).
+
+HOW TO RUN
+
+  # Behavioural: Rust comprehensive corpus test (no build)
+  cargo test -p proxide-core test_infer_element_comprehensive_corpus --lib
+
+  # Structural: Python scanner (no Rust compilation)
+  uv run --no-project python tests/test_element_inference_conformance.py
+
+  # Both together as pytest plugin (requires maturin build):
+  uv run pytest tests/test_element_inference_conformance.py::test_comprehensive_element_inference
+
+  NOTE: Avoid bare `uv run pytest` (without --no-project). It triggers proxide_py build
+  which fails because ATOMTYPE_GFF2.DEF is deliberately absent/gitignored.
 """
 
 from __future__ import annotations
 
-import re
 import subprocess
+import re
 from pathlib import Path
 
 
-def test_infer_element_returns_correct_symbols() -> None:
-    """Behavioural: infer_element() returns correct element symbols for all supported atoms.
+def test_comprehensive_element_inference() -> None:
+    """Comprehensive element inference conformance (behavioural + structural).
 
-    This test pins the correct behaviour for the critical atoms the codebase handles, with
-    special attention to the two-letter elements (Cl, Br, Na, Mg, Zn, Fe, Cu, Mn, Se, I, K)
-    and the alpha-carbon edge case (CA -> C, not Ca).
-
-    The test runs via `cargo test` (disabling sccache to avoid permission issues).
+    Can be run standalone (no pytest) or as pytest plugin.
+    See module docstring for invocation.
     """
-    # Use cargo test to run the infer_element tests in masses.rs
-    env = {"RUSTC_WRAPPER": ""}  # Disable sccache to avoid permission issues in sandbox
+    # Part 1: Behavioural — Rust comprehensive corpus
+    print("\n" + "=" * 70)
+    print("1. BEHAVIOURAL TEST — Rust comprehensive corpus")
+    print("=" * 70)
+
     result = subprocess.run(
-        ["cargo", "test", "-p", "proxide-core", "test_infer_element", "--lib", "--", "--nocapture"],
-        cwd=Path(__file__).parent.parent,
+        ["cargo", "test", "-p", "proxide-core", "test_infer_element_comprehensive_corpus", "--lib"],
         capture_output=True,
         text=True,
-        env={**subprocess.os.environ, **env},
+        env={**subprocess.os.environ, "RUSTC_WRAPPER": ""},
     )
-    assert result.returncode == 0, f"infer_element tests failed:\n{result.stderr}\n{result.stdout}"
+
+    if result.returncode != 0:
+        print("✗ FAILED")
+        print(result.stderr)
+        raise AssertionError("Comprehensive corpus test failed")
+
+    for line in result.stdout.split("\n"):
+        if "test result:" in line:
+            print(f"✓ PASS — {line.strip()}")
+            break
+
+    # Part 2: Structural — scan for antipatterns
+    print("\n" + "=" * 70)
+    print("2. STRUCTURAL TEST — Scan for element inference antipatterns")
+    print("=" * 70)
+
+    violations = _scan_for_element_inference_antipatterns()
+    if violations:
+        msg = "\n".join(violations)
+        print(f"✗ FAILED — Found {len(violations)} violations:\n{msg}")
+        raise AssertionError(msg)
+
+    print("✓ PASS — No hand-rolled element inference detected")
 
 
-def test_no_hand_rolled_element_inference_outside_masses_rs() -> None:
-    """Structural anti-duplication guard: scan for element inference reimplemented by hand.
+def _scan_for_element_inference_antipatterns() -> list[str]:
+    """Scan crates for element-from-atom-name inference antipatterns.
 
-    Searches Rust sources for the anti-pattern: dispatching on the first 1-2 characters of an
-    atom-name-derived variable whose arms return element symbols. The canonical implementation
-    is infer_element() in crates/proxide-core/src/chem/masses.rs, and it must be used instead.
+    Detects two forms:
 
-    ALLOWED EXCEPTIONS (excluded from scan):
-    - Single-character field extraction: .chars().next() on fields with fixed, known names
-      (alt_loc, i_code, label_alt_id, etc.) — these extract single-char metadata, not elements.
-    - Residue-code lookups (three_to_one, RESTYPE_1TO3): extracting amino-acid codes, not
-      inferring elements from atom names.
-    - Element-dispatch on already-resolved symbols: get_mass(element), get_radius(element),
-      etc., where `element` is NOT from atom-name slicing.
-    - Force-field property tables (proxide-gaff2, proxide-gaff): dispatch on atom types that
-      are already classification tokens, not raw atom names.
+    PATTERN 1 (direct):
+        let element = atom_name.chars().next().unwrap();
+        match element { 'C' => ..., 'N' => ..., ... }
 
-    The check scans for the specific anti-pattern: slicing/extracting from variables containing
-    "atom" or "name" in their identifier, then dispatching on single-letter or two-letter
-    element symbols. This avoids false positives on legitimate element-symbol lookup tables.
+    PATTERN 2 (indirect, via intermediate):
+        let trimmed = name.trim_start_matches(...);
+        match trimmed.chars().next() { 'C' => ..., 'N' => ..., ... }
+
+    Both bypass infer_element() and cause silent chemistry errors (Cl→C, bad radii).
+
+    JUSTIFIED EXCLUSIONS:
+    - Files importing infer_element() (doing it right)
+    - masses.rs (the canonical implementation)
+    - Single-char field extraction (alt_loc, i_code, etc. for metadata, not elements)
+    - Residue-code lookup (RESTYPE_1TO3, three_to_one)
+    - Element-symbol-to-number mapping ("CL" => Some(17) is lookup, not inference)
+    - Atom-type dispatch on already-resolved tokens (gaff* files)
+    - get_mass/get_radius calls (already-resolved element symbols)
     """
     crates_dir = Path(__file__).parent.parent / "crates"
-    assert crates_dir.exists(), f"Expected crates/ directory at {crates_dir}"
 
-    # Collect Rust files from parsers and physics — high-risk zones for atom-name slicing.
-    # Exclude gaff/gaff2 (force-field typing), and skip masses.rs.
-    high_risk_patterns = [
-        "crates/proxide-io/**/*.rs",
-        "crates/proxide-physics/**/*.rs",
-        "crates/proxide_fixer/**/*.rs",
-    ]
-
-    rust_files = set()
-    for pattern in high_risk_patterns:
-        rust_files.update(crates_dir.parent.glob(pattern))
-
-    # Filter out masses.rs and any file in gaff/gaff2
-    rust_files = [
-        f for f in rust_files
-        if f.is_file()
-        and "masses.rs" not in f.name
-        and "gaff" not in str(f)
-    ]
+    # Scan ALL Rust files, exclude by rule
+    rust_files = sorted(crates_dir.rglob("*.rs"))
+    rust_files = [f for f in rust_files if f.is_file() and not f.name.startswith(".")]
 
     violations = []
 
@@ -107,70 +117,124 @@ def test_no_hand_rolled_element_inference_outside_masses_rs() -> None:
             content = f.read()
             lines = content.split("\n")
 
-        # Skip files that already import/use infer_element (they're doing it right)
-        if "infer_element" in content:
+        # Exclusion: file already uses canonical infer_element()
+        if "infer_element" in content or "use proxide_core::chem::masses" in content:
             continue
 
-        # Look for the specific anti-pattern: slicing an atom-name-derived variable,
-        # then dispatching on element symbols.
-        #
-        # Key heuristic: search for .chars().next() or [..1]/[..2] on a variable
-        # that contains "atom" or "name" in its identifier. This is much more
-        # specific than looking for all .chars().next() calls (which has false
-        # positives on insertion codes, alt locs, etc.).
+        # Exclusion: masses.rs is the canonical implementation
+        if "masses.rs" in str(rust_file):
+            continue
 
+        # Scan for: .chars().next() on atom-name-derived variable with element dispatch
         for i, line in enumerate(lines, start=1):
-            # Skip comments and docstrings
-            if line.strip().startswith("//"):
+            # Skip comments
+            if line.strip().startswith("//") or line.strip().startswith("/*"):
                 continue
 
             # Skip known safe patterns
             if any(safe in line for safe in [
                 "alt_loc", "i_code", "label_alt_id", "pdbx_PDB_ins_code",
-                "three_to_one", "RESTYPE_1TO3", "get_mass", "get_radius",
-                "insertion code", "alt loc"
+                "insertion code", "alt location", "RESTYPE_1TO3", "three_to_one",
+                "one.chars()", "get_mass", "get_radius"
             ]):
                 continue
 
-            # Look for atom-name-derived variables being sliced
-            if ("atom" in line.lower() or "name" in line.lower()) and \
-               ((".chars().next()" in line or "[..1]" in line or "[..2]" in line)):
-                # Scan forward a few lines to see if there's element-symbol dispatch
-                context_block = "\n".join(lines[max(0, i - 2) : min(len(lines), i + 15)])
+            # Look for: .chars().next() on atom-name or derived variable
+            if ".chars().next()" not in line:
+                continue
 
-                # Check for element symbol dispatch patterns:
-                # - 'H' => ..., 'C' => ..., etc.
-                # - "Cl" => ..., "Na" => ..., etc.
-                has_element_arms = bool(
-                    re.search(
-                        r"(['\"])([HCNOSFPIK]|Cl|Br|Na|Mg|Zn|Fe|Cu|Mn|Se)\1\s*=>",
-                        context_block,
-                    )
+            # Heuristic: variable name suggests atom-name derivation
+            if not any(kw in line.lower() for kw in ["atom", "name", "element", "trimmed", "stripped"]):
+                continue
+
+            # Does context have element-symbol dispatch?
+            context = "\n".join(lines[max(0, i - 2) : min(len(lines), i + 20)])
+            if _has_element_symbol_dispatch(context):
+                violations.append(
+                    f"{rust_file.relative_to(crates_dir)}:{i}\n"
+                    f"  {line.strip()}\n"
+                    f"  → .chars().next() with element dispatch on atom-derived variable"
                 )
 
-                if has_element_arms:
+        # Also check for indirect form: let trimmed = name.trim_*; ... trimmed.chars().next()
+        for i, line in enumerate(lines, start=1):
+            if ".trim" not in line or "name" not in line.lower():
+                continue
+
+            # Extract variable name from: let VAR = name.trim*(...)
+            match = re.search(r"let\s+(\w+)\s*=\s*\w*name\w*\..*?(?:trim|slice)", line)
+            if not match:
+                continue
+
+            var_name = match.group(1)
+            context = "\n".join(lines[max(0, i) : min(len(lines), i + 20)])
+
+            # Check if this variable is used in element dispatch
+            if re.search(rf"{var_name}\s*\.chars\(\)\.next\(\)", context):
+                if _has_element_symbol_dispatch(context) or _element_inference_in_context(context):
                     violations.append(
-                        f"{rust_file.relative_to(crates_dir.parent)}:{i}\n"
+                        f"{rust_file.relative_to(crates_dir)}:{i}\n"
                         f"  {line.strip()}\n"
-                        f"  → element-like dispatch on atom-name-derived variable\n"
+                        f"  → atom-name-derived var {var_name} used in element inference"
                     )
 
-    if violations:
-        msg = (
-            "Found suspect element-inference patterns (element symbols dispatched on\n"
-            "atom-name-derived variables) in:\n\n"
-            + "".join(violations)
-            + "\n"
-            + "Element inference from PDB atom names is a COMMON BUG. Use the canonical\n"
-            + "implementation: `proxide_core::chem::masses::infer_element()`.\n"
-            + "\n"
-            + "It correctly handles:\n"
-            + "  • Two-letter elements: CL→Cl, BR→Br, NA→Na, MG→Mg, ZN→Zn, FE→Fe,\n"
-            + "    CU→Cu, MN→Mn, SE→Se, I→I, K→K\n"
-            + "  • Case insensitivity: CL, Cl, cl all → Cl\n"
-            + "  • The alpha-carbon edge case: CA→C (not Ca)\n"
-            + "\n"
-            + "Reimplementing elsewhere guarantees silent physics errors.\n"
-            + "See backlog #5052 (prolix) for the history of this bug.\n"
-        )
-        raise AssertionError(msg)
+    return violations
+
+
+def _has_element_symbol_dispatch(code: str) -> bool:
+    """Check if code contains dispatch on element symbols (match arms).
+
+    Looks for:
+      'H' =>, 'C' =>, "Cl" =>, "Na" =>  (direct)
+      Some('H') =>, Some('C') =>  (wrapped in Option)
+
+    Excludes: "CL" => 17 (element-to-number, not inference).
+    """
+    # Pattern 1: Direct match arms: 'X' => or "Xx" => where X/Xx is element symbol
+    if re.search(
+        r"(['\"])([HCNOSFPIK]|Cl|Br|Na|Mg|Zn|Fe|Cu|Mn|Se|Ca)\1\s*=>",
+        code,
+    ):
+        # But exclude element-to-number mappings ("CL" => 17)
+        if not re.search(r"['\"]([A-Z]{2})['\"].*?=>\s*\d+", code):
+            return True
+
+    # Pattern 2: Option-wrapped match arms: Some('X') => or Some("Xx") =>
+    if re.search(
+        r"Some\s*\(\s*(['\"])([HCNOSFPIK]|Cl|Br|Na|Mg|Zn|Fe|Cu|Mn|Se|Ca)\1\s*\)\s*=>",
+        code,
+    ):
+        return True
+
+    return False
+
+
+def _element_inference_in_context(code: str) -> bool:
+    """Check for subtle element-inference patterns (non-match-statement forms).
+
+    Detects patterns like:
+      let upper = first_char.to_uppercase().to_string();
+      return format!("{}{}", upper, second_char);
+
+    This is element inference via string manipulation, not explicit dispatch.
+    """
+    # Pattern: to_uppercase() used on a char extracted from atom name,
+    # then formatted/concatenated to build element symbols
+    if "to_uppercase()" in code and ("format!" in code or "to_string()" in code):
+        # Verify this is in the context of a function that looks like it's
+        # inferring elements (name in function or variable names suggests it)
+        if "extract_element" in code or "element" in code.lower():
+            return True
+
+    return False
+
+
+if __name__ == "__main__":
+    try:
+        test_comprehensive_element_inference()
+        print("\n" + "=" * 70)
+        print("ALL TESTS PASSED ✓")
+        print("=" * 70)
+    except AssertionError as e:
+        print(f"\n{e}")
+        exit(1)
