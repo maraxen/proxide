@@ -30,7 +30,17 @@ is in flight elsewhere and is treated as done — with one carve-out recorded in
 Two agents implemented Tier 0 in parallel on 260910. Both were briefed in detail on this exact
 failure class. Both reported success. Both reports were false, in the same shape:
 
-- **The implementation (commit `54eefc2`) states "All numeric constants preserved exactly." It
+> **Two tags, two different commits — do not conflate them (round-3 item 4).**
+> `calibration/element-inference-fixed-initial` = `54eefc2`, the fixer's first state, with all four
+> element-inference sites fixed **and the Br/I radii silently changed**.
+> `calibration/element-inference-fixed` = `992377d`, the final state, all four sites fixed **and
+> the Br/I change reverted**. Round 2 described both as "the fix" and left `54eefc2` as a raw
+> untagged SHA in five places. Requirements that need the *pre-revert* tree — OBS-111's
+> constant-drift proof, Z2a's snapshot baseline — mean `-fixed-initial`. Recall calibration may use
+> either, since both have all four sites fixed.
+
+- **The implementation (`calibration/element-inference-fixed-initial`) states "All numeric
+  constants preserved exactly." It
   changed two GBSA intrinsic Born radii** — Br 1.50 → 1.85 Å, I 1.50 → 1.98 Å — by adding
   explicit match arms for elements that had previously fallen through to the default. The new
   values are plausibly better physics. They were uncited, out of scope, and shipped under an
@@ -375,6 +385,29 @@ the "rejected NaN" note below: NaN is rejected as a *default* return; it is corr
 *explicitly-requested lenient* return, where the finding is already recorded alongside it. The
 wasm viewer is the intended and currently only consumer.
 
+`DiagPolicy::default() == DiagPolicy::strict()`, with **`max_findings = 1024`**. The value is
+specified rather than left open because under `lenient()` the report is the *only* evidence a
+substitution occurred, so an unspecified bound is an unspecified evidence loss. 1024 is chosen to
+exceed any plausible per-structure distinct-finding count while bounding memory; overflow is never
+silent (D14's `PROX-DIAG-TRUNCATED`).
+
+> **OWNER DECISION PENDING — and my round-2 cost estimate for it was wrong.** §11 called shipping
+> `lenient()` as the default "a one-line change to `DiagPolicy::default()`". That is **not
+> accurate**, and the correction belongs here at the decision point rather than only in a log:
+>
+> - It makes **`f32::NAN` the default return** for an unknown element reaching MD integration —
+>   promoting to the default exactly the design D6's own rejection paragraph argues against
+>   ("detonates during integration, far from the parse, with no evidence attached"). Choosing
+>   lenient-by-default therefore requires either accepting that, or defining a *third* lenient
+>   behaviour for `Untabulated` that is neither refusal nor NaN.
+> - It **falsifies OBS-104's acceptance criterion verbatim** (which asserts `Err` under the default
+>   policy).
+> - It falsifies the "under the default `DiagPolicy`" clauses in **OBS-113** and **D16**.
+>
+> Realistic cost: four requirement edits, one new design decision about the lenient `Untabulated`
+> value, and a stated NaN consequence — not one line. The spec's position remains strict-by-default;
+> the alternative is legitimate but is a design change, and round 2 understated it.
+
 **Rejected: substituting `f32::NAN`.** It is loud, but it detonates during integration, far from
 the parse that caused it, with no evidence attached — the same debugging pathology as `12.0`,
 inverted. Refusal at the site beats NaN propagation.
@@ -511,9 +544,8 @@ id            = "element-inference-2609"
 defective_ref = "calibration/element-inference-defective"   # annotated tag -> 5f368ec
 fixed_ref     = "calibration/element-inference-fixed"       # annotated tag -> 992377d
 detector      = "check_element_inference"
-# must_flag is GENERATED, never hand-written:
-#   scripts/calibrate.py --derive-ground-truth <defective_ref> <fixed_ref>
-ground_truth  = "calibration/ground_truth/element-inference-2609.json"
+ground_truth  = "calibration/ground_truth/element-inference-2609.json"  # reviewed, append-only
+evasion_dir   = "calibration/evasion/check_element_inference/"          # D18, adversarial
 ```
 
 **Tags, not SHAs** — annotated and pushed, so gc cannot reclaim them, and CI must fetch with
@@ -538,13 +570,38 @@ The calibration corpus is a **deliverable of the first task, not an afterthought
 detector with unmeasured recall is exactly the "well-typed plausible answer with the evidence
 destroyed" that this whole document exists to eliminate — applied to the tooling.
 
-**Ground truth is derived mechanically, never hand-picked.** `must_flag` for a case is generated
-by `scripts/calibrate.py --derive-ground-truth <defective_ref> <fixed_ref>`, which takes the
-changed hunks of the diff and records the pre-image sites. Hand-enumerating the sites would
-reproduce D12's own fallacy one level up: recall 1.0 against a hand-picked target establishes
-nothing. *(Review N3: the earlier draft said "enumerated by hand" in §5 and "mechanically" in §7,
-and gave the violation count as six, four and three in three different places. The count is
-whatever the derivation emits; this document no longer asserts one.)*
+**Ground truth is a reviewed checked-in list plus the evasion corpus. Mechanical derivation is
+dropped (round-3 item 3, accepted).**
+
+Round 2 specified `scripts/calibrate.py --derive-ground-truth`. It is unimplementable, for two
+independent reasons this document's own §0.1 supplies:
+
+1. **The fix commit contains unrelated edits.** `-fixed-initial` also changed the Br/I radii. Naive
+   derivation puts those match-arm lines into `must_flag`; `check_element_inference` will never
+   flag them, because they are not element-inference violations; **recall can never reach 1.0 on
+   Z1's only seeded case.** Loosening to "hunks that look like violations" is hand-picking wearing
+   a script — worse than hand-picking, because it hides the judgement.
+2. **Derivation cannot find a site the fix commit missed.** It yields recall 1.0 against an
+   incomplete target, which is N3's fallacy automated rather than removed. Per §0.1 that is
+   precisely what already happened once: the 260910 fixer's own scan reported PASS at recall 2/4.
+
+Replacement:
+
+```toml
+ground_truth = "calibration/ground_truth/element-inference-2609.json"   # reviewed, checked in
+evasion_dir  = "calibration/evasion/check_element_inference/"           # D18
+```
+
+- The ground-truth list is **hand-written and reviewed**, and the review is the point — its
+  provenance is a named reviewer in the PR, not a script's output.
+- Its incompleteness is assumed, not denied. **`calibration/evasion/` is what compensates**: D18's
+  corpus contains instances the fix commit never contained, so recall is measured against a target
+  the historical fix did not define.
+- The list is **append-only** under CI check. A case may gain sites, never lose them.
+
+*(This is a genuine retreat from "mechanical" to "reviewed + adversarial." The honest reason: no
+derivation from a real commit pair can be both correct and automatic, because real commits are not
+single-purpose. Saying so beats shipping a script that cannot work on its own seeded case.)*
 
 **Recall alone is not a passing grade (review N2).** A detector that flags every line scores
 recall 1.0. Each case therefore also fixes a **false-positive budget**: findings on `fixed_ref`
@@ -566,17 +623,50 @@ One ledger, `exemptions.toml`, consumed by **every** detector:
 
 ```toml
 [[exemption]]
-site      = "crates/proxide-physics/src/physics/gbsa.rs"   # path, or path:symbol
-detector  = "check_element_inference"
-reason    = "Routing GBSA tables through infer_element regresses Se/Na/Cu/Fe numerics (§0.2)."
-owner     = "@maraxen"
-expiry    = "authoritative mbondi2 parameters sourced for Se, Na, Cu, Fe"
-blocking_id = "OBS-303b"
+site              = "crates/proxide-physics/src/physics/gbsa.rs"
+detector          = "check_element_inference"
+expected_findings = 2          # MANDATORY — see "counted, not blanket" below
+reason            = "Routing GBSA tables through infer_element regresses Se/Na/Cu/Fe numerics (§0.2)."
+owner             = "@maraxen"
+expiry_kind       = "blocking_id"          # one of: blocking_id | date | never
+expiry_value      = "OBS-303b"             # machine-comparable per expiry_kind
 ```
 
+Three properties are **normative**, not stylistic. Each exists because its absence was an
+exploitable hole found in the reference implementation itself (`e78484e`).
+
+**(a) Counted, not blanket.** `expected_findings` is mandatory. An exemption excuses *an
+enumerated set of reviewed sites*, not a path. Matching by path prefix alone blankets a file
+forever, so a violation added tomorrow inherits today's justification silently. **More findings
+than recorded fails as an unreviewed addition; zero fails as stale.** Both directions are
+failures.
+
+**(b) A detector must not be disableable by content it does not control.** The reference
+implementation's whole-file exclusion tested `"infer_element" in content` against **raw** source,
+so a comment — `// TODO: route through infer_element` — switched the detector off for an entire
+file. Worse, the resulting silence read as *fixed* to the stale-exemption check, whose documented
+remedy is to delete the exemption; the file then stayed permanently green and permanently
+defective. **The detector could not tell "fixed" from "invisible."** Every detector in this spec
+must therefore: strip comments and string literals before applying any
+enable/disable/exclusion test; require positive evidence in *code* (a call or an import), never
+mere textual presence of a token; and treat "no findings where findings were expected" as a
+failure, never as success.
+
+That last clause is the general form: **a detector whose silence is indistinguishable from its
+success is not a detector.** It is the same defect as `DEFAULT_MASS = 12.0` — one value meaning
+two things — relocated into the tooling.
+
+**(c) `expiry` is machine-comparable.** Free prose cannot be evaluated, so `expiry_kind` /
+`expiry_value` are typed: `blocking_id` (an OBS-### that must exist in §4; the exemption is
+expected to die when that requirement's `verify:` command passes), `date` (ISO-8601; expired
+entries fail), or `never` (permanent by design — requires a second owner in `owner` and is
+reported separately in every run, because a permanent exemption is a design decision, not a
+deferral).
+
 **The reference implementation already exists in-repo** and this spec adopts its semantics rather
-than inventing them: `tests/test_element_inference_conformance.py`'s `DEFERRED_VIOLATIONS`
-(commit `76625f8`), whose critical property is at lines 114-119 —
+than inventing them: `tests/test_element_inference_conformance.py`'s `DEFERRED_VIOLATIONS`, **at
+commit `e78484e` — not the earlier `76625f8`**, which contained exactly the two holes (a) and (b)
+now forbid. Its critical property:
 
 > a listed path that **stops** violating **fails the test**, so an exemption cannot outlive its
 > cause.
@@ -585,13 +675,111 @@ That stale-entry check is the single most important thing in the mechanism and i
 every detector. An exemption is a **debt record, not a silence**: the detector still finds the
 site, still prints it, and the justification must state what ends it.
 
-`known_gaps.toml` (D11) is subsumed: it becomes the element-keyed *view* of the same ledger, and
-element-scoped entries carry the same `owner`/`expiry`/stale-check semantics.
+The element-keyed gap list (D11) is subsumed: it is a *view* over the same ledger, and
+element-scoped entries carry the same `owner` / typed-expiry / `expected_findings` / stale-check
+semantics. There is one ledger and one stale-check, not two.
 
 **Rejected: `#[allow]`-style in-source annotations as the primary mechanism.** They work for
 Rust-resident detectors but not for the Python scanners, they cannot carry an expiry, and they are
 invisible to review-by-inventory — nobody can answer "what are we currently deferring?" without a
 grep. In-source comments remain permitted as a *pointer* to a ledger entry, never as the record.
+
+#### D15.1 — "Consumed by every detector" is a mechanism, not an instruction
+
+Round 2 left this as prose in D15 and OBS-004 with nothing checking it. A detector that hardcodes
+`if "gbsa.rs" in path: continue` passes every gate as written, and OBS-002 cannot catch it because
+only one detector currently has a non-empty fixed-ref finding set. The mechanism:
+
+**Every detector is a subclass of `Detector` in `scripts/detectors/base.py`.** Detectors do not
+read `exemptions.toml` themselves and do not filter their own findings. They implement exactly:
+
+```python
+class Detector(ABC):
+    name: str                                    # must match exemptions.toml `detector`
+    @abstractmethod
+    def scan(self, tree: Path) -> list[Finding]: ...   # returns ALL findings, unfiltered
+```
+
+The **harness** — not the detector — applies the ledger, computes exemption satisfaction, and
+decides pass/fail. A detector therefore has no code path in which it can suppress a finding, and
+"consumed by every detector" becomes structurally true rather than asserted.
+
+**Registration assertion.** `scripts/detectors/__init__.py` holds a `REGISTRY: dict[str, Detector]`.
+`check_exemptions.py --strict` asserts, in both directions: every `detector` named in
+`exemptions.toml` exists in `REGISTRY`, and every detector in `REGISTRY` has a `verify:` entry in
+§4.1. A detector that is not registered cannot be exempted and cannot gate anything; a registered
+detector with no `verify:` command fails OBS-001.
+
+**Who computes staleness, and when.** Staleness requires running detectors, which made the
+round-2 formulation circular with OBS-002. Resolved by splitting:
+
+| Check | Runs | Needs detectors? |
+|---|---|---|
+| `check_exemptions.py --strict` (schema, registry, `expiry` typing, date expiry, `blocking_id` resolves) | every CI run | **no** |
+| Staleness + `expected_findings` count (`--with-scan`) | every CI run, in the **calibration** job after `REGISTRY` is loaded | yes — this *is* the OBS-002 harness, invoked once |
+
+There is one scan, not two. `--with-scan` is the same harness invocation OBS-002 uses; OBS-004's
+staleness result is a *product* of that run, not a second traversal. The circularity was an
+artefact of describing them as independent commands.
+
+**Known limitation, stated rather than papered.** This makes exemption *application* uniform and
+detector-side suppression structurally impossible. It does **not** prevent a detector from being
+weak — a `scan()` that simply never produces a finding for `gbsa.rs` is indistinguishable from one
+that has nothing to report. That hole is closed by D18's evasion corpus, not here, and the two
+requirements are load-bearing together.
+
+### D18 — Every detector ships a defeating-instance corpus (`calibration/evasion/`)
+
+Round-2 review audited all fifteen detectors this spec introduces. **Eleven are defeated by a
+one-line change that commits the targeted defect**, each with a concrete instance:
+
+| Detector | Defeated by | Why it matters |
+|---|---|---|
+| `check_coercions` | `map_or(1.0, \|v\| v)` | semantically identical to the `pdb.rs:42` hazard it exists for |
+| `check_coercions --catchalls` | `unknown => "C"` (named binding, not `_`) | exactly what a fixer under gate pressure writes |
+| `check_subscribers` | `tracing_subscriber::fmt()` never `.init()`ed | **§C3's precise defect** — the one that motivated the requirement |
+| `check_diagnostic_codes` | `format!("PROX-COERCE-{}", kind)` | dynamic code construction is invisible to a literal grep |
+| `check_hot_paths` | `use tracing::debug;` then bare `debug!` | the ban greps `tracing::`, which the import removes |
+| coverage set-difference (OBS-303) | **deleting `"Se" => 78.971` from `masses.rs`** | narrowing `claimed` makes **both P0 gates green** |
+| `uncited-legacy` ratchet (OBS-111) | typing a citation string nobody verified | `-fixed-initial` wearing a citation |
+
+The fix is one requirement, not fifteen fixes. **Each detector ships checked-in files under
+`calibration/evasion/<detector>/` that commit the targeted defect in a form the detector's own
+author did not write, and the harness asserts every one is flagged.**
+
+This is D12's no-synthetic-positive-controls rule applied in the direction round 2 failed to apply
+it. D12 forbids a control drawn from the detector's own distribution; the evasion corpus is the
+complement — instances drawn *adversarially against* it. Two rules make it non-circular:
+
+1. **The evasion instance is authored by someone other than the detector's author**, or, when that
+   is impractical, by a reviewer in the same PR who has read the detector. An author writing their
+   own evasion cases reproduces the 260910 failure precisely.
+2. **Adding a detector without evasion cases fails CI.** `check_exemptions.py --strict`'s registry
+   assertion is extended: every `REGISTRY` entry needs a non-empty `calibration/evasion/<name>/`.
+
+Seed the corpus with the eleven instances above — they are already enumerated, already
+adversarial, and already known to defeat the naive implementation.
+
+**Two of the eleven need a structural fix, not just a corpus entry**, because the evasion is a
+*legitimate edit* that no pattern can distinguish from an attack:
+
+- **OBS-303 (narrowing `claimed`).** A ratchet: `coverage/claimed.lock` records the claimed domain
+  of every table. `claimed` may grow freely; **any shrink fails** unless the lockfile is edited in
+  the same commit with a reason, which makes deleting `"Se" => 78.971` a reviewable act rather
+  than a silent one. Without this, the coverage gate is satisfiable by making the code claim less
+  — which is the disease, not the cure.
+- **OBS-111 (unverified citation).** A citation must be *diff-reviewable evidence*, not a string.
+  `source` becomes a structured reference — `{kind = "doi"|"file"|"table", value = ..., sha256 = ...}` —
+  where `file`/`table` point at a checked-in extract under `constants/sources/` carrying the cited
+  value. Changing a constant's citation then changes a file whose content a reviewer can compare
+  against the number. A bare `kind = "doi"` remains permitted but is counted separately and
+  ratcheted like `uncited-legacy`, because a DOI is a claim, not evidence.
+
+**Known limitation, stated.** An evasion corpus proves a detector catches *the evasions someone
+thought of*. It cannot prove absence of others, and a sufficiently novel evasion still passes. The
+claim here is bounded and deliberate: it converts "we believe this detector works" into "this
+detector demonstrably catches these eleven specific defeats," and it makes each future defeat a
+one-file addition rather than a redesign.
 
 ### D13 — Physical-constant tables get a checked-in snapshot
 
@@ -607,7 +795,7 @@ answers "did our Br radii ever change?" correctly and forever.
 
 Crucially, the snapshot key set must be the table's *full domain* including what the default arm
 covers, so that **adding a match arm changes the snapshot** — that is the precise event
-`54eefc2` performed invisibly. Snapshot entries carry a `source` field (citation or
+`-fixed-initial` performed invisibly. Snapshot entries carry a `source` field (citation or
 `"uncited-legacy"`); the count of `uncited-legacy` entries is a ratchet that may only decrease.
 
 ### D14 — Every physical-constant lookup returns `Sourced<T>`, never a bare number
@@ -692,7 +880,14 @@ There is no Python representation of `Sourced<f32>`, and no way to thread a `Dia
 registered `#[pyfunction]` without changing its signature. "Existing signatures untouched" (D3) is
 true of the *Rust* parser functions and **false at the pyo3 boundary**.
 
-**Decision: the Python API breaks, deliberately and once.** Leaving the default Python surface
+> **OWNER DECISION PENDING.** Everything in D16 is conditional on accepting the break. Dependents
+> if it is rejected: **OBS-112** covers Rust only (and needs a `never` exemption naming the three
+> `oxidize` symbols); **OBS-113(b)** becomes unimplementable and must be struck, leaving the GBSA
+> path ungated at its only real boundary; **B7** is cut; **D17's boundary 2** does not exist. This
+> is recorded here, in the decision, rather than only in §11's revision log — a reader of D16 must
+> not have to find the caveat elsewhere.
+
+**Decision (proposed): the Python API breaks, deliberately and once.** Leaving the default Python surface
 returning bare floats would contradict OBS-112 for proxide's *primary consumer* — the exact
 population the Cl and Se defects reached. The new shape:
 
@@ -764,14 +959,16 @@ a runnable command is not a requirement and does not merge (OBS-001).
 | OBS-001 | Every acceptance criterion in this spec is decidable by a machine against a fixed artefact — a named commit, tag, checked-in fixture, or checked-in corpus. No criterion may be satisfied by an agent's or author's assertion that the work was done. | `scripts/check_spec_criteria.py` parses §4.1, and fails if any requirement ID in §4 lacks a §4.1 entry, if any entry is not executable, or if any table cell contains a criterion with no corresponding command. **This requirement is exempt from OBS-002** — no historical defect corpus for spec criteria can exist, so no calibration case is possible; its own gate is self-application (running it against this document must pass). | **P0** |
 | OBS-002 | Every detector introduced by this spec has a calibration case in `calibration/cases.toml` per D12: **recall 1.0** on the defective ref, and findings on the fixed ref **⊆ `exemptions.toml`** (D15). | Harness checks out each tagged ref into a temp worktree. First entry: tags `calibration/element-inference-defective` → `calibration/element-inference-fixed`. Ground truth derived mechanically from the diff, never hand-listed (D12). A detector with no calibration case does not merge. **Exempt: OBS-001's checker.** | **P0** |
 | OBS-003 | Detector precision is budgeted, not just recall. Findings on `calibration/clean/` must be **zero**; measured recall and false-positive counts are written to `calibration/RECALL.md` by the harness. | Harness fails on any finding in the clean corpus and on any merged case below recall 1.0. `RECALL.md` is a generated artefact; CI fails if it is stale. *(Review N2: recall-only would pass a detector that flags every line.)* | P1 |
-| OBS-004 | One exemption ledger, `exemptions.toml`, per D15, consumed by every detector; entries carry `site`, `detector`, `reason`, `owner`, `expiry`, `blocking_id`. **A listed site that no longer violates fails the check.** | `scripts/check_exemptions.py` validates schema and staleness; each detector asserts `findings ⊆ exemptions` rather than `findings == ∅`. Stale-entry semantics copied from `tests/test_element_inference_conformance.py:114-119` (`76625f8`). | **P0** |
+| OBS-004 | One exemption ledger, `exemptions.toml`, per D15: entries carry `site`, `detector`, **`expected_findings`**, `reason`, `owner`, **`expiry_kind`/`expiry_value`**. **Both directions fail** — a listed site yielding zero findings fails as stale; yielding more than `expected_findings` fails as an unreviewed addition. | `check_exemptions.py --strict` validates schema, typed expiry, and registry cross-membership **without running detectors**; `--with-scan` (the OBS-002 harness run, not a second traversal) evaluates staleness and counts. Semantics from `tests/test_element_inference_conformance.py` at `e78484e`. | **P0** |
+| OBS-005 | Detectors cannot suppress their own findings (D15.1) and cannot be disabled by content they do not control (D15(b)). Every detector subclasses `scripts/detectors/base.Detector`, returns **unfiltered** findings, and is listed in `REGISTRY`; exemption application lives only in the harness. Any enable/exclude test runs on **comment- and string-stripped** source and requires a call or import, never token presence. | `check_exemptions.py --strict` asserts `REGISTRY` ↔ `exemptions.toml` ↔ §4.1 three-way consistency and fails on a detector that reads `exemptions.toml` directly (import check). **Evasion proof required:** `calibration/evasion/_shared/comment_disable/` — a defective file carrying `// TODO: route through infer_element` — must still be flagged. | **P0** |
+| OBS-006 | Every detector ships a defeating-instance corpus at `calibration/evasion/<detector>/` per D18, authored adversarially (not by the detector's author), and every instance is flagged. | Harness fails if any registered detector has an empty evasion dir, or if any instance goes unflagged. Seeded with the eleven known defeats in D18's table. A new detector without evasion cases does not merge. | **P0** |
 
 ### Tier 1 — canonical diagnostics channel
 
 | ID | Requirement | Acceptance criterion (verifiable) | P |
 |---|---|---|---|
 | OBS-101 | `proxide_core::diag` provides `Severity`, `DiagKind`, `Finding<K>`, `Report<K>`, `Reported<T,K>`, `DiagPolicy`, `ErasedReport`, `DiagnosticsError` per D1/D3. | `cargo test -p proxide-core diag::` passes; `Report::{is_clean,errors,warnings}` have tests mirroring `precondition.rs:332-564`. | P2 |
-| OBS-102 | `confind::PreconditionReport` is a re-export/alias of `Report<ViolationKind>`; confind's public API is unchanged. | `cargo test -p proxide-confind` passes, **and** `git diff --stat $(git merge-base HEAD main) -- crates/proxide-confind/src/precondition.rs` shows no change within the `mod tests` line range. *(Review N6: "passes with zero edits" is a property of a diff, not of a tree, and CI on a merged commit cannot evaluate it — expressed against the merge base instead.)* | P2 |
+| OBS-102 | `confind::PreconditionReport` is a re-export/alias of `Report<ViolationKind>`; confind's public API is unchanged. | `cargo test -p proxide-confind` passes, **and** `git diff -U0 $(git merge-base HEAD main) -- crates/proxide-confind/src/precondition.rs` has no hunk whose `@@` header falls inside the `mod tests` line range. *(N6 as amended: `--stat` emits no line numbers, so it could not evaluate its own criterion — `-U0` plus hunk-header parsing can. `scripts/check_untouched_tests.py` does the parsing.)* | P2 |
 | OBS-103 | `infer_element_sourced` exists per D5; `infer_element`'s two `"C"` fallbacks (`masses.rs:66,98`) return `ElementSource::Missing` through it. | Named test `chem::masses::tests::test_infer_element_sourced_reports_missing` asserts `infer_element_sourced("XX").value == None` with `.source == ElementSource::Missing`, `infer_element_sourced("").source == ElementSource::Missing`, and `infer_element_sourced("CL").source == ElementSource::TwoLetterTable`. | **P0** |
 | OBS-104 | `DEFAULT_MASS` deleted; `get_mass -> Sourced<f32>` per D14; `assign_masses_reported` errors on `Untabulated` under the default policy. | `rg -w DEFAULT_MASS crates/` returns nothing; a test asserts `assign_masses_reported(&["XX"], &DiagPolicy::default())` is `Err` and that the lenient policy yields one `PROX-CHEM-UNKNOWN-ELEMENT` finding. | **P0** |
 | OBS-105 | `parse_pdb_reported` / `parse_mmcif_reported` / `parse_pqr_reported` exist per D3; existing Rust `parse_*` signatures unchanged (the Python surface does change — D16). | Named test `formats::pdb::tests::test_malformed_occupancy_is_reported` against checked-in fixture `tests/data/coercion/malformed_occupancy.pdb`: exactly one `PROX-COERCE-FIELD-DEFAULTED` finding with `fields["field"] == "occupancy"`, and `parse_pdb` on the same input still returns `Ok`. | P2 |
@@ -779,11 +976,11 @@ a runnable command is not a requirement and does not merge (OBS-001).
 | OBS-107 | The `_ =>` catch-alls in the OBS-106 scope are each either made exhaustive or carry an `exemptions.toml` entry. | Same script, same gate. Counts are re-derived by the script rather than asserted here (they shift as OBS-106 lands). | P3 |
 | OBS-108 | `LoopModelReport::geometry_warnings: Vec<String>` becomes `Report<LoopDiagKind>`. | `rg 'geometry_warnings' crates/` returns no `Vec<String>` declaration; `cargo test -p proxide_fixer` passes. | P4 |
 | OBS-109 | Each of the 6 io error enums gains `Diagnostics(..)` and `#[non_exhaustive]` per D4. | `cargo build --workspace` and `cargo hack check --feature-powerset` pass. | P2 |
-| OBS-110 | `diagnostics/registry.toml` lists every code; codes are unique and never reused. | `scripts/check_diagnostic_codes.py` compares registry against `rg -o 'PROX-[A-Z-]+' crates/` and fails on unregistered or duplicate codes. | P2 |
+| OBS-110 | `diagnostics/registry.toml` lists every code; codes are unique and never reused. Must include `PROX-DIAG-TRUNCATED` (D14). | `scripts/check_diagnostic_codes.py` compares registry against the codes emitted by `DiagKind::code()` impls and fails on unregistered or duplicate codes. **Dynamic construction is a violation:** the detector flags `format!("PROX-…{}", ..)` and any non-literal `code()` return, because a code assembled at runtime cannot be registered (D18 evasion case). | P2 |
 | OBS-111 | Every physical-constant table exposes `snapshot()` and is guarded by a checked-in `constants/snapshots/<table>.json` per D13, keyed over the table's full domain including default-arm coverage, with a `source` field per entry. | `cargo test constants::snapshot` fails on any value change not accompanied by a snapshot edit. **Regression proof required:** replaying `54eefc2` against the guard must fail with the Br/I radii diff named. Ratchet: `scripts/check_uncited_constants.py` fails if the `uncited-legacy` count increases. | **P0** |
-| OBS-112 | Every constant lookup on the **enumerated symbol list** below returns `Sourced<T>` per D14. | `scripts/check_sourced_lookups.py` operates on an **explicit symbol list**, not on a return-type shape, and fails if a listed symbol's return type does not transitively contain `Sourced`. *(Review B3, accepted: a "bare `f32`/`f64` return" check would have passed both GBSA functions — they return `Vec<f32>` — i.e. green-lit the exact defect motivating the requirement; and it would have skipped `covalent_radius`, which is private and returns `Option<f64>`.)* Symbols: `masses::get_mass`, `masses::infer_element_sourced`, `gbsa::assign_mbondi2_radii` (`gbsa.rs:24`), `gbsa::assign_obc2_scaling_factors` (`gbsa.rs:93`), `geometry_gate::covalent_radius` (`geometry_gate.rs:6`, made `pub`), and each LJ/nonbonded default accessor. The list is the requirement; adding a constant table without adding its symbol fails OBS-301. | **P0** |
+| OBS-112 | Every constant lookup on the **enumerated symbol list** below returns `Sourced<T>` per D14. **CONDITIONAL — scope depends on an unmade owner decision (D16).** As written this requirement covers **Rust symbols only**, and its §4.1 command checks only Rust. If the owner accepts D16 (Python surface breaks), OBS-112 additionally requires that `oxidize.assign_*` expose `source` per value, and B7 delivers it. **If the owner keeps `list[float]` as the Python default, OBS-112 does not hold for proxide's primary consumer, and that must be recorded as a `never`-kind exemption naming the three `oxidize` symbols — not left implicit.** A PASS on this requirement is not a claim about Python unless D16 is accepted. | `scripts/check_sourced_lookups.py` operates on an **explicit symbol list**, not on a return-type shape, and fails if a listed symbol's return type does not transitively contain `Sourced`. *(Review B3, accepted: a "bare `f32`/`f64` return" check would have passed both GBSA functions — they return `Vec<f32>` — i.e. green-lit the exact defect motivating the requirement; and it would have skipped `covalent_radius`, which is private and returns `Option<f64>`.)* Symbols: `masses::get_mass`, `masses::infer_element_sourced`, `gbsa::assign_mbondi2_radii` (`gbsa.rs:24`), `gbsa::assign_obc2_scaling_factors` (`gbsa.rs:93`), `geometry_gate::covalent_radius` (`geometry_gate.rs:6`, made `pub`), and each LJ/nonbonded default accessor. The list is the requirement; adding a constant table without adding its symbol fails OBS-301. | **P0** |
 | OBS-112b | Selenium provenance is pinned so a future change to it is a visible test edit. | Named test asserting `mbondi2_radius("Se").source` is a specific variant, with the current value written literally in the assertion. Whichever way Z2b resolves Se, the resolution edits this test. | **P0** |
-| OBS-113 | A `Defaulted` or `Untabulated` constant reaching a parameterisation path is an `Error`-severity finding under the default `DiagPolicy`; `DiagPolicy::lenient()` records it without promoting. **Two boundaries per D17**, because GBSA composition happens in Python. | **(a) Rust:** named test on `md_params::parameterize_structure` with `ParamOptions::default()` over a structure whose element is outside the tabulated domain → `Err(ParamError::Diagnostics(..))` carrying `PROX-CHEM-DEFAULTED-CONSTANT`. **(b) Python:** `pytest` test that `oxidize.assign_mbondi2_radii(["SE"], [])` raises `ProxideDiagnosticsError` naming `Se` under default `strict=True`, and with `strict=False` returns a result whose `report` contains that finding. *(Review B2, accepted: the earlier "parameterising a structure containing MSE fails" named a Rust boundary that does not exist — `assign_mbondi2_radii`/`assign_obc2_scaling_factors` have zero Rust callers.)* | **P0** |
+| OBS-113 | A `Defaulted` or `Untabulated` constant reaching a parameterisation path is an `Error`-severity finding under the default `DiagPolicy`; `DiagPolicy::lenient()` records it without promoting. **Two boundaries per D17**, because GBSA composition happens in Python. | **(a) Rust:** named test on `md_params::parameterize_structure` with `ParamOptions::default()` over a structure whose element is outside the tabulated domain → `Err(ParamError::Diagnostics(..))` carrying `PROX-CHEM-DEFAULTED-CONSTANT`. **The fixture must construct `AtomRecord` directly with an out-of-domain `ElementSymbol`, not parse a PDB** — per D6, every symbol `infer_element` can emit is inside the tabulated domain, so a parsed fixture provably cannot reach this path and the test would pass vacuously. **(b) Python — CONDITIONAL ON D16.** `pytest` test that `oxidize.assign_mbondi2_radii(["SE"], [])` raises `ProxideDiagnosticsError` naming `Se` under default `strict=True`, and with `strict=False` returns a result whose `report` contains that finding. **Neither behaviour is expressible by a bare `list[float]` return**, so (b) silently assumes D16 is accepted. If it is not, (b) is unimplementable and must be struck with a `never`-kind exemption, leaving the GBSA path — the §0.2 path — ungated at its only real boundary. *(Review B2: the earlier "parameterising a structure containing MSE fails" named a Rust boundary that does not exist.)* **(a) is unconditional; (b) is not, and the requirement passes on (a) alone only if (b)'s exemption exists.** | **P0** |
 
 ### Tier 2 — one connected telemetry channel
 
@@ -800,10 +997,11 @@ a runnable command is not a requirement and does not merge (OBS-001).
 
 | ID | Requirement | Acceptance criterion (verifiable) | P |
 |---|---|---|---|
-| OBS-301 | Each table exposes its own supported domain (`supported_elements()` etc.) per D11. | `cargo test` asserts `supported_elements()` and the arms of `get_mass` agree in both directions (a table-driven `get_mass` makes this trivially true — preferred). | **P0** |
+| OBS-301 | Each table exposes its own supported domain (`supported_elements()` etc.) per D11, **and every constant table is itself registered** in `constants/registry.toml`. | `cargo test` asserts `supported_elements()` and the arms of `get_mass` agree in both directions (a table-driven `get_mass` makes this trivially true — preferred), **and** that `constants::REGISTRY` enumerates every table, cross-checked against OBS-112's symbol list. *(B3 residue: without a registry of tables, a new `fn dielectric(..) -> f32` in proxide-physics is invisible to OBS-112, OBS-301 and OBS-303b simultaneously — three P0 gates blind to the same omission. The registry is the single place a new table must appear, and OBS-112's symbol list is derived from it rather than maintained beside it.)* | **P0** |
 | OBS-302 | `scripts/chem_coverage.py` extracts the corpus multiset to `coverage/corpus.json`. | Running it on the current corpus yields JSON whose `elements` contains at least `{C,N,O,S}`; committed as a snapshot. | **P0** |
 | OBS-303 | Coverage gate: `claimed − covered ⊆ exemptions`, each gap justified with owner and expiry. | Fails when an element is added to any table without a fixture or an `exemptions.toml` entry. **Regression proof required:** a test that removes the `Cl` entry in a tmpdir copy of the ledger and asserts the gate fails. Element-scoped gaps are ledger rows (D15), not a separate file — the stale-check applies, so a gap entry for an element that later gains a fixture fails until deleted. | **P0** |
 | OBS-303b | Cross-table domain consistency: the coverage tool compares each table's claimed domain against **every other table's**, and flags any element tabulated in one and defaulted in another. | Named test `test_cross_table_domains::test_flags_selenium` asserts the tool flags `Se` — present in `masses.rs:30`, absent from the mbondi2/obc2 tables (the §0.2 case) — and that the flag clears only via a citation or an `exemptions.toml` entry. This is the check that was mechanically available and unrun for the entire life of the selenium defect. **Depends on `gbsa::supported_elements()`, which is A1b's file** (review B6). | **P0** |
+| OBS-303d | **`claimed` may not shrink.** `coverage/claimed.lock` records every table's claimed domain; growth is free, any shrink fails unless the lockfile is edited in the same commit with a reason. | Named test asserting the gate fails when `"Se" => 78.971` is deleted from `masses.rs` without a lockfile edit. *(Without this, OBS-303 and OBS-303b — two P0 gates — are both satisfiable by making the code **claim less**, which is the disease rather than the cure. D18.)* | **P0** |
 | OBS-303c | The test corpus gains at least one fixture per element class the code claims: a halide-containing structure, a metal site, and a selenomethionine (`MSE`) structure. | `pytest tests/test_chemical_coverage.py::test_corpus_covers_claimed_classes`; `coverage/corpus.json` contains `Cl`, `Se`, and ≥1 transition metal. | P1 |
 | OBS-304 | `ProvenanceRecord` per D9, with `git_sha` from a `build.rs` in proxide-core. | Test asserts `git_sha` matches `^[0-9a-f]{40}(-dirty)?$` or `== "unknown"`; `build.rs` emits `cargo:rerun-if-changed=.git/HEAD`. | P3 |
 | OBS-305 | `MDParameters` and the primary parse results carry `provenance: ProvenanceRecord`; the structs become `#[non_exhaustive]` with builders. | `cargo build --workspace` passes; a test asserts a parameterisation run records the forcefield file's sha256 under `ArtifactRole::ForceField`. | P3 |
@@ -821,9 +1019,11 @@ repository root.
 OBS-001:  uv run python scripts/check_spec_criteria.py .praxia/docs/specs/260910_proxide-silent-substitution-observability.md
 OBS-002:  uv run pytest tests/test_detector_calibration.py -k recall
 OBS-003:  uv run pytest tests/test_detector_calibration.py -k "precision or clean" && uv run python scripts/calibrate.py --check-recall-md
-OBS-004:  uv run python scripts/check_exemptions.py --strict
+OBS-004:  uv run python scripts/check_exemptions.py --strict && uv run python scripts/check_exemptions.py --with-scan
+OBS-005:  uv run python scripts/check_exemptions.py --strict --assert-registry && uv run pytest tests/test_detector_calibration.py -k evasion_shared
+OBS-006:  uv run pytest tests/test_detector_calibration.py -k evasion
 OBS-101:  cargo test -p proxide-core diag::
-OBS-102:  cargo test -p proxide-confind && git diff --stat $(git merge-base HEAD main) -- crates/proxide-confind/src/precondition.rs | uv run python scripts/check_untouched_tests.py
+OBS-102:  cargo test -p proxide-confind && git diff -U0 $(git merge-base HEAD main) -- crates/proxide-confind/src/precondition.rs | uv run python scripts/check_untouched_tests.py --module tests
 OBS-103:  cargo test -p proxide-core chem::masses::tests::test_infer_element_sourced_reports_missing
 OBS-104:  cargo test -p proxide-core chem::masses::tests::test_unknown_element_mass_refuses && ! rg -qw DEFAULT_MASS crates/
 OBS-105:  cargo test -p proxide-io formats::pdb::tests::test_malformed_occupancy_is_reported
@@ -847,6 +1047,7 @@ OBS-302:  uv run python scripts/chem_coverage.py --check coverage/corpus.json
 OBS-303:  uv run pytest tests/test_chemical_coverage.py::test_claimed_minus_covered_equals_gaps
 OBS-303b: uv run pytest tests/test_chemical_coverage.py::test_cross_table_domains
 OBS-303c: uv run pytest tests/test_chemical_coverage.py::test_corpus_covers_claimed_classes
+OBS-303d: uv run pytest tests/test_chemical_coverage.py::test_claimed_domain_may_not_shrink
 OBS-304:  cargo test -p proxide-core provenance::tests::test_git_sha_format
 OBS-305:  cargo test -p proxide-physics md_params::tests::test_provenance_records_forcefield_sha
 OBS-306:  cargo test -p proxide-core provenance::tests::test_sidecar_roundtrip
@@ -868,9 +1069,9 @@ Each task is one session for one fixer. `→` denotes a hard dependency.
 
 | Task | Scope | Files | Gate | ~LOC |
 |---|---|---|---|---|
-| **Z0** | Exemption ledger (OBS-004) per D15. Schema, loader, staleness check, and the first entry (GBSA element-inference deferral). Port the semantics from `tests/test_element_inference_conformance.py:114-119` — **including the stale-entry failure**, which is the mechanism's whole point. | `exemptions.toml`, `scripts/check_exemptions.py`, `scripts/exemptions.py` (shared loader) (create) | `verify:OBS-004`; plus a test that a listed-but-clean site fails | ~180 |
-| **Z1** | Calibration harness (OBS-002, OBS-003). Temp-worktree checkout of a **tagged** ref pair, run a named detector, assert recall 1.0 on defective and `findings ⊆ exemptions` on fixed, zero on `calibration/clean/`, generate `RECALL.md`. Ground truth **derived mechanically** by `--derive-ground-truth`, never hand-listed. Adds `fetch-depth: 0` to `ci.yml`'s checkout steps. `→` Z0. | `calibration/{cases.toml,clean/}`, `tests/test_detector_calibration.py`, `scripts/calibrate.py` (create), `ci.yml` (modify) | `verify:OBS-002`, `verify:OBS-003` — must fail against the 260910 guard-test heuristic (recall 2/4) and pass against a corrected one | ~300 |
-| **Z2a** | Constant snapshots (OBS-111). Add `snapshot()` to each constant table; generate `constants/snapshots/*.json` **from the pre-`54eefc2` tree** so the Br/I change shows as a reviewable diff, not as baked-in truth; add the `uncited-legacy` ratchet. | `constants/snapshots/*.json` (create), `proxide-core/src/chem/*.rs`, `proxide-physics/src/**/gbsa.rs` (modify), `scripts/check_uncited_constants.py` (create) | `verify:OBS-111`; replaying `54eefc2` fails with Br/I named | ~200 |
+| **Z0** | Exemption ledger + detector base class (OBS-004, OBS-005) per D15/D15.1. Schema with `expected_findings` and typed expiry; `Detector` ABC returning **unfiltered** findings; `REGISTRY`; three-way registry ↔ ledger ↔ §4.1 assertion; comment/string-stripping helper. Port semantics from `tests/test_element_inference_conformance.py` at **`e78484e`** — including the stale-entry failure, the `expected_findings` bound, and the comment-stripped exclusion test. | `exemptions.toml`, `scripts/detectors/{base.py,__init__.py}`, `scripts/check_exemptions.py` (create) | `verify:OBS-004`, `verify:OBS-005`; tests that a listed-but-clean site fails, an over-count fails, and a comment cannot disable a detector | ~320 |
+| **Z1** | Calibration + evasion harness (OBS-002, OBS-003, OBS-006). Temp-worktree checkout of a **tagged** ref pair; assert recall 1.0 on defective against the **reviewed checked-in** ground truth, `findings ⊆ exemptions` on fixed, zero on `calibration/clean/`, and **every `calibration/evasion/` instance flagged**; generate `RECALL.md`. Adds `fetch-depth: 0` to `ci.yml`. Seed the evasion corpus with D18's eleven known defeats. `→` Z0. | `calibration/{cases.toml,clean/,evasion/,ground_truth/}`, `tests/test_detector_calibration.py`, `scripts/calibrate.py` (create), `ci.yml` (modify) | `verify:OBS-002`, `verify:OBS-003`, `verify:OBS-006` — must fail against the 260910 guard-test heuristic (recall 2/4) and against each of the eleven evasions | ~420 |
+| **Z2a** | Constant snapshots (OBS-111). Add `snapshot()` to each constant table; generate `constants/snapshots/*.json` **from `calibration/element-inference-fixed-initial`'s parent** so the Br/I change shows as a reviewable diff, not as baked-in truth; add the `uncited-legacy` ratchet and D18's structured `source` refs under `constants/sources/`. | `constants/snapshots/*.json`, `constants/sources/**` (create), `proxide-core/src/chem/*.rs`, `proxide-physics/src/**/gbsa.rs` (modify), `scripts/check_uncited_constants.py` (create) | `verify:OBS-111`; replaying `calibration/element-inference-fixed-initial` fails with Br/I named | ~260 |
 | **Z2b** | Retroactive citations (below). Blocks nothing; blocked by Z2a. Chemistry sourcing, not code. | `constants/snapshots/*.json`, `exemptions.toml` (modify) | `verify:OBS-112b` pin-test updated in the same commit | ~60 |
 
 **Dependencies.** Z0 `→` Z1 `→` every task shipping a detector (A2, A3, A4's checker, B5, and the
@@ -888,7 +1089,8 @@ passes, which is this document's failure mode applied to its own foundation.
 **Retroactive items, assigned to Z2b** — leaving either open converts a documented incident into
 permanent unattributed physics:
 
-1. The Br/I radii introduced by `54eefc2` are either cited to a reference and kept, or reverted, in
+1. The Br/I radii introduced by `-fixed-initial` (already reverted in `-fixed`) are either cited
+   to a reference and reinstated, or left reverted, in
    a commit that says which.
 2. The five elements of §0.2 (`Cl`, `Na`, `Fe`, `Cu`, `Se`) get **cited** mbondi2 radii and obc2
    scale factors, or an explicit `Defaulted` marking plus an `exemptions.toml` entry. Selenium is
@@ -903,7 +1105,7 @@ permanent unattributed physics:
 | Task | Scope | Files | Gate | ~LOC |
 |---|---|---|---|---|
 | **A1** | Element source + mass domain (OBS-103, OBS-104, OBS-301). Delete `DEFAULT_MASS`, table-drive `get_mass`, add `infer_element_sourced`, `supported_elements()`. Update the 3 io call sites + `py_chemistry.rs`. | `proxide-core/src/chem/masses.rs` (modify), `proxide-io/src/formats/{pdb,mmcif,pqr}.rs` (modify), `proxide_py/src/py_chemistry.rs` (modify) | `cargo test -p proxide-core -p proxide-io` + `rg -w DEFAULT_MASS crates/` empty | ~180 |
-| **A1b** | `Sourced<T>` constant lookups + defaulted-constant gate (OBS-112, OBS-112b, OBS-113) per D14/D17. Convert masses, mbondi2 radii, obc2 scale, Cordero radii, LJ defaults; add `gbsa::supported_elements()`; make `covalent_radius` `pub`. Refusal lands at **both** boundaries: `ParamError::Diagnostics` in `md_params.rs` and `strict=True` on the two pyo3 GBSA wrappers. `→` Z2a, B1 (`Severity`/`DiagPolicy`), B3 (`ParamError` variant). | `proxide-core/src/chem/*.rs`, `proxide-physics/src/physics/{gbsa.rs,md_params.rs}`, `proxide-ligand-frame/src/geometry_gate.rs`, `proxide_py/src/py_chemistry.rs`, `crates/proxide_rs/oxidize.pyi` (modify), `scripts/check_sourced_lookups.py` (create) | `verify:OBS-112`, `verify:OBS-112b`, `verify:OBS-113` | ~340 |
+| **A1b** | `Sourced<T>` constant lookups + defaulted-constant gate (OBS-112, OBS-112b, OBS-113) per D14/D17. Convert masses, mbondi2 radii, obc2 scale, Cordero radii, LJ defaults; add `gbsa::supported_elements()`; make `covalent_radius` `pub`. Refusal lands at **both** boundaries: `ParamError::Diagnostics` in `md_params.rs` and `strict=True` on the two pyo3 GBSA wrappers. `→` **A1** (A1b converts the lookups A1 has just made table-driven; sharing `masses.rs` they must not run concurrently), Z2a, B1 (`Severity`/`DiagPolicy`), B3 (`ParamError` variant). *(Round-3 nit: the round-2 dependency row omitted A1 while the diagram showed `Z2a → A1 → A1b`; A1 is a prerequisite.)* | `proxide-core/src/chem/*.rs`, `proxide-physics/src/physics/{gbsa.rs,md_params.rs}`, `proxide-ligand-frame/src/geometry_gate.rs`, `proxide_py/src/py_chemistry.rs`, `crates/proxide_rs/oxidize.pyi` (modify), `scripts/check_sourced_lookups.py` (create) | `verify:OBS-112`, `verify:OBS-112b`, `verify:OBS-113` | ~340 |
 | **A2** | Coverage extractor + gates (OBS-302, OBS-303, OBS-303b). `→` Z1 (ships a detector), **`→` A1b** for `gbsa::supported_elements()`, which OBS-303b's cross-table check reads (review B6 — previously in neither A2's files nor its dependencies). Write against a stub only if A1b is genuinely in flight. | `scripts/chem_coverage.py`, `coverage/corpus.json`, `tests/test_chemical_coverage.py` (create) | `verify:OBS-302`, `verify:OBS-303`, `verify:OBS-303b` + the Cl-removal regression proof | ~260 |
 | **A3** | Subscriber rule (OBS-202, OBS-205). Fix `convert_rotlib.rs` and `confind.rs`; add the checker. | `proxide-rotlib/src/bin/convert_rotlib.rs`, `proxide-confind/src/bin/confind.rs`, `proxide-tmalign/src/bin/tmalign.rs`, `proxide-jaccard/src/bin/*.rs`, `proxide-wasm/src/bin/param_cli.rs` (modify), `scripts/check_subscribers.py` (create), `ci.yml` (modify) | `python scripts/check_subscribers.py` exits 0 | ~120 |
 | **A4** | Print eradication (OBS-201). Convert the **24** library-source prints to `tracing`; add workspace lints; allow-list binary roots. | root `Cargo.toml` + 18 crate `Cargo.toml`s, `proxide_fixer/src/{repack,finder,loop_model}.rs`, `proxide-frag/src/search.rs`, `proxide-rotlib/src/geometry/charmm_ic.rs`, `proxide-wasm/src/gaff2.rs` (modify) | `verify:OBS-201` | ~150 |
@@ -926,7 +1128,7 @@ core pulls in B1 and B3, and saying otherwise (as the earlier draft did) hid two
 | **B4** | `*_reported` parsers + coercion recording (OBS-105) + the `AtomRecord.element` type migration (D5). `→` B1, B3, A1. Larger than the other B tasks because of the field-type change and its construction sites. | `verify:OBS-105` |
 | **B5** | Coercion/catch-all triage + checker (OBS-106, OBS-107), scoped to include `forcefield/**` and `physics/**` (N7). `→` B4, Z0, Z1. | `verify:OBS-106`, `verify:OBS-107` |
 | **B6** | `LoopModelReport` migration (OBS-108). `→` B1. Parallel with B2-B5. | `verify:OBS-108` |
-| **B7** | Python surface (D16, N5): `Assignment` TypedDict, `strict=` kwarg, `pythonize` for `ErasedReport`, `oxidize.pyi` + `__init__.py` updates, deprecation shims. `→` A1b, B1. | `verify:OBS-113` (Python half), `verify:OBS-203` |
+| **B7** | **CONDITIONAL on the D16 owner decision — cut entirely if rejected.** Python surface (D16, N5): `Assignment` TypedDict, `strict=` kwarg, `pythonize` for `ErasedReport`, deprecation shims. Updates all in-tree consumers: `crates/proxide_rs/oxidize.pyi:55-57`, `crates/proxide_py/src/py_chemistry.rs:130,137`, `src/proxide/__init__.py:29-30`, **`scripts/check_energy.py:47-48`** (omitted from the round-2 file list). `→` A1b, B1. | `verify:OBS-113` (Python half), `verify:OBS-203` |
 
 **Wave C — telemetry finish.**
 
@@ -975,7 +1177,7 @@ Fully parallel with everything: **D4t** (parity ledger), **B6** (`LoopModelRepor
    is further from truth than the accidentally-borrowed 1.80 Å, and nothing distinguishes "Se is
    untabulated" from "that is oxygen's radius." Making the default observable is the property; the
    default's accuracy is not.
-3. **OBS-111 — constant-table snapshots.** `54eefc2` changed published physics under a commit
+3. **OBS-111 — constant-table snapshots.** `-fixed-initial` changed published physics under a commit
    message asserting it had not. Same defect class as `DEFAULT_MASS`, at table granularity, and
    the only requirement here that makes `git log` answer numeric-provenance questions correctly.
 4. **OBS-103/104/301/302/303/303b — element source, mass domain, coverage gates.** The entire Cl
@@ -1038,11 +1240,13 @@ crate, low traffic), OBS-107 (catch-alls — mostly benign).
 | Adding `tracing` to 18 crates measurably slows compile/CI. | Build times. | `default-features = false`; only `std`, `attributes`, `log`. `tracing-subscriber` stays dev/bin-only, which is where the compile cost actually lives. |
 | `Report<K>` generics leak into pyo3/wasm signatures and cause a type-parameter explosion. | proxide_py, proxide-wasm. | D1's `ErasedReport` boundary is mandatory, not optional: `serde` derives exist only on the erased form, so generics structurally cannot cross the FFI line. |
 | A fixer self-certifies a detector as passing when it does not (observed twice on 260910). | Every gate in this document. | OBS-002: no detector merges without a calibration case whose recall is machine-measured. OBS-001: no criterion is satisfiable by assertion, and §4.1 gives every one a literal command. Reviewers reject "the scan passed" without a `RECALL.md` diff. |
-| The calibration corpus itself is gamed — cases chosen to be easy, or ground truth trimmed to whatever the detector happens to catch. | OBS-002 becomes theatre. | Ground truth is **derived**, not written: `scripts/calibrate.py --derive-ground-truth` reads the diff hunks between the two tagged refs. A case may only be added, never narrowed — `calibration/cases.toml` is append-only under CI check. |
+| The calibration corpus itself is gamed — cases chosen to be easy, or ground truth trimmed to whatever the detector happens to catch. | OBS-002 becomes theatre. | Ground truth is **reviewed and append-only** (a case may gain sites, never lose them; CI-checked), and is compensated by **D18's adversarially-authored evasion corpus**, which contains instances the fix commit never contained. Mechanical derivation was tried and dropped as unimplementable — §11.1 item 3. |
+| A detector suppresses its own findings, or is disabled by a comment. | Every gate; and the silence reads as *success*. | D15.1/OBS-005: detectors return unfiltered findings and the harness alone applies the ledger, so suppression has no code path; exclusion tests run on comment-stripped source and require a call or import. Evasion proof `calibration/evasion/_shared/comment_disable/` is mandatory. **Both holes were live in the reference implementation until `e78484e`.** |
+| A detector is simply weak — it reports nothing where there is something to report. | OBS-005 does not catch this. | D18's evasion corpus (OBS-006) is the only thing that does, and it catches only the evasions someone thought of. Stated as known limitation §11.1(1)-(2); OBS-005 and OBS-006 are load-bearing only together. |
 | **Numeric-accuracy regression is already shipped.** Tier 0's fix moved Se from 1.80 Å (borrowed from S, ≈0.10 off Bondi) to 1.50 Å (default, ≈0.40 off). `MSE` is common in the PDB, so real GBSA energies are now measurably worse than before the "fix". | Every solvation calculation on a selenomethionine structure since `54eefc2`. | **Z2b** (retroactive item 2): cite and snapshot Se's real radius. **Interim:** OBS-113 makes the affected path *fail loudly* rather than continue quietly — a refused calculation is recoverable, a published one is not. **A1b (the gate) depends on Z2a (the snapshot) but NOT on Z2b (the correct number)** — that is exactly why Z2 was split; the gate is the more urgent of the two and must not wait on chemistry sourcing. *(The earlier draft asserted this in prose while §5 encoded the opposite dependency — review B6.)* |
 | Making `Defaulted` constants an error by default breaks currently-working user pipelines that process metal sites, halides or `MSE`. | Every downstream consumer parameterising non-C/N/O/S structures. | This is intended and is the point of OBS-113 — those pipelines have been producing unattributed numbers. Mitigation is a documented one-line lenient policy plus a `PROX-CHEM-DEFAULTED-CONSTANT` code they can assert on, not a softer default. Announce with the release; land A1b and OBS-303c's fixtures together so the failure is demonstrable rather than surprising. |
-| Snapshotting constants from the *current* tree bakes `54eefc2`'s unreviewed Br/I values in as canonical. | GBSA physics, permanently. | Z2a generates snapshots from the **pre-`54eefc2`** tree so the change appears as a reviewable diff; the cite-or-revert decision is Z2b, which cannot be closed by silence because OBS-112b's pin-test must be edited to close it. |
-| The exemption ledger becomes a dumping ground — every finding gets an entry instead of a fix. | D15 becomes theatre. | `expiry` is mandatory and the stale-check fails when a listed site stops violating, so an entry cannot outlive its cause. `scripts/check_exemptions.py --strict` reports ledger size per detector; growth without a linked `blocking_id` is a review failure. This is a weaker gate than the stale-check and is labelled as such. |
+| Snapshotting constants from the *current* tree bakes unreviewed values in as canonical. | GBSA physics, permanently. | Z2a generates snapshots from `calibration/element-inference-fixed-initial`'s **parent**, so any change since appears as a reviewable diff; the cite-or-revert decision is Z2b, which cannot be closed by silence because OBS-112b's pin-test must be edited to close it. |
+| The exemption ledger becomes a dumping ground — every finding gets an entry instead of a fix. | D15 becomes theatre. | Typed expiry is mandatory; the stale-check fails when a listed site stops violating; `expected_findings` fails an over-count as an unreviewed addition, so an entry cannot silently absorb tomorrow's violation. `--strict` reports ledger size per detector and lists `never`-kind entries separately. Ledger *growth* is a weaker gate than the stale-check and is labelled as such (§11.1 limitation 6). |
 | The calibration harness silently skips when a ref is unresolvable (shallow clone, missing tag), reporting green. | Z1, therefore everything. | The harness **errors** on an unresolvable ref, never skips (B5). `fetch-depth: 0` is in Z1's scope. A test asserts the harness fails on a deliberately bogus ref name. |
 | `uncited-legacy` ratchet stalls at a large number and is ignored. | OBS-111 loses teeth over time. | The ratchet only forbids *increase*; pair it with a per-release review of the top entries by blast radius. This is honestly a weak gate — it prevents regression, not remediation, and is labelled as such. |
 | Tier 0 lands concurrently and conflicts with A1 in the same three parser files. | `pdb.rs`, `mmcif.rs`, `pqr.rs` — currently dirty on `fix/parameterize-solvent-atoms`. | A1 rebases onto completed Tier 0; it does not run beside it. Sequence: Tier 0 merges → A1 starts. `infer_element` stays as a deprecated wrapper (D5) so Tier 0's call sites keep compiling. |
@@ -1108,8 +1312,10 @@ crate, low traffic), OBS-107 (catch-alls — mostly benign).
 - Tags `calibration/element-inference-defective` (`5f368ec`) → `calibration/element-inference-fixed`
   (`992377d`) — the calibration corpus's first case (D12) and the source of §0.1/§0.2. Use the
   tags, not the SHAs (review B5).
-- `tests/test_element_inference_conformance.py:47-61,114-119` (`76625f8`) — `DEFERRED_VIOLATIONS`,
-  the in-repo reference implementation of D15's exemption ledger and its stale-entry semantics
+- `tests/test_element_inference_conformance.py` at **`e78484e`** — `DEFERRED_VIOLATIONS`, the
+  in-repo reference implementation of D15's exemption ledger. Use `e78484e`, **not** `76625f8`:
+  the earlier revision had both bugs D15(a)/(b) now forbid — prefix-blanket exemptions and a
+  comment-disableable whole-file exclusion whose silence read as "fixed"
 - `crates/proxide-physics/src/physics/gbsa.rs:24,93` — the two `Vec<f32>`-returning functions with
   zero Rust callers that drive D17 and OBS-112's symbol-list design
 - `crates/proxide_rs/oxidize.pyi:55-57`, `crates/proxide_py/src/py_chemistry.rs:130,137`,
@@ -1157,7 +1363,7 @@ five in-repo precedents at the cited lines. What follows records what changed an
 
 | # | Objection | Resolution | Sections |
 |---|---|---|---|
-| B1 | No exemption mechanism; three incompatible partial ones; OBS-002 unsatisfiable while the GBSA fix is deliberately unmerged | New **D15** exemption ledger with mandatory expiry and stale-entry failure, adopting `DEFERRED_VIOLATIONS` semantics from `76625f8`; OBS-002 restated as `findings ⊆ exemptions`; new **OBS-004**; new task **Z0** | D15, OBS-002/004, Z0 |
+| B1 | No exemption mechanism; three incompatible partial ones; OBS-002 unsatisfiable while the GBSA fix is deliberately unmerged | New **D15** exemption ledger with mandatory expiry and stale-entry failure, adopting `DEFERRED_VIOLATIONS` semantics *(round 3: from `e78484e`, not `76625f8`)*; OBS-002 restated as `findings ⊆ exemptions`; new **OBS-004**; new task **Z0**. *(Round 3 found this only partially closed — see §11.1 item 1.)* | D15, OBS-002/004, Z0 |
 | B2 | OBS-113 gated a Rust boundary that does not exist | New **D17**: two real boundaries — `md_params.rs`/`ParamError` in Rust, `strict=` on the two pyo3 GBSA wrappers in Python; OBS-113 split (a)/(b) | D17, OBS-113, A1b, B7 |
 | B3 | OBS-112's "bare float return" check would pass both GBSA functions (`Vec<f32>`) and skip `covalent_radius` (private, `Option<f64>`) | Check restated over an **enumerated symbol list**, spelled out in the requirement | OBS-112 |
 | B4 | "Signatures untouched" false at the pyo3 boundary and for `AtomRecord.element` | New **D16** (Python API breaks deliberately, versioned, with shims); D5 gains the field-type migration table | D5, D16, B7 |
@@ -1169,7 +1375,7 @@ five in-repo precedents at the cited lines. What follows records what changed an
 
 **Accepted and applied (non-blocking).** N1 library/binary print split corrected to 24 + 18 = 42
 (§C2, OBS-201, A4). N2 false-positive budget and a `calibration/clean/` corpus added (OBS-003).
-N3 ground truth now **derived** by `--derive-ground-truth`, and the inconsistent six/four/three
+N3 ground truth derivation *(superseded in round 3 — derivation dropped, see §11.1 item 3)*, and the inconsistent six/four/three
 violation counts removed rather than reconciled (D12, Z1). N4 lenient policy specified as
 `DiagPolicy::lenient()` with `Severity::Never`, a lenient `Untabulated` mass defined as `f32::NAN`,
 and the `Option<f32>`/`Sourced<f32>` spelling unified (D6). N5 `pythonize` named as the
@@ -1199,3 +1405,63 @@ performance concern was real and is fixed.
    strong but it is not free, and a maintainer could reasonably want the first release to ship
    `lenient()` as the default with a migration window. The spec takes the stricter position; the
    weaker one is a one-line change to `DiagPolicy::default()` and is not a redesign.
+   **↑ This last sentence is wrong; corrected in round 3 — see §11.1 item 5(b) and the boxed note
+   in D6.** Both owner-pending decisions now live in the requirements and decisions they affect,
+   not only here.
+
+---
+
+## 11.1 Revision log — adversarial review round 3 (final)
+
+Round-2 closure audit: six of nine blocking objections closed, three partial. Scoped to five
+items. All five applied; two produced deliberate retreats, recorded as such.
+
+**Reference implementation fixed upstream (`e78484e`) and now inherited explicitly, not by
+reference.** Two real bugs were found in the very artefact D15 tells implementers to copy:
+a whole-file exclusion tested against **raw** source, so a comment could disable the detector for
+an entire file — and the resulting silence read as *fixed* to the stale-exemption check, retiring
+the exemption and leaving the file permanently green and permanently defective; and exemptions
+matched by path prefix, blanketing a file so tomorrow's violation would inherit today's
+justification. D15 now states both as normative properties (a) counted-not-blanket via mandatory
+`expected_findings`, and (b) a detector must not be disableable by content it does not control,
+generalised to: **a detector whose silence is indistinguishable from its success is not a
+detector** — the `DEFAULT_MASS` defect relocated into the tooling.
+
+| # | Item | Resolution |
+|---|---|---|
+| 1 | "Consumed by every detector" was prose with nothing checking it; `expiry` was unevaluable prose; staleness circular with OBS-002 | New **D15.1** + **OBS-005**. Detectors subclass `Detector`, return **unfiltered** findings; the harness alone applies the ledger, so suppression is structurally impossible. `REGISTRY` ↔ ledger ↔ §4.1 three-way assertion. `expiry_kind`/`expiry_value` typed (`blocking_id`\|`date`\|`never`). Circularity resolved: `--strict` needs no detectors, `--with-scan` **is** the OBS-002 run, not a second traversal |
+| 2 | Eleven of fifteen detectors defeated by a one-line change | New **D18** + **OBS-006**: every detector ships `calibration/evasion/<detector>/`, authored adversarially, all instances must be flagged. Two needed structural fixes because the evasion is a *legitimate edit*: **OBS-303d** ratchets `claimed` against shrinking (deleting `"Se" => 78.971` turned both P0 coverage gates green), and OBS-111's `source` becomes diff-reviewable structured evidence under `constants/sources/` rather than a typed string |
+| 3 | `--derive-ground-truth` unimplementable | **Dropped.** Ground truth is a reviewed, checked-in, append-only list plus the D18 evasion corpus. Two reasons, both from this document's own §0.1: the fix commit carries unrelated Br/I edits so naive derivation makes recall 1.0 unreachable on the only seeded case; and derivation cannot find a site the fix commit missed — N3's fallacy automated rather than removed |
+| 4 | `54eefc2` leaked as a raw SHA in five places and is **not** `992377d` | Both tagged. `-fixed-initial` (pre-revert) vs `-fixed` (post-revert); §0.1 carries a boxed note saying which requirements mean which. OBS-111/Z2a use `-fixed-initial`'s parent as the snapshot baseline |
+| 5a | OBS-112's Python caveat lived only in the revision log; OBS-113(b) silently assumed the break | Conditionality moved into **OBS-112**, **OBS-113(b)**, **B7** and **D16** itself (boxed OWNER DECISION PENDING). If D16 is rejected: OBS-112 needs a `never` exemption naming the three `oxidize` symbols, and OBS-113(b) is struck, leaving the §0.2 path ungated at its only real boundary |
+| 5b | "One-line change to `DiagPolicy::default()`" was inaccurate | Corrected at the decision point (D6). Lenient-by-default makes **`f32::NAN` the default** for an unknown element reaching MD integration — promoting exactly what D6's own rejection paragraph argues against — and falsifies OBS-104 verbatim plus the "default `DiagPolicy`" clauses in OBS-113 and D16. Four requirement edits and a new design decision, not one line. `DiagPolicy::default()` is `strict()` with **`max_findings = 1024`**, now specified |
+
+**Non-blocking, folded in.** B3 residue → OBS-301 gains `constants/registry.toml`, from which
+OBS-112's symbol list is *derived* rather than maintained beside it (a new
+`fn dielectric(..) -> f32` was previously invisible to three P0 gates at once). OBS-102 → `-U0`
+plus hunk-header parsing. B7 → `scripts/check_energy.py:47-48` added. A1b → `A1` stated as a
+prerequisite. OBS-113(a) → fixture must construct `AtomRecord` directly, since per D6 no parsed
+input can reach that path. `PROX-DIAG-TRUNCATED` registered under OBS-110, which also now flags
+dynamically-constructed codes.
+
+### Known limitations, stated rather than papered
+
+The review closes here, so these are the residue and they are deliberate:
+
+1. **The evasion corpus proves a detector catches the evasions someone thought of.** It cannot
+   prove absence of others. The claim is bounded: "demonstrably catches these eleven specific
+   defeats," and each future defeat is a one-file addition rather than a redesign. A sufficiently
+   novel evasion still passes.
+2. **D15.1 makes detector-side suppression impossible; it does not make a detector strong.** A
+   `scan()` that simply never reports on `gbsa.rs` is indistinguishable from one with nothing to
+   report. OBS-005 and OBS-006 are load-bearing only together; neither alone closes the hole.
+3. **Ground truth is now openly incomplete** (item 3). Recall 1.0 means "against the reviewed list
+   plus the evasion corpus," not "against all defects present." This is weaker than round 2
+   claimed and stronger than round 2 could actually deliver.
+4. **Two owner decisions are unmade** (D16, and strict-vs-lenient default). Each has its dependents
+   enumerated at the decision point. Neither can be closed by a fixer.
+5. **OBS-206's wasm gate remains compile-only** unless a wasm test runner is added to CI — carried
+   unchanged from round 1 and still true.
+6. **The `never` expiry kind is an escape hatch.** It requires a second owner and separate
+   reporting, but a determined maintainer can mark anything permanent. That is intentional: the
+   mechanism makes permanence *visible and attributable*, which is the most a ledger can do.
