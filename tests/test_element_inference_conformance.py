@@ -49,22 +49,14 @@ from pathlib import Path
 # added tomorrow would inherit today's justification silently. More findings
 # than recorded fails as an unreviewed addition; zero fails as stale.
 DEFERRED_VIOLATIONS: dict[str, dict[str, object]] = {
-    "proxide-physics/src/physics/gbsa.rs": {
-        "expected_findings": 2,
-        "reason": (
-        "Deferred by repository-owner decision 2026-09-10 (task 260910_proxide_observability). "
-        "Routing the GBSA tables through infer_element is correct in shape but changes physics "
-        "for five elements that had each been silently receiving a DIFFERENT element's tabulated "
-        "parameters via first-character dispatch: Cl (carbon's), Na (nitrogen's), Fe (fluorine's), "
-        "Cu (carbon's) and Se (sulfur's). Selenium is the blocking case -- it had been borrowing "
-        "sulfur's 1.80 A radius, which is close to selenium's true Bondi value of ~1.90 A, and the "
-        "corrected code drops it to the 1.50 A unknown-element default. That is a numeric "
-        "regression on the selenomethionine (MSE) path, which is ubiquitous in the PDB because "
-        "selenium is the standard heavy atom for experimental phasing. "
-            "EXPIRES when authoritative mbondi2 parameters for Se, Na, Cu and Fe are sourced and "
-            "the tables completed; at that point apply the infer_element fix and delete this entry."
-        ),
-    },
+    # Empty on purpose. The gbsa.rs entry that lived here expired on
+    # 2026-09-12: its blocking condition was 'authoritative mbondi2
+    # parameters for Se, Na, Cu and Fe are sourced'. They were sourced, and
+    # the authoritative answer is that mbondi2 does not define those
+    # elements at all -- the reference implementation substitutes a
+    # documented catch-all. gbsa.rs now routes through infer_element and
+    # tags every catch-all it applies, so the violation is gone rather than
+    # excused. See crates/proxide-physics/data/mbondi2.xml.
 }
 
 
