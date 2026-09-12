@@ -28,6 +28,8 @@ pub fn get_mass(element: &str) -> f32 {
         "Cu" => 63.546,
         "Mn" => 54.938,
         "Se" => 78.971,
+        // IUPAC 2021 conventional standard atomic weight.
+        "Si" => 28.085,
         _ => DEFAULT_MASS,
     }
 }
@@ -79,6 +81,7 @@ pub fn infer_element(atom_name: &str) -> &str {
             "Cu" | "CU" => return "Cu",
             "Mn" | "MN" => return "Mn",
             "Se" | "SE" => return "Se",
+            "Si" | "SI" => return "Si",
             _ => {}
         }
     }
