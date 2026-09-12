@@ -8,12 +8,12 @@
   code is unreviewable as data, and this repository has already been bitten by
   constants silently changing inside refactors (see CLAUDE.md, ledger A2/A3).
 
-  ---------------------------------------------------------------------------
+  ===========================================================================
   THE MOST IMPORTANT THING IN THIS FILE IS WHAT IS *ABSENT*.
 
   mbondi2 is a protein/nucleic-acid radius set. It defines radii for exactly
   the elements listed below and NO OTHERS. Se, Na, Cu, Fe, Zn, Mn, Br, I, K,
-  Mg and every other element are NOT part of mbondi2 -- not "missing from our
+  Mg and every other element are NOT part of mbondi2, not "missing from our
   copy", not "to be filled in later". Upstream assigns them a documented
   catch-all `default_radius`, and so do we.
 
@@ -24,7 +24,7 @@
   set is precisely the silent-substitution failure this file exists to prevent.
   If a caller needs real selenium radii, that is a different radius set and
   belongs in a different file with its own provenance block.
-  ---------------------------------------------------------------------------
+  ===========================================================================
 -->
 <GBParameters scheme="mbondi2" units="angstrom">
 
@@ -41,6 +41,7 @@
         screen_symbol="_SCREEN_PARAMETERS"
         repo="https://github.com/openmm/openmm"
         ref="46376ea"
+        verified_against_version="8.4.0.dev-4768436"
         captured="2026-09-12"/>
     <Note>
       Verified by transcription against the named symbols at the pinned ref.
@@ -74,7 +75,7 @@
   </HydrogenRule>
 
   <!--
-    OBC/HCT screening parameters -- upstream `_SCREEN_PARAMETERS`, first column
+    OBC/HCT screening parameters: upstream `_SCREEN_PARAMETERS`, first column
     ("normal"). The GBn / GBn2 / GBn2-nucleic columns are deliberately not
     transcribed: this crate implements OBC2 only, and carrying unused columns
     invites a future caller to read the wrong one.
