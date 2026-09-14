@@ -143,6 +143,15 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
         py_chemistry::assign_obc2_scaling_factors,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        py_chemistry::assign_mbondi2_radii_with_provenance,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        py_chemistry::assign_obc2_scaling_factors_with_provenance,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(py_chemistry::mbondi2_table_info, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::get_water_model, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::compute_bicubic_params, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::parameterize_molecule, m)?)?;
