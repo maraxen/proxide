@@ -1053,7 +1053,7 @@ mod tests {
     use proxide_io::formats::pdb;
     use std::path::Path;
 
-    fn load_test_topology(fixture_name: &str) -> Option<Topology> {
+    fn load_test_topology(fixture_name: &str) -> Topology {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         let fixture_path = Path::new(manifest_dir)
             .join("tests")
@@ -1061,17 +1061,36 @@ mod tests {
             .join(fixture_name);
 
         if !fixture_path.exists() {
-            return None;
+            panic!("Fixture {} not found at {:?}", fixture_name, fixture_path);
         }
 
+        // Read the file to count ATOM/HETATM lines
+        let file_content = std::fs::read_to_string(&fixture_path)
+            .unwrap_or_else(|e| panic!("Failed to read fixture {}: {}", fixture_name, e));
+        let line_count = file_content
+            .lines()
+            .filter(|line| line.starts_with("ATOM") || line.starts_with("HETATM"))
+            .count();
+
         match pdb::parse_pdb_file(&fixture_path) {
-            Ok((raw_data, _model_ids)) => Some(Topology::from_raw_atom_data(&raw_data)),
-            Err(_) => None,
+            Ok((raw_data, _model_ids)) => {
+                let num_atoms = raw_data.num_atoms;
+                if num_atoms != line_count {
+                    panic!(
+                        "Fixture {} atom count mismatch: file has {} ATOM/HETATM lines but parsed {} atoms",
+                        fixture_name, line_count, num_atoms
+                    );
+                }
+                Topology::from_raw_atom_data(&raw_data)
+            }
+            Err(e) => panic!("Failed to parse fixture {}: {}", fixture_name, e),
         }
     }
 
     fn load_rotlib() -> Option<RotamerLibrary> {
-        // Try to load from the project's rotlib path
+        // Try to load from the project's rotlib path.
+        // If a candidate path exists, we PANIC on failure to load (debt #1891);
+        // an absent rotlib may still skip.
         let rotlib_paths = [
             "/home/marielle/projects/proxide/testfiles/rotlib.pb.zst",
             "testfiles/rotlib.pb.zst",
@@ -1080,9 +1099,10 @@ mod tests {
         for path_str in &rotlib_paths {
             let path = Path::new(path_str);
             if path.exists() {
-                if let Ok(lib) = RotamerLibrary::load_pb(path) {
-                    return Some(lib);
-                }
+                return Some(
+                    RotamerLibrary::load_pb(path)
+                        .unwrap_or_else(|e| panic!("Failed to load rotlib from {:?}: {}", path, e)),
+                );
             }
         }
 
@@ -1099,13 +1119,7 @@ mod tests {
             }
         };
 
-        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
-            Some(t) => t,
-            None => {
-                eprintln!("Skipping test: truncated_sidechain.pdb not found");
-                return;
-            }
-        };
+        let mut topology = load_test_topology("truncated_sidechain.pdb");
 
         // Verify that LYS only has N/CA/C/O/CB (5 atoms)
         assert_eq!(topology.chains.len(), 1);
@@ -1269,13 +1283,7 @@ mod tests {
             }
         };
 
-        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
-            Some(t) => t,
-            None => {
-                eprintln!("Skipping test: truncated_sidechain.pdb not found");
-                return;
-            }
-        };
+        let mut topology = load_test_topology("truncated_sidechain.pdb");
 
         // Verify starting state: LYS with N/CA/C/O/CB
         assert_eq!(topology.chains.len(), 1);
@@ -1336,13 +1344,7 @@ mod tests {
             }
         };
 
-        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
-            Some(t) => t,
-            None => {
-                eprintln!("Skipping test: truncated_sidechain.pdb not found");
-                return;
-            }
-        };
+        let mut topology = load_test_topology("truncated_sidechain.pdb");
 
         // Record backbone coordinates before
         let residue_before = &topology.chains[0].residues[0];
@@ -1481,13 +1483,7 @@ mod tests {
             }
         };
 
-        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
-            Some(t) => t,
-            None => {
-                eprintln!("Skipping test: truncated_sidechain.pdb not found");
-                return;
-            }
-        };
+        let mut topology = load_test_topology("truncated_sidechain.pdb");
 
         // Verify starting state
         assert_eq!(topology.chains.len(), 1);
@@ -1541,13 +1537,7 @@ mod tests {
             }
         };
 
-        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
-            Some(t) => t,
-            None => {
-                eprintln!("Skipping test: truncated_sidechain.pdb not found");
-                return;
-            }
-        };
+        let mut topology = load_test_topology("truncated_sidechain.pdb");
 
         // Try to rebuild a non-existent residue
         let mut repacker = SidechainRepacker::new(&mut topology, &lib);
@@ -1581,13 +1571,7 @@ mod tests {
             }
         };
 
-        let mut topology = match load_test_topology("truncated_sidechain.pdb") {
-            Some(t) => t,
-            None => {
-                eprintln!("Skipping test: truncated_sidechain.pdb not found");
-                return;
-            }
-        };
+        let mut topology = load_test_topology("truncated_sidechain.pdb");
 
         // Call with empty targets
         let mut repacker = SidechainRepacker::new(&mut topology, &lib);
@@ -1787,5 +1771,54 @@ mod tests {
         assert_eq!(extract_element("BR"), "Br");
         assert_eq!(extract_element("NA"), "Na");
         assert_eq!(extract_element("FE"), "Fe");
+    }
+
+    #[test]
+    fn test_load_truncated_sidechain_without_rotlib() {
+        // Test that truncated_sidechain.pdb loads successfully without needing rotlib.
+        // Verifies: residue structure, atom names, and that it's a LYS with CB but missing CG/CD/CE/NZ.
+        let topology = load_test_topology("truncated_sidechain.pdb");
+
+        assert_eq!(topology.chains.len(), 1, "Should have 1 chain");
+        let chain = &topology.chains[0];
+        assert_eq!(chain.id, "A", "Chain should be 'A'");
+
+        assert_eq!(chain.residues.len(), 1, "Should have 1 residue");
+        let residue = &chain.residues[0];
+        assert_eq!(residue.name, "LYS", "Residue should be LYS");
+        assert_eq!(residue.res_id, 1, "Residue number should be 1");
+
+        let atom_names: Vec<&str> = residue.atoms.iter().map(|a| a.name.as_str()).collect();
+
+        // Verify expected backbone atoms are present
+        assert!(atom_names.contains(&"N"), "N should be present");
+        assert!(atom_names.contains(&"CA"), "CA should be present");
+        assert!(atom_names.contains(&"C"), "C should be present");
+        assert!(atom_names.contains(&"O"), "O should be present");
+        assert!(
+            atom_names.contains(&"CB"),
+            "CB should be present (truncated at CB)"
+        );
+
+        // Verify sidechain extension is absent
+        assert!(
+            !atom_names.contains(&"CG"),
+            "CG should be absent (truncated)"
+        );
+        assert!(
+            !atom_names.contains(&"CD"),
+            "CD should be absent (truncated)"
+        );
+        assert!(
+            !atom_names.contains(&"CE"),
+            "CE should be absent (truncated)"
+        );
+        assert!(
+            !atom_names.contains(&"NZ"),
+            "NZ should be absent (truncated)"
+        );
+
+        // Verify exact atom count is 5 (N, CA, C, O, CB)
+        assert_eq!(residue.atoms.len(), 5, "Should have exactly 5 atoms");
     }
 }

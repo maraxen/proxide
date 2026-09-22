@@ -41,14 +41,20 @@ fn test_fixture_path_str_returns_string() {
 }
 
 #[test]
+fn test_all_fixtures_load_loudly() {
+    // This test verifies that all committed fixtures load without panicking
+    // with the loud fixture loaders
+    let _ = load_topology("clean_small.pdb");
+    let _ = load_topology("disulfide_pair.pdb");
+    let _ = load_topology("missing_atoms.pdb");
+    let _ = load_topology("chain_break.pdb");
+    let _ = load_topology("truncated_sidechain.pdb");
+    let _ = load_topology("no_hydrogens.pdb");
+}
+
+#[test]
 fn test_load_topology_clean_small() {
     let topology = load_topology("clean_small.pdb");
-    assert!(
-        topology.is_some(),
-        "Failed to load clean_small.pdb fixture as topology"
-    );
-
-    let topology = topology.unwrap();
     assert_eq!(
         topology.chains.len(),
         1,
@@ -81,12 +87,6 @@ fn test_load_topology_clean_small() {
 #[test]
 fn test_load_topology_disulfide_pair() {
     let topology = load_topology("disulfide_pair.pdb");
-    assert!(
-        topology.is_some(),
-        "Failed to load disulfide_pair.pdb fixture as topology"
-    );
-
-    let topology = topology.unwrap();
     assert_eq!(
         topology.chains.len(),
         1,
@@ -141,12 +141,6 @@ fn test_load_topology_disulfide_pair() {
 #[test]
 fn test_load_topology_missing_atoms() {
     let topology = load_topology("missing_atoms.pdb");
-    assert!(
-        topology.is_some(),
-        "Failed to load missing_atoms.pdb fixture as topology"
-    );
-
-    let topology = topology.unwrap();
     assert_eq!(topology.chains.len(), 1);
 
     let chain = &topology.chains[0];
@@ -185,12 +179,6 @@ fn test_load_topology_missing_atoms() {
 #[test]
 fn test_load_topology_chain_break() {
     let topology = load_topology("chain_break.pdb");
-    assert!(
-        topology.is_some(),
-        "Failed to load chain_break.pdb fixture as topology"
-    );
-
-    let topology = topology.unwrap();
     assert_eq!(
         topology.chains.len(),
         1,
