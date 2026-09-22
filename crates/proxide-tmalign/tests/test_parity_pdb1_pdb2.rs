@@ -1,7 +1,8 @@
 //! Parity harness v1 — `tmalign_pair_serial` vs. the real USalign reference
-//! binary, following `proxide-confind/tests/test_parity_1dc7.rs`'s
-//! convention (committed reference `const`s, epsilon comparison, env-gated
-//! skip-if-absent input loading).
+//! binary. Fixtures are vendored byte-identical from USalign commit 177cc8a
+//! (see tests/data/NOTICE-USalign.md), ensuring sample-pair parity tests run
+//! and assert in CI. Tests fail (do not skip) if fixtures are missing or
+//! unparseable.
 //!
 //! ## Regeneration
 //!
@@ -51,12 +52,8 @@ const TOLERANCE: f32 = 0.01;
 
 #[test]
 fn tmalign_pdb1_vs_pdb2_matches_reference_tm_scores() {
-    let Some(p1) = common::load_usalign_sample("PDB1.pdb") else {
-        return;
-    };
-    let Some(p2) = common::load_usalign_sample("PDB2.pdb") else {
-        return;
-    };
+    let p1 = common::load_usalign_sample("PDB1.pdb");
+    let p2 = common::load_usalign_sample("PDB2.pdb");
 
     let result = tmalign_pair_serial(&p1.coords, &p2.coords)
         .expect("tmalign_pair_serial should succeed on the USalign sample pair");
@@ -88,9 +85,7 @@ fn tmalign_pdb1_vs_pdb2_matches_reference_tm_scores() {
 
 #[test]
 fn tmalign_self_alignment_yields_near_perfect_tm_score() {
-    let Some(p1) = common::load_usalign_sample("PDB1.pdb") else {
-        return;
-    };
+    let p1 = common::load_usalign_sample("PDB1.pdb");
 
     let result = tmalign_pair_serial(&p1.coords, &p1.coords)
         .expect("tmalign_pair_serial should succeed on a self-alignment");
@@ -121,12 +116,8 @@ fn tmalign_self_alignment_yields_near_perfect_tm_score() {
 /// touching no floating-point summation order.
 #[test]
 fn tmalign_pair_matches_serial_exactly_on_pdb1_vs_pdb2() {
-    let Some(p1) = common::load_usalign_sample("PDB1.pdb") else {
-        return;
-    };
-    let Some(p2) = common::load_usalign_sample("PDB2.pdb") else {
-        return;
-    };
+    let p1 = common::load_usalign_sample("PDB1.pdb");
+    let p2 = common::load_usalign_sample("PDB2.pdb");
 
     let serial = tmalign_pair_serial(&p1.coords, &p2.coords)
         .expect("tmalign_pair_serial should succeed on the USalign sample pair");
