@@ -4,7 +4,8 @@
 mod common;
 
 use common::{load_backbone, load_topology};
-use proxide_confind::precondition::{check_preconditions, require_preconditions};
+use proxide_confind::error::ConFindError;
+use proxide_confind::precondition::{check_preconditions, require_preconditions, ViolationKind};
 
 #[test]
 fn test_c1_clean_small() {
@@ -112,6 +113,17 @@ fn test_c1_missing_atoms() {
     );
 
     let backbone = load_backbone("missing_atoms.pdb");
+
+    // bb[1] (GLY, res_id 2) is the residue missing C and O in missing_atoms.pdb.
+    assert!(
+        backbone.bb[1].c.is_none(),
+        "GLY residue (index 1) should be missing its C atom"
+    );
+    assert!(
+        backbone.bb[1].o.is_none(),
+        "GLY residue (index 1) should be missing its O atom"
+    );
+
     let report = check_preconditions(&backbone);
 
     // Collect errors and warnings
@@ -121,37 +133,43 @@ fn test_c1_missing_atoms() {
     assert_eq!(errors.len(), 3, "Should have 3 errors");
     assert_eq!(warnings.len(), 0, "Should have 0 warnings");
 
-    // Verify error kinds match expected violations for residue index 1 (GLY, res_id 2)
-    let error_kinds: Vec<_> = errors.iter().map(|e| &e.kind).collect();
-    let has_missing_c = error_kinds.iter().any(|k| {
-        matches!(
-            k,
-            proxide_confind::precondition::ViolationKind::MissingBackboneAtom { atom: "C" }
-        )
-    });
-    let has_undef_phi = error_kinds.iter().any(|k| {
-        matches!(
-            k,
-            proxide_confind::precondition::ViolationKind::UndefinedPhi
-        )
-    });
-    let has_undef_psi = error_kinds.iter().any(|k| {
-        matches!(
-            k,
-            proxide_confind::precondition::ViolationKind::UndefinedPsi
-        )
-    });
-
-    assert!(
-        has_missing_c,
-        "Should have MissingBackboneAtom(C) violation"
+    // Verify the EXACT ordered sequence of violations: MissingBackboneAtom("C"),
+    // UndefinedPhi, UndefinedPsi — each attributed to residue index 1, res_id 2, GLY.
+    let expected_kinds = [
+        ViolationKind::MissingBackboneAtom { atom: "C" },
+        ViolationKind::UndefinedPhi,
+        ViolationKind::UndefinedPsi,
+    ];
+    assert_eq!(
+        errors.len(),
+        expected_kinds.len(),
+        "Expected exactly {} errors in order",
+        expected_kinds.len()
     );
-    assert!(has_undef_phi, "Should have UndefinedPhi violation");
-    assert!(has_undef_psi, "Should have UndefinedPsi violation");
+    for (i, (error, expected_kind)) in errors.iter().zip(expected_kinds.iter()).enumerate() {
+        assert_eq!(&error.kind, expected_kind, "Error {} kind mismatch", i);
+        assert_eq!(
+            error.residue.0, 1,
+            "Error {} should be attributed to residue index 1",
+            i
+        );
+        assert_eq!(
+            error.id.res_id, 2,
+            "Error {} should be attributed to res_id 2",
+            i
+        );
+        assert_eq!(
+            error.res_name, "GLY",
+            "Error {} should be attributed to res_name GLY",
+            i
+        );
+    }
 
+    let result = require_preconditions(&backbone);
     assert!(
-        require_preconditions(&backbone).is_err(),
-        "require_preconditions should fail with 3 errors"
+        matches!(result, Err(ConFindError::PreconditionsFailed(3))),
+        "Expected Err(ConFindError::PreconditionsFailed(3)), got {:?}",
+        result
     );
 
     // CANARY for debt #1890: verify the gap-bridging behaviour.
@@ -261,4 +279,49 @@ fn test_c1_truncated_sidechain() {
         require_preconditions(&backbone).is_ok(),
         "require_preconditions should pass"
     );
+}
+
+#[test]
+fn test_c1_topology_backbone_identity() {
+    // Cross-API identity check: for every committed fixture, load_topology() and
+    // load_backbone() must agree on the ordered sequence of (chain id, res_id, res_name).
+    // These two loaders traverse independent code paths (Topology::from_raw_atom_data vs.
+    // ProcessedStructure::from_raw + extract_f64_backbone); a silent divergence between
+    // them would mean the precondition-check identity used elsewhere in this file
+    // (residue index / res_id / res_name) doesn't actually match what load_topology reports.
+    for name in &[
+        "clean_small.pdb",
+        "disulfide_pair.pdb",
+        "missing_atoms.pdb",
+        "chain_break.pdb",
+        "truncated_sidechain.pdb",
+        "no_hydrogens.pdb",
+    ] {
+        let topology = load_topology(name);
+        let topo_seq: Vec<(String, i32, String)> = topology
+            .chains
+            .iter()
+            .flat_map(|chain| {
+                chain
+                    .residues
+                    .iter()
+                    .map(move |r| (chain.id.clone(), r.res_id, r.name.clone()))
+            })
+            .collect();
+
+        let backbone = load_backbone(name);
+        let backbone_seq: Vec<(String, i32, String)> = backbone
+            .ids
+            .iter()
+            .zip(backbone.bb.iter())
+            .map(|(id, rb)| (id.chain_id.clone(), id.res_id, rb.res_name.clone()))
+            .collect();
+
+        assert_eq!(
+            topo_seq, backbone_seq,
+            "load_topology and load_backbone disagree on the (chain, res_id, res_name) \
+             sequence for fixture {}: topology={:?} backbone={:?}",
+            name, topo_seq, backbone_seq
+        );
+    }
 }

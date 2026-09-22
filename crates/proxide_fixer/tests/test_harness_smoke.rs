@@ -218,6 +218,41 @@ fn test_load_topology_chain_break() {
 }
 
 #[test]
+fn test_fixture_directory_is_exactly_expected_pdbs() {
+    // Enumerate tests/data/ directly (not via the fixture() helper) so this test fails
+    // loudly if a fixture is added, removed, or renamed without updating the harness.
+    let data_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data");
+
+    let mut names: Vec<String> = std::fs::read_dir(&data_dir)
+        .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", data_dir, e))
+        .map(|entry| entry.expect("Failed to read directory entry").file_name())
+        .filter_map(|os_name| os_name.into_string().ok())
+        .filter(|name| name.ends_with(".pdb"))
+        .collect();
+    names.sort();
+
+    assert_eq!(
+        names,
+        vec![
+            "chain_break.pdb".to_string(),
+            "clean_small.pdb".to_string(),
+            "disulfide_pair.pdb".to_string(),
+            "missing_atoms.pdb".to_string(),
+            "no_hydrogens.pdb".to_string(),
+            "truncated_sidechain.pdb".to_string(),
+        ],
+        "tests/data should contain exactly the expected set of .pdb fixtures"
+    );
+
+    // Every fixture in the directory must also load successfully via load_topology.
+    for name in &names {
+        let _ = load_topology(name);
+    }
+}
+
+#[test]
 fn test_harness_consistent_fixture_format() {
     // Verify all fixtures have consistent format (valid PDB headers, etc.)
     for name in &[

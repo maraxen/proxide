@@ -8,6 +8,9 @@ mod common;
 use common::load_topology;
 use proxide_fixer::sanitizers::disulfide::DisulfideSanitizer;
 
+// CYS2's CB-SG distance in disulfide_pair.pdb is 5.54 Å, so this fixture only exercises
+// the detector's SG-SG criterion (CLAUDE.md ledger B2: a fixture shaped like the
+// detector's own rule is not proof of physically valid detection).
 #[test]
 fn test_c2_disulfide_pair() {
     // disulfide_pair.pdb: 2 CYS residues with SG atoms ~2.04 Å apart.
@@ -63,7 +66,10 @@ fn test_c2_clean_small() {
     // Verify initial state: no CYS residues
     for residue in &topology.chains[0].residues {
         assert!(
-            residue.name != "CYS" && residue.name != "CYH" && residue.name != "CYM",
+            residue.name != "CYS"
+                && residue.name != "CYH"
+                && residue.name != "CYM"
+                && residue.name != "CYX",
             "clean_small should have no cysteine residues"
         );
     }
@@ -88,7 +94,10 @@ fn test_c2_missing_atoms() {
     // Verify initial state: no CYS residues
     for residue in &topology.chains[0].residues {
         assert!(
-            residue.name != "CYS" && residue.name != "CYH" && residue.name != "CYM",
+            residue.name != "CYS"
+                && residue.name != "CYH"
+                && residue.name != "CYM"
+                && residue.name != "CYX",
             "missing_atoms should have no cysteine residues"
         );
     }
@@ -113,7 +122,10 @@ fn test_c2_chain_break() {
     // Verify initial state: no CYS residues
     for residue in &topology.chains[0].residues {
         assert!(
-            residue.name != "CYS" && residue.name != "CYH" && residue.name != "CYM",
+            residue.name != "CYS"
+                && residue.name != "CYH"
+                && residue.name != "CYM"
+                && residue.name != "CYX",
             "chain_break should have no cysteine residues"
         );
     }
