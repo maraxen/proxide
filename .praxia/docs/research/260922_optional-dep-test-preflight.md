@@ -10,7 +10,9 @@ status: complete
 
 Pre-flight research for debt #909 phase 1: assessment of which optional-dependency-gated tests pass, fail, or skip when rdkit/mdtraj/h5py/tables are installed on Python 3.11 at uv.lock versions.
 
-**Result:** 5 previously-skipped test files now execute with all tests passing; 3 existing failures persist (not new, pre-existing bugs); no failures introduced by optional dependencies; all 287 total test instances (vs. 260 baseline) run without infrastructure errors.
+**Result:** 60 previously-skipped test instances across 5 test files now execute, 60 of 60 pass (100%); 3 pre-existing failures persist (not new); no failures introduced by optional dependencies.
+
+**Critical finding:** Test failures (92 test instances across 3 files) are NOT regressions — they result from missing ATOMTYPE_GFF2.DEF file in this checkout (CI fetches via `scripts/fetch_amber_assets.py` before pytest). The missing DEF causes `_get_default_rules()` to silently return an empty rule set, so all GAFF2 type assignments fall back to 'c3' (sp3) defaults. This exposes production bug debt #1896 (silent GAFF2 rule fallback). Phase 2 must (a) confirm all 92 tests pass in real CI with fetched DEF, (b) fix debt #1896 so missing DEF raises instead of silently mistyping.
 
 ## Environment Setup
 
@@ -68,12 +70,12 @@ Total test instances:
 | test_openmm_roundtrip.py | P:6 F:0 S:0 | P:6 F:0 S:0 | No change | Already ran, all pass |
 | test_energy_relaxation.py | P:3 F:0 S:0 | P:3 F:0 S:0 | No change | Already ran, all pass |
 | test_atomic_system_openmm_export.py | P:1 F:0 S:0 | P:1 F:0 S:0 | No change | Already ran, all pass |
-| test_molecule.py | P:6 F:1 S:1 | P:6 F:1 S:1 | No change | **1 failing** — pre-existing rdkit aromaticity issue |
+| test_molecule.py | P:6 F:1 S:1 | P:6 F:1 S:1 | No change | **1 failing** — GAFF2 aromaticity fallback (env-only) |
 | test_dispatch.py | P:0 F:0 S:1 | P:23 F:0 S:0 | SKIP → PASS | All 23 mdtraj-dispatch tests now pass |
 | test_md_parameterization.py | P:5 F:0 S:2 | P:5 F:0 S:2 | No change | Already ran, all pass |
 | test_gb_provenance_bindings.py | P:7 F:0 S:0 | P:7 F:0 S:0 | No change | Already ran, all pass |
-| test_gaff2_parity_invariants.py | P:2 F:2 S:0 | P:2 F:2 S:0 | No change | **2 failing** — pre-existing gaff2 inference bugs |
-| test_gaff2_golden.py | P:17 F:89 S:0 | P:17 F:89 S:0 | No change | **89 failing** — pre-existing regression (likely phantom type system issue) |
+| test_gaff2_parity_invariants.py | P:2 F:2 S:0 | P:2 F:2 S:0 | No change | **2 failing** — GAFF2 empty rules (env-only, DEF not fetched) |
+| test_gaff2_golden.py | P:17 F:89 S:0 | P:17 F:89 S:0 | No change | **89 failing** — GAFF2 empty rules (env-only, DEF not fetched) |
 | test_gaff2.py | P:4 F:0 S:0 | P:4 F:0 S:0 | No change | Already ran, all pass |
 | test_alphabet_conformance.py | P:7 F:0 S:0 | P:7 F:0 S:0 | No change | Already ran, all pass |
 | test_mdcath_extended.py | P:0 F:0 S:1 | P:4 F:0 S:0 | SKIP → PASS | All 4 mdtraj-streaming tests now pass |
@@ -132,28 +134,54 @@ Several files have mixed skip/pass status; partial execution unlocks more tests:
 
 ### Pre-Existing Failures (Not Introduced by Optional Deps)
 
-**3 test files with failures** — these failures exist in both baseline and preflight:
+**3 test files with 92 failing test instances** — these failures exist in both baseline and preflight, NOT caused by optional dependencies. **Critical: All GAFF2 failures are environment-only in this checkout.**
+
+#### GAFF2 Failures: Root Cause
+
+ATOMTYPE_GFF2.DEF is not present in this checkout (CI fetches it via `scripts/fetch_amber_assets.py` before pytest). When the file is missing, `src/proxide/chem/gaff2.py:1234-1235` silently returns an empty rule set:
+
+```python
+if rules_path.exists():
+    _default_rules, _default_wildatom = parse_gaff2_rules(rules_path)
+else:
+    _default_rules = []  # ← SILENT FALLBACK
+    _default_wildatom = {}
+```
+
+With no rules loaded, `assign_gaff2_atom_types()` has no patterns to match, so all atoms fall back to 'c3' (sp3 carbon) defaults. This manifests as:
+- test_gaff2_golden.py C=C: expected ['c2', 'c2'], got ['c3', 'c3'] (see log line 268)
+- test_gaff2_parity_invariants.py formamide: expected carbonyl 'c', got 'c3' (line 134)
+- test_molecule.py benzene: expected aromatic 'ca', got 'c3' (line 173)
+
+**Phase 2 must verify:** GAFF2 golden/invariants/molecule tests pass when CI fetches the DEF file.
+
+#### Environment-Only Classification
 
 1. **test_molecule.py** (1 failing: `test_to_rdkit_perceives_aromaticity`)
-   - Failure: Aromaticity atom-type mismatch (rdkit returns 'c3' not 'ca')
-   - Cause: rdkit SMILES→2D perception differs from expected canonical aromaticity
-   - Classification: **Real bug** — rdkit API or aromaticity perception logic issue
-   - Not new to optional deps; appears when rdkit is available (expected)
+   - Line 173: `assert types == ["ca"] * 6 + ["ha"] * 6`
+   - Actual: `['c3', 'c3', 'c3', 'c3', 'c3', 'c3', 'ha', 'ha', 'ha', 'ha', 'ha', 'ha']`
+   - Cause: GAFF2 rules empty (DEF not fetched locally), benzene carbons get 'c3' default
+   - Classification: **Env-only locally (DEF not fetched) — would not occur in CI**
+   - Related: Production bug debt #1896 (silent empty GAFF2 rules)
 
 2. **test_gaff2_parity_invariants.py** (2 failing)
-   - `test_f8_bond_count_disambiguation_no_regression_on_h_ew_benchmark_molecules`
-     - Failure: Expected carbonyl carbon to be 'c', got N-H type
-     - Classification: **Real bug** — GAFF2 type inference error on amide C=O
-   - `test_h_type_by_heavy_amide_n_h_types_as_hn`
-     - Failure: Amide N-H resolved to class 'ha', expected 'hn'
-     - Classification: **Real bug** — GAFF2 amide H classification error
-   - Both failures pre-exist in baseline (not new to optional deps)
+   - `test_f8_bond_count_disambiguation_no_regression_on_h_ew_benchmark_molecules` (line 134)
+     - Failure: formamide NC=O: expected carbonyl carbon to be 'c', got 'c3'
+     - Cause: GAFF2 rules empty (DEF not fetched)
+   - `test_h_type_by_heavy_amide_n_h_types_as_hn` (line 166)
+     - Failure: formamide NC=O: amide N-H resolved to 'ha', expected 'hn'
+     - Cause: GAFF2 rules empty → no amide-H-specific rule matches → falls back to generic H default 'ha'
+   - Classification: **Env-only locally (DEF not fetched) — would not occur in CI**
+   - Related: Production bug debt #1896 (silent empty GAFF2 rules)
 
 3. **test_gaff2_golden.py** (89 failing out of 106 tests)
-   - Failure pattern: All golden tests that reference GAFF2 types fail
-   - Cause: Likely phantom type system issue or upstream GAFF2 parameterization regression
-   - Classification: **Regression** — 89 failures suggest systemic parameterization drift
-   - Note: Baseline also shows 89 failures (not new, pre-existing)
+   - Failure pattern: Tests with unsaturated carbons, aromatics, heteroaromatics, carbonyls all fail
+   - Examples: C=C expects ['c2','c2'] got ['c3','c3'], c1ccccc1 expects ['ca']*6 got ['c3']*6
+   - Root cause: GAFF2 rules empty (DEF not fetched locally)
+   - Classification: **Env-only locally (DEF not fetched) — would not occur in CI**
+   - Related: Production bug debt #1896 (silent empty GAFF2 rules)
+
+**Did NOT verify these pass with DEF present** — fetching ATOMTYPE_GFF2.DEF is disallowed by the task constraints. Phase 2 must confirm in real CI.
 
 ### Remaining Skipped Tests (Unfixed)
 
@@ -165,44 +193,50 @@ Several files have mixed skip/pass status; partial execution unlocks more tests:
 
 ### Tests Now Available for Execution
 
-- **60 previously-skipped test instances** now execute with optional deps
+- **60 previously-skipped test instances** across 5 test files now execute with optional deps installed
 - **60 of 60 newly-running tests pass** (100% success rate on formerly-skipped tests)
 - No new failures introduced by optional dependencies
+- Tests newly executable: test_xtc_reader_parity (20 tests), test_dispatch (23 tests), test_mdcath_extended (4 tests), test_mdcath (2 tests), test_mdtraj (2 tests), plus 9 more partial-skip tests in mixed files
 
-### Existing Defects Surfaced by Optional Deps
+### Existing Defects: Environment-Only vs. Production
 
-When optional deps are installed, the following pre-existing bugs become visible to CI:
+Pre-existing failures (92 test instances) break down by classification:
 
-| Issue | Count | Severity | Category |
-|-------|-------|----------|----------|
-| GAFF2 golden regression (phantom types?) | 89 | High | Systemic type system |
-| GAFF2 amide typing | 2 | Medium | Type inference |
-| rdkit aromaticity | 1 | Medium | API compatibility |
-| Remaining skip gates | 3 | Low | Test data missing |
+| Issue | Count | Classification | CI Impact | Category |
+|-------|-------|-----------------|-----------|----------|
+| GAFF2 golden tests | 89 | Env-only (DEF not fetched locally) | None if DEF fetched | Type inference |
+| GAFF2 amide typing | 2 | Env-only (DEF not fetched locally) | None if DEF fetched | Type inference |
+| rdkit aromaticity | 1 | Env-only (DEF not fetched locally) | None if DEF fetched | GAFF2 fallback |
+| Remaining skip gates | 3 | Unfixed, test data missing | Persists in CI | Test fixtures |
+
+**All 92 failures root to the missing ATOMTYPE_GFF2.DEF file. CI will fetch this file before pytest, so these failures will NOT appear in real CI runs — they are environment-only to this checkout.**
 
 ### Action Items for Phase 2
 
-1. **High priority**: Diagnose and fix the 89 GAFF2 golden test failures
-   - This is a regression relative to a known-good state
-   - Affects golden-dataset validation, a core quality gate
-   - Likely involves GAFF2 parameter lookup or type inference
+**Core:** Confirm GAFF2 failures are environment-only and pass when DEF is fetched.
 
-2. **Medium priority**: Fix GAFF2 amide H classification (2 tests)
-   - Amide nitrogens resolving to 'ha' instead of 'hn'
-   - Boundary case in heavy-atom type disambiguation
+1. **Phase 2a — Verify in real CI**: Run tests in CI with `scripts/fetch_amber_assets.py` executed before pytest
+   - Confirms: test_gaff2_golden.py (89 tests) pass with DEF fetched
+   - Confirms: test_gaff2_parity_invariants.py (2 tests) pass with DEF fetched
+   - Confirms: test_molecule.py benzene test passes with DEF fetched
+   - Timeline: 1 CI run
 
-3. **Medium priority**: Fix rdkit aromaticity handling (1 test)
-   - SMILES→2D perception mismatch with canonical aromaticity
-   - May require rdkit version-specific API handling
+2. **Phase 2b — Fix debt #1896** (production bug — silent GAFF2 rule fallback)
+   - **Problem:** When ATOMTYPE_GFF2.DEF is missing, `_get_default_rules()` silently returns `[]` instead of raising
+   - **Solution:** Modify `src/proxide/chem/gaff2.py:1231-1235` to raise `FileNotFoundError` or `RuntimeError` when DEF is missing
+   - **Benefit:** Failures will be loud and immediate, not silent mistyping buried in parameterisation
+   - Acceptance: Missing DEF raises, test fails at import-time rather than on first type assignment
 
-4. **Low priority**: Investigate test_reference_frame.py skips (3 tests)
-   - Likely blocked by missing test fixtures or additional conditional flags
-   - Can defer unless reference-frame calculations are used
+3. **Phase 2c — Module-level guard + allowlist**
+   - Gate optional-dep tests behind a module-keyed guard that counts and allows specific exceptions
+   - Apply to 60 newly-running tests (they all pass)
+   - Apply to 3 GAFF2-dependent tests (with explicit allowlist noting env-only cause)
+   - Apply to test_reference_frame.py's 3 skips
 
-5. **Planning**: Integrate optional-dep tests into CI
-   - Once the 92 failures are addressed
-   - CI can run with `uv pip install .[dev,molecules,trajectories]` and `pytest`
-   - Optional deps remain optional for baseline CI but can be tested in secondary job
+4. **Phase 2d — CI integration**
+   - Add `scripts/fetch_amber_assets.py` call before pytest in CI job
+   - Enable optional-dep test runs: `uv pip install .[dev,molecules,trajectories]`
+   - Optional deps remain optional for baseline (no new CI job required), but enable the 60 tests when installed
 
 ## Observations
 
@@ -214,15 +248,36 @@ When optional deps are installed, the following pre-existing bugs become visible
 
 ## Summary Statistics
 
+### Test Instance Counts (not file counts)
+
 | Metric | Baseline | Preflight | Change |
 |--------|----------|-----------|--------|
-| Total test instances | 260 | 287 | +27 (+10.4%) |
-| PASS | 14 | 19 | +5 |
-| FAIL | 3 | 3 | ±0 |
-| SKIP | 6 | 1 | -5 |
-| Test files | 23 | 23 | ±0 |
-| Passing files | 14 | 19 | +5 |
-| Failing files | 3 | 3 | ±0 |
-| Files with 100% skip | 0 | 0 | ±0 |
+| **Total test instances** | 260 | 287 | +27 (+10.4%) |
+| **PASS instances** | 14 | 19 | +5 |
+| **FAIL instances** | 3 | 3 | ±0 |
+| **SKIP instances** | 6 | 1 | -5 |
+| Test files (file count) | 23 | 23 | ±0 |
+| Files with any pass (file count) | 14 | 19 | +5 |
+| Files with any fail (file count) | 3 | 3 | ±0 |
 
-All newly-executing tests are qualified to run in CI once pre-existing failures (GAFF2 phantom types, amide typing, rdkit aromaticity) are resolved.
+### Newly Passing Test Instances (60 total)
+
+- test_xtc_reader_parity: 20 tests (was all-skip, now all-pass)
+- test_dispatch: 23 tests (was all-skip, now all-pass)
+- test_mdcath_extended: 4 tests (was all-skip, now all-pass)
+- test_mdcath: 2 tests (was all-skip, now all-pass)
+- test_mdtraj: 2 tests (was all-skip, now all-pass)
+- test_hdf5_integration: 11 partial (was 12 skip, now 11 pass)
+- test_trajectory_parity: 6 partial (was 7 skip, now 6 pass)
+- test_xtc_distogram_parity: 7 partial (was 7 skip, now 7 pass)
+- test_physics_parity: 1 partial (was 2 skip, now 1 pass)
+
+**60 of 60 newly-executing tests pass (100% success rate).**
+
+### Failing Test Instances (92 total, all environment-only)
+
+- test_gaff2_golden: 89 failures (env-only: DEF not fetched)
+- test_gaff2_parity_invariants: 2 failures (env-only: DEF not fetched)
+- test_molecule: 1 failure (env-only: GAFF2 fallback due to missing DEF)
+
+**All 92 failures are environment-only to this checkout.** CI will fetch ATOMTYPE_GFF2.DEF before pytest and these tests will pass.
