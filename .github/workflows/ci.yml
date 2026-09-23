@@ -68,7 +68,7 @@ jobs:
       - name: Install dependencies
         run: |
           source .venv/bin/activate
-          uv pip install .[dev]
+          uv pip install .[dev,openmm]
       - name: Verify GAFF2 rules load from the installed package
         # Fail-loud smoke gate for debt #1896: confirms the packaged DEF
         # round-tripped through the (non-editable) wheel build and loads

@@ -570,8 +570,7 @@ pub fn parameterize_structure(
     // unresolved solvent, AND any atom outside `residue_info`/solvent
     // entirely (ligand/ion atoms -- this function never visits those; see
     // `parameterize_molecule` for standalone ligand/GAFF parameterization).
-    let unparameterized_atoms: Vec<usize> =
-        (0..n_atoms).filter(|&idx| !touched[idx]).collect();
+    let unparameterized_atoms: Vec<usize> = (0..n_atoms).filter(|&idx| !touched[idx]).collect();
 
     if !unparameterized_atoms.is_empty() {
         log::warn!(
@@ -582,7 +581,9 @@ pub fn parameterize_structure(
             n_atoms
         );
         if options.strict {
-            return Err(ParamError::UnparameterizedAtoms(unparameterized_atoms.len()));
+            return Err(ParamError::UnparameterizedAtoms(
+                unparameterized_atoms.len(),
+            ));
         }
     }
 
@@ -1792,11 +1793,8 @@ mod tests {
 
         // r(OH) = 0.9572 A, theta(HOH) = 104.52 deg -- matches the TIP3P
         // model geometry documented on `water::tip3p()`.
-        let water_geom: [[f32; 3]; 3] = [
-            [0.0, 0.0, 0.0],
-            [0.9572, 0.0, 0.0],
-            [-0.2397, 0.9266, 0.0],
-        ];
+        let water_geom: [[f32; 3]; 3] =
+            [[0.0, 0.0, 0.0], [0.9572, 0.0, 0.0], [-0.2397, 0.9266, 0.0]];
         let names = ["O", "H1", "H2"];
         let elements = ["O", "H", "H"];
         for water_idx in 0..2usize {
@@ -1952,18 +1950,19 @@ mod tests {
         let mut raw = RawAtomData::with_capacity(6);
 
         // Water 1: standard TIP3P geometry at the origin.
-        let water1_geom: [[f32; 3]; 3] = [
-            [0.0, 0.0, 0.0],
-            [0.9572, 0.0, 0.0],
-            [-0.2397, 0.9266, 0.0],
-        ];
+        let water1_geom: [[f32; 3]; 3] =
+            [[0.0, 0.0, 0.0], [0.9572, 0.0, 0.0], [-0.2397, 0.9266, 0.0]];
         // Water 2: translated so its O sits exactly 1.0 A from water 1's H2
         // (spurious-bond distance), with every other cross-molecule pair kept
         // outside any bonding threshold (see test docstring for the arithmetic).
         let water2_origin = [-0.2397_f32, 1.9266_f32, 0.0_f32];
         let water2_geom: [[f32; 3]; 3] = [
             water2_origin,
-            [water2_origin[0] + 0.9572, water2_origin[1], water2_origin[2]],
+            [
+                water2_origin[0] + 0.9572,
+                water2_origin[1],
+                water2_origin[2],
+            ],
             [
                 water2_origin[0] - 0.2397,
                 water2_origin[1] + 0.9266,
@@ -2084,10 +2083,9 @@ mod tests {
             &structure.raw_atoms.elements,
             1.3,
         );
-        topology.bonds.push(proxide_core::forcefield::Bond {
-            i: n_atoms,
-            j: 0,
-        });
+        topology
+            .bonds
+            .push(proxide_core::forcefield::Bond { i: n_atoms, j: 0 });
 
         let options = ParamOptions::default();
         let result = parameterize_structure(&structure, &topology, &ff, &options);
@@ -2137,13 +2135,15 @@ mod tests {
             &structure.raw_atoms.elements,
             1.3,
         );
-        topology.proper_dihedrals.push(proxide_core::forcefield::Dihedral {
-            i: 0,
-            j: 1,
-            k: 2,
-            l: n_atoms + 5,
-            is_improper: false,
-        });
+        topology
+            .proper_dihedrals
+            .push(proxide_core::forcefield::Dihedral {
+                i: 0,
+                j: 1,
+                k: 2,
+                l: n_atoms + 5,
+                is_improper: false,
+            });
 
         let options = ParamOptions::default();
         let result = parameterize_structure(&structure, &topology, &ff, &options);
@@ -2205,8 +2205,7 @@ mod tests {
         // Lenient (default) mode: still returns Ok, but now says so instead
         // of staying silent.
         let lenient_options = ParamOptions::default();
-        let params =
-            parameterize_structure(&structure, &topology, &ff, &lenient_options).unwrap();
+        let params = parameterize_structure(&structure, &topology, &ff, &lenient_options).unwrap();
         assert_eq!(params.unparameterized_atoms.len(), 2);
         assert!(params.unparameterized_atoms.contains(&0));
         assert!(params.unparameterized_atoms.contains(&1));

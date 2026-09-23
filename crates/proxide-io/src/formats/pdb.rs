@@ -249,8 +249,7 @@ mod tests {
         // instead of "Cl". Also cover a long-enough line whose element column is
         // present but blank -- that must fall back to name-based inference too,
         // not silently accept an empty element string.
-        let short_line =
-            "HETATM 7506  Cl  CL  A 500      12.000   3.000   4.000  1.00  0.00";
+        let short_line = "HETATM 7506  Cl  CL  A 500      12.000   3.000   4.000  1.00  0.00";
         let atom = parse_atom_line(short_line).unwrap();
         assert_eq!(atom.atom_name, "Cl");
         assert_eq!(atom.element, "Cl");
