@@ -195,7 +195,7 @@ With no rules loaded, `assign_gaff2_atom_types()` has no patterns to match, so a
 - **76 previously-skipped test instances** now execute with optional deps installed
 - **76 of 76 newly-running tests pass** (100% success rate on formerly-skipped tests)
 - No new failures introduced by optional dependencies
-- Tests newly executable: test_xtc_reader_parity (20 tests), test_dispatch (23 tests), test_mdcath_extended (4 tests), test_mdcath (2 tests), test_mdtraj (2 tests), plus 9 more partial-skip tests in mixed files
+- Tests newly executable: test_xtc_reader_parity (20 tests), test_dispatch (23 tests), test_mdcath_extended (4 tests), test_mdcath (2 tests), test_mdtraj (2 tests), plus 25 more in partially-skipped files (test_hdf5_integration 11, test_trajectory_parity 6, test_xtc_distogram_parity 7, test_physics_parity 1)
 
 ### Existing Defects: Environment-Only vs. Production
 
