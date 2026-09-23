@@ -7,8 +7,11 @@ to RDKit molecules.
 
 from __future__ import annotations
 
+import hashlib
 import math as _math
+import os
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -1216,28 +1219,117 @@ def assign_gaff2_atom_types(
     return atom_types
 
 
+class Gaff2DefError(RuntimeError):
+    """Base class for ATOMTYPE_GFF2.DEF loading failures.
+
+    proxide never assigns GAFF2 atom types from a missing, altered, or
+    empty rule set -- see CLAUDE.md's fail-fast rule (no sentinel standing
+    in for "unknown"). Every such case raises one of this class's
+    subclasses at the point of determination instead of silently degrading
+    to an empty ruleset (which previously caused every atom to fall
+    through to the generic per-element placeholder types in
+    `assign_gaff2_atom_types`).
+    """
+
+
+class Gaff2DefMissingError(Gaff2DefError, FileNotFoundError):
+    """The resolved ATOMTYPE_GFF2.DEF path does not exist."""
+
+
+class Gaff2DefInvalidError(Gaff2DefError, ValueError):
+    """ATOMTYPE_GFF2.DEF exists but its content is wrong.
+
+    Raised for a digest mismatch against the pin (the default/env-var
+    path only) or for a file that parses to zero rules (any path).
+    """
+
+
+# Single source of truth for ATOMTYPE_GFF2.DEF's upstream location and
+# content digest -- see that file's own header comment. Mirrored (not read)
+# by .github/workflows/ci.yml's rust-checks job and
+# crates/proxide-gaff2/src/rules_loader.rs's digest test.
+_PIN_PATH = Path(__file__).parent.parent / "assets" / "gaff" / "ATOMTYPE_GFF2.pin.toml"
+
+
+def _load_pin() -> dict:
+    """Read the ATOMTYPE_GFF2.DEF pin file."""
+    with _PIN_PATH.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _default_def_path() -> Path:
+    """Resolve the default ATOMTYPE_GFF2.DEF path.
+
+    `PROXIDE_GAFF2_DEF`, if set, overrides the packaged location -- e.g.
+    for a dev checkout, a non-editable install whose wheel wasn't built
+    with the DEF present, or CI debugging.
+    """
+    env_path = os.environ.get("PROXIDE_GAFF2_DEF")
+    if env_path:
+        return Path(env_path)
+    return Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "ATOMTYPE_GFF2.DEF"
+
+
 _default_rules: list[Gaff2Rule] | None = None
 _default_wildatom: dict[str, list[str]] | None = None
 
 
 def _get_default_rules() -> tuple[list[Gaff2Rule], dict[str, list[str]]]:
-    """Get default GAFF2 rules (cached)."""
+    """Get default GAFF2 rules (cached).
+
+    Never caches a failed load: the module-level cache is only assigned
+    after the resolved DEF has been found, digest-verified against the
+    pin file, and successfully parsed into at least one rule. A missing
+    or altered default DEF raises on every call until it's fixed -- it
+    never silently degrades to an empty ruleset.
+    """
     global _default_rules, _default_wildatom
 
     if _default_rules is None:
-        # Use fixed relative path from project root
-        rules_path = Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "ATOMTYPE_GFF2.DEF"
+        rules_path = _default_def_path()
+        pin = _load_pin()
 
-        if rules_path.exists():
-            _default_rules, _default_wildatom = parse_gaff2_rules(rules_path)
-        else:
-            _default_rules = []
-            _default_wildatom = {}
+        if not rules_path.exists():
+            raise Gaff2DefMissingError(
+                f"ATOMTYPE_GFF2.DEF not found at {rules_path}. "
+                f"{pin['license_note']} It is deliberately not bundled in this "
+                "MIT-licensed package's git history. Fetch it from a source checkout "
+                "with `uv run python scripts/fetch_amber_assets.py` (run from the repo "
+                "root), or set the PROXIDE_GAFF2_DEF environment variable to point at "
+                f"an already-fetched copy. Pinned source: {pin['url']} "
+                f"(sha256 {pin['sha256']})."
+            )
 
-    return (
-        _default_rules if _default_rules is not None else [],
-        _default_wildatom if _default_wildatom is not None else {},
-    )
+        actual_digest = hashlib.sha256(rules_path.read_bytes()).hexdigest()
+        if actual_digest != pin["sha256"]:
+            raise Gaff2DefInvalidError(
+                f"ATOMTYPE_GFF2.DEF at {rules_path} does not match the pinned digest "
+                f"-- expected sha256 {pin['sha256']}, got {actual_digest}. The file "
+                "was altered, corrupted in transit, or is a different upstream "
+                "version than this proxide release expects. Re-fetch a verified copy "
+                "with `uv run python scripts/fetch_amber_assets.py`."
+            )
+
+        rules, wildatom = parse_gaff2_rules(rules_path)
+        if not rules:
+            raise Gaff2DefInvalidError(
+                f"ATOMTYPE_GFF2.DEF at {rules_path} matched its pinned digest but "
+                "parsed to zero rules. parse_gaff2_rules() silently skips "
+                "unparseable lines, so a zero-rule result here means the file's ATD "
+                "grammar diverged from the parser without the digest changing, which "
+                "should be impossible -- treat this as a parser bug, not a missing "
+                "file."
+            )
+
+        _default_rules, _default_wildatom = rules, wildatom
+
+    # The `if` block above either raises (never assigning the cache) or
+    # assigns both cache variables together, so both are guaranteed
+    # non-None here -- these asserts just make that guarantee legible to
+    # the type checker, which can't otherwise narrow a `global` this way.
+    assert _default_rules is not None
+    assert _default_wildatom is not None
+    return (_default_rules, _default_wildatom)
 
 
 def load_gaff2_rules(
@@ -1246,15 +1338,38 @@ def load_gaff2_rules(
     """Load GAFF2 rules from file.
 
     Args:
-        def_path: Path to ATOMTYPE_GFF2.DEF. If None, uses default bundled.
+        def_path: Path to ATOMTYPE_GFF2.DEF. If None, uses the packaged/
+            PROXIDE_GAFF2_DEF default, digest-verified against the pin
+            file (see `_get_default_rules`).
 
     Returns:
-        Tuple of (rules list, wildatom map)
+        Tuple of (rules list, wildatom map).
+
+    Raises:
+        Gaff2DefMissingError: the resolved DEF file does not exist.
+        Gaff2DefInvalidError: the DEF file exists but parses to zero
+            rules. (An explicit `def_path` skips the pin's digest check --
+            that check only applies to the default/env-var path -- but a
+            zero-rule result is always an error regardless of path: an
+            empty ruleset is never a legitimate "no rules" answer, it
+            means the file is empty, truncated, or not actually a GAFF2
+            DEF file.)
     """
     if def_path is None:
         return _get_default_rules()
 
-    return parse_gaff2_rules(def_path)
+    path = Path(def_path)
+    if not path.exists():
+        raise Gaff2DefMissingError(f"ATOMTYPE_GFF2.DEF not found at {path}.")
+
+    rules, wildatom = parse_gaff2_rules(path)
+    if not rules:
+        raise Gaff2DefInvalidError(
+            f"{path} parsed to zero GAFF2 rules. parse_gaff2_rules() silently skips "
+            "unparseable lines, so an empty result means the file is empty, "
+            "truncated, or not a valid ATOMTYPE_GFF2.DEF grammar."
+        )
+    return rules, wildatom
 
 
 def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:

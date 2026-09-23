@@ -54,6 +54,15 @@ use crate::def_parser::{self, Gaff2Rule, WildatomMap};
 static ATOMTYPE_GFF2_DEF: &str =
     include_str!("../../../src/proxide/assets/gaff/dat/ATOMTYPE_GFF2.DEF");
 
+/// Compile-time-embedded contents of `ATOMTYPE_GFF2.pin.toml` -- the single
+/// source of truth for the DEF's upstream location and content digest
+/// (also read at runtime by `gaff2.py` and `scripts/fetch_amber_assets.py`).
+/// Test-only: used by `embedded_default_def_content_digest_is_pinned` below
+/// so the digest this crate expects can never silently drift from the pin.
+#[cfg(test)]
+static ATOMTYPE_GFF2_PIN_TOML: &str =
+    include_str!("../../../src/proxide/assets/gaff/ATOMTYPE_GFF2.pin.toml");
+
 /// Testable core of `get_default_rules()`: caller supplies the cache cell,
 /// the DEF content, and the parse function, so tests can exercise "parsed
 /// once, cached" behavior against synthetic content without touching the
@@ -171,23 +180,45 @@ mod tests {
         );
     }
 
+    /// Extracts the `sha256 = "..."` value from `ATOMTYPE_GFF2.pin.toml`'s
+    /// text without pulling in a TOML parser dependency for this one
+    /// test-only lookup -- the file's format (one `key = "value"` per
+    /// line) is controlled entirely by this repo, so a simple per-line
+    /// scan is sufficient and avoids a new `[dev-dependencies]` entry.
+    fn pinned_sha256() -> String {
+        for line in ATOMTYPE_GFF2_PIN_TOML.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("sha256") {
+                let rest = rest.trim_start();
+                if let Some(rest) = rest.strip_prefix('=') {
+                    return rest.trim().trim_matches('"').to_string();
+                }
+            }
+        }
+        panic!("ATOMTYPE_GFF2.pin.toml has no `sha256 = \"...\"` line");
+    }
+
     /// Content-digest pin (Open Item #6, drift guard #1 of 2 -- the second,
     /// a cross-language digest test spanning the maturin wheel boundary, is
     /// still open). A DEF bump must be a deliberate, reviewed change that
     /// forces re-running the parity campaign, not a silent behavior change
-    /// picked up by whoever next rebuilds this crate. Recompute with
-    /// `sha256sum src/proxide/assets/gaff/dat/ATOMTYPE_GFF2.DEF` and update
-    /// deliberately if the DEF file is intentionally updated.
+    /// picked up by whoever next rebuilds this crate. The expected digest is
+    /// derived from `ATOMTYPE_GFF2.pin.toml` (the single source of truth
+    /// this test, `gaff2.py`, `scripts/fetch_amber_assets.py`, and
+    /// `ci.yml`'s rust-checks job all key off) rather than duplicated here
+    /// as a second hardcoded literal.
     #[test]
     fn embedded_default_def_content_digest_is_pinned() {
         use sha2::{Digest, Sha256};
         let digest = Sha256::digest(ATOMTYPE_GFF2_DEF.as_bytes());
         let hex = format!("{digest:x}");
         assert_eq!(
-            hex, "7a076ac2e667ab87057befc7a5985be4cead83e01ff5d2d3dab9f1d65bff637e",
-            "ATOMTYPE_GFF2.DEF content changed (sha256 mismatch) -- if this is a \
-             deliberate AmberTools update, update this pinned digest AND re-run \
-             the full geostd parity campaign before merging"
+            hex,
+            pinned_sha256(),
+            "ATOMTYPE_GFF2.DEF content changed (sha256 mismatch against \
+             ATOMTYPE_GFF2.pin.toml) -- if this is a deliberate AmberTools update, \
+             update the pin file (and the mirrored literals in ci.yml's rust-checks \
+             job) AND re-run the full geostd parity campaign before merging"
         );
     }
 

@@ -56,14 +56,27 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - name: Create virtual environment
         run: uv venv
+      - name: Fetch AmberTools/antechamber assets (not vendored in git)
+        # Runs BEFORE install so the DEF is present on disk when `uv pip
+        # install .[dev]` (non-editable) builds the wheel -- maturin's
+        # `include = ["src/proxide/**/*"]` only packages what already
+        # exists at build time; fetching after install would leave the
+        # installed wheel without the DEF regardless of what's on disk.
+        run: |
+          source .venv/bin/activate
+          python scripts/fetch_amber_assets.py
       - name: Install dependencies
         run: |
           source .venv/bin/activate
           uv pip install .[dev]
-      - name: Fetch AmberTools/antechamber assets (not vendored in git)
+      - name: Verify GAFF2 rules load from the installed package
+        # Fail-loud smoke gate for debt #1896: confirms the packaged DEF
+        # round-tripped through the (non-editable) wheel build and loads
+        # via the same PROXIDE_GAFF2_DEF-aware path gaff2.py's real callers
+        # use -- not just that the file exists on the checkout's disk.
         run: |
           source .venv/bin/activate
-          python scripts/fetch_amber_assets.py
+          python -c "from proxide.chem.gaff2 import load_gaff2_rules; r, _ = load_gaff2_rules(); assert r, 'no GAFF2 rules loaded'"
       - name: Run Smoke Tests
         run: |
           source .venv/bin/activate
