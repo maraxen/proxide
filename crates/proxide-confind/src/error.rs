@@ -11,6 +11,8 @@ pub enum ConFindError {
     FreedomNotComputed(ResidueIndex),
     #[error("structure failed {0} precondition check(s); see log for per-residue diagnostics")]
     PreconditionsFailed(usize),
+    #[error("invalid BackboneOptions: {0}")]
+    InvalidOptions(String),
     #[error("rotamer library error: {0}")]
     RotlibError(#[from] proxide_rotlib::RotlibError),
     #[error("IO error: {0}")]

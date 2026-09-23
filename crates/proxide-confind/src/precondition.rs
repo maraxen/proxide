@@ -1,4 +1,4 @@
-use crate::coords::{ProteinBackbone, ResidueIndex};
+use crate::coords::{ProteinBackbone, ResidueBackbone, ResidueIndex};
 use crate::error::ConFindError;
 use proxide_core::processing::residues::ResidueId;
 
@@ -22,7 +22,8 @@ pub enum ViolationKind {
     UndefinedPsi,
     /// Residue name not in canonical set (20 standard AAs + variants).
     UnknownResidueType { res_name: String },
-    /// Consecutive same-chain residues with CA atoms separated by > 4.5 Å.
+    /// Consecutive same-chain residues with CA atoms separated by more than
+    /// [`CHAIN_BREAK_CA_ANGSTROM`].
     ChainBreak { gap_to_next_ca: f64 },
 }
 
@@ -81,16 +82,102 @@ pub const CANONICAL_AA_NAMES: &[&str] = &[
 ];
 
 /// CA–CA distance threshold (Å) for chain break detection.
-const CHAIN_BREAK_CA_ANGSTROM: f64 = 4.5;
+pub const CHAIN_BREAK_CA_ANGSTROM: f64 = 4.5;
+
+/// A geometric chain break detected by [`chain_breaks`]: the CA–CA distance
+/// between `bb[prev_with_ca]` and `bb[index]` (the nearest preceding and
+/// following residues that both have a CA atom, within the same chain
+/// segment) exceeds [`CHAIN_BREAK_CA_ANGSTROM`].
+///
+/// `index` and `prev_with_ca` are global (dense) indices into
+/// [`ProteinBackbone::bb`]. Per spec D (debt #1890), the break boundary for
+/// [`crate::coords::ChainBreakPolicy::Split`] sits between `bb[index - 1]`
+/// (usually, but not necessarily, `prev_with_ca`) and `bb[index]`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChainBreakAt {
+    /// Global index of the residue immediately after the break.
+    pub index: usize,
+    /// Global index of the nearest preceding residue that has a CA atom.
+    pub prev_with_ca: usize,
+    /// CA–CA distance (Å) between `bb[prev_with_ca]` and `bb[index]`.
+    pub gap: f64,
+}
+
+/// Detect geometric chain breaks: consecutive same-chain-segment residues
+/// whose CA atoms are more than [`CHAIN_BREAK_CA_ANGSTROM`] Å apart.
+///
+/// Shared by [`check_preconditions`] (for the `ChainBreak` warning) and
+/// [`crate::coords`]'s dihedral filler (for
+/// [`crate::coords::ChainBreakPolicy::Split`]), so both agree on exactly
+/// which residue pairs count as a break.
+///
+/// Residues without a CA atom are skipped when scanning for the previous
+/// CA — i.e. a run of CA-less residues does not itself create a break, and
+/// the gap is measured against the nearest earlier residue that *does* have
+/// a CA (same carry-over-CA-less rule as `check_preconditions` has always
+/// used).
+pub fn chain_breaks(bb: &[ResidueBackbone], chain_map: &[usize]) -> Vec<ChainBreakAt> {
+    let mut breaks = Vec::new();
+    let n = bb.len();
+    if n == 0 {
+        return breaks;
+    }
+
+    let mut chain_starts: Vec<usize> = vec![0];
+    for i in 1..n {
+        if chain_map[i] != chain_map[i - 1] {
+            chain_starts.push(i);
+        }
+    }
+    chain_starts.push(n);
+
+    for w in chain_starts.windows(2) {
+        let seg_start = w[0];
+        let seg_end = w[1];
+
+        let mut last_ca: Option<(usize, [f64; 3])> = None;
+
+        for (offset, rb) in bb[seg_start..seg_end].iter().enumerate() {
+            let i = seg_start + offset;
+            if let Some(ca) = rb.ca {
+                if let Some((prev_i, prev_ca)) = last_ca {
+                    let dx = ca[0] - prev_ca[0];
+                    let dy = ca[1] - prev_ca[1];
+                    let dz = ca[2] - prev_ca[2];
+                    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+                    if dist > CHAIN_BREAK_CA_ANGSTROM {
+                        breaks.push(ChainBreakAt {
+                            index: i,
+                            prev_with_ca: prev_i,
+                            gap: dist,
+                        });
+                    }
+                }
+                last_ca = Some((i, ca));
+            }
+        }
+    }
+
+    breaks
+}
 
 /// Check preconditions on a ProteinBackbone without modifying it.
 ///
 /// Performs a single pass over all residues, recording violations:
 /// - Missing N/CA/C atoms → MissingBackboneAtom (Error)
-/// - φ undefined for non-first-in-chain → UndefinedPhi (Error)
-/// - ψ undefined for non-last-in-chain → UndefinedPsi (Error)
+/// - φ undefined for non-first-in-chain → UndefinedPhi (Error), except when the
+///   residue sits immediately after a [`chain_breaks`] break and all four φ
+///   atoms are physically present (i.e. the only reason φ is undefined is
+///   [`crate::coords::ChainBreakPolicy::Split`] intentionally severing the
+///   dihedral at that break — under
+///   [`crate::coords::ChainBreakPolicy::Bridge`] φ is defined there, so this
+///   exemption never fires and the report is unchanged from base).
+/// - ψ undefined for non-last-in-chain → UndefinedPsi (Error), with the
+///   symmetric exemption when the *next* residue starts a break and all four
+///   ψ atoms are present.
 /// - Residue name not canonical → UnknownResidueType (Warning)
-/// - Consecutive same-chain CA atoms > 4.5 Å apart → ChainBreak (Warning)
+/// - Consecutive same-chain CA atoms more than [`CHAIN_BREAK_CA_ANGSTROM`] Å apart → ChainBreak (Warning)
 ///
 /// Logs each violation via `log::error!` or `log::warn!` with chain/residue ID,
 /// insertion code, and a suggested fix.
@@ -110,6 +197,11 @@ pub fn check_preconditions(bb: &ProteinBackbone) -> PreconditionReport {
         }
     }
     chain_starts.push(n);
+
+    // Geometric chain breaks, shared with crate::coords's dihedral filler so both
+    // agree on exactly which residue pairs count as a break (spec D, debt #1890).
+    let breaks = chain_breaks(&bb.bb, &bb.chain_map);
+    let break_indices: std::collections::HashSet<usize> = breaks.iter().map(|b| b.index).collect();
 
     // (a) Check for missing backbone atoms and unknown residue types.
     for (i, rb) in bb.bb.iter().enumerate() {
@@ -196,9 +288,18 @@ pub fn check_preconditions(bb: &ProteinBackbone) -> PreconditionReport {
             let res_id = &bb.ids[global_idx];
             let rb = &bb.bb[global_idx];
 
-            // φ should be undefined (9999.0) ONLY for the chain's first residue.
+            // φ should be undefined (9999.0) ONLY for the chain's first residue —
+            // except a residue immediately after a Split break, whose φ atoms are
+            // all physically present (the dihedral is undefined solely because
+            // the break policy severed it, not because of a missing atom).
             let is_chain_first = local_idx == 0;
-            if !is_chain_first && (rb.phi - 9999.0).abs() < 1e-6 {
+            let phi_atoms_present = global_idx > 0
+                && bb.bb[global_idx - 1].c.is_some()
+                && rb.n.is_some()
+                && rb.ca.is_some()
+                && rb.c.is_some();
+            let phi_split_exempt = break_indices.contains(&global_idx) && phi_atoms_present;
+            if !is_chain_first && !phi_split_exempt && (rb.phi - 9999.0).abs() < 1e-6 {
                 violations.push(PreconditionViolation {
                     residue: res_idx,
                     id: res_id.clone(),
@@ -214,9 +315,17 @@ pub fn check_preconditions(bb: &ProteinBackbone) -> PreconditionReport {
                 );
             }
 
-            // ψ should be undefined (9999.0) ONLY for the chain's last residue.
+            // ψ should be undefined (9999.0) ONLY for the chain's last residue —
+            // except a residue immediately before a Split break (i.e. the break's
+            // `index` is global_idx + 1), whose ψ atoms are all physically present.
             let is_chain_last = local_idx == (seg_end - seg_start - 1);
-            if !is_chain_last && (rb.psi - 9999.0).abs() < 1e-6 {
+            let psi_atoms_present = global_idx + 1 < n
+                && rb.n.is_some()
+                && rb.ca.is_some()
+                && rb.c.is_some()
+                && bb.bb[global_idx + 1].n.is_some();
+            let psi_split_exempt = break_indices.contains(&(global_idx + 1)) && psi_atoms_present;
+            if !is_chain_last && !psi_split_exempt && (rb.psi - 9999.0).abs() < 1e-6 {
                 violations.push(PreconditionViolation {
                     residue: res_idx,
                     id: res_id.clone(),
@@ -234,49 +343,34 @@ pub fn check_preconditions(bb: &ProteinBackbone) -> PreconditionReport {
         }
     }
 
-    // (d) Check for chain breaks: consecutive same-chain residues with CA atoms > 4.5 Å apart.
-    for w in chain_starts.windows(2) {
-        let seg_start = w[0];
-        let seg_end = w[1];
-
-        let mut last_ca: Option<([f64; 3], usize, ResidueIndex, ResidueId)> = None;
-
-        for i in seg_start..seg_end {
-            let rb = &bb.bb[i];
-            if let Some(ca) = rb.ca {
-                if let Some((prev_ca, _prev_i, prev_res_idx, prev_res_id)) = last_ca {
-                    let dx = ca[0] - prev_ca[0];
-                    let dy = ca[1] - prev_ca[1];
-                    let dz = ca[2] - prev_ca[2];
-                    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-
-                    if dist > CHAIN_BREAK_CA_ANGSTROM {
-                        violations.push(PreconditionViolation {
-                            residue: ResidueIndex(i as u32),
-                            id: bb.ids[i].clone(),
-                            res_name: rb.res_name.clone(),
-                            kind: ViolationKind::ChainBreak {
-                                gap_to_next_ca: dist,
-                            },
-                        });
-                        log::warn!(
-                            "Chain break detected: {}/{}/{}{} to {}/{}/{}{} gap = {:.2} Å (threshold {:.1} Å); fix: verify residues are consecutive in PDB or check for missing residues",
-                            prev_res_id.chain_id,
-                            prev_res_idx.0,
-                            prev_res_id.res_id,
-                            prev_res_id.insertion_code,
-                            bb.ids[i].chain_id,
-                            i as u32,
-                            bb.ids[i].res_id,
-                            bb.ids[i].insertion_code,
-                            dist,
-                            CHAIN_BREAK_CA_ANGSTROM
-                        );
-                    }
-                }
-                last_ca = Some((ca, i, ResidueIndex(i as u32), bb.ids[i].clone()));
-            }
-        }
+    // (d) Chain breaks: consecutive same-chain residues with CA atoms further apart
+    // than CHAIN_BREAK_CA_ANGSTROM. Uses the same `breaks` computed above via
+    // chain_breaks(), so this warning and the Split policy always agree.
+    for b in &breaks {
+        let rb = &bb.bb[b.index];
+        let prev_res_idx = ResidueIndex(b.prev_with_ca as u32);
+        let prev_res_id = &bb.ids[b.prev_with_ca];
+        violations.push(PreconditionViolation {
+            residue: ResidueIndex(b.index as u32),
+            id: bb.ids[b.index].clone(),
+            res_name: rb.res_name.clone(),
+            kind: ViolationKind::ChainBreak {
+                gap_to_next_ca: b.gap,
+            },
+        });
+        log::warn!(
+            "Chain break detected: {}/{}/{}{} to {}/{}/{}{} gap = {:.2} Å (threshold {:.1} Å); fix: verify residues are consecutive in PDB or check for missing residues",
+            prev_res_id.chain_id,
+            prev_res_idx.0,
+            prev_res_id.res_id,
+            prev_res_id.insertion_code,
+            bb.ids[b.index].chain_id,
+            b.index as u32,
+            bb.ids[b.index].res_id,
+            bb.ids[b.index].insertion_code,
+            b.gap,
+            CHAIN_BREAK_CA_ANGSTROM
+        );
     }
 
     PreconditionReport { violations }
