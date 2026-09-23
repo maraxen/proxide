@@ -1,21 +1,18 @@
 {
   "task_id": "260922_autonomous-loop",
-  "sprint_id": "260922_sprint-20-gaff2-def-fail-loud",
-  "sprint_plan_path": ".praxia/sprint_plans/260922_sprint-20-gaff2-def-fail-loud.toml",
-  "branch": "autoloop/260922-sprint-20",
-  "git_base_sha": "74e1e77",
-  "approved_by": "user, in conversation (\"Approve sprint 20\"), 2026-09-23; approval covers the planned gh workflow_dispatch CI run",
-  "push_policy": "PRs, stacked: #41 <- #42 <- #43 <- sprint 20 PR. Owner will correct the misset branch-creation ruleset.",
+  "sprint_id": "260923_sprint-21-confind-dihedral-policies",
+  "sprint_plan_path": ".praxia/sprint_plans/260923_sprint-21-confind-dihedral-policies.toml",
+  "branch": "autoloop/260923-sprint-21",
+  "git_base_sha": "4484164",
+  "code_base_sha": "316d1ab",
+  "approved_by": "user, in conversation (\"Approved\"), 2026-09-23; LegacyCompact library-only (no CLI flag requested)",
+  "push_policy": "PRs, stacked on #44",
   "dispatch_mode": "in-place, single track",
-  "tracks": {
-    "g": {"item": "debt-1896", "fixer_model": "sonnet", "reviewer_model": "sonnet", "model_note": "Sonnet fixer (not Haiku) after Haiku fixers misreported their own work twice in sprint 19"}
-  },
-  "held_for_next_sprint": "Track D debt #1890 (owner decisions recorded 260923)",
-  "verify": {
-    "g": {"commits": ["8ec3029", "0ea2e6f", "e62b5cc"], "verdict": "PASS",
-          "history": "reviewer PASS 10/10 (MINOR repeated sentence fixed in 0ea2e6f); first CI run 35858861056 FAILED (ruff E501 from 0ea2e6f, rustfmt drift in pdb.rs/pqr.rs/md_params.rs from earlier stack commits, mbondi2 drift test needs OpenMM absent from .[dev]); e62b5cc fixed all three; CI run 35859959789 green on all 4 jobs",
-          "stack_caveat": "rustfmt drift and the OpenMM install originate in #41/#42 commits but are fixed here; #41 alone would fail CI -- merge the stack together"}
-  },
-  "closed": {"debt_resolved": [1896]},
-  "prior_sprints": {"18": {"pr": 42, "verify": "PASS"}, "19": {"pr": 43, "verify": "PASS"}}
+  "tracks": {"d": {"item": "debt-1890", "fixer_model": "sonnet", "reviewer_model": "sonnet"}},
+  "prior_sprints": {"18": {"pr": 42}, "19": {"pr": 43}, "20": {"pr": 44, "ci": "35859959789 green"}},
+  "verify": {"d": {"commits": ["288bfa9", "8f29bb9"], "verdict": "PASS 8/8", "remediations": 0,
+                   "controls": ["golden bit flip -> golden test fails", "LegacyCompact test switched to default -> fails"],
+                   "ci": "35880552376 green on all 4 jobs incl. workspace clippy (not runnable locally: proxide-gaff2 needs the DEF)",
+                   "notes": ["unrelated pre-existing ignored test measure_loadpb_drift_vs_master fails (known #869 load_pb drift)", "fixer filed 2 debts to the offline journal only; orchestrator re-filed them to the DB as #1903/#1904 (praxia has no 'offline sync' command)"]}},
+  "closed": {"debt_resolved": [1890]}
 }
