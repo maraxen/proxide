@@ -10,7 +10,7 @@ status: complete
 
 Pre-flight research for debt #909 phase 1: assessment of which optional-dependency-gated tests pass, fail, or skip when rdkit/mdtraj/h5py/tables are installed on Python 3.11 at uv.lock versions.
 
-**Result:** 60 previously-skipped test instances across 5 test files now execute, 60 of 60 pass (100%); 3 pre-existing failures persist (not new); no failures introduced by optional dependencies.
+**Result:** 76 previously-skipped test instances now execute, 76 of 76 pass (100%); 3 pre-existing failures persist (not new); no failures introduced by optional dependencies.
 
 **Critical finding:** Test failures (92 test instances across 3 files) are NOT regressions — they result from missing ATOMTYPE_GFF2.DEF file in this checkout (CI fetches via `scripts/fetch_amber_assets.py` before pytest). The missing DEF causes `_get_default_rules()` to silently return an empty rule set, so all GAFF2 type assignments fall back to 'c3' (sp3) defaults. This exposes production bug debt #1896 (silent GAFF2 rule fallback). Phase 2 must (a) confirm all 92 tests pass in real CI with fetched DEF, (b) fix debt #1896 so missing DEF raises instead of silently mistyping.
 
@@ -50,8 +50,8 @@ RUSTC_WRAPPER="" OMP_NUM_THREADS=2 timeout 600 uv pip install --python target/pr
 23 test files containing `importorskip()`, `HAS_H5PY`, `HAS_MDTRAJ`, or `_AVAILABLE` markers were executed in both environments.
 
 Total test instances:
-- Baseline: 260 (14 PASS, 3 FAIL, 6 SKIP)
-- Preflight: 287 (19 PASS, 3 FAIL, 1 SKIP)
+- Baseline: 260 (110 PASS, 92 FAIL, 58 SKIP)
+- Preflight: 287 (186 PASS, 92 FAIL, 9 SKIP)
 - Net change: +27 test instances executing (previously skipped)
 
 ## Results Table
@@ -95,8 +95,7 @@ Total test instances:
 
 2. **test_dispatch.py** (23 tests)
    - Status: SKIP (baseline) → PASS (preflight)
-   - Reason: mdtraj availability check in module-level `conftest.py`
-   - Import: `pytest.importorskip("mdtraj")` in `tests/io/parsing/conftest.py`
+   - Reason: h5py/mdtraj availability via module-level `pytest.importorskip()` calls in `tests/io/parsing/test_dispatch.py` itself (lines 11-12); h5py fires first. `tests/io/parsing/conftest.py` uses a try/except ImportError `HAS_H5PY` flag, not `importorskip`.
    - All dispatch tests execute and pass
 
 3. **test_mdcath_extended.py** (4 tests)
@@ -149,7 +148,7 @@ else:
 ```
 
 With no rules loaded, `assign_gaff2_atom_types()` has no patterns to match, so all atoms fall back to 'c3' (sp3 carbon) defaults. This manifests as:
-- test_gaff2_golden.py C=C: expected ['c2', 'c2'], got ['c3', 'c3'] (see log line 268)
+- test_gaff2_golden.py C=C: expected ['c2', 'c2'], got ['c3', 'c3'] (tests/test_gaff2_golden.py:268)
 - test_gaff2_parity_invariants.py formamide: expected carbonyl 'c', got 'c3' (line 134)
 - test_molecule.py benzene: expected aromatic 'ca', got 'c3' (line 173)
 
@@ -193,8 +192,8 @@ With no rules loaded, `assign_gaff2_atom_types()` has no patterns to match, so a
 
 ### Tests Now Available for Execution
 
-- **60 previously-skipped test instances** across 5 test files now execute with optional deps installed
-- **60 of 60 newly-running tests pass** (100% success rate on formerly-skipped tests)
+- **76 previously-skipped test instances** now execute with optional deps installed
+- **76 of 76 newly-running tests pass** (100% success rate on formerly-skipped tests)
 - No new failures introduced by optional dependencies
 - Tests newly executable: test_xtc_reader_parity (20 tests), test_dispatch (23 tests), test_mdcath_extended (4 tests), test_mdcath (2 tests), test_mdtraj (2 tests), plus 9 more partial-skip tests in mixed files
 
@@ -229,14 +228,13 @@ Pre-existing failures (92 test instances) break down by classification:
 
 3. **Phase 2c — Module-level guard + allowlist**
    - Gate optional-dep tests behind a module-keyed guard that counts and allows specific exceptions
-   - Apply to 60 newly-running tests (they all pass)
+   - Apply to 76 newly-running tests (they all pass)
    - Apply to 3 GAFF2-dependent tests (with explicit allowlist noting env-only cause)
    - Apply to test_reference_frame.py's 3 skips
 
 4. **Phase 2d — CI integration**
-   - Add `scripts/fetch_amber_assets.py` call before pytest in CI job
-   - Enable optional-dep test runs: `uv pip install .[dev,molecules,trajectories]`
-   - Optional deps remain optional for baseline (no new CI job required), but enable the 60 tests when installed
+   - Enable optional-dep test runs: `uv pip install .[dev,molecules,trajectories]` (ci.yml:60 currently installs only `.[dev]`)
+   - Optional deps remain optional for baseline (no new CI job required), but enable the 76 tests when installed
 
 ## Observations
 
@@ -244,7 +242,7 @@ Pre-existing failures (92 test instances) break down by classification:
 - **Python 3.11 compatibility**: All optional deps (rdkit 2026.3.1, mdtraj 1.11.0, h5py 3.15.1, tables 3.10.2) install cleanly on Python 3.11.15
 - **Test infrastructure**: No pytest, conftest, or fixture issues encountered when optional deps present
 - **Gating quality**: Skip markers work correctly; all expected tests gate properly
-- **Newly-passing quality**: All 60 previously-skipped tests pass without modification, indicating that gating logic was the only blocker
+- **Newly-passing quality**: All 76 previously-skipped tests pass without modification, indicating that gating logic was the only blocker
 
 ## Summary Statistics
 
@@ -253,14 +251,14 @@ Pre-existing failures (92 test instances) break down by classification:
 | Metric | Baseline | Preflight | Change |
 |--------|----------|-----------|--------|
 | **Total test instances** | 260 | 287 | +27 (+10.4%) |
-| **PASS instances** | 14 | 19 | +5 |
-| **FAIL instances** | 3 | 3 | ±0 |
-| **SKIP instances** | 6 | 1 | -5 |
+| **PASS instances** | 110 | 186 | +76 |
+| **FAIL instances** | 92 | 92 | ±0 |
+| **SKIP instances** | 58 | 9 | -49 |
 | Test files (file count) | 23 | 23 | ±0 |
-| Files with any pass (file count) | 14 | 19 | +5 |
+| Files with passes and zero failures (file count) | 14 | 19 | +5 |
 | Files with any fail (file count) | 3 | 3 | ±0 |
 
-### Newly Passing Test Instances (60 total)
+### Newly Passing Test Instances (76 total)
 
 - test_xtc_reader_parity: 20 tests (was all-skip, now all-pass)
 - test_dispatch: 23 tests (was all-skip, now all-pass)
@@ -272,7 +270,7 @@ Pre-existing failures (92 test instances) break down by classification:
 - test_xtc_distogram_parity: 7 partial (was 7 skip, now 7 pass)
 - test_physics_parity: 1 partial (was 2 skip, now 1 pass)
 
-**60 of 60 newly-executing tests pass (100% success rate).**
+**76 of 76 newly-executing tests pass (100% success rate).**
 
 ### Failing Test Instances (92 total, all environment-only)
 
