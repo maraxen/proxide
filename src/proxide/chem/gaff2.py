@@ -1292,8 +1292,7 @@ def _get_default_rules() -> tuple[list[Gaff2Rule], dict[str, list[str]]]:
         if not rules_path.exists():
             raise Gaff2DefMissingError(
                 f"ATOMTYPE_GFF2.DEF not found at {rules_path}. "
-                f"{pin['license_note']} It is deliberately not bundled in this "
-                "MIT-licensed package's git history. Fetch it from a source checkout "
+                f"{pin['license_note']} It is deliberately excluded from this repository's git history. Fetch it from a source checkout "
                 "with `uv run python scripts/fetch_amber_assets.py` (run from the repo "
                 "root), or set the PROXIDE_GAFF2_DEF environment variable to point at "
                 f"an already-fetched copy. Pinned source: {pin['url']} "
