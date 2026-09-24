@@ -26,13 +26,24 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// Fixtures whose snapshot is EXPECTED to change (e.g. a later step makes a
-/// previously-silently-dropped/zeroed atom into a hard error). Empty means:
-/// every fixture snapshotted at Step 0 must still parse bit-identically after
-/// every later step. Adding an entry here is a reviewed decision, not a
-/// silent allowance -- see ledger B5 (a gate satisfiable by narrowing the
-/// claim): removing a fixture from scope instead of listing it here would be
-/// exactly that anti-pattern.
-const EXPECTED_DIVERGENCES: &[(&str, &str)] = &[];
+/// previously-silently-dropped/zeroed atom into a hard error, or -- as here --
+/// a companion fix in the same sprint corrects a wrong inferred value). Empty
+/// would mean every fixture snapshotted at Step 0 must still parse
+/// bit-identically after every later step. Adding an entry here is a
+/// reviewed decision, not a silent allowance -- see ledger B5 (a gate
+/// satisfiable by narrowing the claim): removing a fixture from scope instead
+/// of listing it here would be exactly that anti-pattern.
+const EXPECTED_DIVERGENCES: &[(&str, &str)] = &[(
+    "tests/data/trajectories/native.pdb",
+    "Step 1 (decision g, same sprint) made proxide_core::infer_element strip a \
+     leading digit before inference. This fixture's ACE/NME methyl hydrogens are \
+     named '1HH3'/'2HH3'/'3HH3' with a blank element column (short line, no cols \
+     77-78). Before Step 1: '1HH3' -> first char '1' -> no match -> silently \
+     defaulted to element \"C\" (wrong -- backlog #5052-adjacent bug named in \
+     decision g). After Step 1: '1HH3' -> strip '1' -> \"HH3\" -> 'H' (correct). \
+     Atoms 1, 3, 4, 20, 21, 22 change element \"C\" -> \"H\"; no other field \
+     changes. This is the intended effect of Step 1, not a Step 2/3 regression.",
+)];
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -256,7 +267,8 @@ fn snapshot_matches_checked_in_baseline() {
     for (fixture, new_line) in &current {
         let new_serialized = serialize_fixture(fixture, &workspace_root().join(fixture));
         let old_line = checked_lines.get(fixture);
-        let changed = old_line.map(|o| o.trim_end_matches(',')) != Some(new_serialized.trim_end_matches(','));
+        let changed =
+            old_line.map(|o| o.trim_end_matches(',')) != Some(new_serialized.trim_end_matches(','));
         if changed {
             let allowed = EXPECTED_DIVERGENCES.iter().any(|(f, _)| f == fixture);
             if !allowed {
