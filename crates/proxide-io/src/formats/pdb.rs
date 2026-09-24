@@ -86,6 +86,15 @@ mod tests {
         err.downcast_ref::<PdbFieldError>()
     }
 
+    /// The workspace root, two levels above this crate (`crates/proxide-io`).
+    fn workspace_root() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("proxide-io is two levels below the workspace root")
+            .to_path_buf()
+    }
+
     #[test]
     fn test_parse_atom_line() {
         let line =
@@ -205,10 +214,11 @@ mod tests {
 
     #[test]
     fn test_malformed_occupancy_is_an_error() {
-        // OBS-105 option a, named test 1/2.
-        let line =
-            "ATOM      1  N   ALA A   1      20.154  29.699   5.276  x.xx 49.05           N  ";
-        let err = parse_one_line(line).unwrap_err();
+        // OBS-105 option a, named test 1/2. Spec-named checked-in fixture:
+        // tests/data/coercion/malformed_occupancy.pdb (occupancy column
+        // holds "x.xx" -- present but unparseable, not blank).
+        let path = workspace_root().join("tests/data/coercion/malformed_occupancy.pdb");
+        let err = parse_pdb_file(&path).unwrap_err();
         let kind_err = downcast_kind(&err).unwrap();
         assert_eq!(
             kind_err.kind,
