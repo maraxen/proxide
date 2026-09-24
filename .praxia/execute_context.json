@@ -1,25 +1,19 @@
 {
   "task_id": "260922_autonomous-loop",
-  "sprint_id": "260923_sprint-22-silent-fallbacks",
-  "sprint_plan_path": ".praxia/sprint_plans/260923_sprint-22-silent-fallbacks.toml",
-  "branch": "autoloop/260923-sprint-22",
-  "git_base_sha": "ddd7e1b",
-  "approved_by": "user, in conversation, 2026-09-23: 'Land it now, strict espaloma and file tech debt to support additional methods. That ALA gap is critical'",
-  "owner_decisions": {"d1_track_r": "land now (CLI fails loudly on Dunbrack .pb.zst until backlog #5244)", "d2_track_c": "strict espaloma default, no auto; gasteiger opt-in; debt #1907 filed for more methods"},
-  "dispatch_mode": "in-place, 3 concurrent tracks (disjoint files); Track Y does not rebuild the extension (orchestrator rebuilds after all tracks)",
-  "tracks": {
-    "r": {"item": "debt-1898", "fixer_model": "sonnet"},
-    "y": {"item": "debt-1901", "fixer_model": "haiku"},
-    "c": {"item": "debt-1900", "fixer_model": "sonnet"}
-  },
-  "parallel_recon": "backlog #5244 (ALA entry for Dunbrack rotlib) read-only research for sprint 23",
-  "prior_sprints": {"18": {"pr": 42}, "19": {"pr": 43}, "20": {"pr": 44}, "21": {"pr": 45}},
+  "sprint_id": "260923_sprint-23-rotlib-ala-entry",
+  "sprint_plan_path": ".praxia/sprint_plans/260923_sprint-23-rotlib-ala-entry.toml",
+  "branch": "autoloop/260923-sprint-23",
+  "git_base_sha": "67e0811",
+  "approved_by": "user, in conversation, 2026-09-23: 'Sprint approved' (decisions a-d as recommended)",
+  "owner_decisions": {"a": "commit regenerated 12.6 MB artifact", "b": "keep 1.540 CB as unverified placeholder; debt #1916", "c": "stop and escalate if drift worsens", "d": "A/B build instead of byte-reproduction", "obs105": "option A: blank occupancy/B-factor -> default, malformed non-blank -> hard error; deeper fix debt #1911"},
+  "dispatch_mode": "in-place, 1 track, sonnet fixer",
+  "tracks": {"a": {"item": "backlog-5244", "fixer_model": "sonnet"}},
+  "prior_sprints": {"18": {"pr": 42}, "19": {"pr": 43}, "20": {"pr": 44}, "21": {"pr": 45}, "22": {"pr": 46}},
   "verify": {
-    "r": {"commits": ["a12de2b", "4294d2f"], "verdict": "PASS after 1 remediation", "history": "reviewer failed item 6: drift test returned silently on UnknownAa(ALA) (ledger B3); remediation asserts the error via expect_err + matches!; control (GLY) fails. Leftover MINOR: clippy needless_return in that test file (CI clippy does not lint tests)."},
-    "y": {"commits": ["47c397d"], "verdict": "PASS", "history": "orchestrator-verified scope + no dangling refs; extension rebuilt (uv run --with maturin maturin develop) and confirmed the three stubs are gone"},
-    "c": {"commits": ["5374304"], "verdict": "PASS 8/8 + A-F", "history": "converting return-bool tests to asserts exposed wrong test expectations (vdW rmin_half values under known_masses; bond key c3-op -> cx-op), corrected and verified against load_gaff2_parameters(); interrupted once by API session limit and resumed"}
+    "a": {"commits": ["5b6515c", "1a3f446", "d14ba03", "a208572"], "verdict": "PASS 8/8", "history": "Mosaist ALA probe FAITHFUL (1 bin, 1 rotamer, p=1); artifact sha256 13264f97 -> a923b1c0, B == A + one ALA entry; drift max|d| 0.043081 -> 0.031773, mean 0.004591 -> 0.003517, matched 54 / missing 2"}
   },
-  "ci": "35949613239 green on all 4 jobs",
-  "closed": {"debt_resolved": [1898, 1900, 1901]},
-  "notes": ["push produced no ruleset-bypass message: owner appears to have fixed the ruleset"]
+  "ci": "36035262612 green on all 4 jobs",
+  "closed": {"backlog_completed": [5244]},
+  "debts_filed": [1911, 1916, 1917],
+  "notes": ["push still reports 'Bypassed rule violations' - ruleset not yet fixed by owner"]
 }
