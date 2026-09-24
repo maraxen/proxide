@@ -112,28 +112,22 @@ fn measure_loadpb_drift_vs_master() {
     // rotamer set — so THIS test, run against that library, is expected to hit that error
     // until #5244 lands. Any other error, or a bare Ok, means the library or the code
     // changed underneath this assumption and the drift comparison below needs a fresh look.
-    let contact_list = match cf.contacts(&all_res(&cf), 0.0) {
-        Ok(list) => list,
-        Err(ConFindError::RotlibError(RotlibError::UnknownAa(aa))) if aa == "ALA" => {
-            log::warn!(
-                "SKIP: {} has no ALA entry (backlog #5244) — ConFind now fails loudly on \
-                 this per debt #1898 / Sprint 22 decision d1, which is the intended behavior, \
-                 not a regression this drift test should chase.",
-                pb_path
-            );
-            return;
-        }
-        Err(e) => panic!(
-            "contacts() failed with an unexpected error (expected UnknownAa(\"ALA\") per \
-             backlog #5244, since ALA support has not landed): {e}"
-        ),
-    };
-
-    assert!(
-        !contact_list.pairs.is_empty(),
-        "contact list must not be empty"
+    let err = cf.contacts(&all_res(&cf), 0.0).expect_err(
+        "contacts() must currently fail with UnknownAa(\"ALA\") — the Dunbrack .pb.zst \
+             library has no ALA entry (backlog #5244). If this now succeeds, #5244 has \
+             landed: update this test to assert Ok(...) and run the full drift comparison \
+             below instead of this early-exit branch.",
     );
+    assert!(
+        matches!(&err, ConFindError::RotlibError(RotlibError::UnknownAa(a)) if a == "ALA"),
+        "backlog #5244: expected ConFindError::RotlibError(RotlibError::UnknownAa(\"ALA\")), got {err:?}"
+    );
+    return;
+}
 
+/// Re-enable when backlog #5244 lands and ALA is added to the Dunbrack library.
+#[allow(dead_code)]
+fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactList) {
     // Build expected map: canonical key (chain_a, res_a, chain_b, res_b) → cd
     let expected: HashMap<(String, i32, String, i32), f64> = REF_CONTACTS
         .iter()
