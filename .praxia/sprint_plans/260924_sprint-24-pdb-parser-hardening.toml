@@ -1,0 +1,105 @@
+[sprint]
+sprint_id = "260924_sprint-24-pdb-parser-hardening"
+sprint_num = 24
+name = "Sprint 24 — PDB fixed-column parser hardening: one shared field reader, no silent drops/zeros (debts #1776 #1883 #1885 #1886, OBS-105 option a)"
+description = "Three hand-rolled PDB readers (proxide-io pdb.rs, confind coords.rs first pass, fixer loop_model.rs) silently drop, zero-fill, or panic on malformed input. Introduce one char-safe fixed-column field reader in proxide-io with a structured error, make pdb.rs fail loud per OBS-105(a), and route confind and fixer through it."
+context = '''
+task_id: 260922_autonomous-loop (loop iteration 7). Branch autoloop/260924-sprint-24 stacked on autoloop/260923-sprint-23 (PR #47).
+Recon (sonnet, 260924) verified:
+- proxide-io/src/formats/pdb.rs parse_atom_line L14: <54 bytes -> None -> atom dropped (L114-119, #1883); byte slices line[0..6],[6..11],[12..16],[76..78] (L19,31-40,62-68) panic on multibyte UTF-8 (#1776); parse_i32(...)? drops atom on bad serial/res_seq; occupancy/B unwrap_or(1.0/0.0) for blank AND malformed (L41-50); unparseable MODEL keeps previous model (L103-107).
+- confind coords.rs L265-279 first pass re-slices columns with unwrap_or(0.0) coords, then aligns with proxide_io::parse_pdb_file by atom index (L282, L304-312) (#1885).
+- proxide_fixer loop_model.rs L343-429 parse_loop_residues: .get() slicing but res_id/serial/coords unwrap_or(0/0.0) (#1886); own extract_element_from_name L407 duplicates proxide-core infer_element (ledger A5).
+- IOParseError/CIFRegistry cfg(feature="ssbond") at proxide-io lib.rs:15-17,24-36; proxide-wasm depends on proxide-io default-features=false, features=["pdb"].
+- Dependency graph: confind, fixer, tmalign, wasm all already depend on proxide-io -> a new proxide-io module adds no edge.
+- No fixture contains hex/hybrid-36 serials, >99999 atoms, non-ASCII, malformed occupancy; no caller/test depends on silent drops (gap: not proven).
+- pqr.rs res_seq unwrap_or(0) L46-51 and .ok()? line drop; mmcif.rs serial/res_seq unwrap_or(0) L207-214, row-length mismatch skip L82-84 -> OUT of scope, filed as new debts.
+- No PROX- code registry in code (OBS-110 not implemented).
+Spec: OBS-105 amended (option a) names tests formats::pdb::tests::test_malformed_occupancy_is_an_error and test_blank_occupancy_takes_documented_default and fixture tests/data/coercion/malformed_occupancy.pdb.
+Rules: CLAUDE.md fail-fast / ledger A1-A6, B1-B9; never `git add -A`; RUSTC_WRAPPER="" for cargo; never write the main checkout or /home/marielle/projects/proxide/data; no whole-suite local runs.
+'''
+max_fix_retries = 1
+worktree_shadow_mode = false
+revision = '''
+Revised after an Opus spec-challenger review (REVISE: 0 FATAL, 7 MAJOR, 7 MINOR; record 260924_loop_sprint24_coherence). Orchestrator-verified:
+loop_model.rs:489-493 extract_element_from_name already strips digits then calls infer_element (obj 1 true -> do NOT naively replace; recon's A5 claim was wrong);
+golden is crates/proxide-confind/tests/data/dihedral_golden_316d1ab.json; mosaist golden test #[ignore] at coords.rs:1090 (obj 5 true);
+OpenMM pdbfile.py _formatIndex: beyond 10**places writes '%X' of (index - 10**places + 10*16**(places-1)) % 16**places -> residue 10000 = 'A000'
+(letter-led, already an error under decision a), but the modulo wraps to decimal-looking values at residue >= 34576 / serial >= 755360 (obj 3's
+'2710' example corrected; silent-merge risk real after wrap). Hex 'A000'-'A009' coincide with hybrid-36, diverge from 'A010'.
+'''
+
+[decisions]
+a_serial_encoding = "RECOMMENDED: non-decimal serial or res_seq (OpenMM letter-led hex 'A000'.. or hybrid-36) -> hard PdbFieldError naming field/columns/raw text (today: silent atom drop). Debt: explicit hex/hybrid-36 decoding behind a named option. IMPACT: OpenMM-written PDBs with >9999 residues or >99999 atoms (solvated prolix systems) will now fail loudly instead of silently losing atoms."
+b_scope = "RECOMMENDED: PDB readers only; PQR (res_seq unwrap_or(0), .ok()? drops) and mmCIF (serial/res_seq unwrap_or(0), row-length skip) filed as debts for sprint 25 on the same helper."
+c_short_line = "RECOMMENDED: record type from line[0..6]; ATOM/HETATM shorter than 54 chars -> LineTooShort; a trailing field is read from the partial slice get(a..min(b,len)) and is blank only if that slice is empty/whitespace (a trimmed length-77 'N ' element is read, not ignored)."
+d_residue_wrap = "RECOMMENDED: error when a (chain, res_seq, icode) key reappears non-contiguously within one chain and model (catches OpenMM hex wraparound and other collisions that would silently merge residues in ProcessedStructure::from_raw)."
+e_nonfinite = "RECOMMENDED: nan/inf/infinity in any numeric field -> NonFinite hard error (Rust parse accepts them; CLAUDE.md forbids NaN-as-unknown)."
+f_bytes = "RECOMMENDED: read lines as bytes (read_until newline); non-UTF-8/non-ASCII content in records proxide does not parse (REMARK, AUTHOR, ...) is accepted; ATOM/HETATM/MODEL require line[..min(len,78)].is_ascii() else NonAscii with line+column."
+g_infer_element_digits = "RECOMMENDED: move leading-digit stripping into canonical proxide_core infer_element in its own commit with a corpus test (also fixes the latent '1HB' -> C bug at pdb.rs:68 when the element column is blank); loop_model's wrapper then becomes a direct call only if the corpus test proves equivalence."
+
+[[tracks]]
+id = "a"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1776+1883"
+phase_name = "Track A — proxide-io record-level fail-loud PDB reader (OBS-105 a)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop. Report every contradiction with actual values. Separate commits where marked.
+Step 0 (own commit, BEFORE any parser change): for EVERY *.pdb under tests/data and crates/*/tests/data, snapshot the full parse_pdb_file RawAtomData
+(f32 bit patterns of coords/occupancy/B, elements, atom names, serials, res_ids, icodes, chains, model_ids) into checked-in
+crates/proxide-io/tests/data/parse_snapshot_base.json via a test-only generator. Also record in the report, for the six confind golden fixtures,
+the confind first-pass atom-line count vs parse_pdb_file count.
+Step 1 (own commit) — decision g: proxide_core infer_element strips leading digits before inference; corpus test incl. '1HB'->H, '2HG1'->H,
+'1CL'->Cl (loop_model test ~L1387), 'CA'->C (as today); uv run --no-project pytest tests/test_element_inference_conformance.py -q.
+Step 2 — new crates/proxide-io/src/formats/pdb_fields.rs (compiled under feature "pdb"):
+ - PdbFieldError (#[non_exhaustive], Error+Display): 1-based line, record, field (&'static str), 1-based columns, raw text (lossy; >80 chars truncated WITH a '…(+N bytes)' marker), kind {NonAscii, LineTooShort, Unparseable, NonFinite, InvalidModel, ResidueReappears}. Display includes literal const PDB_MALFORMED_RECORD_CODE = "PROX-IO-MALFORMED-RECORD".
+ - Byte-level line reading (decision f); record dispatch on line.get(0..6); helpers required_f64 / required_i32 / optional_f64_blank_default(default) with partial-slice semantics (decision c); every float helper rejects non-finite (decision e).
+ - Record-level API: pub fn parse_pdb_records<R: BufRead>(reader) -> Result<Vec<PdbAtomRecord>, PdbFieldError>; PdbAtomRecord carries every field parse_atom_line produces today PLUS f64 coords and line number. Parse f32 fields exactly as today (parse::<f32> of the same text, not f64-then-cast) so the snapshot stays bit-identical.
+ - MODEL: parse the first token after 'MODEL' (accept non-standard 'MODEL 1'); absent/non-numeric -> InvalidModel.
+ - Residue reappearance check (decision d) within (model, chain).
+Step 3 — pdb.rs parse_pdb_from_reader built on parse_pdb_records; no drop paths remain; errors mapped into the existing Box<dyn Error> (Python keeps ValueError). Update test_parse_atom_line_edge_cases to kind-specific Err.
+Step 4 — tests: exact OBS-105 names formats::pdb::tests::test_malformed_occupancy_is_an_error (checked-in tests/data/coercion/malformed_occupancy.pdb) and test_blank_occupancy_takes_documented_default; plus kind+field-specific: non-ASCII atom name; Latin-1 REMARK line (fixture bytes) parses Ok; bare 'ATOM' line; bad x; '     nan' in x; 'nan' in B-factor; hex serial 'A0000'; hex res_seq 'A000'; wraparound duplicate residue; 'MODEL 1' Ok; 'MODEL x' Err; length-77 element line; snapshot test: every base fixture parses to exactly the Step-0 snapshot (or an error listed in a checked-in expected-errors list with justification).
+Do NOT touch lib.rs IOParseError cfg (unused by pdb.rs; out of scope).
+Step 5 — run: cargo test -p proxide-io; cargo test -p proxide-core chem::; cargo test -p proxide-tmalign; cargo hack check -p proxide-io --feature-powerset --exclude-features hdf5,fetching (if cargo-hack is absent, check default / --no-default-features --features pdb / pdb,ssbond / full and say so); cargo check -p proxide-wasm; fmt; cargo clippy -p proxide-io -p proxide-core --lib -- -D warnings; rebuild extension (RUSTC_WRAPPER="" uv run --no-project --with maturin maturin develop) then uv run --no-project pytest tests/io/parsing -q and tests/test_rust_integration.py -q.
+File debts (praxia debt add, unsandboxed for DB): hex/hybrid-36 decoding (decision a); PQR silent zeros/drops; mmCIF silent zeros/row skip; register PROX-IO-MALFORMED-RECORD when the OBS-110 registry exists.
+Commits end with:
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+VERIFY (execute; do not trust the report): 1) snapshot commit precedes the parser change and the snapshot test passes; 2) the two OBS-105 named tests pass on checked-in fixtures; 3) each malformed-input test asserts kind AND field (not is_err); 4) independent controls: in a temp copy, set one fixture's occupancy to 'x.xx', one coord to '     nan', and make one residue reappear -> each errors with the right kind; a Latin-1 REMARK parses Ok; 5) no unwrap_or / `?`-drop / `.ok()` on ATOM fields in pdb.rs or pdb_fields.rs (read the code, not only rg); 6) PROX-IO-MALFORMED-RECORD is a literal const; truncation marker present; 7) infer_element commit separate with corpus test, conformance test passes; 8) feature matrix + wasm check + tmalign + tests/io/parsing + test_rust_integration pass; fmt + clippy clean; debts filed. PASS = all 8.
+'''
+return_key = "a"
+
+[[tracks]]
+id = "b"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1885+1886"
+phase_name = "Track B — confind coords.rs and fixer loop_model.rs on parse_pdb_records"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop. Starts after Track A lands. Report contradictions with values.
+1. confind coords.rs load_pdb_f64_with_options: replace BOTH the first-pass hand slicing (~L265-279) and the positional alignment with parse_pdb_file (~L282, L304-312) by one call to proxide_io::formats::pdb_fields::parse_pdb_records, taking f64 coords from the same record; DELETE the f32 fallback branch used when atom_idx >= f64_coords.len(). Keep molecule-type / altloc / model filtering behaviour identical (state today's behaviour before changing it).
+2. Golden: if Track A Step 0 showed first-pass count == parse_pdb_file count for all six fixtures, crates/proxide-confind/tests/data/dihedral_golden_316d1ab.json must stay bit-identical; run golden_dihedral_bit_equality_committed_fixtures by name AND `-- --ignored golden_dihedral_bit_equality_mosaist_fixtures` (must run, not skip). If counts differed, STOP and report the diff — do not regenerate the golden.
+3. fixer loop_model.rs parse_loop_residues (already Result<_, String>, single caller ~L217): build from parse_pdb_records instead of hand slicing; keep altloc-retaining and by-chain-id semantics (do NOT use Topology::from_raw_atom_data); unparseable res_id/serial/coords now error (map PdbFieldError into the String); extract_element_from_name becomes a direct infer_element call only if Track A's corpus test proves equivalence (callers: wrapper ~L489-493, make_atom ~L766).
+4. Tests: coords.rs — garbage x errors naming line + x; non-ASCII errors without panic; loop_model — garbage res_id errors; existing loop_model tests incl. ~L1387 pass.
+5. Run: cargo test -p proxide-confind (+ the two golden tests above, and the drift test with --ignored); cargo test -p proxide_fixer (list what ran); fmt; clippy -p proxide-confind -p proxide_fixer --lib -- -D warnings.
+Commits end with:
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+VERIFY (execute): 1) coords.rs has no hand column slicing, no second parse, no positional alignment, and the f32 fallback branch is gone (read the function); 2) loop_model.rs has no hand column slicing or unwrap_or(0/0.0) on PDB fields; 3) both golden tests executed (show 'running N tests' with the mosaist one run, not ignored) and the golden file is unchanged (git diff); 4) malformed-input tests assert specific kind/field; 5) loop_model altloc and chain semantics unchanged (altloc fixture test, existing or new); 6) confind drift test --ignored still reports max|d| <= 0.031773; 7) confind + fixer tests pass, fmt + clippy clean. PASS = all 7.
+'''
+return_key = "b"
+
+[orchestration]
+sequential = ["a", "b"]
+concurrent = []
+
