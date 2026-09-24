@@ -1,19 +1,13 @@
 {
   "task_id": "260922_autonomous-loop",
-  "sprint_id": "260923_sprint-23-rotlib-ala-entry",
-  "sprint_plan_path": ".praxia/sprint_plans/260923_sprint-23-rotlib-ala-entry.toml",
-  "branch": "autoloop/260923-sprint-23",
-  "git_base_sha": "67e0811",
-  "approved_by": "user, in conversation, 2026-09-23: 'Sprint approved' (decisions a-d as recommended)",
-  "owner_decisions": {"a": "commit regenerated 12.6 MB artifact", "b": "keep 1.540 CB as unverified placeholder; debt #1916", "c": "stop and escalate if drift worsens", "d": "A/B build instead of byte-reproduction", "obs105": "option A: blank occupancy/B-factor -> default, malformed non-blank -> hard error; deeper fix debt #1911"},
-  "dispatch_mode": "in-place, 1 track, sonnet fixer",
-  "tracks": {"a": {"item": "backlog-5244", "fixer_model": "sonnet"}},
-  "prior_sprints": {"18": {"pr": 42}, "19": {"pr": 43}, "20": {"pr": 44}, "21": {"pr": 45}, "22": {"pr": 46}},
-  "verify": {
-    "a": {"commits": ["5b6515c", "1a3f446", "d14ba03", "a208572"], "verdict": "PASS 8/8", "history": "Mosaist ALA probe FAITHFUL (1 bin, 1 rotamer, p=1); artifact sha256 13264f97 -> a923b1c0, B == A + one ALA entry; drift max|d| 0.043081 -> 0.031773, mean 0.004591 -> 0.003517, matched 54 / missing 2"}
-  },
-  "ci": "36035262612 green on all 4 jobs",
-  "closed": {"backlog_completed": [5244]},
-  "debts_filed": [1911, 1916, 1917],
-  "notes": ["push still reports 'Bypassed rule violations' - ruleset not yet fixed by owner"]
+  "sprint_id": "260924_sprint-24-pdb-parser-hardening",
+  "sprint_plan_path": ".praxia/sprint_plans/260924_sprint-24-pdb-parser-hardening.toml",
+  "branch": "autoloop/260924-sprint-24",
+  "stacked_on": "autoloop/260923-sprint-23 (PR #47)",
+  "approved_by": "user, in conversation, 2026-09-24: 'Sprint approved' (decisions a-g as recommended)",
+  "owner_decisions": {"a": "non-decimal serial/res_seq -> hard error; debt for hex/hybrid-36 decoding", "b": "PDB only; PQR/mmCIF debts for sprint 25", "c": "short line < 54 error; partial trailing field blank only if empty/whitespace", "d": "non-contiguous residue reappearance -> error", "e": "nan/inf -> NonFinite error", "f": "byte-level reading; non-ASCII allowed in unparsed records", "g": "leading-digit strip in canonical infer_element, own commit"},
+  "dispatch_mode": "in-place, sequential a -> b, sonnet fixers",
+  "tracks": {"a": {"item": "debt-1776+1883", "fixer_model": "sonnet"}, "b": {"item": "debt-1885+1886", "fixer_model": "sonnet"}},
+  "prior_sprints": {"18": {"pr": 42}, "19": {"pr": 43}, "20": {"pr": 44}, "21": {"pr": 45}, "22": {"pr": 46}, "23": {"pr": 47}},
+  "verify": {}
 }
