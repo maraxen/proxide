@@ -1,7 +1,8 @@
 mod common;
 
 use common::load_real_backbone;
-use proxide_confind::ConFind;
+use proxide_confind::{ConFind, ConFindError};
+use proxide_rotlib::RotlibError;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -105,9 +106,28 @@ fn measure_loadpb_drift_vs_master() {
     };
 
     let cf = ConFind::new(rlib, bb.clone(), false);
-    let contact_list = cf
-        .contacts(&all_res(&cf), 0.0)
-        .expect("contacts should succeed");
+    // The Dunbrack-derived .pb.zst library at PROXIDE_ROTLIB_PB has no ALA entry (verified
+    // 2026-09-23, backlog #5244). Per Sprint 22 decision d1 (debt #1898), ConFind now fails
+    // loudly with UnknownAa("ALA") instead of silently omitting ALA from every residue's
+    // rotamer set — so THIS test, run against that library, is expected to hit that error
+    // until #5244 lands. Any other error, or a bare Ok, means the library or the code
+    // changed underneath this assumption and the drift comparison below needs a fresh look.
+    let contact_list = match cf.contacts(&all_res(&cf), 0.0) {
+        Ok(list) => list,
+        Err(ConFindError::RotlibError(RotlibError::UnknownAa(aa))) if aa == "ALA" => {
+            log::warn!(
+                "SKIP: {} has no ALA entry (backlog #5244) — ConFind now fails loudly on \
+                 this per debt #1898 / Sprint 22 decision d1, which is the intended behavior, \
+                 not a regression this drift test should chase.",
+                pb_path
+            );
+            return;
+        }
+        Err(e) => panic!(
+            "contacts() failed with an unexpected error (expected UnknownAa(\"ALA\") per \
+             backlog #5244, since ALA support has not landed): {e}"
+        ),
+    };
 
     assert!(
         !contact_list.pairs.is_empty(),
