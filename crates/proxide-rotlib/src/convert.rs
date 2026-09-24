@@ -380,9 +380,15 @@ mod tests {
             .expect("ALA entry missing with synthesis ON");
         assert_eq!(ala.bins.len(), 1, "ALA must have exactly 1 bin");
         assert_eq!(ala.bins[0].rotamers.len(), 1, "ALA bin must have 1 rotamer");
-        assert_eq!(ala.bins[0].rotamers[0].prob, 1.0, "ALA rotamer prob must be 1.0");
+        assert_eq!(
+            ala.bins[0].rotamers[0].prob, 1.0,
+            "ALA rotamer prob must be 1.0"
+        );
         assert_eq!(ala.num_chi, 0, "ALA num_chi must be 0");
-        assert!(ala.bins[0].rotamers[0].chi.is_empty(), "ALA chi must be empty");
+        assert!(
+            ala.bins[0].rotamers[0].chi.is_empty(),
+            "ALA chi must be empty"
+        );
         assert_eq!(ala.default_bin, 0);
         assert_eq!(ala.atom_names, vec!["CB".to_string()]);
 
@@ -392,13 +398,9 @@ mod tests {
         let c = BACKBONE_C;
         let n = BACKBONE_N;
         let ca = BACKBONE_CA;
-        let torsion = -proxide_geometry::geometry::angles::dihedral_angle(
-            &c,
-            &n,
-            &ca,
-            &[cb.x, cb.y, cb.z],
-        )
-        .to_degrees();
+        let torsion =
+            -proxide_geometry::geometry::angles::dihedral_angle(&c, &n, &ca, &[cb.x, cb.y, cb.z])
+                .to_degrees();
         assert!(
             (torsion - (-119.7)).abs() < 0.5,
             "synthetic ALA CB torsion: expected -119.7 +-0.5, got {:.3}",

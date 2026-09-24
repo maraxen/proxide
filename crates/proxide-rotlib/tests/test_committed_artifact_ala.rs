@@ -14,8 +14,13 @@ fn committed_artifact_path() -> std::path::PathBuf {
 #[test]
 fn test_committed_artifact_has_synthetic_ala() {
     let path = committed_artifact_path();
-    let lib = RotamerLibrary::load_pb(&path)
-        .unwrap_or_else(|e| panic!("failed to load committed artifact at {}: {}", path.display(), e));
+    let lib = RotamerLibrary::load_pb(&path).unwrap_or_else(|e| {
+        panic!(
+            "failed to load committed artifact at {}: {}",
+            path.display(),
+            e
+        )
+    });
 
     assert!(
         lib.contains_aa("ALA"),
@@ -62,10 +67,15 @@ fn test_committed_artifact_has_synthetic_ala() {
             [0.551, 1.420, 0.0],
         )
         .expect("place_rotamer(\"ALA\", ...) failed on committed artifact");
-    assert_eq!(placed.atoms.len(), 1, "ALA should place exactly 1 sidechain atom (CB)");
+    assert_eq!(
+        placed.atoms.len(),
+        1,
+        "ALA should place exactly 1 sidechain atom (CB)"
+    );
     let cb = placed.atoms[0].xyz;
     let ca = [0.0_f64, 0.0, 0.0];
-    let d_ca_cb = ((cb[0] - ca[0]).powi(2) + (cb[1] - ca[1]).powi(2) + (cb[2] - ca[2]).powi(2)).sqrt();
+    let d_ca_cb =
+        ((cb[0] - ca[0]).powi(2) + (cb[1] - ca[1]).powi(2) + (cb[2] - ca[2]).powi(2)).sqrt();
     assert!(
         (d_ca_cb - 1.540).abs() < 0.01,
         "CA-CB bond length should be ~1.540 A, got {:.4}",

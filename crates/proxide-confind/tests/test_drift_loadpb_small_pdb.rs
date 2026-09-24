@@ -1,8 +1,7 @@
 mod common;
 
 use common::load_real_backbone;
-use proxide_confind::{ConFind, ConFindError};
-use proxide_rotlib::RotlibError;
+use proxide_confind::ConFind;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -69,7 +68,31 @@ const REF_CONTACTS: &[(&str, i32, &str, i32, f64)] = &[
     ("B", 6, "B", 7, 0.001298),
 ];
 
-const TOLERANCE: f64 = 1e-4;
+// Per-pair "notable drift" report threshold. This is NOT the pass/fail gate (see
+// BASELINE_MAX_DELTA_BEFORE below) -- it only controls which pairs get listed in the
+// "pairs above threshold" section of the printed report.
+const REPORT_TOLERANCE: f64 = 1e-4;
+
+/// BEFORE baseline (backlog #5244, decision c): re-measured 2026-09-23 on the SAME
+/// fixture (small.pdb + the pre-#5244 proxide-rotlib-dunbrack2010-ccd.pb.zst, sha256
+/// 13264f972b782970141032617e1395932714abece81d27980b5749e15268579b, ALA silently
+/// omitted from contact calculations) and the SAME metric (max|delta| across matched
+/// REF_CONTACTS pairs), using code checked out at 47c397d (the parent of a12de2b, i.e.
+/// before ConFind started propagating rotamer-library errors instead of silently
+/// dropping unknown amino acids). Obtained via `git worktree add target/before-47c397d
+/// 47c397d` from this worktree and running this same test there with
+/// PROXIDE_ROTLIB_PB pointed at that worktree's own (pre-#5244) copy of the artifact.
+/// Full report: target/logs/trackA23_step6_BEFORE_full_report.log.
+///
+/// This reproduces the max|delta| = 0.043081 previously cited in the #869 record
+/// (spec-challenger review 260923_loop_sprint23_coherence, objection #6) to 6 decimal
+/// places, confirming that citation was measuring the same fixture/metric.
+const BASELINE_MAX_DELTA_BEFORE: f64 = 0.043081;
+const BASELINE_MEAN_DELTA_BEFORE: f64 = 0.004591;
+const BASELINE_MEDIAN_DELTA_BEFORE: f64 = 0.000830;
+/// BEFORE matched 54 of 56 REF_CONTACTS pairs (2 missing, 2 unexpected-in-actual).
+const BASELINE_MATCHED_COUNT_BEFORE: usize = 54;
+const BASELINE_MISSING_BEFORE: usize = 2;
 
 fn all_res(cf: &ConFind) -> Vec<proxide_confind::ResidueIndex> {
     (0..cf.n_residues() as u32)
@@ -77,56 +100,73 @@ fn all_res(cf: &ConFind) -> Vec<proxide_confind::ResidueIndex> {
         .collect()
 }
 
+/// Default path to the committed rotamer-library artifact, resolved relative to this
+/// crate's manifest dir (not the workspace root or an external main-checkout path) so
+/// the test is reproducible from a fresh clone of this worktree without depending on
+/// any path outside it. Override with PROXIDE_ROTLIB_PB for ad hoc comparisons against
+/// a different build (e.g. an A/B regeneration check).
+fn default_pb_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst"
+    ))
+}
+
 #[test]
 #[ignore]
 fn measure_loadpb_drift_vs_master() {
-    let pb_path = std::env::var("PROXIDE_ROTLIB_PB").unwrap_or_else(|_| {
-        "/home/marielle/projects/proxide/data/rotlibs/proxide-rotlib-bbdep2010.pb.zst".to_string()
+    let pb_path = std::env::var("PROXIDE_ROTLIB_PB")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| default_pb_path());
+
+    // Fail-fast (CLAUDE.md): a missing or unparseable input panics. This test's default
+    // library path is the artifact committed to this worktree (backlog #5244), so
+    // "missing" now means something is actually broken, not "Mosaist/the artifact
+    // wasn't regenerated yet" -- there is nothing left to silently skip past.
+    assert!(
+        pb_path.exists(),
+        "rotamer library not found at {} -- this is a fail-loud test, not a skip. If \
+         PROXIDE_ROTLIB_PB is unset, the default is this worktree's own committed \
+         artifact; see crates/proxide-rotlib/README.md for the regeneration recipe.",
+        pb_path.display()
+    );
+
+    let bb = load_real_backbone().unwrap_or_else(|| {
+        panic!(
+            "small.pdb fixture not found at the configured PDB_PATH (see \
+             crates/proxide-confind/tests/common/mod.rs::real_pdb_path) -- this is a \
+             fail-loud test, not a skip"
+        )
     });
 
-    let pb_path_obj = std::path::Path::new(&pb_path);
-    if !pb_path_obj.exists() {
-        log::warn!("SKIP: protobuf library not found at {}", pb_path);
-        return;
-    }
-
-    let bb = match load_real_backbone() {
-        Some(v) => v,
-        None => {
-            log::warn!("SKIP: small.pdb backbone not found");
-            return;
-        }
-    };
-
-    let rlib = match proxide_rotlib::RotamerLibrary::load_pb(pb_path_obj) {
-        Ok(v) => Arc::new(v),
-        Err(e) => {
-            panic!("Failed to load protobuf library from {}: {}", pb_path, e);
-        }
-    };
+    let rlib = proxide_rotlib::RotamerLibrary::load_pb(&pb_path).unwrap_or_else(|e| {
+        panic!(
+            "failed to load protobuf library from {}: {}",
+            pb_path.display(),
+            e
+        )
+    });
+    let rlib = Arc::new(rlib);
 
     let cf = ConFind::new(rlib, bb.clone(), false);
-    // The Dunbrack-derived .pb.zst library at PROXIDE_ROTLIB_PB has no ALA entry (verified
-    // 2026-09-23, backlog #5244). Per Sprint 22 decision d1 (debt #1898), ConFind now fails
-    // loudly with UnknownAa("ALA") instead of silently omitting ALA from every residue's
-    // rotamer set — so THIS test, run against that library, is expected to hit that error
-    // until #5244 lands. Any other error, or a bare Ok, means the library or the code
-    // changed underneath this assumption and the drift comparison below needs a fresh look.
-    let err = cf.contacts(&all_res(&cf), 0.0).expect_err(
-        "contacts() must currently fail with UnknownAa(\"ALA\") — the Dunbrack .pb.zst \
-             library has no ALA entry (backlog #5244). If this now succeeds, #5244 has \
-             landed: update this test to assert Ok(...) and run the full drift comparison \
-             below instead of this early-exit branch.",
-    );
+    let contact_list = cf.contacts(&all_res(&cf), 0.0).unwrap_or_else(|e| {
+        panic!(
+            "contacts() failed: {:?} -- if this is RotlibError::UnknownAa(\"ALA\"), the \
+             library at {} is missing the synthetic ALA entry from backlog #5244; \
+             rebuild it via the recipe in crates/proxide-rotlib/README.md",
+            e,
+            pb_path.display()
+        )
+    });
+
     assert!(
-        matches!(&err, ConFindError::RotlibError(RotlibError::UnknownAa(a)) if a == "ALA"),
-        "backlog #5244: expected ConFindError::RotlibError(RotlibError::UnknownAa(\"ALA\")), got {err:?}"
+        !contact_list.pairs.is_empty(),
+        "contact list must not be empty"
     );
-    return;
+
+    run_drift_comparison(&cf, &contact_list);
 }
 
-/// Re-enable when backlog #5244 lands and ALA is added to the Dunbrack library.
-#[allow(dead_code)]
 fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactList) {
     // Build expected map: canonical key (chain_a, res_a, chain_b, res_b) → cd
     let expected: HashMap<(String, i32, String, i32), f64> = REF_CONTACTS
@@ -134,13 +174,20 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
         .map(|&(ca, ra, cb, rb, cd)| ((ca.to_string(), ra, cb.to_string(), rb), cd))
         .collect();
 
-    // Collect deltas
+    // Collect deltas. Missing reference pairs (present in REF_CONTACTS but absent from
+    // actual) count as delta = |reference| -- a fully-dropped contact is not "no
+    // evidence of drift", it is the largest possible drift for that pair (B3/B4-class
+    // failure mode this project's CLAUDE.md warns about: a detector whose silence on a
+    // missing case reads as success). This also means max_delta can never silently be
+    // -inf: REF_CONTACTS is non-empty, so deltas is never empty once missing pairs are
+    // folded in, even if contact_list.pairs were somehow empty (guarded separately above).
     let mut deltas: Vec<f64> = Vec::new();
     let mut matched_count = 0;
     let mut missing_from_actual = 0;
     let mut unexpected_in_actual = 0;
     let mut exceeding_tolerance = 0;
     let mut largest_drift: Vec<(String, i32, String, i32, f64, f64, f64)> = Vec::new();
+    let mut missing_pairs: Vec<(String, i32, String, i32, f64)> = Vec::new();
 
     // Check all actual pairs against expected
     for (&(ri_a, ri_b), &actual) in contact_list.pairs.iter().zip(&contact_list.degrees) {
@@ -158,7 +205,7 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
             deltas.push(delta);
             matched_count += 1;
 
-            if delta >= TOLERANCE {
+            if delta >= REPORT_TOLERANCE {
                 exceeding_tolerance += 1;
             }
 
@@ -176,7 +223,7 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
         }
     }
 
-    // Check for missing pairs
+    // Check for missing pairs -- and fold each into deltas as delta = |reference|.
     let actual_pairs: std::collections::HashSet<(String, i32, String, i32)> = contact_list
         .pairs
         .iter()
@@ -192,44 +239,41 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
         })
         .collect();
 
-    for &(ca, ra, cb, rb, _) in REF_CONTACTS {
+    for &(ca, ra, cb, rb, reference) in REF_CONTACTS {
         let key = (ca.to_string(), ra, cb.to_string(), rb);
         if !actual_pairs.contains(&key) {
             missing_from_actual += 1;
+            deltas.push(reference.abs());
+            missing_pairs.push((ca.to_string(), ra, cb.to_string(), rb, reference));
         }
     }
 
     // Sort largest_drift by delta descending
     largest_drift.sort_by(|a, b| b.6.partial_cmp(&a.6).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Compute statistics
+    // Compute statistics. deltas is guaranteed non-empty here: REF_CONTACTS is a
+    // non-empty const, and every one of its pairs contributes exactly one delta (either
+    // matched or folded-in-as-missing above) -- so max_delta can never default to -inf.
+    assert!(
+        !deltas.is_empty(),
+        "internal invariant violated: deltas must be non-empty whenever REF_CONTACTS is \
+         non-empty (every reference pair is either matched or counted as missing)"
+    );
     let max_delta = deltas.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let mean_delta = if !deltas.is_empty() {
-        deltas.iter().sum::<f64>() / deltas.len() as f64
-    } else {
-        0.0
-    };
+    let mean_delta = deltas.iter().sum::<f64>() / deltas.len() as f64;
     let mut sorted_deltas = deltas.clone();
     sorted_deltas.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let median_delta = if sorted_deltas.is_empty() {
-        0.0
-    } else if sorted_deltas.len() % 2 == 0 {
+    let median_delta = if sorted_deltas.len() % 2 == 0 {
         (sorted_deltas[sorted_deltas.len() / 2 - 1] + sorted_deltas[sorted_deltas.len() / 2]) / 2.0
     } else {
         sorted_deltas[sorted_deltas.len() / 2]
     };
 
-    // Enforce drift threshold: max_delta must not exceed TOLERANCE
-    assert!(
-        max_delta <= TOLERANCE,
-        "max|delta| {:.6} exceeds threshold {:.0e}",
-        max_delta,
-        TOLERANCE
-    );
-
-    // Build drift report
+    // Build drift report BEFORE any assertion, so a failing gate still leaves a full
+    // report on stderr/disk to diagnose from (spec-challenger review objection #5: the
+    // old code asserted before building the report).
     let mut report = String::new();
-    report.push_str("\n");
+    report.push('\n');
     report.push_str(
         "================================================================================\n",
     );
@@ -237,29 +281,38 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
     report.push_str(
         "================================================================================\n",
     );
-    report.push_str("\n");
+    report.push('\n');
     report.push_str(&format!("Matched pairs:              {}\n", matched_count));
     report.push_str(&format!(
-        "Missing from actual (PB):   {}\n",
+        "Missing from actual (PB):   {}  (folded into delta stats as delta=|reference|)\n",
         missing_from_actual
     ));
     report.push_str(&format!(
         "Unexpected in actual (PB):  {}\n",
         unexpected_in_actual
     ));
-    report.push_str("\n");
+    report.push('\n');
     report.push_str(&format!(
-        "Drift statistics (across {} matched pairs):\n",
-        matched_count
+        "Drift statistics (across {} deltas: {} matched + {} missing-as-worst-case):\n",
+        deltas.len(),
+        matched_count,
+        missing_from_actual
     ));
-    report.push_str(&format!("  Max |Δ|:                  {:.6}\n", max_delta));
-    report.push_str(&format!("  Mean |Δ|:                 {:.6}\n", mean_delta));
     report.push_str(&format!(
-        "  Median |Δ|:               {:.6}\n",
+        "  Max |\u{394}|:                  {:.6}\n",
+        max_delta
+    ));
+    report.push_str(&format!(
+        "  Mean |\u{394}|:                 {:.6}\n",
+        mean_delta
+    ));
+    report.push_str(&format!(
+        "  Median |\u{394}|:               {:.6}\n",
         median_delta
     ));
     report.push_str(&format!(
-        "  Count exceeding 5e-4:     {} ({}%)\n",
+        "  Count exceeding {:.0e} (matched only): {} ({}%)\n",
+        REPORT_TOLERANCE,
         exceeding_tolerance,
         if matched_count > 0 {
             (exceeding_tolerance * 100) / matched_count
@@ -267,7 +320,29 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
             0
         }
     ));
-    report.push_str("\n");
+    report.push('\n');
+    report.push_str(&format!(
+        "BASELINE (BEFORE, ALA silently omitted, code at 47c397d): max|\u{394}|={:.6} \
+         mean|\u{394}|={:.6} median|\u{394}|={:.6} matched={} missing={}\n",
+        BASELINE_MAX_DELTA_BEFORE,
+        BASELINE_MEAN_DELTA_BEFORE,
+        BASELINE_MEDIAN_DELTA_BEFORE,
+        BASELINE_MATCHED_COUNT_BEFORE,
+        BASELINE_MISSING_BEFORE
+    ));
+    report.push('\n');
+
+    if !missing_pairs.is_empty() {
+        report.push_str("Missing pairs (reference present, actual absent):\n");
+        for (ca, ra, cb, rb, reference) in &missing_pairs {
+            report.push_str(&format!(
+                "  {},{} -> {},{}  reference={:.6} (counted as delta={:.6})\n",
+                ca, ra, cb, rb, reference, reference
+            ));
+        }
+        report.push('\n');
+    }
+
     // Classify terminal residues: residue 1 (N-terminal) or max res_id per chain (C-terminal).
     // From REF_CONTACTS the chains are A and B, each with res_ids 1..7.
     let terminal_res_ids: std::collections::HashSet<(String, i32)> = {
@@ -289,7 +364,7 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
 
     let above_threshold: Vec<_> = largest_drift
         .iter()
-        .filter(|(_, _, _, _, _, _, d)| *d >= TOLERANCE)
+        .filter(|(_, _, _, _, _, _, d)| *d >= REPORT_TOLERANCE)
         .collect();
 
     let terminal_involved = above_threshold
@@ -299,9 +374,9 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
     let interior_only = above_threshold.len() - terminal_involved;
 
     report.push_str(&format!(
-        "All {} pairs above threshold ({:.0e}):\n",
+        "All {} matched pairs above threshold ({:.0e}):\n",
         above_threshold.len(),
-        TOLERANCE
+        REPORT_TOLERANCE
     ));
     report.push_str(&format!(
         "  Terminal-residue involved: {}\n",
@@ -319,7 +394,7 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
             ""
         };
         report.push_str(&format!(
-            "  {}. {},{} → {},{}{}\n",
+            "  {}. {},{} \u{2192} {},{}{}\n",
             i + 1,
             ca,
             ra,
@@ -328,26 +403,33 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
             flag
         ));
         report.push_str(&format!(
-            "     Actual:    {:.6}  Reference: {:.6}  Δ: {:.6}\n",
+            "     Actual:    {:.6}  Reference: {:.6}  \u{394}: {:.6}\n",
             actual, reference, delta
         ));
     }
-    report.push_str("\n");
-    report.push_str("Top 10 largest-drift contacts:\n");
-    report.push_str("\n");
+    report.push('\n');
+    report.push_str("Top 10 largest-drift matched contacts:\n");
+    report.push('\n');
 
     for (i, (ca, ra, cb, rb, actual, reference, delta)) in largest_drift.iter().take(10).enumerate()
     {
-        report.push_str(&format!("  {}. {},{} → {},{}\n", i + 1, ca, ra, cb, rb));
+        report.push_str(&format!(
+            "  {}. {},{} \u{2192} {},{}\n",
+            i + 1,
+            ca,
+            ra,
+            cb,
+            rb
+        ));
         report.push_str(&format!("     Actual:    {:.6}\n", actual));
         report.push_str(&format!("     Reference: {:.6}\n", reference));
         report.push_str(&format!("     Delta:     {:.6} ({:.2e})\n", delta, delta));
-        report.push_str("\n");
+        report.push('\n');
     }
     report.push_str(
         "================================================================================\n",
     );
-    report.push_str("\n");
+    report.push('\n');
 
     // Print to stderr and to a file
     eprint!("{}", report);
@@ -358,4 +440,34 @@ fn run_drift_comparison(cf: &ConFind, contact_list: &proxide_confind::ContactLis
     {
         let _ = file.write_all(report.as_bytes());
     }
+
+    // Gate (decision c): after <= before, on the same metric (max|delta|), or STOP.
+    // This is a regression gate against the re-measured BEFORE baseline above, not a
+    // fixed tolerance -- a fixed 1e-4 tolerance was the old code's bug (objection #6:
+    // the tolerance was never validated against a real measurement of the "acceptable"
+    // starting point, which was actually 0.043).
+    assert!(
+        max_delta <= BASELINE_MAX_DELTA_BEFORE,
+        "max|delta| {:.6} exceeds the BEFORE baseline {:.6} -- backlog #5244 decision c: \
+         STOP and escalate with these numbers. Do not commit the artifact or drift change \
+         in this state.",
+        max_delta,
+        BASELINE_MAX_DELTA_BEFORE
+    );
+
+    // Coverage must not regress either: adding ALA should not cause previously-matched
+    // reference pairs to silently disappear, and the missing set must not grow.
+    assert!(
+        matched_count >= BASELINE_MATCHED_COUNT_BEFORE,
+        "matched_count {} is below the BEFORE baseline {} -- coverage regressed",
+        matched_count,
+        BASELINE_MATCHED_COUNT_BEFORE
+    );
+    assert!(
+        missing_from_actual <= BASELINE_MISSING_BEFORE,
+        "missing_from_actual {} exceeds the BEFORE baseline {} -- more reference pairs \
+         are silently absent from actual than before backlog #5244's fix",
+        missing_from_actual,
+        BASELINE_MISSING_BEFORE
+    );
 }

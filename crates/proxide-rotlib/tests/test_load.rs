@@ -53,8 +53,8 @@ fn test_mosaist_ala_shape_probe() {
 
     let is_single_rotamer_per_bin =
         summary.min_rotamers_per_bin == 1 && summary.max_rotamers_per_bin == 1;
-    let is_p_one =
-        (summary.min_probability - 1.0).abs() < 1e-6 && (summary.max_probability - 1.0).abs() < 1e-6;
+    let is_p_one = (summary.min_probability - 1.0).abs() < 1e-6
+        && (summary.max_probability - 1.0).abs() < 1e-6;
     let cb_spread_ok = summary
         .max_cb_spread_angstrom
         .map(|d| d < 0.05)

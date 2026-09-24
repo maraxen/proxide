@@ -117,7 +117,10 @@ fn verify_rotamer_library(path: &Path) {
             code
         );
     }
-    println!("✓ All 23 residue codes present (incl. synthetic ALA): {:?}", actual_codes);
+    println!(
+        "✓ All 23 residue codes present (incl. synthetic ALA): {:?}",
+        actual_codes
+    );
 
     // 4b. Synthetic ALA has the expected shape: 1 bin, 1 rotamer, p=1, num_chi=0.
     let ala_entry = lib

@@ -133,7 +133,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Build the protobuf
-    let lib = build_library(rotlib_source.as_ref(), ic_table.as_ref(), args.synthesize_ala)?;
+    let lib = build_library(
+        rotlib_source.as_ref(),
+        ic_table.as_ref(),
+        args.synthesize_ala,
+    )?;
     info!("Built library with {} residue types", lib.residues.len());
 
     // Serialize and compress
