@@ -668,7 +668,30 @@ The script follows the `bench_xtc_decode.py` pattern:
 **Dependencies:** T0 decides whether any of T1–T8 run. Then T1 → T2 → T4; T3 → T4; T4 → T5 → {T6,
 T7}; T6 → T8.
 
-### Task 0: measure the reference path on one real replicate (orchestrator, Engaging; IN PROGRESS)
+### Task 0: measure the reference path on one real replicate (orchestrator, Engaging; DONE — **NO-GO**)
+
+**Result (2026-09-23, SLURM 23613233, node1603, `mit_normal`, 4 CPU).** Script:
+sweetprots `scripts/benchmarks/sweet_contact_count_reference_timing.py` (commit db3b39f; launcher
+7a5e200), replicate `vft_apo-stripped_kd9p5A_TRD_his-neutral_rep2`, read **directly from the pool
+(no staging)**, mdtraj `iterload(stride=5, atom_indices=protein+probe heavy)` + per-frame periodic
+`cKDTree`, 4.5 Å.
+
+| quantity | value |
+|---|---|
+| file size, raw frames, natoms, atom order | 9.54 GB; 10,000 raw (2000 at stride 5); 215,660; protein 0–14715, **probe 14716–35397 (before water)** |
+| staging copy wall | not needed — direct pool read was used |
+| decode + count wall | 159.5 s decode + 12.2 s count = **2.9 min** |
+| total wall per replicate | **3.15 min** (sacct Elapsed 00:03:09) |
+| peak RSS | **8.2 GB** (MaxRSS 8,635,344 K) |
+| pool throughput | not separately measured (≈ 60 MB/s effective over the whole file) |
+| projected 68-replicate cost | ≈ 68 × 3.2 min × 4 CPU ≈ **14 core-h** (vs prereg's 150–400 / ≤ 1100) |
+| non-vacuity | 67.9 contacting TRD molecules per frame (mean over 2000 frames) |
+
+**Verdict: NO-GO** — G1 fails (3.2 ≪ 90 min), G2 not applicable (no staging needed; direct read
+already fast), G3 fails (8.2 GB < 16 GB, completed). The consumer runs the prereg reference path.
+This spec stays `draft`, available if a larger campaign (e.g. many more probes/replicates or full
+unstrided frames) changes the arithmetic; the probe-before-water atom order means the early-stop
+decode would cut decode work ~6× if it is ever built.
 
 **What is measured.** Run the prereg §2.1 reference implementation (staging + `iterload(stride=5)` +
 `cKDTree`), as planned for prereg Task 2, on one real replicate. Use the full 2000 strided frames,
