@@ -1,18 +1,25 @@
 {
   "task_id": "260922_autonomous-loop",
-  "sprint_id": "260923_sprint-21-confind-dihedral-policies",
-  "sprint_plan_path": ".praxia/sprint_plans/260923_sprint-21-confind-dihedral-policies.toml",
-  "branch": "autoloop/260923-sprint-21",
-  "git_base_sha": "4484164",
-  "code_base_sha": "316d1ab",
-  "approved_by": "user, in conversation (\"Approved\"), 2026-09-23; LegacyCompact library-only (no CLI flag requested)",
-  "push_policy": "PRs, stacked on #44",
-  "dispatch_mode": "in-place, single track",
-  "tracks": {"d": {"item": "debt-1890", "fixer_model": "sonnet", "reviewer_model": "sonnet"}},
-  "prior_sprints": {"18": {"pr": 42}, "19": {"pr": 43}, "20": {"pr": 44, "ci": "35859959789 green"}},
-  "verify": {"d": {"commits": ["288bfa9", "8f29bb9"], "verdict": "PASS 8/8", "remediations": 0,
-                   "controls": ["golden bit flip -> golden test fails", "LegacyCompact test switched to default -> fails"],
-                   "ci": "35880552376 green on all 4 jobs incl. workspace clippy (not runnable locally: proxide-gaff2 needs the DEF)",
-                   "notes": ["unrelated pre-existing ignored test measure_loadpb_drift_vs_master fails (known #869 load_pb drift)", "fixer filed 2 debts to the offline journal only; orchestrator re-filed them to the DB as #1903/#1904 (praxia has no 'offline sync' command)"]}},
-  "closed": {"debt_resolved": [1890]}
+  "sprint_id": "260923_sprint-22-silent-fallbacks",
+  "sprint_plan_path": ".praxia/sprint_plans/260923_sprint-22-silent-fallbacks.toml",
+  "branch": "autoloop/260923-sprint-22",
+  "git_base_sha": "ddd7e1b",
+  "approved_by": "user, in conversation, 2026-09-23: 'Land it now, strict espaloma and file tech debt to support additional methods. That ALA gap is critical'",
+  "owner_decisions": {"d1_track_r": "land now (CLI fails loudly on Dunbrack .pb.zst until backlog #5244)", "d2_track_c": "strict espaloma default, no auto; gasteiger opt-in; debt #1907 filed for more methods"},
+  "dispatch_mode": "in-place, 3 concurrent tracks (disjoint files); Track Y does not rebuild the extension (orchestrator rebuilds after all tracks)",
+  "tracks": {
+    "r": {"item": "debt-1898", "fixer_model": "sonnet"},
+    "y": {"item": "debt-1901", "fixer_model": "haiku"},
+    "c": {"item": "debt-1900", "fixer_model": "sonnet"}
+  },
+  "parallel_recon": "backlog #5244 (ALA entry for Dunbrack rotlib) read-only research for sprint 23",
+  "prior_sprints": {"18": {"pr": 42}, "19": {"pr": 43}, "20": {"pr": 44}, "21": {"pr": 45}},
+  "verify": {
+    "r": {"commits": ["a12de2b", "4294d2f"], "verdict": "PASS after 1 remediation", "history": "reviewer failed item 6: drift test returned silently on UnknownAa(ALA) (ledger B3); remediation asserts the error via expect_err + matches!; control (GLY) fails. Leftover MINOR: clippy needless_return in that test file (CI clippy does not lint tests)."},
+    "y": {"commits": ["47c397d"], "verdict": "PASS", "history": "orchestrator-verified scope + no dangling refs; extension rebuilt (uv run --with maturin maturin develop) and confirmed the three stubs are gone"},
+    "c": {"commits": ["5374304"], "verdict": "PASS 8/8 + A-F", "history": "converting return-bool tests to asserts exposed wrong test expectations (vdW rmin_half values under known_masses; bond key c3-op -> cx-op), corrected and verified against load_gaff2_parameters(); interrupted once by API session limit and resumed"}
+  },
+  "ci": "35949613239 green on all 4 jobs",
+  "closed": {"debt_resolved": [1898, 1900, 1901]},
+  "notes": ["push produced no ruleset-bypass message: owner appears to have fixed the ruleset"]
 }
