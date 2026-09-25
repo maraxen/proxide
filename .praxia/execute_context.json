@@ -8,6 +8,10 @@
   "owner_decisions": {"a": "non-decimal serial/res_seq -> hard error; debt for hex/hybrid-36 decoding", "b": "PDB only; PQR/mmCIF debts for sprint 25", "c": "short line < 54 error; partial trailing field blank only if empty/whitespace", "d": "non-contiguous residue reappearance -> error", "e": "nan/inf -> NonFinite error", "f": "byte-level reading; non-ASCII allowed in unparsed records", "g": "leading-digit strip in canonical infer_element, own commit"},
   "dispatch_mode": "in-place, sequential a -> b, sonnet fixers",
   "tracks": {"a": {"item": "debt-1776+1883", "fixer_model": "sonnet"}, "b": {"item": "debt-1885+1886", "fixer_model": "sonnet"}},
-  "prior_sprints": {"18": {"pr": 42}, "19": {"pr": 43}, "20": {"pr": 44}, "21": {"pr": 45}, "22": {"pr": 46}, "23": {"pr": 47}},
-  "verify": {}
+  "prior_sprints": {"18": {"pr": 42}, "19": {"pr": 43}, "20": {"pr": 44}, "21": {"pr": 45}, "22": {"pr": 46}, "23": {"pr": 47}, "24": {"pr": 48}},
+  "verify": {"a": {"reviewer": "sonnet", "verdict": "PASS 8/8", "commits": ["8955462", "5138b7f", "105904e", "9dcf951", "a1480b8", "58420a6"]}, "b": {"reviewer": "sonnet", "verdict": "PASS 7/7 + reorder check", "commits": ["cbf6794", "5ef4fe4"], "note": "fixer agent hit API session limit before reporting; orchestrator re-ran all gates, then independent reviewer re-executed", "golden_diff": "empty", "drift_max": 0.031773, "drift_mean": 0.003517}},
+  "ci": {"run": 36175618264, "conclusion": "success", "jobs": "tests, quality-checks, test-espaloma, rust-checks"},
+  "pr": 48,
+  "debts_resolved": [1776, 1883, 1885, 1886],
+  "closed": "2026-09-25"
 }
