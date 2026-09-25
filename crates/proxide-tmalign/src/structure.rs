@@ -102,28 +102,47 @@ pub fn load_pdb_ca_trace<P: AsRef<Path>>(path: P) -> Result<CaTrace, TmAlignErro
 mod tests {
     use super::*;
 
-    /// Locate the local `~/repos/USalign` reference clone's bundled sample
-    /// PDBs, if present. Skips (not fails) when absent — following the
-    /// env-gated skip-if-absent convention in
-    /// `proxide-confind/tests/test_parity_1dc7.rs`.
-    fn usalign_sample(name: &str) -> Option<std::path::PathBuf> {
-        let base = std::env::var("USALIGN_REPO")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                let home = std::env::var("HOME").unwrap_or_default();
-                std::path::PathBuf::from(home).join("repos/USalign")
-            });
-        let path = base.join(name);
-        path.exists().then_some(path)
+    /// Load a USalign sample PDB fixture from the test data directory.
+    ///
+    /// Fixtures are vendored byte-identical from USalign commit 177cc8a
+    /// (see tests/data/NOTICE-USalign.md). Panics if the fixture is missing
+    /// or fails to parse.
+    fn usalign_sample(name: &str) -> std::path::PathBuf {
+        // Byte lengths of vendored fixtures from USalign commit 177cc8a.
+        // Verify against: sha256sum tests/data/PDB{1,2}.pdb
+        const PDB1_SIZE: u64 = 207441;
+        const PDB2_SIZE: u64 = 113076;
+
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data")
+            .join(name);
+
+        let metadata = std::fs::metadata(&path)
+            .unwrap_or_else(|e| panic!("fixture {} not found: {}", path.display(), e));
+
+        let expected_size = match name {
+            "PDB1.pdb" => PDB1_SIZE,
+            "PDB2.pdb" => PDB2_SIZE,
+            _ => panic!("unknown fixture {}", name),
+        };
+
+        assert_eq!(
+            metadata.len(),
+            expected_size,
+            "fixture {} size mismatch: expected {}, got {} bytes",
+            name,
+            expected_size,
+            metadata.len()
+        );
+
+        path
     }
 
     #[test]
     fn load_pdb1_from_usalign_reference_produces_matching_length() {
-        let Some(path) = usalign_sample("PDB1.pdb") else {
-            return;
-        };
+        let path = usalign_sample("PDB1.pdb");
         let trace = load_pdb_ca_trace(&path).expect("PDB1.pdb should parse");
-        // Reference TMalign output (this session): "Length of Structure_1: 250 residues"
+        // Reference TMalign output: "Length of Structure_1: 250 residues"
         assert_eq!(trace.len(), 250);
         assert_eq!(trace.seq.len(), 250);
         assert_eq!(trace.res_ids.len(), 250);
@@ -131,11 +150,9 @@ mod tests {
 
     #[test]
     fn load_pdb2_from_usalign_reference_produces_matching_length() {
-        let Some(path) = usalign_sample("PDB2.pdb") else {
-            return;
-        };
+        let path = usalign_sample("PDB2.pdb");
         let trace = load_pdb_ca_trace(&path).expect("PDB2.pdb should parse");
-        // Reference TMalign output (this session): "Length of Structure_2: 166 residues"
+        // Reference TMalign output: "Length of Structure_2: 166 residues"
         assert_eq!(trace.len(), 166);
     }
 }

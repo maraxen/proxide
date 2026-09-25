@@ -16,6 +16,7 @@ use proxide_units::{ANGSTROM_TO_NM, KCAL_TO_KJ};
 
 /// Errors during parameterization
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum ParamError {
     #[error("Missing residue template: {0}")]
     MissingTemplate(String),
@@ -31,6 +32,13 @@ pub enum ParamError {
          `unparameterized_atoms` report for indices"
     )]
     UnparameterizedAtoms(usize),
+
+    #[error("topology {term} term {indices:?} references atom index >= n_atoms ({n_atoms})")]
+    TopologyIndexOutOfRange {
+        term: &'static str,
+        indices: Vec<usize>,
+        n_atoms: usize,
+    },
 }
 
 /// How to handle missing residue templates
@@ -144,7 +152,9 @@ pub struct ParamOptions {
     pub water_model: String,
     /// If true, return `Err(ParamError::UnparameterizedAtoms)` when the
     /// resulting `unparameterized_atoms` report is non-empty, instead of
-    /// returning `Ok` with zeroed values for those atoms.
+    /// returning `Ok` with zeroed values for those atoms. Note: `strict` does
+    /// not govern invariant violations such as out-of-range topology indices,
+    /// which always error regardless of this flag.
     pub strict: bool,
 }
 
@@ -167,6 +177,47 @@ pub fn parameterize_structure(
     options: &ParamOptions,
 ) -> Result<MDParameters, ParamError> {
     let n_atoms = processed.raw_atoms.num_atoms;
+
+    // Validate topology indices before processing
+    for bond in &topology.bonds {
+        if bond.i >= n_atoms || bond.j >= n_atoms {
+            return Err(ParamError::TopologyIndexOutOfRange {
+                term: "bond",
+                indices: vec![bond.i, bond.j],
+                n_atoms,
+            });
+        }
+    }
+
+    for angle in &topology.angles {
+        if angle.i >= n_atoms || angle.j >= n_atoms || angle.k >= n_atoms {
+            return Err(ParamError::TopologyIndexOutOfRange {
+                term: "angle",
+                indices: vec![angle.i, angle.j, angle.k],
+                n_atoms,
+            });
+        }
+    }
+
+    for dih in &topology.proper_dihedrals {
+        if dih.i >= n_atoms || dih.j >= n_atoms || dih.k >= n_atoms || dih.l >= n_atoms {
+            return Err(ParamError::TopologyIndexOutOfRange {
+                term: "proper",
+                indices: vec![dih.i, dih.j, dih.k, dih.l],
+                n_atoms,
+            });
+        }
+    }
+
+    for imp in &topology.improper_dihedrals {
+        if imp.i >= n_atoms || imp.j >= n_atoms || imp.k >= n_atoms || imp.l >= n_atoms {
+            return Err(ParamError::TopologyIndexOutOfRange {
+                term: "improper",
+                indices: vec![imp.i, imp.j, imp.k, imp.l],
+                n_atoms,
+            });
+        }
+    }
 
     // Initialize output arrays
     let mut charges = vec![0.0f32; n_atoms];
@@ -726,15 +777,7 @@ pub fn parameterize_structure(
         {
             continue;
         }
-        // Defensive: `dih.i`/`dih.l` should always be < n_atoms by construction
-        // (they originate from the same coordinate/element arrays passed to
-        // `generate_topology`), but a `topology` built against a different
-        // atom count than this `processed` (a caller-side inconsistency) must
-        // never leak an out-of-range index into `pairs_14` -- silently skip
-        // rather than let a bad index reach the Python boundary.
-        if dih.i >= n_atoms || dih.l >= n_atoms {
-            continue;
-        }
+
         let pair_key = if dih.i < dih.l {
             (dih.i, dih.l)
         } else {
@@ -1999,6 +2042,126 @@ mod tests {
                  exception), got pair {:?}",
                 pair
             );
+        }
+    }
+
+    #[test]
+    fn test_out_of_range_bond_index_is_an_error() {
+        let ff = make_test_forcefield();
+        let mut raw = RawAtomData::with_capacity(2);
+        raw.add_atom(AtomRecord {
+            serial: 1,
+            atom_name: "CA".to_string(),
+            res_name: "ALA".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            element: "C".to_string(),
+            is_hetatm: false,
+            ..AtomRecord::default()
+        });
+        raw.add_atom(AtomRecord {
+            serial: 2,
+            atom_name: "N".to_string(),
+            res_name: "ALA".to_string(),
+            chain_id: "A".to_string(),
+            res_seq: 1,
+            x: 1.5,
+            y: 0.0,
+            z: 0.0,
+            element: "N".to_string(),
+            is_hetatm: false,
+            ..AtomRecord::default()
+        });
+        let structure = ProcessedStructure::from_raw(raw).unwrap();
+        let n_atoms = structure.raw_atoms.num_atoms;
+
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let mut topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+        topology.bonds.push(proxide_core::forcefield::Bond {
+            i: n_atoms,
+            j: 0,
+        });
+
+        let options = ParamOptions::default();
+        let result = parameterize_structure(&structure, &topology, &ff, &options);
+
+        match result {
+            Err(ParamError::TopologyIndexOutOfRange {
+                term,
+                indices,
+                n_atoms: na,
+            }) => {
+                assert_eq!(term, "bond");
+                assert!(indices.contains(&n_atoms));
+                assert_eq!(na, n_atoms);
+            }
+            _ => panic!(
+                "Expected TopologyIndexOutOfRange error for bond, got: {:?}",
+                result
+            ),
+        }
+    }
+
+    #[test]
+    fn test_out_of_range_proper_index_is_an_error() {
+        let ff = make_test_forcefield();
+        let mut raw = RawAtomData::with_capacity(4);
+        for i in 0..4 {
+            raw.add_atom(AtomRecord {
+                serial: (i + 1) as i32,
+                atom_name: format!("A{}", i),
+                res_name: "ALA".to_string(),
+                chain_id: "A".to_string(),
+                res_seq: 1,
+                x: i as f32 * 1.5,
+                y: 0.0,
+                z: 0.0,
+                element: if i == 0 || i == 3 { "C" } else { "N" }.to_string(),
+                is_hetatm: false,
+                ..AtomRecord::default()
+            });
+        }
+        let structure = ProcessedStructure::from_raw(raw).unwrap();
+        let n_atoms = structure.raw_atoms.num_atoms;
+
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let mut topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+        topology.proper_dihedrals.push(proxide_core::forcefield::Dihedral {
+            i: 0,
+            j: 1,
+            k: 2,
+            l: n_atoms + 5,
+            is_improper: false,
+        });
+
+        let options = ParamOptions::default();
+        let result = parameterize_structure(&structure, &topology, &ff, &options);
+
+        match result {
+            Err(ParamError::TopologyIndexOutOfRange {
+                term,
+                indices,
+                n_atoms: na,
+            }) => {
+                assert_eq!(term, "proper");
+                assert!(indices.contains(&(n_atoms + 5)));
+                assert_eq!(na, n_atoms);
+            }
+            _ => panic!(
+                "Expected TopologyIndexOutOfRange error for proper dihedral, got: {:?}",
+                result
+            ),
         }
     }
 

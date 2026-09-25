@@ -1,14 +1,12 @@
 //! Phase 5 — curated benchmark set vs. the real USalign reference binary.
 //!
-//! Unlike `test_parity_pdb1_pdb2.rs` (which loads the USalign-bundled sample
-//! pair from `~/repos/USalign`, skipping if absent), these fixtures are
-//! committed directly under `tests/data/` — real, permissively-licensed
+//! Fixtures are committed directly under `tests/data/` — real, permissively-licensed
 //! (public-domain RCSB deposit) single-chain protein structures, extracted
 //! to one chain per file so `extract_ca_trace`'s all-chains-concatenated
 //! behavior doesn't conflate multi-chain assemblies (e.g. hemoglobin's 4
-//! chains) into one trace. No env-var gating needed for these inputs,
-//! closing the CI-fixture gap `test_parity_pdb1_pdb2.rs` has (that test
-//! silently no-ops in CI since `~/repos/USalign` isn't cloned there).
+//! chains) into one trace. Both `test_parity_pdb1_pdb2.rs` and this suite's
+//! fixtures run unconditionally in CI: USalign samples are now vendored
+//! byte-identical in tests/data/ (see NOTICE-USalign.md).
 //!
 //! Reference values were captured by running the real `TMalign` binary
 //! (built from `~/repos/USalign`, commit 177cc8a, v20240303 — same build

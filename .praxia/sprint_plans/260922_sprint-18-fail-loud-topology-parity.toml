@@ -1,0 +1,136 @@
+[sprint]
+sprint_id = "260922_sprint-18-fail-loud-topology-parity"
+sprint_num = 18
+name = "Sprint 18 — fail loud on bad topology indices; make TM-align parity tests actually run"
+description = "Track A (debt #1775): validate every bonded-term atom index at parameterize_structure entry and return a ParamError instead of panicking; delete the unreachable silent-skip guard. Track C (backlog #3789): vendor USalign's PDB1/PDB2 sample pair so the pdb1/pdb2 parity tests assert in CI instead of reporting a bare pass."
+context = '''
+task_id: 260922_autonomous-loop
+Loop: autoloop-260922_autonomous-loop (L2). Base branch: autoloop/260922_autonomous-loop (= fix/parameterize-solvent-atoms f79b306 + ledger commit 68aa5a7).
+Project rule (CLAUDE.md): fail fast and loud; never fill a sentinel where you mean unknown; a detector whose silence is indistinguishable from success is not a detector (ledger B3).
+This plan was revised after a spec-coherence adversarial review (challenger + defender, both Opus) against
+.praxia/docs/specs/260910_proxide-silent-substitution-observability.md — record: .praxia/spec_adversarial_reviews.jsonl
+(review_id 260922_loop_sprint18_coherence). Every anchor below was verified against the code by the orchestrator.
+Track B (PDB parser hardening: debts #1776, #1883, #1885, #1886) was DEFERRED out of this sprint: it needs an owner
+decision on OBS-105 and a structured error vocabulary, and it must land after Track C.
+Stack: cargo; RUSTC_WRAPPER="" if sccache fails in the sandbox; proxide-io/physics use `log`, not tracing. Never `git add -A`
+(untracked sandbox dotfiles sit in the tree) — stage named files only. Run narrow tests only (single crate / -k filter).
+'''
+max_fix_retries = 1
+worktree_shadow_mode = false
+
+[[tracks]]
+id = "a"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1775"
+phase_name = "Track A — parameterize_structure: entry-time bonded-index validation (debt #1775)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop
+
+## Objective
+An out-of-range atom index in a Topology term must make parameterize_structure return an error, never panic and never silently skip.
+
+## Verified facts (do not re-derive; do check the lines still match before editing)
+- crates/proxide-physics/src/physics/md_params.rs
+  - L19: `pub enum ParamError` (thiserror, no #[non_exhaustive]). No code outside md_params.rs matches on its variants.
+  - L145-148: `ParamOptions.strict` doc — scoped to the unparameterized_atoms report.
+  - L169: `let n_atoms = processed.raw_atoms.num_atoms;`  L175 atom_types and L208 atom_classes are both length n_atoms.
+  - Term loops that index per-atom arrays: bonds L541 and L664, angles L553 and L672, propers L567 (atom_classes[dih.i..l] at L568-576) and L721, impropers L622.
+  - L728-737: a pairs_14 guard `if dih.i >= n_atoms || dih.l >= n_atoms { continue; }` with a "Defensive" comment. It is UNREACHABLE: L567-576 already index with the same dihedral and panic first.
+- crates/proxide-core/src/forcefield/topology.rs: Topology { bonds: Vec<Bond>{i,j}, angles: Vec<Angle>{i,j,k}, proper_dihedrals / improper_dihedrals: Vec<Dihedral>{i,j,k,l} }.
+- crates/proxide_py/src/py_parsers.rs:357 maps any ParamError to PyValueError via Display — a new variant needs no binding change.
+
+## Steps
+1. Add a variant, e.g.
+   `#[error("topology {term} term {indices:?} references atom index >= n_atoms ({n_atoms})")]
+    TopologyIndexOutOfRange { term: &'static str, indices: Vec<usize>, n_atoms: usize }`
+   and mark `ParamError` `#[non_exhaustive]` (spec D4/D17 direction).
+2. Immediately after L169, validate every index of every bonds/angles/proper_dihedrals/improper_dihedrals entry against n_atoms and return the first violation as TopologyIndexOutOfRange (term = "bond" | "angle" | "proper" | "improper"). Validation runs regardless of ParamOptions.strict.
+3. Delete the unreachable L728-737 skip and its "Defensive" comment (the solvent-atom filter above it stays). Add one line to the `strict` doc comment (L145-148) stating it does not govern invariant violations such as out-of-range topology indices.
+4. Tests in md_params.rs `mod tests` (reuse the fixture setup of `test_pairs_14_excludes_spurious_cross_water_bond`, L1874): `test_out_of_range_proper_index_is_an_error` and `test_out_of_range_bond_index_is_an_error`, each asserting `matches!(result, Err(ParamError::TopologyIndexOutOfRange { .. }))` — not a panic, not Ok. Confirm each test PANICS on the pre-change code (temporarily revert, or reason from L568) and report which you did.
+5. Run `RUSTC_WRAPPER="" cargo test -p proxide-physics --lib` and `RUSTC_WRAPPER="" cargo check -p proxide_py`; paste the `test result:` lines.
+6. Commit only md_params.rs with message
+   `fix(physics): reject out-of-range topology indices instead of panicking (debt #1775)` plus a body naming the unreachable guard removed.
+   End the message with:
+   Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+   Claude-Session: https://claude.ai/code/session_01SbXt9g5fCHS6EFnoubG2Ft
+Do not change any physical constant.
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+
+## VERIFY (each item decided by running a command or reading a specific line — never by trusting the fixer's report)
+1. `git diff --stat <base>..HEAD` touches only crates/proxide-physics/src/physics/md_params.rs.
+2. ParamError has `TopologyIndexOutOfRange` and `#[non_exhaustive]`.
+3. The validation sits before the first per-atom-array index (before L541's bonds loop) and covers bonds, angles, proper_dihedrals AND improper_dihedrals, checking every index (i,j[,k[,l]]).
+4. No `continue` on `>= n_atoms` remains anywhere in parameterize_structure (`rg -n ">= n_atoms" crates/proxide-physics/src/physics/md_params.rs`).
+5. Both new tests exist, use `matches!(.., Err(ParamError::TopologyIndexOutOfRange { .. }))`, and pass: `RUSTC_WRAPPER="" cargo test -p proxide-physics --lib out_of_range`.
+6. Full `RUSTC_WRAPPER="" cargo test -p proxide-physics --lib` passes (compare count to 54+2) and `cargo check -p proxide_py` passes.
+7. The `strict` doc comment states it does not govern invariant violations; no constant changed (`git diff` shows no numeric literal edits outside tests).
+PASS = all 7 hold. FAIL = any fails; cite the item and evidence.
+'''
+return_key = "debt-1775"
+
+[[tracks]]
+id = "c"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "3789"
+phase_name = "Track C — vendor USalign PDB1/PDB2; parity tests assert in CI (backlog #3789)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop
+
+## Objective
+The USalign sample-pair parity tests must run and assert in CI. A missing or unparseable fixture must FAIL the test, never report a bare pass.
+
+## Verified facts
+- /home/marielle/repos/USalign is at commit 177cc8a2bbd3e2a6e9c5faaaa4ff5dfa1e6048f7 and PDB1.pdb, PDB2.pdb, LICENSE are clean at that commit.
+  sha256: PDB1.pdb 7fa7989c8221d9be7f1c40a5aa21c0e1481f0c1ac977df41d5cb82392760f5b2
+          PDB2.pdb 879c407d45727910efad897a65773452f735fce8a7ceb48e14b20f4406e5c652
+  LICENSE permits redistribution provided its notices, reference list and copyright notice accompany all copies.
+- crates/proxide-tmalign/tests/common/mod.rs:12-24 `load_usalign_sample` -> Option; HOME/USALIGN_REPO lookup; `.ok()` on parse error.
+- crates/proxide-tmalign/tests/test_parity_pdb1_pdb2.rs: three tests early-return on None (L54-58, L91-92, L124-128).
+- crates/proxide-tmalign/src/structure.rs:105-140: a SECOND loader `usalign_sample` with the same skip-if-absent early return in two unit tests (PDB1 length 250, PDB2 length 166). Both copies must be fixed (ledger A5).
+- crates/proxide-tmalign/tests/data/ already holds six curated fixtures used by test_parity_curated_set.rs.
+- PDB1.pdb lines have no chain ID and blank B-factor columns; they parse today (occupancy/B-factor defaults are unchanged in this sprint).
+
+## Steps
+1. Copy the two files byte-for-byte: `cp /home/marielle/repos/USalign/PDB1.pdb /home/marielle/repos/USalign/PDB2.pdb crates/proxide-tmalign/tests/data/` and verify with `sha256sum` that both match the hashes above exactly. If either differs, STOP and report.
+2. Write crates/proxide-tmalign/tests/data/NOTICE-USalign.md: source repo URL (https://github.com/pylelab/USalign), commit 177cc8a2bbd3e2a6e9c5faaaa4ff5dfa1e6048f7, both sha256 values, which files it covers, and USalign's LICENSE text copied VERBATIM from /home/marielle/repos/USalign/LICENSE.
+3. Replace BOTH loaders with one behaviour: resolve `Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data").join(name)`; `panic!` with the path if the file is missing; `panic!` with the error if parsing fails (no `.ok()`); assert the file's sha256 equals the pinned value (add `sha2` as a dev-dependency only if it is not already in the workspace — check Cargo.lock first; if adding a dependency is needed, prefer a hand-rolled comparison of the byte length + a cheap checksum and report the choice). Remove the HOME/USALIGN_REPO lookup; the reference constants were captured against 177cc8a, so an override that swaps fixtures would silently invalidate them.
+4. Remove every `let Some(..) = .. else { return; }` skip in test_parity_pdb1_pdb2.rs and structure.rs's two tests; they now load unconditionally.
+5. Fix stale docs: test_parity_curated_set.rs:3-11 (says the pdb1/pdb2 test "silently no-ops in CI"), test_parity_pdb1_pdb2.rs:1-4, tests/common/mod.rs:1-11.
+6. Prove the tests assert: run `RUSTC_WRAPPER="" cargo test -p proxide-tmalign` with `HOME=/nonexistent` (so no USalign clone can be found) and paste the per-test `ok` lines for the pdb1/pdb2 tests and structure.rs's two tests. Then temporarily rename tests/data/PDB1.pdb, rerun, and confirm those tests FAIL (not pass); restore the file.
+7. Commit only the files under crates/proxide-tmalign/ you changed or added (name them explicitly; never `git add -A`), message
+   `test(tmalign): vendor USalign PDB1/PDB2 so sample-pair parity tests run in CI (#3789)`
+   ending with:
+   Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+   Claude-Session: https://claude.ai/code/session_01SbXt9g5fCHS6EFnoubG2Ft
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+
+## VERIFY (decide each by command or line read, never by the fixer's report)
+1. `sha256sum crates/proxide-tmalign/tests/data/PDB1.pdb crates/proxide-tmalign/tests/data/PDB2.pdb` equals 7fa7989c…f5b2 and 879c407d…c652 exactly.
+2. NOTICE-USalign.md exists, names commit 177cc8a2bbd3…, both hashes, and contains USalign's LICENSE text verbatim (`diff` the LICENSE block against /home/marielle/repos/USalign/LICENSE).
+3. `rg -n "else \{ return; \}|\.ok\(\)|USALIGN_REPO|repos/USalign" crates/proxide-tmalign/tests crates/proxide-tmalign/src/structure.rs` returns no loader/skip hits.
+4. With `HOME=/nonexistent RUSTC_WRAPPER="" cargo test -p proxide-tmalign`, the pdb1/pdb2 parity tests and structure.rs's two sample tests run and pass (all crate tests pass).
+5. Negative control: with tests/data/PDB1.pdb temporarily moved away, those tests FAIL. Restore it afterwards and confirm `git status` is clean for it.
+6. The stale "silently no-ops" docs are gone (`rg -n "no-op" crates/proxide-tmalign/tests`).
+7. `git diff --stat <base>..HEAD` touches only crates/proxide-tmalign/ (plus Cargo.lock only if a dev-dependency was justified in the fixer report).
+PASS = all 7 hold. FAIL = any fails; cite the item and evidence.
+'''
+return_key = "3789"
+
+[orchestration]
+sequential = []
+concurrent = ["a", "c"]
+
+[deferred]
+track_b = "PDB parser hardening — debts #1776, #1883, #1885, #1886 (+ pqr.rs, MODEL-number absorption, record-name dispatch). Blocked on owner decision B1 (OBS-105) and a structured PdbField error / reserved PROX-IO-MALFORMED-RECORD code; must also move IOParseError off cfg(feature=ssbond). Land after this sprint's Track C."
