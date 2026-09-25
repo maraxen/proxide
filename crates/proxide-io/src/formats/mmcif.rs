@@ -1232,6 +1232,21 @@ _atom_site.label_seq_id
     }
 
     #[test]
+    fn quoted_value_with_internal_space_is_one_token() {
+        // Replaces the removed test_parse_cif_values_quoted: an internal space
+        // must not split a quoted token (else the row gains a column -> RowLength).
+        let text = format!(
+            "{}ATOM 1 'C A' . ALA A 1 ? 0.000 0.000 0.000 1.00 10.00 1\n\
+             ATOM 2 \"C B\" . ALA A 1 ? 1.000 0.000 0.000 1.00 10.00 1\n",
+            atom_site_header(FULL_COLS)
+        );
+        let raw = expect_ok(&text);
+        assert_eq!(raw.num_atoms, 2);
+        assert_eq!(raw.atom_names[0], "C A");
+        assert_eq!(raw.atom_names[1], "C B");
+    }
+
+    #[test]
     fn auth_only_header_ok() {
         let cols = [
             "group_PDB",
