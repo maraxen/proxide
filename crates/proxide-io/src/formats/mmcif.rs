@@ -5,6 +5,7 @@
 //!
 //! Format reference: https://mmcif.wwpdb.org/
 
+use proxide_core::chem::masses::infer_element;
 use proxide_core::structure::{AtomRecord, RawAtomData};
 use std::collections::HashMap;
 use std::fs::File;
@@ -186,9 +187,25 @@ fn extract_atom_record(values: &[&str], column_map: &HashMap<String, usize>) -> 
     let group_pdb = get_str("group_PDB");
     let is_hetatm = group_pdb == "HETATM";
 
+    let atom_name = get_str("label_atom_id");
+
+    // `_atom_site.type_symbol` is mmCIF's element column, but unlike PDB's
+    // fixed columns 77-78 it is genuinely optional per the mmCIF dictionary
+    // (and absent entirely, or ".'/'?', in some non-RCSB-authored files) --
+    // this parser previously had NO fallback at all in that case, silently
+    // returning an empty element string. Fall back to the same two-letter-
+    // aware `infer_element` used by `pdb.rs` (backlog #5052, prolix) rather
+    // than leaving `element` empty.
+    let type_symbol = get_str("type_symbol");
+    let element = if type_symbol.is_empty() {
+        infer_element(&atom_name).to_string()
+    } else {
+        type_symbol
+    };
+
     Some(AtomRecord {
         serial: get_i32("id").unwrap_or(0),
-        atom_name: get_str("label_atom_id"),
+        atom_name,
         alt_loc: get_str("label_alt_id").chars().next().unwrap_or(' '),
         res_name: get_str("label_comp_id"),
         chain_id: get_str("label_asym_id"),
@@ -201,7 +218,7 @@ fn extract_atom_record(values: &[&str], column_map: &HashMap<String, usize>) -> 
         z,
         occupancy: get_f32("occupancy").unwrap_or(1.0),
         temp_factor: get_f32("B_iso_or_equiv").unwrap_or(0.0),
-        element: get_str("type_symbol"),
+        element,
         charge: None,
         radius: None,
         is_hetatm,
@@ -262,6 +279,37 @@ mod tests {
         assert_eq!(atom.atom_name, "N");
         assert_eq!(atom.res_name, "ALA");
         assert!((atom.x - 20.154).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_extract_atom_record_missing_type_symbol_falls_back_to_name() {
+        // `_atom_site.type_symbol` is optional per the mmCIF dictionary --
+        // some non-RCSB-authored files omit the column entirely, or write
+        // "." / "?" for it. Before this fix, `extract_atom_record` had NO
+        // fallback at all in that case (unlike `pdb.rs`, which falls back to
+        // name-based inference when its element column is absent or blank),
+        // silently producing an empty `element` string. This checks the
+        // fallback now uses the same two-letter-aware `infer_element` (a
+        // one-character slice would wrongly report "C" for a chloride ion
+        // named "CL").
+        // Deliberately no "type_symbol" entry in column_map at all.
+        let values = vec![
+            "HETATM", "1", "CL", "CL", ".", "A", "500", "12.000", "3.000", "4.000",
+        ];
+        let mut column_map = HashMap::new();
+        column_map.insert("group_PDB".to_string(), 0);
+        column_map.insert("id".to_string(), 1);
+        column_map.insert("label_atom_id".to_string(), 2);
+        column_map.insert("label_comp_id".to_string(), 3);
+        column_map.insert("label_asym_id".to_string(), 5);
+        column_map.insert("label_seq_id".to_string(), 6);
+        column_map.insert("Cartn_x".to_string(), 7);
+        column_map.insert("Cartn_y".to_string(), 8);
+        column_map.insert("Cartn_z".to_string(), 9);
+
+        let atom = extract_atom_record(&values, &column_map).unwrap();
+        assert_eq!(atom.atom_name, "CL");
+        assert_eq!(atom.element, "Cl");
     }
 
     #[test]

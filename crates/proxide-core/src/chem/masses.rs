@@ -28,6 +28,8 @@ pub fn get_mass(element: &str) -> f32 {
         "Cu" => 63.546,
         "Mn" => 54.938,
         "Se" => 78.971,
+        // IUPAC 2021 conventional standard atomic weight.
+        "Si" => 28.085,
         _ => DEFAULT_MASS,
     }
 }
@@ -54,8 +56,13 @@ pub fn assign_masses(atom_names: &[String]) -> Vec<f32> {
 
 /// Infer element from atom name
 ///
-/// Follows PDB conventions where element is typically the first 1-2 characters
-fn infer_element(atom_name: &str) -> &str {
+/// Follows PDB conventions where element is typically the first 1-2 characters.
+/// Public so format parsers (e.g. `proxide-io`'s PDB reader) can reuse this
+/// two-letter-aware logic instead of reimplementing a naive first-character-only
+/// fallback -- see backlog #5052 (prolix), where a duplicated, wrong version of
+/// this exact inference in `proxide-io/src/formats/pdb.rs` mis-elementized a
+/// chloride ion ("Cl") as carbon ("C").
+pub fn infer_element(atom_name: &str) -> &str {
     let name = atom_name.trim();
     if name.is_empty() {
         return "C";
@@ -74,6 +81,7 @@ fn infer_element(atom_name: &str) -> &str {
             "Cu" | "CU" => return "Cu",
             "Mn" | "MN" => return "Mn",
             "Se" | "SE" => return "Se",
+            "Si" | "SI" => return "Si",
             _ => {}
         }
     }
@@ -123,5 +131,58 @@ mod tests {
         assert_eq!(infer_element("CL"), "Cl");
         assert_eq!(infer_element("Na"), "Na");
         assert_eq!(infer_element("FE"), "Fe");
+    }
+
+    #[test]
+    fn test_infer_element_comprehensive_corpus() {
+        // Comprehensive conformance test for all supported atoms, both ALL-CAPS (PDB format)
+        // and title-case (canonical). This is the guard against silent element-inference bugs.
+        // See tests/test_element_inference_conformance.py for the structural anti-pattern scan.
+
+        // Single-letter elements (PDB form: all-caps, canonical: uppercase)
+        assert_eq!(infer_element("H"), "H");
+        assert_eq!(infer_element("h"), "H");
+        assert_eq!(infer_element("C"), "C");
+        assert_eq!(infer_element("c"), "C");
+        assert_eq!(infer_element("N"), "N");
+        assert_eq!(infer_element("n"), "N");
+        assert_eq!(infer_element("O"), "O");
+        assert_eq!(infer_element("o"), "O");
+        assert_eq!(infer_element("S"), "S");
+        assert_eq!(infer_element("s"), "S");
+        assert_eq!(infer_element("P"), "P");
+        assert_eq!(infer_element("p"), "P");
+        assert_eq!(infer_element("F"), "F");
+        assert_eq!(infer_element("f"), "F");
+        assert_eq!(infer_element("I"), "I");
+        assert_eq!(infer_element("i"), "I");
+        assert_eq!(infer_element("K"), "K");
+        assert_eq!(infer_element("k"), "K");
+
+        // Two-letter elements: PDB names are ALL-CAPS, must map to title-case canonical form
+        // (implemented for PDB format + title-case, not bare lowercase, per real-world PDB usage)
+        assert_eq!(infer_element("CL"), "Cl");
+        assert_eq!(infer_element("Cl"), "Cl");
+        assert_eq!(infer_element("BR"), "Br");
+        assert_eq!(infer_element("Br"), "Br");
+        assert_eq!(infer_element("NA"), "Na");
+        assert_eq!(infer_element("Na"), "Na");
+        assert_eq!(infer_element("MG"), "Mg");
+        assert_eq!(infer_element("Mg"), "Mg");
+        assert_eq!(infer_element("ZN"), "Zn");
+        assert_eq!(infer_element("Zn"), "Zn");
+        assert_eq!(infer_element("FE"), "Fe");
+        assert_eq!(infer_element("Fe"), "Fe");
+        assert_eq!(infer_element("CU"), "Cu");
+        assert_eq!(infer_element("Cu"), "Cu");
+        assert_eq!(infer_element("MN"), "Mn");
+        assert_eq!(infer_element("Mn"), "Mn");
+        assert_eq!(infer_element("SE"), "Se");
+        assert_eq!(infer_element("Se"), "Se");
+
+        // Critical edge case: CA (alpha carbon, protein backbone) must stay "C", not "Ca"
+        assert_eq!(infer_element("CA"), "C");
+        assert_eq!(infer_element("Ca"), "C"); // title-case variant must also be "C"
+        assert_eq!(infer_element("ca"), "C");
     }
 }

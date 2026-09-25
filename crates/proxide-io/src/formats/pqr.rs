@@ -8,6 +8,7 @@
 
 #![allow(dead_code)]
 
+use proxide_core::chem::masses::infer_element;
 use proxide_core::structure::{AtomRecord, RawAtomData};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -61,12 +62,18 @@ fn parse_pqr_line(line: &str) -> Option<AtomRecord> {
     let charge = parts[9].parse::<f32>().ok()?;
     let radius = parts[10].parse::<f32>().ok()?;
 
-    // Infer element from atom name
-    let element = atom_name
-        .chars()
-        .next()
-        .map(|c| c.to_string())
-        .unwrap_or_else(|| "C".to_string());
+    // Infer element from atom name. PQR has no dedicated element column at
+    // all (unlike PDB's optional columns 77-78) -- this is *always* a
+    // name-based inference, so it must be the same two-letter-aware
+    // `infer_element` used by mass assignment and (after the pdb.rs fix,
+    // backlog #5052 in prolix) the PDB parser's own fallback, not a naive
+    // first-character slice. The naive version previously here mis-
+    // elementized "CL" (chloride) as "C" (carbon), "NA" (sodium) as "N"
+    // (nitrogen), "ZN"/"MG"/"FE"/"CU"/"MN"/"SE" similarly wrong or outright
+    // invalid single-letter symbols ("Z", "M"...) -- found during the
+    // proxide-brittle-parsing sweep (task 260909_dhfr_gap_tranche2) that
+    // also found and fixed the identical pattern in `pdb.rs`.
+    let element = infer_element(&atom_name).to_string();
 
     Some(AtomRecord {
         serial,
@@ -149,5 +156,26 @@ mod tests {
         let atom = atom.unwrap();
         assert_eq!(atom.res_seq, 52);
         assert_eq!(atom.i_code, 'A');
+    }
+
+    #[test]
+    fn test_two_letter_element_fallback_not_truncated() {
+        // Same anti-pattern as backlog #5052 (prolix)'s `pdb.rs` bug: PQR has
+        // no dedicated element column at all, so this is *always* a name-
+        // based inference. A naive first-character-only slice previously
+        // here mis-elementized "CL" (chloride) as "C" (carbon) and "NA"
+        // (sodium) as "N" (nitrogen) -- and would do the same, or produce an
+        // outright invalid single-letter symbol, for Br/Mg/Zn/Fe/Cu/Mn/Se.
+        let cl_line =
+            "HETATM    1  CL  CL  A 500      12.000   3.000   4.000  -1.0000  1.9350";
+        let atom = parse_pqr_line(cl_line).unwrap();
+        assert_eq!(atom.atom_name, "CL");
+        assert_eq!(atom.element, "Cl");
+
+        let na_line =
+            "HETATM    2  NA  NA  A 501      15.000   3.000   4.000   1.0000  1.8680";
+        let atom = parse_pqr_line(na_line).unwrap();
+        assert_eq!(atom.atom_name, "NA");
+        assert_eq!(atom.element, "Na");
     }
 }

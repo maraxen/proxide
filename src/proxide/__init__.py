@@ -27,7 +27,9 @@ from proxide._proxider import (  # ty: ignore[unresolved-import]
   # Chemistry
   assign_masses,
   assign_mbondi2_radii,
+  assign_mbondi2_radii_with_provenance,
   assign_obc2_scaling_factors,
+  assign_obc2_scaling_factors_with_provenance,
   compute_bicubic_params,
   frame_count,
   get_mdcath_replicas,
@@ -37,6 +39,7 @@ from proxide._proxider import (  # ty: ignore[unresolved-import]
   kabsch_rmsd_batch,
   # Force fields
   load_forcefield,
+  mbondi2_table_info,
   n_atoms,
   parameterize_molecule,
   parse_dcd,
@@ -101,6 +104,9 @@ __all__ = [
   "assign_gaff_atom_types",
   "assign_mbondi2_radii",
   "assign_obc2_scaling_factors",
+  "assign_mbondi2_radii_with_provenance",
+  "assign_obc2_scaling_factors_with_provenance",
+  "mbondi2_table_info",
   "get_water_model",
   "compute_bicubic_params",
   "parameterize_molecule",

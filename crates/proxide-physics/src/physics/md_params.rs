@@ -12,6 +12,7 @@ use proxide_core::forcefield::{
 };
 use proxide_core::processing::ProcessedStructure;
 use proxide_geometry::geometry::topology::assign_template_hydrogens;
+use proxide_units::{ANGSTROM_TO_NM, KCAL_TO_KJ};
 
 /// Errors during parameterization
 #[derive(Error, Debug)]
@@ -24,6 +25,12 @@ pub enum ParamError {
 
     #[error("Missing nonbonded params for atom type: {0}")]
     _MissingNonbonded(String),
+
+    #[error(
+        "{0} atom(s) could not be parameterized (strict mode); see the \
+         `unparameterized_atoms` report for indices"
+    )]
+    UnparameterizedAtoms(usize),
 }
 
 /// How to handle missing residue templates
@@ -104,6 +111,17 @@ pub struct MDParameters {
     /// CMAP energy grids
     pub cmap_grids: Vec<proxide_core::forcefield::CMAPGrid>,
     // We'll assume global for now, handled by OpenMM, but we list the pairs.
+    /// Indices of atoms this call did NOT confidently parameterize: atoms
+    /// with no matching template atom, atoms in a residue with no matching
+    /// residue template (only crude element-based LJ fallback, charge left
+    /// at 0.0), solvent atoms that couldn't be matched to a water model, and
+    /// -- critically -- any atom this function never visits at all (e.g.
+    /// ligand/ion atoms, which are outside `residue_info` and are not
+    /// handled here; see `parameterize_molecule` for ligands). Empty means
+    /// every atom received real force-field- or water-model-sourced values.
+    /// See [`ParamOptions::strict`] to turn a non-empty report into a hard
+    /// error instead.
+    pub unparameterized_atoms: Vec<usize>,
 }
 
 /// Options for parameterization
@@ -113,6 +131,21 @@ pub struct ParamOptions {
     pub auto_terminal_caps: bool,
     /// How to handle missing residue templates
     pub missing_mode: MissingResidueMode,
+    /// Water model used to parameterize solvent atoms (molecule_type == 2,
+    /// e.g. `HOH`/`WAT`/`TIP3`/`SOL`/`DOD`), which are excluded from
+    /// `residue_info` and therefore invisible to the residue-template loop
+    /// above -- without this, solvent silently keeps charge=sigma=epsilon=0.
+    /// Passed to [`crate::physics::water::get_water_model`]; supported
+    /// names are `"TIP3P"` (default), `"SPCE"`/`"SPC/E"`, `"TIP4PEW"`/
+    /// `"TIP4P-EW"`. An unrecognized name leaves solvent atoms
+    /// unparameterized (reported via `unparameterized_atoms`, not silently
+    /// zeroed) rather than erroring, so a typo degrades gracefully into a
+    /// visible report instead of a hard failure mid-pipeline.
+    pub water_model: String,
+    /// If true, return `Err(ParamError::UnparameterizedAtoms)` when the
+    /// resulting `unparameterized_atoms` report is non-empty, instead of
+    /// returning `Ok` with zeroed values for those atoms.
+    pub strict: bool,
 }
 
 impl Default for ParamOptions {
@@ -120,6 +153,8 @@ impl Default for ParamOptions {
         Self {
             auto_terminal_caps: true,
             missing_mode: MissingResidueMode::SkipWarn,
+            water_model: "TIP3P".to_string(),
+            strict: false,
         }
     }
 }
@@ -158,6 +193,15 @@ pub fn parameterize_structure(
 
     let mut num_parameterized = 0usize;
     let mut num_skipped = 0usize;
+
+    // Tracks which atoms received a confident, force-field- (or water-
+    // model-)sourced charge assignment. Everything left `false` at the end
+    // -- unmatched atoms, atoms in a residue with no template at all (which
+    // still get a crude element-based LJ fallback below but keep charge
+    // 0.0), unhandled solvent, and any atom this function never visits
+    // (ligand/ion atoms, which live outside `residue_info`) -- is surfaced
+    // via `unparameterized_atoms` rather than silently returned as zeros.
+    let mut touched = vec![false; n_atoms];
 
     // Mapping from (class1, class2) -> BondParam
     // We need atom classes for lookup, so let's store them
@@ -281,6 +325,7 @@ pub fn parameterize_structure(
 
                 local_to_global.insert(atom_name.as_str(), atom_idx);
                 claimed_template_atoms.insert(template_atom.name.clone());
+                touched[atom_idx] = true;
                 num_parameterized += 1;
             } else {
                 let element = &processed.raw_atoms.elements[atom_idx];
@@ -340,9 +385,153 @@ pub fn parameterize_structure(
                             }
                         }
                     }
+                    touched[h_idx] = true;
                     num_parameterized += 1;
                 }
             }
+        }
+    }
+
+    // --- Assign solvent (water) parameters ---
+    // Solvent atoms (HOH/WAT/TIP3/SOL/DOD) are intentionally excluded from
+    // `residue_info` -- see `proxide_core::processing::residues` -- so the
+    // per-residue template loop above never visits them, and they would
+    // otherwise keep charge=sigma=epsilon=0.0 forever, silently, even with
+    // a force field that happens to define an HOH template (there is
+    // currently no multi-force-field merging in this crate, so a protein FF
+    // like ff14SB and a water FF like tip3p.xml can't both be loaded into
+    // one `ForceField` at once anyway). Parameterize solvent here from the
+    // hard-coded `WaterModel` catalog (`crate::physics::water`) instead.
+    //
+    // Units: `get_water_model` returns AMBER-convention values (Angstroms,
+    // kcal/mol -- see doc comment on `WaterModel`). Everything else in this
+    // function (charges/sigmas/epsilons parsed from the OpenMM-XML force
+    // field via `NonbondedParam`, whose field docs specify nm and kJ/mol)
+    // is in OpenMM/GROMACS convention, and the Python boundary applies a
+    // single unit-system conversion pass over the whole `sigmas`/`epsilons`
+    // arrays assuming they're uniformly in that convention (see
+    // `proxide_units::registry` + `py_parsers.rs`'s `conv.*` scaling). So
+    // water values are converted right here, at assignment time, to match
+    // -- getting this wrong would silently replace one wrong answer with a
+    // different wrong answer.
+    if !processed.solvent_atoms.is_empty() {
+        match crate::physics::water::get_water_model(&options.water_model, true) {
+            Ok(model) => {
+                let mut i = 0;
+                while i < processed.solvent_atoms.len() {
+                    let first_idx = processed.solvent_atoms[i];
+                    let key = (
+                        processed.raw_atoms.chain_ids[first_idx].as_str(),
+                        processed.raw_atoms.res_ids[first_idx],
+                        processed.raw_atoms.insertion_codes[first_idx],
+                    );
+                    let mut j = i + 1;
+                    while j < processed.solvent_atoms.len() {
+                        let idx = processed.solvent_atoms[j];
+                        let k = (
+                            processed.raw_atoms.chain_ids[idx].as_str(),
+                            processed.raw_atoms.res_ids[idx],
+                            processed.raw_atoms.insertion_codes[idx],
+                        );
+                        if k != key {
+                            break;
+                        }
+                        j += 1;
+                    }
+                    let mol_atoms = &processed.solvent_atoms[i..j];
+                    i = j;
+
+                    if mol_atoms.len() != model.atoms.len() {
+                        // Atom count doesn't match the chosen model (e.g. an
+                        // O-only crystallographic water against TIP3P, which
+                        // expects O+H1+H2). Leave unparameterized -- it will
+                        // surface via `unparameterized_atoms` -- rather than
+                        // guess at missing atoms.
+                        continue;
+                    }
+
+                    // Assign each atom in this water molecule to a model
+                    // site name by element, consuming "H1" before "H2" in
+                    // file order. The two hydrogens are physically
+                    // equivalent in every model here, so file order is an
+                    // arbitrary but stable and harmless choice.
+                    let mut slot_names: Vec<&'static str> = Vec::with_capacity(mol_atoms.len());
+                    let mut h_seen = 0usize;
+                    let mut recognized = true;
+                    for &atom_idx in mol_atoms {
+                        let element = processed.raw_atoms.elements[atom_idx].to_uppercase();
+                        let slot: &'static str = match element.as_str() {
+                            "O" => "O",
+                            "H" => {
+                                h_seen += 1;
+                                if h_seen == 1 {
+                                    "H1"
+                                } else {
+                                    "H2"
+                                }
+                            }
+                            _ if model.has_virtual_sites => "M",
+                            _ => {
+                                recognized = false;
+                                break;
+                            }
+                        };
+                        slot_names.push(slot);
+                    }
+                    if !recognized {
+                        continue;
+                    }
+
+                    for (&atom_idx, &slot) in mol_atoms.iter().zip(slot_names.iter()) {
+                        let charge = model.charges.get(slot);
+                        let sigma_a = model.sigmas.get(slot);
+                        let epsilon_kcal = model.epsilons.get(slot);
+                        let (Some(&charge), Some(&sigma_a), Some(&epsilon_kcal)) =
+                            (charge, sigma_a, epsilon_kcal)
+                        else {
+                            continue;
+                        };
+                        charges[atom_idx] = charge;
+                        sigmas[atom_idx] = sigma_a * ANGSTROM_TO_NM;
+                        epsilons[atom_idx] = epsilon_kcal * KCAL_TO_KJ;
+                        atom_types[atom_idx] = format!("{}-{}", model.name, slot);
+                        atom_classes[atom_idx] = atom_types[atom_idx].clone();
+                        touched[atom_idx] = true;
+                        num_parameterized += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Unknown water model '{}' ({e}); {} solvent atom(s) left unparameterized",
+                    options.water_model,
+                    processed.solvent_atoms.len()
+                );
+            }
+        }
+    }
+
+    // --- Unparameterized-atom report ---
+    // Never hand back charge=0/sigma=0/epsilon=0 for an atom this function
+    // didn't confidently visit without saying so: `touched[i] == false`
+    // covers unmatched template atoms, whole residues with no template at
+    // all (crude element-based LJ fallback above, charge left at 0.0),
+    // unresolved solvent, AND any atom outside `residue_info`/solvent
+    // entirely (ligand/ion atoms -- this function never visits those; see
+    // `parameterize_molecule` for standalone ligand/GAFF parameterization).
+    let unparameterized_atoms: Vec<usize> =
+        (0..n_atoms).filter(|&idx| !touched[idx]).collect();
+
+    if !unparameterized_atoms.is_empty() {
+        log::warn!(
+            "parameterize_structure: {} of {} atom(s) could not be confidently \
+             parameterized (charge/sigma/epsilon may be 0.0 or a crude element-based \
+             fallback) -- see MDParameters::unparameterized_atoms for indices",
+            unparameterized_atoms.len(),
+            n_atoms
+        );
+        if options.strict {
+            return Err(ParamError::UnparameterizedAtoms(unparameterized_atoms.len()));
         }
     }
 
@@ -489,6 +678,33 @@ pub fn parameterize_structure(
         exclusions_123.insert((i, k));
     }
 
+    // Solvent atoms (water, per `ProcessedStructure::solvent_atoms`) never carry
+    // torsion terms in any standard water model (TIP3P/TIP4P/...), so a *real*
+    // 1-4 nonbonded exception can never involve one. `topology` here is built
+    // purely from distance + covalent-radius inference over the WHOLE system
+    // at once (see `proxide_geometry::geometry::topology::infer_bonds`), with
+    // no residue-boundary or force-field-template awareness -- so a geometric
+    // dihedral chain that touches a solvent atom only exists because two
+    // different molecules got spuriously bonded together (e.g. a water's H
+    // sitting anomalously close to another water's O, or to a protein atom).
+    // Without this filter, such a spurious bond silently fabricates a "scaled
+    // 1-4" nonbonded exception with a nonzero energy for atoms that have no
+    // real covalent relationship at all. Found via prolix's
+    // dhfr_pme_exclusion_census.py (task 260909_dhfr_gap_tranche2): a solvated
+    // 1VII system (7507 atoms, only 596 of them protein) reported ~1563-1564
+    // `pairs_14` entries, reproduced consistently across separate runs --
+    // implausibly high for a 596-atom protein alone (low hundreds at most)
+    // *and* including water, which must structurally contribute exactly zero
+    // real 1-4 pairs (no water model has torsion terms) -- and at least one
+    // entry referenced an atom index that didn't even exist in the 7507-atom
+    // system. (An initial OpenMM-side "~40 exceptions" comparison baseline
+    // for the same run was later retracted as unreliable -- a separate,
+    // unrelated OpenMM/SWIG binding issue on that environment, prolix
+    // backlog #5055 -- so it is deliberately not cited here; the anomaly
+    // stands on proxide's own numbers alone.) See
+    // `test_pairs_14_excludes_spurious_cross_water_bond` below.
+    let solvent_set: HashSet<usize> = processed.solvent_atoms.iter().copied().collect();
+
     let mut pairs_14 = Vec::new();
     let mut seen_14_pairs = HashSet::new();
     let mut nonbonded_exceptions = Vec::new();
@@ -503,6 +719,22 @@ pub fn parameterize_structure(
     }
 
     for dih in &topology.proper_dihedrals {
+        if solvent_set.contains(&dih.i)
+            || solvent_set.contains(&dih.j)
+            || solvent_set.contains(&dih.k)
+            || solvent_set.contains(&dih.l)
+        {
+            continue;
+        }
+        // Defensive: `dih.i`/`dih.l` should always be < n_atoms by construction
+        // (they originate from the same coordinate/element arrays passed to
+        // `generate_topology`), but a `topology` built against a different
+        // atom count than this `processed` (a caller-side inconsistency) must
+        // never leak an out-of-range index into `pairs_14` -- silently skip
+        // rather than let a bad index reach the Python boundary.
+        if dih.i >= n_atoms || dih.l >= n_atoms {
+            continue;
+        }
         let pair_key = if dih.i < dih.l {
             (dih.i, dih.l)
         } else {
@@ -601,6 +833,7 @@ pub fn parameterize_structure(
         } else {
             Vec::new()
         },
+        unparameterized_atoms,
     })
 }
 
@@ -644,6 +877,7 @@ pub fn parameterize_molecule(
     let mut atom_types = vec![String::new(); n_atoms];
     let mut num_parameterized = 0usize;
     let mut num_skipped = 0usize;
+    let mut unparameterized_atoms = Vec::new();
 
     // Assign LJ parameters from GAFF atom types
     for (i, gaff_type_opt) in gaff_types.iter().enumerate() {
@@ -655,9 +889,11 @@ pub fn parameterize_molecule(
                 num_parameterized += 1;
             } else {
                 num_skipped += 1;
+                unparameterized_atoms.push(i);
             }
         } else {
             num_skipped += 1;
+            unparameterized_atoms.push(i);
         }
     }
 
@@ -737,6 +973,7 @@ pub fn parameterize_molecule(
         cmap_torsions: Vec::new(),
         cmap_map_indices: Vec::new(),
         cmap_grids: Vec::new(),
+        unparameterized_atoms,
     })
 }
 
@@ -1149,6 +1386,7 @@ mod tests {
         let options = ParamOptions {
             auto_terminal_caps: false,
             missing_mode: MissingResidueMode::SkipWarn,
+            ..Default::default()
         };
 
         let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
@@ -1172,6 +1410,7 @@ mod tests {
         let options = ParamOptions {
             auto_terminal_caps: false,
             missing_mode: MissingResidueMode::Fail,
+            ..Default::default()
         };
 
         let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
@@ -1297,6 +1536,7 @@ mod tests {
         let options = ParamOptions {
             auto_terminal_caps: false,
             missing_mode: MissingResidueMode::ClosestMatch,
+            ..Default::default()
         };
 
         let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
@@ -1326,6 +1566,7 @@ mod tests {
         let options = ParamOptions {
             auto_terminal_caps: false,
             missing_mode: MissingResidueMode::Fail,
+            ..Default::default()
         };
 
         let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
@@ -1463,6 +1704,7 @@ mod tests {
         let options = ParamOptions {
             auto_terminal_caps: true,
             missing_mode: MissingResidueMode::SkipWarn,
+            ..Default::default()
         };
 
         let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
@@ -1479,5 +1721,344 @@ mod tests {
         let res = parameterize_molecule(&coords, &elements, 1.3);
         assert!(res.is_err());
         assert!(format!("{}", res.unwrap_err()).contains("mismatch"));
+    }
+
+    /// One ALA protein residue (atoms 0,1,2; far from the waters) plus two
+    /// TIP3P-geometry `HOH` water molecules (atoms 3,4,5 and 6,7,8), well
+    /// separated from each other and from the protein so `infer_bonds` can't
+    /// spuriously connect them. `is_hetatm: true` on the water atoms is
+    /// required: solvent classification only triggers on HETATM records
+    /// (see `ProcessedStructure::from_raw_with_config`).
+    fn make_water_structure() -> ProcessedStructure {
+        let mut raw = RawAtomData::with_capacity(9);
+
+        for (i, name) in ["N", "CA", "C"].iter().enumerate() {
+            raw.add_atom(AtomRecord {
+                serial: (i + 1) as i32,
+                atom_name: name.to_string(),
+                res_name: "ALA".to_string(),
+                chain_id: "A".to_string(),
+                res_seq: 1,
+                x: i as f32,
+                y: 100.0,
+                z: 0.0,
+                element: (if *name == "N" { "N" } else { "C" }).to_string(),
+                ..AtomRecord::default()
+            });
+        }
+
+        // r(OH) = 0.9572 A, theta(HOH) = 104.52 deg -- matches the TIP3P
+        // model geometry documented on `water::tip3p()`.
+        let water_geom: [[f32; 3]; 3] = [
+            [0.0, 0.0, 0.0],
+            [0.9572, 0.0, 0.0],
+            [-0.2397, 0.9266, 0.0],
+        ];
+        let names = ["O", "H1", "H2"];
+        let elements = ["O", "H", "H"];
+        for water_idx in 0..2usize {
+            let offset_x = water_idx as f32 * 50.0;
+            for atom_idx in 0..3usize {
+                raw.add_atom(AtomRecord {
+                    serial: (10 + water_idx * 3 + atom_idx) as i32,
+                    atom_name: names[atom_idx].to_string(),
+                    res_name: "HOH".to_string(),
+                    chain_id: "W".to_string(),
+                    res_seq: 100 + water_idx as i32,
+                    x: water_geom[atom_idx][0] + offset_x,
+                    y: water_geom[atom_idx][1],
+                    z: water_geom[atom_idx][2],
+                    element: elements[atom_idx].to_string(),
+                    is_hetatm: true,
+                    ..AtomRecord::default()
+                });
+            }
+        }
+
+        ProcessedStructure::from_raw(raw).unwrap()
+    }
+
+    #[test]
+    fn test_water_oh_bonds_locked() {
+        // Locks pre-existing, correct behavior (independent of the solvent
+        // parameterization fix): geometric bond inference already finds
+        // exactly the 2 O-H bonds per water molecule, with no spurious H-H
+        // or cross-molecule bonds, because it works on distance + covalent
+        // radii and never consults `residue_info`/`molecule_type` at all.
+        let structure = make_water_structure();
+        assert_eq!(structure.solvent_atoms.len(), 6); // 2 waters x 3 atoms
+
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        let water_set: HashSet<usize> = structure.solvent_atoms.iter().copied().collect();
+        let water_bonds: Vec<_> = topology
+            .bonds
+            .iter()
+            .filter(|b| water_set.contains(&b.i) && water_set.contains(&b.j))
+            .collect();
+        assert_eq!(water_bonds.len(), 4); // 2 O-H bonds x 2 waters
+    }
+
+    #[test]
+    fn test_parameterize_solvent_water_tip3p() {
+        // Reproduces the diagnosed defect: before the fix, solvent atoms
+        // were excluded from `residue_info` and therefore invisible to this
+        // function's residue-template loop, so charges/sigmas/epsilons
+        // stayed at 0.0 for every water atom no matter what force field was
+        // supplied. This asserts the fixed behavior: nonzero charges and a
+        // nonzero oxygen epsilon, matching the TIP3P model converted from
+        // its native AMBER units (Angstrom, kcal/mol) to the nm/kJ-mol
+        // convention used everywhere else in `MDParameters`.
+        let ff = make_test_forcefield();
+        let structure = make_water_structure();
+        let options = ParamOptions::default(); // water_model defaults to "TIP3P"
+
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
+
+        // Atom order: 0,1,2 = ALA N/CA/C; 3,4,5 = water 1 O/H1/H2.
+        let o1 = 3;
+        let h1a = 4;
+        let h1b = 5;
+
+        assert!(
+            (params.charges[o1] - (-0.834)).abs() < 1e-4,
+            "O charge: {}",
+            params.charges[o1]
+        );
+        assert!((params.charges[h1a] - 0.417).abs() < 1e-4);
+        assert!((params.charges[h1b] - 0.417).abs() < 1e-4);
+
+        let expected_sigma_nm = 3.150_61 * ANGSTROM_TO_NM;
+        let expected_epsilon_kj = 0.1521 * KCAL_TO_KJ;
+        assert!(
+            (params.sigmas[o1] - expected_sigma_nm).abs() < 1e-4,
+            "O sigma (nm): {}",
+            params.sigmas[o1]
+        );
+        assert!(
+            (params.epsilons[o1] - expected_epsilon_kj).abs() < 1e-4,
+            "O epsilon (kJ/mol): {}",
+            params.epsilons[o1]
+        );
+        // TIP3P hydrogens carry zero LJ epsilon by design (not to be
+        // confused with the "never visited" zero this whole fix addresses).
+        assert_eq!(params.epsilons[h1a], 0.0);
+        assert_eq!(params.epsilons[h1b], 0.0);
+
+        // Every water atom got parameterized -- none of them are flagged in
+        // the unparameterized-atom report.
+        for &idx in &structure.solvent_atoms {
+            assert!(
+                !params.unparameterized_atoms.contains(&idx),
+                "water atom {idx} should not be reported as unparameterized"
+            );
+        }
+
+        // Sanity: the ordinary protein path is untouched by the solvent fix.
+        assert!((params.charges[0] - (-0.4157)).abs() < 1e-4); // ALA N
+    }
+
+    #[test]
+    fn test_pairs_14_excludes_spurious_cross_water_bond() {
+        // Bug 2 (task 260909_dhfr_gap_tranche2, proxide side of a prolix-reported
+        // anomaly): a solvated 1VII system (7507 atoms, only 596 of them
+        // protein) reported ~1563-1564 `pairs_14` entries, reproduced across
+        // separate runs -- implausibly high for a 596-atom protein alone, and
+        // definitely wrong insofar as it includes any water atom at all
+        // (water has zero real 1-4 pairs in every standard water model,
+        // independent of any protein-side count) -- and at least one
+        // prolix-reported pair referenced an atom index that didn't exist in
+        // the 7507-atom system. (A same-run OpenMM-side "~40 exceptions"
+        // comparison baseline was later retracted as unreliable -- an
+        // unrelated OpenMM/SWIG binding issue, prolix backlog #5055 -- so
+        // it's deliberately not relied on here.) Root cause: `topology`
+        // is built by pure distance + covalent-radius bond inference over the
+        // WHOLE system at once (`infer_bonds`, no residue-boundary or
+        // force-field-template awareness), so two DIFFERENT water molecules
+        // placed close enough together get a spurious inter-molecular "bond" --
+        // and, before the fix, `pairs_14` was built directly from raw geometric
+        // `topology.proper_dihedrals` with no check that the resulting chain
+        // stayed within a single, real, force-field-bonded molecule. Since water
+        // has zero real torsions in every standard water model, ANY water-
+        // touching entry in `pairs_14` is definitionally spurious.
+        //
+        // This test manufactures exactly that spurious bond (water 1's H2 placed
+        // 1.0 A from water 2's O -- well inside the O-H bonding threshold of
+        // (0.66+0.31)*1.3 = 1.261 A -- while every other inter-water distance
+        // stays outside any bonding threshold) and asserts:
+        //   1. the spurious bond really does form (sanity: the mechanism fires);
+        //   2. it really does create a geometric proper dihedral entirely among
+        //      water atoms (sanity: the dihedral-generation step is exercised);
+        //   3. `parameterize_structure`'s `pairs_14` contains NO entry touching
+        //      any solvent atom (the actual fix -- this would have failed
+        //      before it, since the raw geometric dihedral from point 2 would
+        //      have been pushed straight into `pairs_14`).
+        let ff = make_test_forcefield();
+        let mut raw = RawAtomData::with_capacity(6);
+
+        // Water 1: standard TIP3P geometry at the origin.
+        let water1_geom: [[f32; 3]; 3] = [
+            [0.0, 0.0, 0.0],
+            [0.9572, 0.0, 0.0],
+            [-0.2397, 0.9266, 0.0],
+        ];
+        // Water 2: translated so its O sits exactly 1.0 A from water 1's H2
+        // (spurious-bond distance), with every other cross-molecule pair kept
+        // outside any bonding threshold (see test docstring for the arithmetic).
+        let water2_origin = [-0.2397_f32, 1.9266_f32, 0.0_f32];
+        let water2_geom: [[f32; 3]; 3] = [
+            water2_origin,
+            [water2_origin[0] + 0.9572, water2_origin[1], water2_origin[2]],
+            [
+                water2_origin[0] - 0.2397,
+                water2_origin[1] + 0.9266,
+                water2_origin[2],
+            ],
+        ];
+        let names = ["O", "H1", "H2"];
+        let elements = ["O", "H", "H"];
+        for (water_idx, geom) in [water1_geom, water2_geom].iter().enumerate() {
+            for atom_idx in 0..3usize {
+                raw.add_atom(AtomRecord {
+                    serial: (water_idx * 3 + atom_idx + 1) as i32,
+                    atom_name: names[atom_idx].to_string(),
+                    res_name: "HOH".to_string(),
+                    chain_id: "W".to_string(),
+                    res_seq: 100 + water_idx as i32,
+                    x: geom[atom_idx][0],
+                    y: geom[atom_idx][1],
+                    z: geom[atom_idx][2],
+                    element: elements[atom_idx].to_string(),
+                    is_hetatm: true,
+                    ..AtomRecord::default()
+                });
+            }
+        }
+
+        let structure = ProcessedStructure::from_raw(raw).unwrap();
+        assert_eq!(structure.solvent_atoms.len(), 6);
+        let solvent_set: HashSet<usize> = structure.solvent_atoms.iter().copied().collect();
+
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        // Sanity 1: the spurious cross-molecule bond (water1 H2 [index 2] --
+        // water2 O [index 3]) really did form.
+        let has_spurious_bond = topology
+            .bonds
+            .iter()
+            .any(|b| (b.i == 2 && b.j == 3) || (b.i == 3 && b.j == 2));
+        assert!(
+            has_spurious_bond,
+            "expected the manufactured close contact to be inferred as a bond; \
+             got bonds: {:?}",
+            topology.bonds
+        );
+
+        // Sanity 2: that spurious bond really does create a geometric proper
+        // dihedral entirely among water atoms (all 4 chain atoms in
+        // solvent_set).
+        let has_all_water_dihedral = topology.proper_dihedrals.iter().any(|d| {
+            solvent_set.contains(&d.i)
+                && solvent_set.contains(&d.j)
+                && solvent_set.contains(&d.k)
+                && solvent_set.contains(&d.l)
+        });
+        assert!(
+            has_all_water_dihedral,
+            "expected the spurious bond to produce an all-water geometric \
+             dihedral; got dihedrals: {:?}",
+            topology.proper_dihedrals
+        );
+
+        // The actual fix: parameterize_structure must never surface a pairs_14
+        // entry touching a solvent atom, no matter what spurious geometric
+        // dihedral the raw distance-based topology contains.
+        let options = ParamOptions::default();
+        let params = parameterize_structure(&structure, &topology, &ff, &options).unwrap();
+        for pair in &params.pairs_14 {
+            assert!(
+                !solvent_set.contains(&pair[0]) && !solvent_set.contains(&pair[1]),
+                "pairs_14 must never include a solvent atom (spurious 1-4 \
+                 exception), got pair {:?}",
+                pair
+            );
+        }
+    }
+
+    #[test]
+    fn test_unparameterized_report_and_strict_mode() {
+        // Ligand atoms are, structurally, in exactly the same boat solvent
+        // was before this fix: excluded from `residue_info`, so
+        // `parameterize_structure` never visits them at all (ligand
+        // parameterization is a separate opt-in path -- see
+        // `parameterize_molecule` / py_chemistry). This checks the new
+        // safety net (task B) catches that silently-zeroed case generically,
+        // not just for water.
+        let ff = make_test_forcefield();
+        let mut raw = RawAtomData::with_capacity(2);
+        for (i, name) in ["C1", "C2"].iter().enumerate() {
+            raw.add_atom(AtomRecord {
+                serial: (i + 1) as i32,
+                atom_name: name.to_string(),
+                res_name: "LIG".to_string(),
+                chain_id: "L".to_string(),
+                res_seq: 1,
+                x: i as f32 * 1.5,
+                y: 200.0,
+                z: 0.0,
+                element: "C".to_string(),
+                is_hetatm: true,
+                ..AtomRecord::default()
+            });
+        }
+        let structure = ProcessedStructure::from_raw(raw).unwrap();
+        assert_eq!(structure.ligand_groups.len(), 1);
+        assert!(structure.residue_info.is_empty());
+
+        let coords_slice: &[[f32; 3]] = bytemuck::cast_slice(&structure.raw_atoms.coords);
+        let topology = proxide_geometry::geometry::topology::generate_topology(
+            coords_slice,
+            &structure.raw_atoms.elements,
+            1.3,
+        );
+
+        // Lenient (default) mode: still returns Ok, but now says so instead
+        // of staying silent.
+        let lenient_options = ParamOptions::default();
+        let params =
+            parameterize_structure(&structure, &topology, &ff, &lenient_options).unwrap();
+        assert_eq!(params.unparameterized_atoms.len(), 2);
+        assert!(params.unparameterized_atoms.contains(&0));
+        assert!(params.unparameterized_atoms.contains(&1));
+        assert_eq!(params.charges[0], 0.0);
+
+        // Strict mode: the exact same input now errors instead of quietly
+        // returning zeros.
+        let strict_options = ParamOptions {
+            strict: true,
+            ..Default::default()
+        };
+        let result = parameterize_structure(&structure, &topology, &ff, &strict_options);
+        match result {
+            Err(ParamError::UnparameterizedAtoms(n)) => assert_eq!(n, 2),
+            other => panic!("expected UnparameterizedAtoms(2), got {other:?}"),
+        }
     }
 }
