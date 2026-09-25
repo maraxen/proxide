@@ -10,14 +10,16 @@
 //! a-c/l) replaced the original whitespace-split parser -- which silently
 //! dropped a line on a short/garbage record (`.ok()?`), zero-filled a
 //! garbage `res_seq` (`unwrap_or(0)`), and silently accepted any line with
-//! >=11 tokens (ignoring extras) -- with a fail-loud one: every malformed
-//! line is a hard, structured [`PqrFieldError`] naming the line, token
-//! index, field, and kind, and the caller (`parse_pqr_file`) aborts the
-//! whole parse on the first one rather than silently skipping it.
+//! 11 or more tokens (ignoring extras) -- with a fail-loud one: every
+//! malformed line is a hard, structured [`PqrFieldError`] naming the line,
+//! token index, field, and kind, and the caller (`parse_pqr_file`) aborts
+//! the whole parse on the first one rather than silently skipping it.
 
 #![allow(dead_code)]
 
-use crate::formats::field_parse::{self, truncate_raw_str, TokenFieldErrorKind, IO_MALFORMED_RECORD_CODE};
+use crate::formats::field_parse::{
+    self, truncate_raw_str, TokenFieldErrorKind, IO_MALFORMED_RECORD_CODE,
+};
 use proxide_core::chem::masses::infer_element;
 use proxide_core::structure::{AtomRecord, RawAtomData};
 use std::fmt;
@@ -44,7 +46,13 @@ pub struct PqrFieldError {
 }
 
 impl PqrFieldError {
-    fn new(line: usize, token_index: usize, field: &'static str, raw_line: &str, kind: TokenFieldErrorKind) -> Self {
+    fn new(
+        line: usize,
+        token_index: usize,
+        field: &'static str,
+        raw_line: &str,
+        kind: TokenFieldErrorKind,
+    ) -> Self {
         Self {
             line,
             token_index,
@@ -195,21 +203,40 @@ fn parse_pqr_line(line: &str, line_no: usize) -> Result<Option<AtomRecord>, PqrF
         }
     };
 
-    let serial = field_parse::parse_decimal_i32(tokens[1])
-        .ok_or_else(|| PqrFieldError::new(line_no, 1, "serial", line, TokenFieldErrorKind::Unparseable))?;
+    let serial = field_parse::parse_decimal_i32(tokens[1]).ok_or_else(|| {
+        PqrFieldError::new(line_no, 1, "serial", line, TokenFieldErrorKind::Unparseable)
+    })?;
     let atom_name = tokens[2].to_string();
     let res_name = tokens[3].to_string();
     let chain_id = chain_idx.map(|i| tokens[i].to_string()).unwrap_or_default(); // documented-default: decision a -- 10-token line has no chain column, chain = ""
 
     let (res_seq, i_code) = parse_res_seq_token(tokens[res_seq_idx]).ok_or_else(|| {
-        PqrFieldError::new(line_no, res_seq_idx, "res_seq", line, TokenFieldErrorKind::Unparseable)
+        PqrFieldError::new(
+            line_no,
+            res_seq_idx,
+            "res_seq",
+            line,
+            TokenFieldErrorKind::Unparseable,
+        )
     })?;
 
     let x = parse_field_f32(tokens[coord_start], line_no, coord_start, "x", line)?;
     let y = parse_field_f32(tokens[coord_start + 1], line_no, coord_start + 1, "y", line)?;
     let z = parse_field_f32(tokens[coord_start + 2], line_no, coord_start + 2, "z", line)?;
-    let charge = parse_field_f32(tokens[coord_start + 3], line_no, coord_start + 3, "charge", line)?;
-    let radius = parse_field_f32(tokens[coord_start + 4], line_no, coord_start + 4, "radius", line)?;
+    let charge = parse_field_f32(
+        tokens[coord_start + 3],
+        line_no,
+        coord_start + 3,
+        "charge",
+        line,
+    )?;
+    let radius = parse_field_f32(
+        tokens[coord_start + 4],
+        line_no,
+        coord_start + 4,
+        "radius",
+        line,
+    )?;
 
     // Infer element from atom name. PQR has no dedicated element column at
     // all (unlike PDB's optional columns 77-78) -- this is *always* a
@@ -411,8 +438,7 @@ mod tests {
     fn twelve_tokens_is_token_count() {
         // A DELIBERATE change (decision a): today extras are silently
         // ignored; now a 12-token line is a hard TokenCount error.
-        let line =
-            "ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240  EXTRA";
+        let line = "ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240  EXTRA";
         let (kind, field) = err_kind_field(line);
         assert_eq!(kind, TokenFieldErrorKind::TokenCount);
         assert_eq!(field, "<tokens>");

@@ -78,7 +78,9 @@ impl fmt::Display for TokenFieldErrorKind {
             TokenFieldErrorKind::TokenCount => "wrong or merged token count",
             TokenFieldErrorKind::RowLength => "row not terminated at a line boundary",
             TokenFieldErrorKind::UnterminatedQuote => "unterminated quoted value",
-            TokenFieldErrorKind::Inapplicable => "value is '.' (inapplicable) but field is required",
+            TokenFieldErrorKind::Inapplicable => {
+                "value is '.' (inapplicable) but field is required"
+            }
             TokenFieldErrorKind::Unknown => "value is '?' (unknown) but field is required",
             TokenFieldErrorKind::NonLoopUnsupported => "non-loop _atom_site form is unsupported",
             TokenFieldErrorKind::MultipleDataBlocks => {
@@ -152,16 +154,25 @@ mod tests {
     #[test]
     fn finite_f32_distinguishes_unparseable_from_nonfinite() {
         assert_eq!(parse_finite_f32("1.5"), Ok(1.5f32));
-        assert_eq!(parse_finite_f32("xx.xxx"), Err(TokenFieldErrorKind::Unparseable));
+        assert_eq!(
+            parse_finite_f32("xx.xxx"),
+            Err(TokenFieldErrorKind::Unparseable)
+        );
         assert_eq!(parse_finite_f32("nan"), Err(TokenFieldErrorKind::NonFinite));
         assert_eq!(parse_finite_f32("inf"), Err(TokenFieldErrorKind::NonFinite));
-        assert_eq!(parse_finite_f32("-inf"), Err(TokenFieldErrorKind::NonFinite));
+        assert_eq!(
+            parse_finite_f32("-inf"),
+            Err(TokenFieldErrorKind::NonFinite)
+        );
     }
 
     #[test]
     fn finite_f64_distinguishes_unparseable_from_nonfinite() {
         assert_eq!(parse_finite_f64("1.5"), Ok(1.5f64));
-        assert_eq!(parse_finite_f64("xx.xxx"), Err(TokenFieldErrorKind::Unparseable));
+        assert_eq!(
+            parse_finite_f64("xx.xxx"),
+            Err(TokenFieldErrorKind::Unparseable)
+        );
         assert_eq!(parse_finite_f64("nan"), Err(TokenFieldErrorKind::NonFinite));
     }
 

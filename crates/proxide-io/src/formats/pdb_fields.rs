@@ -370,7 +370,8 @@ fn optional_f32_blank_default(
     if text.is_empty() {
         return Ok(default);
     }
-    field_parse::parse_finite_f32(text).map_err(|kind| ctx.err(field, (start + 1, end), to_pdb_kind(kind)))
+    field_parse::parse_finite_f32(text)
+        .map_err(|kind| ctx.err(field, (start + 1, end), to_pdb_kind(kind)))
 }
 
 // ---------------------------------------------------------------------

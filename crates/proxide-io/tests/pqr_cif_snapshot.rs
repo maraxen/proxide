@@ -227,8 +227,7 @@ fn enumerated_fixture_set_is_exact() {
             snapshot_path()
         )
     });
-    let checked_keys: BTreeSet<String> =
-        parse_checked_in_lines(&checked_in).into_keys().collect();
+    let checked_keys: BTreeSet<String> = parse_checked_in_lines(&checked_in).into_keys().collect();
     let want: BTreeSet<String> = FIXTURES.iter().map(|s| s.to_string()).collect();
     assert_eq!(
         checked_keys, want,
@@ -242,8 +241,7 @@ fn enumerated_fixture_set_is_exact() {
 fn regenerate_snapshot() {
     let entries = build_snapshot();
     let rendered = render_snapshot(&entries);
-    std::fs::create_dir_all(snapshot_path().parent().unwrap())
-        .expect("create snapshot dir");
+    std::fs::create_dir_all(snapshot_path().parent().unwrap()).expect("create snapshot dir");
     std::fs::write(snapshot_path(), rendered).expect("write snapshot.json");
 }
 
@@ -319,8 +317,8 @@ fn independent_pdb_atom_line_count(path: &Path) -> usize {
 fn independent_count_matches_1crn_cif() {
     let path = workspace_root().join("crates/proxide-io/tests/data/1CRN.cif");
     let expected = independent_cif_atom_site_row_count(&path);
-    let (raw, _) = parse_mmcif_file(&path)
-        .unwrap_or_else(|e| panic!("1CRN.cif: parser errored: {e}"));
+    let (raw, _) =
+        parse_mmcif_file(&path).unwrap_or_else(|e| panic!("1CRN.cif: parser errored: {e}"));
     assert_eq!(
         raw.num_atoms, expected,
         "1CRN.cif: parser num_atoms ({}) disagrees with independent _atom_site row count ({}) \
@@ -333,8 +331,8 @@ fn independent_count_matches_1crn_cif() {
 fn independent_count_matches_1ubq_cif() {
     let path = workspace_root().join("crates/proxide-io/tests/data/1UBQ.cif");
     let expected = independent_cif_atom_site_row_count(&path);
-    let (raw, _) = parse_mmcif_file(&path)
-        .unwrap_or_else(|e| panic!("1UBQ.cif: parser errored: {e}"));
+    let (raw, _) =
+        parse_mmcif_file(&path).unwrap_or_else(|e| panic!("1UBQ.cif: parser errored: {e}"));
     assert_eq!(
         raw.num_atoms, expected,
         "1UBQ.cif: parser num_atoms ({}) disagrees with independent _atom_site row count ({}) \
@@ -365,8 +363,14 @@ fn crn_cif_and_pdb_parity() {
     let (cif_raw, _) = parse_mmcif_file(&cif_path).expect("1CRN.cif parses");
     let (pdb_raw, _) = parse_pdb_file(&pdb_path).expect("1CRN.pdb parses");
 
-    assert_eq!(cif_raw.num_atoms, pdb_raw.num_atoms, "1CRN cif/pdb atom count parity");
-    assert_eq!(cif_raw.atom_names, pdb_raw.atom_names, "1CRN cif/pdb atom_name parity");
+    assert_eq!(
+        cif_raw.num_atoms, pdb_raw.num_atoms,
+        "1CRN cif/pdb atom count parity"
+    );
+    assert_eq!(
+        cif_raw.atom_names, pdb_raw.atom_names,
+        "1CRN cif/pdb atom_name parity"
+    );
 
     for i in 0..cif_raw.num_atoms {
         let cif_xyz = (
