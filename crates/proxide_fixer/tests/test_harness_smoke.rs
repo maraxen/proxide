@@ -41,14 +41,20 @@ fn test_fixture_path_str_returns_string() {
 }
 
 #[test]
+fn test_all_fixtures_load_loudly() {
+    // This test verifies that all committed fixtures load without panicking
+    // with the loud fixture loaders
+    let _ = load_topology("clean_small.pdb");
+    let _ = load_topology("disulfide_pair.pdb");
+    let _ = load_topology("missing_atoms.pdb");
+    let _ = load_topology("chain_break.pdb");
+    let _ = load_topology("truncated_sidechain.pdb");
+    let _ = load_topology("no_hydrogens.pdb");
+}
+
+#[test]
 fn test_load_topology_clean_small() {
     let topology = load_topology("clean_small.pdb");
-    assert!(
-        topology.is_some(),
-        "Failed to load clean_small.pdb fixture as topology"
-    );
-
-    let topology = topology.unwrap();
     assert_eq!(
         topology.chains.len(),
         1,
@@ -81,12 +87,6 @@ fn test_load_topology_clean_small() {
 #[test]
 fn test_load_topology_disulfide_pair() {
     let topology = load_topology("disulfide_pair.pdb");
-    assert!(
-        topology.is_some(),
-        "Failed to load disulfide_pair.pdb fixture as topology"
-    );
-
-    let topology = topology.unwrap();
     assert_eq!(
         topology.chains.len(),
         1,
@@ -141,12 +141,6 @@ fn test_load_topology_disulfide_pair() {
 #[test]
 fn test_load_topology_missing_atoms() {
     let topology = load_topology("missing_atoms.pdb");
-    assert!(
-        topology.is_some(),
-        "Failed to load missing_atoms.pdb fixture as topology"
-    );
-
-    let topology = topology.unwrap();
     assert_eq!(topology.chains.len(), 1);
 
     let chain = &topology.chains[0];
@@ -185,12 +179,6 @@ fn test_load_topology_missing_atoms() {
 #[test]
 fn test_load_topology_chain_break() {
     let topology = load_topology("chain_break.pdb");
-    assert!(
-        topology.is_some(),
-        "Failed to load chain_break.pdb fixture as topology"
-    );
-
-    let topology = topology.unwrap();
     assert_eq!(
         topology.chains.len(),
         1,
@@ -227,6 +215,41 @@ fn test_load_topology_chain_break() {
         "Chain break should show >8 Angstrom gap; distance={:.2}",
         distance
     );
+}
+
+#[test]
+fn test_fixture_directory_is_exactly_expected_pdbs() {
+    // Enumerate tests/data/ directly (not via the fixture() helper) so this test fails
+    // loudly if a fixture is added, removed, or renamed without updating the harness.
+    let data_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data");
+
+    let mut names: Vec<String> = std::fs::read_dir(&data_dir)
+        .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", data_dir, e))
+        .map(|entry| entry.expect("Failed to read directory entry").file_name())
+        .filter_map(|os_name| os_name.into_string().ok())
+        .filter(|name| name.ends_with(".pdb"))
+        .collect();
+    names.sort();
+
+    assert_eq!(
+        names,
+        vec![
+            "chain_break.pdb".to_string(),
+            "clean_small.pdb".to_string(),
+            "disulfide_pair.pdb".to_string(),
+            "missing_atoms.pdb".to_string(),
+            "no_hydrogens.pdb".to_string(),
+            "truncated_sidechain.pdb".to_string(),
+        ],
+        "tests/data should contain exactly the expected set of .pdb fixtures"
+    );
+
+    // Every fixture in the directory must also load successfully via load_topology.
+    for name in &names {
+        let _ = load_topology(name);
+    }
 }
 
 #[test]
