@@ -62,8 +62,18 @@ pub fn assign_masses(atom_names: &[String]) -> Vec<f32> {
 /// fallback -- see backlog #5052 (prolix), where a duplicated, wrong version of
 /// this exact inference in `proxide-io/src/formats/pdb.rs` mis-elementized a
 /// chloride ion ("Cl") as carbon ("C").
+///
+/// Strips a leading digit before inference: PDB hydrogen-naming conventions
+/// commonly prefix a remoteness/branch digit onto the element letter(s), e.g.
+/// "1HB", "2HG1", "1CL" -- without stripping it, `"1HB".chars().next()` is
+/// `'1'`, which matches no element and silently falls through to the "C"
+/// default (sprint 24, decision g; task 260922_autonomous-loop). Digits
+/// elsewhere in the name (e.g. the trailing branch index in "HG1") are left
+/// alone -- only a *leading* digit is a PDB naming-convention prefix, not
+/// part of the element.
 pub fn infer_element(atom_name: &str) -> &str {
     let name = atom_name.trim();
+    let name = name.trim_start_matches(|c: char| c.is_ascii_digit());
     if name.is_empty() {
         return "C";
     }
@@ -184,5 +194,29 @@ mod tests {
         assert_eq!(infer_element("CA"), "C");
         assert_eq!(infer_element("Ca"), "C"); // title-case variant must also be "C"
         assert_eq!(infer_element("ca"), "C");
+    }
+
+    #[test]
+    fn test_infer_element_leading_digit_stripped() {
+        // Sprint 24 decision g (task 260922_autonomous-loop): PDB hydrogen
+        // naming conventions prefix a remoteness/branch digit onto the
+        // element letter(s) (e.g. "1HB", "2HG1"). Without stripping the
+        // leading digit, `infer_element` silently fell through to the "C"
+        // default -- a latent bug at proxide-io/src/formats/pdb.rs:68 (blank
+        // element column + digit-prefixed hydrogen name) predating this fix.
+        assert_eq!(infer_element("1HB"), "H");
+        assert_eq!(infer_element("2HG1"), "H");
+        assert_eq!(infer_element("1CL"), "Cl");
+        assert_eq!(infer_element("2Cl"), "Cl");
+        assert_eq!(infer_element("3HD1"), "H");
+
+        // Not digit-prefixed: unaffected, including the critical CA case.
+        assert_eq!(infer_element("CA"), "C");
+        assert_eq!(infer_element("HB"), "H");
+
+        // A name that is nothing but digits after stripping falls back to
+        // the same "unknown -> C" default as an empty name (unchanged
+        // behaviour, just reached via a different path now).
+        assert_eq!(infer_element("1"), "C");
     }
 }

@@ -14,6 +14,7 @@ pub mod newick;
 #[cfg(test)]
 mod newick_test;
 pub mod pdb;
+pub mod pdb_fields;
 pub mod pqr;
 pub mod trr;
 pub mod xdr;

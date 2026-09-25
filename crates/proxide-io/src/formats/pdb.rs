@@ -1,80 +1,24 @@
 //! PDB file format parser
-//!  
+//!
 //! High-performance parser for Protein Data Bank (PDB) files.
 //! Returns raw atom data matching the proxide format.
+//!
+//! The actual fixed-column field reading (and its fail-loud error handling)
+//! lives in [`crate::formats::pdb_fields`] -- see that module's docs for the
+//! full rationale (sprint 24, task 260922_autonomous-loop, debt
+//! #1776+#1883, OBS-105 option a). This module is now a thin adapter from
+//! [`pdb_fields::PdbAtomRecord`] to the crate-wide [`RawAtomData`] /
+//! [`AtomRecord`] shape, plus the public file/reader entry points. There is
+//! no atom-dropping path left here: every malformed record aborts the whole
+//! parse with a [`crate::formats::pdb_fields::PdbFieldError`] (via `?`, which
+//! `Box<dyn std::error::Error>` accepts automatically since `PdbFieldError`
+//! implements `std::error::Error`).
 
-use proxide_core::chem::masses::infer_element;
+use crate::formats::pdb_fields::parse_pdb_records;
 use proxide_core::structure::{AtomRecord, RawAtomData};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-
-/// Parse a PDB ATOM/HETATM line using fixed-width fields
-/// Format: https://www.wwpdb.org/documentation/file-format-content/format33/sect9.html
-fn parse_atom_line(line: &str) -> Option<AtomRecord> {
-    if line.len() < 54 {
-        return None;
-    }
-
-    let record_type = line[0..6].trim();
-    if record_type != "ATOM" && record_type != "HETATM" {
-        return None;
-    }
-
-    // Helper to parse float from fixed-width field
-    let parse_f32 = |s: &str| -> Option<f32> { s.trim().parse().ok() };
-
-    // Helper to parse int from fixed-width field
-    let parse_i32 = |s: &str| -> Option<i32> { s.trim().parse().ok() };
-
-    Some(AtomRecord {
-        serial: parse_i32(&line[6..11])?,
-        atom_name: line[12..16].trim().to_string(),
-        alt_loc: line.chars().nth(16).unwrap_or(' '),
-        res_name: line[17..20].trim().to_string(),
-        chain_id: line[21..22].trim().to_string(),
-        res_seq: parse_i32(&line[22..26])?,
-        i_code: line.chars().nth(26).unwrap_or(' '),
-        x: parse_f32(&line[30..38])?,
-        y: parse_f32(&line[38..46])?,
-        z: parse_f32(&line[46..54])?,
-        occupancy: if line.len() >= 60 {
-            parse_f32(&line[54..60]).unwrap_or(1.0)
-        } else {
-            1.0
-        },
-        temp_factor: if line.len() >= 66 {
-            parse_f32(&line[60..66]).unwrap_or(0.0)
-        } else {
-            0.0
-        },
-        element: {
-            // Columns 77-78 (0-indexed 76..78) hold the element symbol per the PDB
-            // spec, but many writers (including OpenMM's PDBFile, used for the
-            // Modeller-generated solvent/ion atoms that exposed this) either omit
-            // the column entirely (short line) or leave it blank (long-enough line,
-            // empty after trim). Either way, fall back to name-based inference --
-            // and that inference must be the two-letter-aware `infer_element`
-            // (shared with mass assignment), not a naive first-character slice.
-            // The naive version previously here mis-elementized "Cl" as "C" (and
-            // would do the same for Br/Na/Mg/Zn/Fe/Cu/Mn/Se) -- see backlog #5052
-            // (prolix).
-            let from_column = if line.len() >= 78 {
-                line[76..78].trim().to_string()
-            } else {
-                String::new()
-            };
-            if from_column.is_empty() {
-                infer_element(line[12..16].trim()).to_string()
-            } else {
-                from_column
-            }
-        },
-        charge: None,
-        radius: None,
-        is_hetatm: record_type == "HETATM",
-    })
-}
 
 /// Parse PDB file and return raw atom data with model IDs.
 /// Parses all models by default. Use `filter_models()` to select specific models.
@@ -90,33 +34,31 @@ pub fn parse_pdb_file<P: AsRef<Path>>(
 pub fn parse_pdb_from_reader<R: BufRead>(
     reader: R,
 ) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
-    let mut raw_data = RawAtomData::new();
-    let mut model_ids: Vec<usize> = Vec::new();
-    let mut current_model: usize = 1; // Default model 1 if no MODEL record
+    let records = parse_pdb_records(reader)?;
 
-    for line in reader.lines() {
-        let line = line?;
-        let trimmed = line.trim();
+    let mut raw_data = RawAtomData::with_capacity(records.len());
+    let mut model_ids: Vec<usize> = Vec::with_capacity(records.len());
 
-        if trimmed.starts_with("MODEL") {
-            // Parse model number from MODEL record
-            if let Some(model_str) = trimmed.get(10..) {
-                if let Ok(model_num) = model_str.trim().parse::<usize>() {
-                    current_model = model_num;
-                }
-            }
-        } else if trimmed.starts_with("ENDMDL")
-            || trimmed.starts_with("TER")
-            || trimmed.starts_with("ANISOU")
-        {
-            // TER and ANISOU are explicitly ignored for now but could trigger state changes
-            continue;
-        } else if trimmed.starts_with("ATOM") || trimmed.starts_with("HETATM") {
-            if let Some(atom) = parse_atom_line(&line) {
-                raw_data.add_atom(atom);
-                model_ids.push(current_model);
-            }
-        }
+    for rec in records {
+        model_ids.push(rec.model);
+        raw_data.add_atom(AtomRecord {
+            serial: rec.serial,
+            atom_name: rec.atom_name,
+            alt_loc: rec.alt_loc,
+            res_name: rec.res_name,
+            chain_id: rec.chain_id,
+            res_seq: rec.res_seq,
+            i_code: rec.i_code,
+            x: rec.x,
+            y: rec.y,
+            z: rec.z,
+            occupancy: rec.occupancy,
+            temp_factor: rec.temp_factor,
+            element: rec.element,
+            charge: rec.charge,
+            radius: rec.radius,
+            is_hetatm: rec.is_hetatm,
+        });
     }
 
     if raw_data.num_atoms == 0 {
@@ -129,36 +71,56 @@ pub fn parse_pdb_from_reader<R: BufRead>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::formats::pdb_fields::PdbFieldError;
+
+    /// Parse a single ATOM/HETATM line through the full reader (mirrors what
+    /// the old private `parse_atom_line` unit tests exercised, now routed
+    /// through the shared `pdb_fields` reader -- there is no atom-level
+    /// parsing left in this module to unit test directly).
+    fn parse_one_line(line: &str) -> Result<RawAtomData, Box<dyn std::error::Error>> {
+        let (raw, _) = parse_pdb_from_reader(line.as_bytes())?;
+        Ok(raw)
+    }
+
+    fn downcast_kind(err: &Box<dyn std::error::Error>) -> Option<&PdbFieldError> {
+        err.downcast_ref::<PdbFieldError>()
+    }
+
+    /// The workspace root, two levels above this crate (`crates/proxide-io`).
+    fn workspace_root() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("proxide-io is two levels below the workspace root")
+            .to_path_buf()
+    }
 
     #[test]
     fn test_parse_atom_line() {
         let line =
             "ATOM      1  N   MET A   1      20.154  29.699   5.276  1.00 49.05           N  ";
-        let atom = parse_atom_line(line);
-        assert!(atom.is_some());
-
-        let atom = atom.unwrap();
-        assert_eq!(atom.serial, 1);
-        assert_eq!(atom.atom_name, "N");
-        assert_eq!(atom.res_name, "MET");
-        assert_eq!(atom.chain_id, "A");
-        assert_eq!(atom.res_seq, 1);
-        assert!((atom.x - 20.154).abs() < 0.001);
-        assert!((atom.temp_factor - 49.05).abs() < 0.01);
-        assert_eq!(atom.element, "N");
+        let raw = parse_one_line(line).unwrap();
+        assert_eq!(raw.num_atoms, 1);
+        assert_eq!(raw.serial_numbers[0], 1);
+        assert_eq!(raw.atom_names[0], "N");
+        assert_eq!(raw.res_names[0], "MET");
+        assert_eq!(raw.chain_ids[0], "A");
+        assert_eq!(raw.res_ids[0], 1);
+        assert!((raw.coords[0] - 20.154).abs() < 0.001);
+        assert!((raw.b_factors[0] - 49.05).abs() < 0.01);
+        assert_eq!(raw.elements[0], "N");
     }
 
     #[test]
     fn test_parse_hetatm() {
         let line =
             "HETATM 2242  O   HOH A 301      24.243  16.452  10.158  1.00 20.12           O  ";
-        let atom = parse_atom_line(line);
-        assert!(atom.is_some());
-
-        let atom = atom.unwrap();
-        assert_eq!(atom.atom_name, "O");
-        assert_eq!(atom.res_name, "HOH");
-        assert_eq!(atom.chain_id, "A");
+        let raw = parse_one_line(line).unwrap();
+        assert_eq!(raw.num_atoms, 1);
+        assert_eq!(raw.atom_names[0], "O");
+        assert_eq!(raw.res_names[0], "HOH");
+        assert_eq!(raw.chain_ids[0], "A");
+        assert!(raw.is_hetatm[0]);
     }
 
     #[test]
@@ -220,26 +182,58 @@ mod tests {
         // 1H5' should be captured correctly
         let line =
             "ATOM      1 1H5' ALA A   1      20.154  29.699   5.276  1.00 49.05           H  ";
-        let atom = parse_atom_line(line).unwrap();
-        assert_eq!(atom.atom_name, "1H5'");
+        let raw = parse_one_line(line).unwrap();
+        assert_eq!(raw.atom_names[0], "1H5'");
     }
 
     #[test]
     fn test_parse_atom_line_edge_cases() {
-        // Short line
-        assert!(parse_atom_line("ATOM").is_none());
+        // Short line -- was `None` (silently dropped); now a hard,
+        // kind-specific error (decision c, OBS-105 option a).
+        let err = parse_one_line("ATOM").unwrap_err();
+        let kind_err =
+            downcast_kind(&err).expect("Box<dyn Error> should downcast to PdbFieldError");
+        assert_eq!(
+            kind_err.kind,
+            crate::formats::pdb_fields::PdbFieldErrorKind::LineTooShort
+        );
 
-        // Temp factor fallback and element inference
+        // Temp factor fallback and element inference (line ends before the
+        // occupancy/B-factor/element columns -- all blank, default applies).
         let line = "ATOM      1  N   ALA A   1      20.154  29.699   5.276";
-        let atom = parse_atom_line(line).unwrap();
-        assert_eq!(atom.temp_factor, 0.0);
-        assert_eq!(atom.element, "N");
+        let raw = parse_one_line(line).unwrap();
+        assert_eq!(raw.b_factors[0], 0.0);
+        assert_eq!(raw.elements[0], "N");
 
-        // Explicit occupancy but no temp factor
+        // Explicit occupancy but no temp factor.
         let line = "ATOM      1  N   ALA A   1      20.154  29.699   5.276  1.00";
-        let atom = parse_atom_line(line).unwrap();
-        assert_eq!(atom.occupancy, 1.0);
-        assert_eq!(atom.temp_factor, 0.0);
+        let raw = parse_one_line(line).unwrap();
+        assert_eq!(raw.occupancy[0], 1.0);
+        assert_eq!(raw.b_factors[0], 0.0);
+    }
+
+    #[test]
+    fn test_malformed_occupancy_is_an_error() {
+        // OBS-105 option a, named test 1/2. Spec-named checked-in fixture:
+        // tests/data/coercion/malformed_occupancy.pdb (occupancy column
+        // holds "x.xx" -- present but unparseable, not blank).
+        let path = workspace_root().join("tests/data/coercion/malformed_occupancy.pdb");
+        let err = parse_pdb_file(&path).unwrap_err();
+        let kind_err = downcast_kind(&err).unwrap();
+        assert_eq!(
+            kind_err.kind,
+            crate::formats::pdb_fields::PdbFieldErrorKind::Unparseable
+        );
+        assert_eq!(kind_err.field, "occupancy");
+    }
+
+    #[test]
+    fn test_blank_occupancy_takes_documented_default() {
+        // OBS-105 option a, named test 2/2.
+        let line =
+            "ATOM      1  N   ALA A   1      20.154  29.699   5.276       49.05           N  ";
+        let raw = parse_one_line(line).unwrap();
+        assert_eq!(raw.occupancy[0], 1.0);
     }
 
     #[test]
@@ -250,14 +244,14 @@ mod tests {
         // present but blank -- that must fall back to name-based inference too,
         // not silently accept an empty element string.
         let short_line = "HETATM 7506  Cl  CL  A 500      12.000   3.000   4.000  1.00  0.00";
-        let atom = parse_atom_line(short_line).unwrap();
-        assert_eq!(atom.atom_name, "Cl");
-        assert_eq!(atom.element, "Cl");
+        let raw = parse_one_line(short_line).unwrap();
+        assert_eq!(raw.atom_names[0], "Cl");
+        assert_eq!(raw.elements[0], "Cl");
 
         let blank_column_line =
             "HETATM 7506  Cl  CL  A 500      12.000   3.000   4.000  1.00  0.00              ";
-        let atom = parse_atom_line(blank_column_line).unwrap();
-        assert_eq!(atom.element, "Cl");
+        let raw = parse_one_line(blank_column_line).unwrap();
+        assert_eq!(raw.elements[0], "Cl");
     }
 
     #[test]
