@@ -166,14 +166,12 @@ mod tests {
         // here mis-elementized "CL" (chloride) as "C" (carbon) and "NA"
         // (sodium) as "N" (nitrogen) -- and would do the same, or produce an
         // outright invalid single-letter symbol, for Br/Mg/Zn/Fe/Cu/Mn/Se.
-        let cl_line =
-            "HETATM    1  CL  CL  A 500      12.000   3.000   4.000  -1.0000  1.9350";
+        let cl_line = "HETATM    1  CL  CL  A 500      12.000   3.000   4.000  -1.0000  1.9350";
         let atom = parse_pqr_line(cl_line).unwrap();
         assert_eq!(atom.atom_name, "CL");
         assert_eq!(atom.element, "Cl");
 
-        let na_line =
-            "HETATM    2  NA  NA  A 501      15.000   3.000   4.000   1.0000  1.8680";
+        let na_line = "HETATM    2  NA  NA  A 501      15.000   3.000   4.000   1.0000  1.8680";
         let atom = parse_pqr_line(na_line).unwrap();
         assert_eq!(atom.atom_name, "NA");
         assert_eq!(atom.element, "Na");

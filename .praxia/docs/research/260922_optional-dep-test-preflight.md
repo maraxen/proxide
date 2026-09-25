@@ -152,7 +152,7 @@ With no rules loaded, `assign_gaff2_atom_types()` has no patterns to match, so a
 - test_gaff2_parity_invariants.py formamide: expected carbonyl 'c', got 'c3' (line 134)
 - test_molecule.py benzene: expected aromatic 'ca', got 'c3' (line 173)
 
-**Phase 2 must verify:** GAFF2 golden/invariants/molecule tests pass when CI fetches the DEF file.
+**Phase 2 must verify:** GAFF2 golden/invariants/molecule tests pass once CI fetches the DEF file AND installs rdkit (debt #909 phase 2d) — the DEF alone is not sufficient, since these tests import rdkit and CI's `tests` job installs only `.[dev]`.
 
 #### Environment-Only Classification
 
@@ -160,7 +160,7 @@ With no rules loaded, `assign_gaff2_atom_types()` has no patterns to match, so a
    - Line 173: `assert types == ["ca"] * 6 + ["ha"] * 6`
    - Actual: `['c3', 'c3', 'c3', 'c3', 'c3', 'c3', 'ha', 'ha', 'ha', 'ha', 'ha', 'ha']`
    - Cause: GAFF2 rules empty (DEF not fetched locally), benzene carbons get 'c3' default
-   - Classification: **Env-only locally (DEF not fetched) — would not occur in CI**
+   - Classification: **Env-only locally (DEF not fetched); NOT exercised in CI even after debt #1896's fix packages/loads the DEF — these tests import rdkit, and CI's `tests` job installs only `.[dev]` (rdkit is gated behind the `molecules`/`espaloma` extras); unexercised until debt #909 phase 2d installs rdkit there**
    - Related: Production bug debt #1896 (silent empty GAFF2 rules)
 
 2. **test_gaff2_parity_invariants.py** (2 failing)
@@ -170,14 +170,14 @@ With no rules loaded, `assign_gaff2_atom_types()` has no patterns to match, so a
    - `test_h_type_by_heavy_amide_n_h_types_as_hn` (line 166)
      - Failure: formamide NC=O: amide N-H resolved to 'ha', expected 'hn'
      - Cause: GAFF2 rules empty → no amide-H-specific rule matches → falls back to generic H default 'ha'
-   - Classification: **Env-only locally (DEF not fetched) — would not occur in CI**
+   - Classification: **Env-only locally (DEF not fetched); NOT exercised in CI even after debt #1896's fix packages/loads the DEF — these tests import rdkit, and CI's `tests` job installs only `.[dev]` (rdkit is gated behind the `molecules`/`espaloma` extras); unexercised until debt #909 phase 2d installs rdkit there**
    - Related: Production bug debt #1896 (silent empty GAFF2 rules)
 
 3. **test_gaff2_golden.py** (89 failing out of 106 tests)
    - Failure pattern: Tests with unsaturated carbons, aromatics, heteroaromatics, carbonyls all fail
    - Examples: C=C expects ['c2','c2'] got ['c3','c3'], c1ccccc1 expects ['ca']*6 got ['c3']*6
    - Root cause: GAFF2 rules empty (DEF not fetched locally)
-   - Classification: **Env-only locally (DEF not fetched) — would not occur in CI**
+   - Classification: **Env-only locally (DEF not fetched); NOT exercised in CI even after debt #1896's fix packages/loads the DEF — these tests import rdkit, and CI's `tests` job installs only `.[dev]` (rdkit is gated behind the `molecules`/`espaloma` extras); unexercised until debt #909 phase 2d installs rdkit there**
    - Related: Production bug debt #1896 (silent empty GAFF2 rules)
 
 **Did NOT verify these pass with DEF present** — fetching ATOMTYPE_GFF2.DEF is disallowed by the task constraints. Phase 2 must confirm in real CI.
@@ -203,22 +203,23 @@ Pre-existing failures (92 test instances) break down by classification:
 
 | Issue | Count | Classification | CI Impact | Category |
 |-------|-------|-----------------|-----------|----------|
-| GAFF2 golden tests | 89 | Env-only (DEF not fetched locally) | None if DEF fetched | Type inference |
-| GAFF2 amide typing | 2 | Env-only (DEF not fetched locally) | None if DEF fetched | Type inference |
-| rdkit aromaticity | 1 | Env-only (DEF not fetched locally) | None if DEF fetched | GAFF2 fallback |
+| GAFF2 golden tests | 89 | Env-only (DEF not fetched locally) | Still NOT exercised in CI — needs rdkit, not installed by `.[dev]` | Type inference |
+| GAFF2 amide typing | 2 | Env-only (DEF not fetched locally) | Still NOT exercised in CI — needs rdkit, not installed by `.[dev]` | Type inference |
+| rdkit aromaticity | 1 | Env-only (DEF not fetched locally) | Still NOT exercised in CI — needs rdkit, not installed by `.[dev]` | GAFF2 fallback |
 | Remaining skip gates | 3 | Unfixed, test data missing | Persists in CI | Test fixtures |
 
-**All 92 failures root to the missing ATOMTYPE_GFF2.DEF file. CI will fetch this file before pytest, so these failures will NOT appear in real CI runs — they are environment-only to this checkout.**
+**CORRECTED (260922, debt #1896 fix / spec-adversarial FATAL #1): all 92 failures root to the missing ATOMTYPE_GFF2.DEF file locally, but fetching the DEF alone does NOT make these tests run in CI. These are rdkit-requiring GAFF2 typing tests, and CI's `tests` job installs only `.[dev]` — rdkit lives behind the `molecules`/`espaloma` extras, neither installed there. Debt #1896's fix makes CI fetch and package the DEF (so a post-install `load_gaff2_rules()` smoke check can run there), but the GAFF2 *typing* tests below remain unexercised in CI until debt #909 phase 2d installs rdkit in the `tests` job.**
 
 ### Action Items for Phase 2
 
-**Core:** Confirm GAFF2 failures are environment-only and pass when DEF is fetched.
+**Core:** Confirm GAFF2 typing-test failures are environment-only, and separately confirm they will actually run in CI once rdkit is installed (debt #909 phase 2d) — fetching the DEF (debt #1896) is necessary but not sufficient for that.
 
-1. **Phase 2a — Verify in real CI**: Run tests in CI with `scripts/fetch_amber_assets.py` executed before pytest
-   - Confirms: test_gaff2_golden.py (89 tests) pass with DEF fetched
-   - Confirms: test_gaff2_parity_invariants.py (2 tests) pass with DEF fetched
-   - Confirms: test_molecule.py benzene test passes with DEF fetched
-   - Timeline: 1 CI run
+1. **Phase 2a — Verify in real CI**: Run tests in CI with `scripts/fetch_amber_assets.py` executed before pytest AND rdkit installed (debt #909 phase 2d)
+   - Confirms: test_gaff2_golden.py (89 tests) pass with DEF fetched + rdkit installed
+   - Confirms: test_gaff2_parity_invariants.py (2 tests) pass with DEF fetched + rdkit installed
+   - Confirms: test_molecule.py benzene test passes with DEF fetched + rdkit installed
+   - Until then: debt #1896 lands a CI-covered DEF-loading check (`tests/chem/test_gaff2_def_loading.py` + a post-install `load_gaff2_rules()` smoke step) that does NOT need rdkit, but does not by itself exercise the typing tests above
+   - Timeline: 1 CI run after debt #909 phase 2d
 
 2. **Phase 2b — Fix debt #1896** (production bug — silent GAFF2 rule fallback)
    - **Problem:** When ATOMTYPE_GFF2.DEF is missing, `_get_default_rules()` silently returns `[]` instead of raising
@@ -278,4 +279,4 @@ Pre-existing failures (92 test instances) break down by classification:
 - test_gaff2_parity_invariants: 2 failures (env-only: DEF not fetched)
 - test_molecule: 1 failure (env-only: GAFF2 fallback due to missing DEF)
 
-**All 92 failures are environment-only to this checkout.** CI will fetch ATOMTYPE_GFF2.DEF before pytest and these tests will pass.
+**All 92 failures are environment-only to this checkout in the sense that they stem from the missing DEF, not a code defect.** CORRECTED (260922): fetching ATOMTYPE_GFF2.DEF before pytest (debt #1896) does NOT make these 92 GAFF2-typing tests pass in CI on its own — they import rdkit, which CI's `tests` job does not install (only `.[dev]`, not the `molecules`/`espaloma` extras). They remain unexercised in CI until debt #909 phase 2d installs rdkit there. What debt #1896's fix does add to CI coverage is a DEF-loading check (no rdkit needed): the DEF is now fetched before install so the wheel packages it, and a post-install step asserts `load_gaff2_rules()` returns a non-empty ruleset.

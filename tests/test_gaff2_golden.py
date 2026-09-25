@@ -882,14 +882,9 @@ def test_def_file_parses_without_dropping_fields() -> None:
     cases where a bracket/paren was clearly present in the raw line but the
     parsed field is None").
     """
-    from pathlib import Path
+    from proxide.chem.gaff2 import _default_def_path, parse_gaff2_rules
 
-    from proxide.chem.gaff2 import parse_gaff2_rules
-
-    def_path = (
-        Path(__file__).parent.parent
-        / "src" / "proxide" / "assets" / "gaff" / "dat" / "ATOMTYPE_GFF2.DEF"
-    )
+    def_path = _default_def_path()
     rules, wildatom_map = parse_gaff2_rules(def_path)
 
     # Pinned to the actual count from the vendored DEF file (317 of 318 raw ATD

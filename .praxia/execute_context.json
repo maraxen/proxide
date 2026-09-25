@@ -1,23 +1,21 @@
 {
   "task_id": "260922_autonomous-loop",
-  "sprint_id": "260922_sprint-19-fixture-conformance-ci-preflight",
-  "sprint_plan_path": ".praxia/sprint_plans/260922_sprint-19-fixture-conformance-ci-preflight.toml",
-  "branch": "autoloop/260922-sprint-19",
-  "git_base_sha": "52d0802afe37e4e05245c195c4f9753bbbb7c107",
-  "approved_by": "user, in conversation (\"I approve, open PRs\"), 2026-09-22",
-  "push_policy": "user: open PRs. Stack: #41 fix/parameterize-solvent-atoms -> main; #42 autoloop/260922_autonomous-loop -> fix/...; sprint 19 PR stacked on #42. Note: repo ruleset restricts branch creation/updates; every branch push bypasses it via the owner's permissions.",
-  "dispatch_mode": "in-place, concurrent (same rationale as sprint 18: Agent worktree isolation branches from origin/main)",
+  "sprint_id": "260922_sprint-20-gaff2-def-fail-loud",
+  "sprint_plan_path": ".praxia/sprint_plans/260922_sprint-20-gaff2-def-fail-loud.toml",
+  "branch": "autoloop/260922-sprint-20",
+  "git_base_sha": "74e1e77",
+  "approved_by": "user, in conversation (\"Approve sprint 20\"), 2026-09-23; approval covers the planned gh workflow_dispatch CI run",
+  "push_policy": "PRs, stacked: #41 <- #42 <- #43 <- sprint 20 PR. Owner will correct the misset branch-creation ruleset.",
+  "dispatch_mode": "in-place, single track",
   "tracks": {
-    "t": {"item": "2250+debt-1889", "fixer_model": "haiku", "reviewer_model": "sonnet"},
-    "p": {"item": "debt-909-phase1", "fixer_model": "haiku", "reviewer_model": "sonnet"}
+    "g": {"item": "debt-1896", "fixer_model": "sonnet", "reviewer_model": "sonnet", "model_note": "Sonnet fixer (not Haiku) after Haiku fixers misreported their own work twice in sprint 19"}
   },
-  "sprint_18": {"commits": ["2513659", "1f43427"], "verify": "PASS", "pr": 42},
+  "held_for_next_sprint": "Track D debt #1890 (owner decisions recorded 260923)",
   "verify": {
-    "t": {"commits": ["5bd4171", "f356c30", "d475d17"], "remediations": 2, "verdict": "PASS",
-          "history": "fixer reported all values matched; reviewer FAILED items 4-6 (weaker-than-planned assertions, missing identity check, no read_dir test, CYX/B2 missing) - ledger B1 in action; remediation 1 (haiku) removed leftover Option loader; remediation 2 (sonnet) tightened assertions; orchestrator re-verified items 4-6 by rg + cargo test (nodefault 72+6+0+9, disulfide 111+6+4+9, fmt clean)"},
-    "p": {"commits": ["c64546f", "f20dd3a", "9621c33", "67c56a7"], "remediations": 3, "verdict": "PASS",
-          "history": "initial report misclassified GAFF2 failures as a regression (actually DEF absent locally -> debt #1896 silent empty rules) and mixed file/test counts; reviewer FAILED 4-6; corrected totals baseline 110/92/58 -> preflight 186/92/9, 76 newly passing; minor residual: summary line 13 says '3 pre-existing failures' meaning files"}
+    "g": {"commits": ["8ec3029", "0ea2e6f", "e62b5cc"], "verdict": "PASS",
+          "history": "reviewer PASS 10/10 (MINOR repeated sentence fixed in 0ea2e6f); first CI run 35858861056 FAILED (ruff E501 from 0ea2e6f, rustfmt drift in pdb.rs/pqr.rs/md_params.rs from earlier stack commits, mbondi2 drift test needs OpenMM absent from .[dev]); e62b5cc fixed all three; CI run 35859959789 green on all 4 jobs",
+          "stack_caveat": "rustfmt drift and the OpenMM install originate in #41/#42 commits but are fixed here; #41 alone would fail CI -- merge the stack together"}
   },
-  "closed": {"backlog": [2250], "debt_resolved": [1889], "debt_updated": [909]},
-  "model_routing_note": "Track T remediation 2 and Track P remediation 2 used Sonnet instead of Haiku after Haiku misreported its own work twice."
+  "closed": {"debt_resolved": [1896]},
+  "prior_sprints": {"18": {"pr": 42, "verify": "PASS"}, "19": {"pr": 43, "verify": "PASS"}}
 }

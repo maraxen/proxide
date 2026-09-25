@@ -22,6 +22,11 @@ auth to avoid the unauthenticated 60 req/hr GitHub rate limit).
 Usage:
     uv run python scripts/fetch_amber_assets.py
     uv run python scripts/fetch_amber_assets.py --check   # verify only, no fetch/write
+
+The upstream repo/ref/path and the pinned sha256 all come from
+`src/proxide/assets/gaff/ATOMTYPE_GFF2.pin.toml` -- the single source of
+truth this script, `src/proxide/chem/gaff2.py`, `.github/workflows/ci.yml`,
+and `crates/proxide-gaff2/src/rules_loader.rs`'s digest test all key off.
 """
 
 from __future__ import annotations
@@ -31,25 +36,36 @@ import hashlib
 import logging
 import os
 import sys
+import tomllib
 import urllib.request
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("fetch_amber_assets")
 
-_REPO = "Amber-MD/AmberClassic"
-_DEFAULT_REF = "20e92d4b44e84cc0ca84bdf7f640eba0c1d1f2ed"  # main, captured 2026-08-21
+# Anchor to the repo root via this script's own location, not the CWD --
+# this script may be invoked from anywhere (`uv run python
+# scripts/fetch_amber_assets.py` from the repo root is the documented usage,
+# but nothing enforces that).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_PIN_PATH = _REPO_ROOT / "src" / "proxide" / "assets" / "gaff" / "ATOMTYPE_GFF2.pin.toml"
+
+with _PIN_PATH.open("rb") as _f:
+    _PIN = tomllib.load(_f)
+
+_REPO = _PIN["repo"]
+_DEFAULT_REF = _PIN["ref"]
 
 # Each entry: where the file lives upstream, where it lands locally, and the
-# sha256 it must match -- verified 2026-08-21 by fetching the real upstream
-# file and diffing it byte-for-byte against this repo's then-vendored copy
-# (they were identical), so this digest is a real confirmed pin, not a
-# guess.
+# sha256 it must match. Sourced from the pin file above (originally
+# verified 2026-08-21 by fetching the real upstream file and diffing it
+# byte-for-byte against this repo's then-vendored copy -- they were
+# identical -- so this digest is a real confirmed pin, not a guess).
 ASSETS = [
     {
-        "upstream_path": "dat/antechamber/ATOMTYPE_GFF2.DEF",
-        "dest": Path("src/proxide/assets/gaff/dat/ATOMTYPE_GFF2.DEF"),
-        "sha256": "7a076ac2e667ab87057befc7a5985be4cead83e01ff5d2d3dab9f1d65bff637e",
+        "upstream_path": _PIN["upstream_path"],
+        "dest": _REPO_ROOT / "src" / "proxide" / "assets" / "gaff" / "dat" / "ATOMTYPE_GFF2.DEF",
+        "sha256": _PIN["sha256"],
     },
 ]
 
@@ -113,8 +129,10 @@ def main() -> int:
             logger.error(
                 "DIGEST MISMATCH after fetch: %s -- expected %s, got %s. This means "
                 "AmberTools/antechamber's upstream file changed, or the fetch was "
-                "corrupted. If this is a deliberate upstream update: update the pinned "
-                "digest here AND in crates/proxide-gaff2/src/rules_loader.rs's "
+                "corrupted. If this is a deliberate upstream update: update "
+                "ATOMTYPE_GFF2.pin.toml (the single source of truth), update the "
+                "mirrored literals in .github/workflows/ci.yml's rust-checks job and "
+                "crates/proxide-gaff2/src/rules_loader.rs's "
                 "embedded_default_def_content_digest_is_pinned test, then re-run the "
                 "full geostd parity campaign (scripts/validation/gaff2_rust_parity.py "
                 "--full) before merging.",
