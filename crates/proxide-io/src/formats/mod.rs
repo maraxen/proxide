@@ -7,6 +7,7 @@ pub mod dcd;
 #[cfg(test)]
 mod dcd_test;
 pub mod fasta;
+pub mod field_parse;
 #[cfg(feature = "foldcomp")]
 pub mod foldcomp;
 pub mod mmcif;
