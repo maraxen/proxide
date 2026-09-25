@@ -33,6 +33,7 @@
 //! other, which can double-round a decimal literal to a different bit
 //! pattern than parsing it directly in the target width would.
 
+use crate::formats::field_parse::{self, TokenFieldErrorKind};
 use proxide_core::chem::masses::infer_element;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -300,6 +301,18 @@ impl<'a> FieldCtx<'a> {
     }
 }
 
+/// Maps the shared [`TokenFieldErrorKind`] back onto the pre-existing
+/// `PdbFieldErrorKind` (decision h: `PdbFieldErrorKind` itself is NOT
+/// changed). Only the two variants `field_parse`'s numeric helpers can ever
+/// produce are handled; anything else would be a `field_parse` bug.
+fn to_pdb_kind(kind: TokenFieldErrorKind) -> PdbFieldErrorKind {
+    match kind {
+        TokenFieldErrorKind::Unparseable => PdbFieldErrorKind::Unparseable,
+        TokenFieldErrorKind::NonFinite => PdbFieldErrorKind::NonFinite,
+        other => unreachable!("field_parse numeric helpers never produce {other:?}"),
+    }
+}
+
 fn required_i32(
     s: &str,
     start: usize,
@@ -308,8 +321,8 @@ fn required_i32(
     field: &'static str,
 ) -> Result<i32, PdbFieldError> {
     let text = partial_str(s, start, end).trim();
-    text.parse::<i32>()
-        .map_err(|_| ctx.err(field, (start + 1, end), PdbFieldErrorKind::Unparseable))
+    field_parse::parse_decimal_i32(text)
+        .ok_or_else(|| ctx.err(field, (start + 1, end), PdbFieldErrorKind::Unparseable))
 }
 
 fn required_f32(
@@ -320,13 +333,8 @@ fn required_f32(
     field: &'static str,
 ) -> Result<f32, PdbFieldError> {
     let text = partial_str(s, start, end).trim();
-    let value: f32 = text
-        .parse()
-        .map_err(|_| ctx.err(field, (start + 1, end), PdbFieldErrorKind::Unparseable))?;
-    if !value.is_finite() {
-        return Err(ctx.err(field, (start + 1, end), PdbFieldErrorKind::NonFinite));
-    }
-    Ok(value)
+    field_parse::parse_finite_f32(text)
+        .map_err(|kind| ctx.err(field, (start + 1, end), to_pdb_kind(kind)))
 }
 
 /// Parses the SAME field text as `required_f32` independently as `f64` --
@@ -340,13 +348,8 @@ fn required_f64(
     field: &'static str,
 ) -> Result<f64, PdbFieldError> {
     let text = partial_str(s, start, end).trim();
-    let value: f64 = text
-        .parse()
-        .map_err(|_| ctx.err(field, (start + 1, end), PdbFieldErrorKind::Unparseable))?;
-    if !value.is_finite() {
-        return Err(ctx.err(field, (start + 1, end), PdbFieldErrorKind::NonFinite));
-    }
-    Ok(value)
+    field_parse::parse_finite_f64(text)
+        .map_err(|kind| ctx.err(field, (start + 1, end), to_pdb_kind(kind)))
 }
 
 /// Blank-or-value semantics for a trailing float field (occupancy,
@@ -359,7 +362,7 @@ fn optional_f32_blank_default(
     s: &str,
     start: usize,
     end: usize,
-    default: f32,
+    default: f32, // documented-default: blank field only (decision c)
     ctx: FieldCtx,
     field: &'static str,
 ) -> Result<f32, PdbFieldError> {
@@ -367,13 +370,8 @@ fn optional_f32_blank_default(
     if text.is_empty() {
         return Ok(default);
     }
-    let value: f32 = text
-        .parse()
-        .map_err(|_| ctx.err(field, (start + 1, end), PdbFieldErrorKind::Unparseable))?;
-    if !value.is_finite() {
-        return Err(ctx.err(field, (start + 1, end), PdbFieldErrorKind::NonFinite));
-    }
-    Ok(value)
+    field_parse::parse_finite_f32(text)
+        .map_err(|kind| ctx.err(field, (start + 1, end), to_pdb_kind(kind)))
 }
 
 // ---------------------------------------------------------------------
