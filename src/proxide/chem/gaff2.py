@@ -18,6 +18,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from proxide.chem.partial_charges import (
+    CHARGE_SOURCE_ESPALOMA_AM1BCC,
+    CHARGE_SOURCE_GASTEIGER,
+    assign_espaloma_charges_rdkit,
+)
+
 if TYPE_CHECKING:
     from rdkit import Chem
 
@@ -25,6 +31,31 @@ try:
     from rdkit import Chem
 except ImportError:
     Chem = None
+
+#: Numerical blow-up guard for RDKit Gasteiger partial charges (elementary
+#: charge units). This is NOT a calibrated physical bound -- no finite
+#: |q| > 10 case is known for a real molecule. A value exceeding it means the
+#: PEOE iteration diverged (e.g. an exotic formal-charge/bonding pattern
+#: RDKit's Gasteiger parameters were never fit for), and is treated as a
+#: computation failure to raise on, never a value to clip or zero out.
+GASTEIGER_BLOWUP_GUARD = 10.0
+
+#: Maximum allowed |sum(charges) - sum(formal charges)| (elementary charge
+#: units) for any accepted GAFF2 partial-charge assignment. Measured: espaloma
+#: (backend="rust") conserves total charge to ~1e-9 for methanol (its loss
+#: function constrains this); RDKit Gasteiger with explicit hydrogens
+#: conserves to ~1e-17. An implicit-hydrogen input (e.g. methanol without
+#: AddHs) violates this by ~0.37 e -- exactly the input-shape bug this check
+#: exists to catch.
+_CHARGE_TOTAL_CONSERVATION_TOL = 1e-3
+
+#: Valid charge_method values -> the CHARGE_SOURCE_* provenance constant
+#: recorded in parameterize_gaff_with_rdkit's result dict. No "auto" entry
+#: (debt #1900 decision d2).
+_CHARGE_METHOD_SOURCES = {
+    "espaloma": CHARGE_SOURCE_ESPALOMA_AM1BCC,
+    "gasteiger": CHARGE_SOURCE_GASTEIGER,
+}
 
 
 @dataclass
@@ -1792,66 +1823,117 @@ def build_gaff2_ffxml(
     return "\n".join(lines)
 
 
-def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:
-    """Compute partial charges using expaloma or fallback to Gasteiger.
+def _check_gasteiger_blowup(atom_idx: int, atom_symbol: str, q: float) -> None:
+    """Raise if a single Gasteiger charge trips :data:`GASTEIGER_BLOWUP_GUARD`.
 
-    Tries native Rust expaloma first, then RDKit Gasteiger as fallback.
-    Returns zero charges if nothing is available.
+    Pulled out of :func:`_assign_gaff2_charges` so this guard is unit-testable
+    without RDKit's Gasteiger computation itself (no real molecule needed --
+    just a candidate charge value).
     """
-    from rdkit import Chem
-
-    mol_copy = Chem.Mol(mol)
-    Chem.SanitizeMol(mol_copy)
-
-    try:
-        from proxide._proxider import (
-            assign_espaloma_charges as assign_rust_charges,
+    if not np.isfinite(q) or abs(q) > GASTEIGER_BLOWUP_GUARD:
+        raise ValueError(
+            f"Gasteiger charge blow-up guard tripped at atom index {atom_idx} "
+            f"({atom_symbol}): q={q!r} exceeds +/-{GASTEIGER_BLOWUP_GUARD} "
+            "(a numerical blow-up guard, not a calibrated physical bound)"
         )
-    except ImportError:
-        assign_rust_charges = None
 
-    try:
-        from expaloma.featurize import from_rdkit_mol
-    except ImportError:
-        from_rdkit_mol = None
 
-    if assign_rust_charges and from_rdkit_mol:
-        try:
-            g = from_rdkit_mol(mol_copy)
-            h0 = np.ascontiguousarray(g.h0, dtype=np.float32)
-            senders = np.ascontiguousarray(g.senders, dtype=np.uint32)
-            receivers = np.ascontiguousarray(g.receivers, dtype=np.uint32)
-            q_ref = np.ascontiguousarray(g.q_ref, dtype=np.float32)
-            total_charge = float(q_ref.sum())
+def _validate_gaff2_charges(charges, mol: Chem.Mol, charge_method: str) -> np.ndarray:
+    """Validate a partial-charge assignment for GAFF2 parameterisation.
 
-            q_rust = assign_rust_charges(
-                h0,
-                senders,
-                receivers,
-                np.zeros(h0.shape[0], dtype=np.uint32),
-                1,
-                [total_charge],
-            )
-            return list(q_rust)
-        except Exception:
-            pass
+    Applied to the output of every ``charge_method`` branch. Checks: every
+    value finite, the length matches the atom count, and the total charge
+    conserves the molecule's formal charge within
+    :data:`_CHARGE_TOTAL_CONSERVATION_TOL`.
 
-    try:
-        mol_copy.ComputeGasteigerCharges()
-        charges = []
-        for atom in mol_copy.GetAtoms():
-            charge = atom.GetDoubleProp("_GasteigerCharge")
-            if charge == float("inf") or charge == float("-inf") or abs(charge) > 10:
-                charge = 0.0
-            charges.append(charge)
-        return charges
-    except Exception:
-        return [0.0] * mol.GetNumAtoms()
+    Raises:
+        ValueError: any of the above checks fails.
+    """
+    arr = np.asarray(charges, dtype=np.float64)
+    n_atoms = mol.GetNumAtoms()
+    if arr.shape != (n_atoms,):
+        raise ValueError(
+            f"{charge_method} charges have shape {arr.shape}, expected "
+            f"({n_atoms},) (mol atom count)"
+        )
+    if not np.all(np.isfinite(arr)):
+        bad = [i for i, q in enumerate(arr) if not np.isfinite(q)]
+        raise ValueError(
+            f"{charge_method} produced non-finite charge(s) at atom index(es) {bad}"
+        )
+    formal_total = float(sum(a.GetFormalCharge() for a in mol.GetAtoms()))
+    actual_total = float(arr.sum())
+    if abs(actual_total - formal_total) > _CHARGE_TOTAL_CONSERVATION_TOL:
+        raise ValueError(
+            f"{charge_method} charges sum to {actual_total:.6f}, expected "
+            f"{formal_total:.6f} (sum of formal charges) within "
+            f"{_CHARGE_TOTAL_CONSERVATION_TOL}; likely implicit-hydrogen "
+            "input or a broken charge model -- see debt #1900"
+        )
+    return arr
+
+
+def _assign_gaff2_charges(mol: Chem.Mol, charge_method: str = "espaloma") -> np.ndarray:
+    """Assign GAFF2 partial charges via an explicit, validated method.
+
+    No silent fallback and no "auto": GAFF2 is parameterised for
+    AM1-BCC-class charges, and Gasteiger is a different charge model, not a
+    lower-accuracy substitute for it -- silently swapping models changes the
+    physics without saying so (debt #1900, sprint-22 decision d2).
+
+    Args:
+        mol: RDKit molecule (explicit hydrogens expected).
+        charge_method: "espaloma" (default) -- calls
+            :func:`~proxide.chem.partial_charges.assign_espaloma_charges_rdkit`
+            (backend="rust"); its errors (e.g. missing expaloma) propagate
+            uncaught. "gasteiger" -- RDKit's Gasteiger/PEOE charges via
+            ``rdPartialCharges.ComputeGasteigerCharges(throwOnParamFailure=True)``,
+            explicit opt-in only.
+
+    Returns:
+        Partial charges (n_atoms,), atom-index order matching ``mol``.
+
+    Raises:
+        ValueError: ``charge_method`` is not "espaloma" or "gasteiger", a
+            Gasteiger charge exceeds :data:`GASTEIGER_BLOWUP_GUARD` in
+            magnitude, or the resulting charges fail
+            :func:`_validate_gaff2_charges`.
+        ImportError: espaloma's backend dependencies are missing (propagated
+            from ``assign_espaloma_charges_rdkit``, not caught here).
+    """
+    if charge_method not in _CHARGE_METHOD_SOURCES:
+        # Validated before touching RDKit at all, so an unknown method is
+        # rejected even when RDKit/the input mol aren't usable yet.
+        raise ValueError(
+            f"Unknown charge_method {charge_method!r}; expected 'espaloma' or "
+            "'gasteiger' (no 'auto' -- see debt #1900 decision d2)"
+        )
+
+    from rdkit import Chem as _Chem
+
+    mol_copy = _Chem.Mol(mol)
+    _Chem.SanitizeMol(mol_copy)
+
+    if charge_method == "espaloma":
+        charges = assign_espaloma_charges_rdkit(mol_copy, backend="rust")
+    else:  # "gasteiger"
+        from rdkit.Chem import rdPartialCharges
+
+        rdPartialCharges.ComputeGasteigerCharges(mol_copy, throwOnParamFailure=True)
+        raw_charges = [
+            atom.GetDoubleProp("_GasteigerCharge") for atom in mol_copy.GetAtoms()
+        ]
+        for idx, (atom, q) in enumerate(zip(mol_copy.GetAtoms(), raw_charges, strict=True)):
+            _check_gasteiger_blowup(idx, atom.GetSymbol(), q)
+        charges = raw_charges
+
+    return _validate_gaff2_charges(charges, mol_copy, charge_method)
 
 
 def parameterize_gaff_with_rdkit(
     mol: Chem.Mol,
     gaff_version: str = "gaff-2.2.20",
+    charge_method: str = "espaloma",
 ) -> dict:
     """Assign GAFF2 parameters to an RDKit molecule.
 
@@ -1861,10 +1943,17 @@ def parameterize_gaff_with_rdkit(
     Args:
         mol: RDKit molecule (should have explicit hydrogens)
         gaff_version: GAFF version string (default: gaff-2.2.20)
+        charge_method: "espaloma" (default, strict) or "gasteiger" (explicit
+            opt-in). No "auto" -- see :func:`_assign_gaff2_charges` and debt
+            #1900 decision d2. Raises ``ValueError`` for any other value.
 
     Returns:
         Dict with keys:
         - atom_types: list of atom type strings
+        - charges: list of partial charges (n_atoms,), atom-index order
+        - charge_method: the charge source, one of
+          ``proxide.chem.partial_charges.CHARGE_SOURCE_ESPALOMA_AM1BCC`` or
+          ``CHARGE_SOURCE_GASTEIGER`` -- always present, never inferred
         - masses: dict of atom type -> mass
         - bonds: dict of (type1, type2) -> (kb, r0)
         - angles: dict of (type1, type2, type3) -> (kt, t0)
@@ -1931,7 +2020,10 @@ def parameterize_gaff_with_rdkit(
                     'types': (t_i, t_j, t_k),
                 })
 
-    charges = _get_espaloma_charges(mol)
+    charges = _assign_gaff2_charges(mol, charge_method)
+    # _assign_gaff2_charges already rejected any charge_method not in this
+    # map, so the lookup below is safe.
+    charge_source = _CHARGE_METHOD_SOURCES[charge_method]
 
     used_types = set(atom_types)
     masses = {at: params['masses'].get(at, 0.0) for at in used_types}
@@ -2013,6 +2105,7 @@ def parameterize_gaff_with_rdkit(
     return {
         'atom_types': atom_types,
         'charges': charges,
+        'charge_method': charge_source,
         'masses': masses,
         'bonds': bonds,
         'angles': angles,

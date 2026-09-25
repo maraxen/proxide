@@ -100,10 +100,16 @@ pub fn contact_degree_raw(
     let mut tuples: Vec<ClashTuple> = Vec::new();
 
     for (rot_a, rot_b_set) in &clashing {
-        let prob_a = rotlib.rotamer_probability_by_id(rot_a).unwrap_or(0.0);
+        // rot_a/rot_b came from this library's own surviving-rotamer grids (built from this
+        // same rotlib in Phase A), so their (aa, bin, rot_index) are guaranteed valid here.
+        let prob_a = rotlib
+            .rotamer_probability_by_id(rot_a)
+            .expect("RotamerId came from this library");
         let prop_a = aa_propensity(&rot_a.aa);
         for rot_b in rot_b_set {
-            let prob_b = rotlib.rotamer_probability_by_id(rot_b).unwrap_or(0.0);
+            let prob_b = rotlib
+                .rotamer_probability_by_id(rot_b)
+                .expect("RotamerId came from this library");
             let prop_b = aa_propensity(&rot_b.aa);
             cd_raw += prop_a * prop_b * prob_a * prob_b;
             tuples.push(ClashTuple {

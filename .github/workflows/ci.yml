@@ -170,6 +170,29 @@ jobs:
           source .venv/bin/activate
           uv pip install -e ".[dev,espaloma]"
       - name: Run Espaloma-marked tests
+        # debt #1900: this job installs the [espaloma] extra specifically so
+        # these tests run for real, not via pytest.importorskip's silent
+        # skip path (which is what the plain `tests` job -- no rdkit/expaloma
+        # installed -- correctly falls back to). A skip here means the extra
+        # failed to import for some other reason and the test never actually
+        # ran, which this job exists to catch -- so it must fail the build,
+        # not just report green with a quiet asterisk.
+        #
+        # Mechanism: `set -o pipefail` makes the job fail on pytest's own
+        # nonzero exit (a real failure, or exit code 5 for "no tests
+        # collected" if -m espaloma matched nothing at all) same as before;
+        # `-rs` is what buffers */reports the skip reasons/count into the
+        # terminal summary; the trailing grep then fails the step on its own
+        # if pytest itself exited 0 but the summary line still shows one or
+        # more skips (e.g. an individual pytest.importorskip firing inside a
+        # test that otherwise collected and "passed" as a skip). YAML-valid
+        # multi-line `run:` block, no shell escaping surprises.
         run: |
           source .venv/bin/activate
-          pytest -m espaloma tests/chem/test_partial_charges.py -v
+          set -o pipefail
+          pytest -m espaloma tests/chem/test_partial_charges.py tests/chem/test_gaff2_charges.py -v -rs \
+            | tee pytest_espaloma.log
+          if grep -qE '[0-9]+ skipped' pytest_espaloma.log; then
+            echo "::error::Espaloma-marked tests were skipped in the test-espaloma job, which installs the [espaloma] extra specifically to run them for real. A skip here means expaloma/rdkit import failed silently instead of the extra actually being exercised -- failing the build instead of reporting a quiet green."
+            exit 1
+          fi

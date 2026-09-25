@@ -1,0 +1,108 @@
+[sprint]
+sprint_id = "260923_sprint-22-silent-fallbacks"
+sprint_num = 22
+name = "Sprint 22 — remove silent fallbacks: ConFind rotamer lookup, Python stubs, GAFF2 partial charges"
+description = "Track R (debt #1898): rotamer-library errors in ConFind propagate instead of silently dropping an amino acid. Track Y (debt #1901): remove three Python stubs that return fake empty results. Track C (debt #1900): GAFF2 partial charges never silently change model or fabricate values; the charge method is explicit and recorded."
+context = '''
+task_id: 260922_autonomous-loop (loop iteration 5). Branch autoloop/260923-sprint-22 stacked on autoloop/260923-sprint-21 (PR #45).
+Revised after an Opus spec-challenger review (REVISE; FATAL #1 verified: the Dunbrack-derived .pb.zst rotlib has no ALA —
+crates/proxide-rotlib/tests/test_converter_ac3.rs:97). Record: .praxia/spec_adversarial_reviews.jsonl (260923_loop_sprint22_coherence).
+OWNER DECISIONS REQUIRED (see [decisions]); the plan below assumes the recommended answers.
+Rules: CLAUDE.md fail-fast; never `git add -A`; RUSTC_WRAPPER="" for cargo; narrow runs; never create/fetch ATOMTYPE_GFF2.DEF.
+'''
+max_fix_retries = 1
+worktree_shadow_mode = false
+
+[decisions]
+d1_track_r = "RECOMMENDED: land #1898 now. Consequence, stated deliberately: the confind CLI and any caller using the Dunbrack .pb.zst library will fail with RotlibError::UnknownAa(\"ALA\") until backlog #5244 adds an ALA entry. Today those runs silently omit ALA (propensity 7.73; permanent_contacts always empty). MASTER rotlib.bin has all 18 amino acids, so the Mosaist parity tests are unaffected. Alternative: hold #1898 until #5244 lands (keeps the silent omission meanwhile)."
+d2_track_c = "RECOMMENDED: charge_method default = \"espaloma\" (strict); \"gasteiger\" explicit opt-in; no \"auto\". GAFF2 is parameterised for AM1-BCC-class charges; Gasteiger is a different model, not a lower-accuracy default. Alternative: keep an opt-in \"auto\" that falls back ONLY on ImportError or expaloma's unsupported-element ValueError, recording the reason."
+
+[[tracks]]
+id = "r"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1898"
+phase_name = "Track R — ConFind propagates rotamer-library errors (debt #1898)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop
+Facts: crates/proxide-confind/src/cache.rs:116-122 maps any rotlib.num_rotamers error to rotamer_grids.insert(aa, None) + continue. ConFindError already has
+`RotlibError(#[from] proxide_rotlib::RotlibError)` (error.rs:16-17); L132 uses .map_err(ConFindError::RotlibError). Mosaist errors on a missing amino acid
+(mstrotlib.cpp:389-390). cache.rs:135 `rotamer_probability_by_id(&placed.id).unwrap_or(0.0)` (also cache.rs:38, parallel.rs:103,106) silently zeroes a weight.
+Steps:
+0. Record whether each data/rotlibs/*.pb.zst contains "ALA" (RotamerLibrary::load_pb + a contains/lookup call in a throwaway test or example — do not commit it); report the result.
+1. cache.rs:116-122 -> `let nr = rotlib.num_rotamers(aa, phi, psi, rb.is_cis_peptide).map_err(ConFindError::RotlibError)?;`. Remove the None-insert skip; fix the cache.rs:12-14 doc so None has one meaning.
+2. cache.rs:135 -> `?` (function returns Result); cache.rs:38 and parallel.rs:103,106 -> `.expect("RotamerId came from this library")` with a comment. No silent 0.0.
+3. Test (plain `cargo test`, runs in CI, no env gate): build a synthetic MSL-format rotamer library INSIDE the test (confind tests cannot import rotlib's write_minimal_lib — copy the minimal format) with all 18 AA_NAMES except TRP; run ConFind on a small committed backbone (e.g. crates/proxide_fixer/tests/data/clean_small.pdb via extract_f64_backbone or tests/data/1crn.pdb) and assert `matches!(err, ConFindError::RotlibError(RotlibError::UnknownAa(a)) if a == "TRP")`; positive control: the same library with TRP added -> Ok.
+4. Update the ignored drift test (crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs ~L83-110) so that with the Dunbrack .pb.zst it expects the UnknownAa("ALA") error (or skips with an explicit panic-message reason naming backlog #5244) instead of `.expect("contacts should succeed")`.
+5. Run: `RUSTC_WRAPPER="" cargo test -p proxide-confind`, `cargo test -p proxide-confind -- --ignored` (report which pass/fail and why), fmt, `cargo clippy -p proxide-confind --lib -- -D warnings`.
+Commit: fix(confind): propagate rotamer-library errors instead of dropping amino acids (debt #1898)
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+VERIFY: 1) diff limited to crates/proxide-confind; 2) `rg -n "Err\(_\)|unwrap_or\(0\.0\)" crates/proxide-confind/src/cache.rs crates/proxide-confind/src/parallel.rs` shows no rotlib swallow; 3) the synthetic-library test runs under plain cargo test (not ignored), asserts UnknownAa("TRP") exactly, and has a passing positive control; 4) independent control: add TRP to the negative library -> test fails; restore; 5) existing parity tests with MASTER rotlib.bin still pass when run with --ignored (show they executed); 6) step-0 ALA result reported; drift test updated as planned; 7) fmt + clippy lib clean. PASS = all 7.
+'''
+return_key = "debt-1898"
+
+[[tracks]]
+id = "y"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1901"
+phase_name = "Track Y — remove fake-result Python stubs (debt #1901)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop
+Facts: crates/proxide_py/src/lib.rs:205-208 registers three stubs: py_confind::run_confind (returns []), py_rotlib::PyRotamerLibrary (load_pb accepts any path incl. missing and returns Ok; residue_codes returns []), py_frag::search_fragments (returns []). None is in src/proxide/__init__.py or crates/proxide_rs/oxidize.pyi; no test or doc calls them (verify with rg). proxide_py does not depend on proxide-confind.
+Steps: 1. rg to confirm no Python/Rust callers or docs reference them. 2. Remove the three registrations and delete py_confind.rs, py_rotlib.rs, py_frag.rs and their `mod` lines (unregistered #[pyfunction]s would trip dead_code under clippy -D warnings). 3. Note in the commit body that this reverses sprint-16's "must return Ok(Self {})" and that the real binding is backlog #5245. 4. `RUSTC_WRAPPER="" cargo check -p proxide_py` and `cargo clippy -p proxide_py -- -D warnings`; rebuild the extension (`uv run --no-project maturin develop` or the repo's usual command) and run `uv run --no-project pytest tests/test_gb_provenance_bindings.py -q` as a smoke test that the module still imports.
+Commit: refactor(py): remove stub bindings that returned fake empty results (debt #1901)
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+VERIFY: 1) only crates/proxide_py/src/{lib.rs,py_confind.rs,py_rotlib.rs,py_frag.rs} changed; 2) `rg -n "run_confind|search_fragments|PyRotamerLibrary|RotamerLibrary\b" crates/proxide_py src tests docs` has no dangling references; 3) cargo check + clippy -D warnings on proxide_py clean; 4) extension builds and `python -c "import proxide; assert not hasattr(proxide._proxider, 'run_confind')"` passes. PASS = all 4.
+'''
+return_key = "debt-1901"
+
+[[tracks]]
+id = "c"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1900"
+phase_name = "Track C — explicit, validated, recorded GAFF2 partial charges (debt #1900)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop
+Facts: src/proxide/chem/gaff2.py:1795-1849 _get_espaloma_charges: hand-copied espaloma path (duplicates partial_charges.py:61-95 assign_espaloma_charges_rdkit(backend="rust"), which already raises ImportError with install hints) wrapped in `except Exception: pass`; Gasteiger fallback replaces inf/|q|>10 with 0.0 (NaN passes); any exception -> [0.0]*n. Only caller: parameterize_gaff_with_rdkit (~L1934); only in-repo callers of that are tests (test_gaff2.py, test_gaff2_golden.py). CI job test-espaloma (ci.yml:152-175) installs .[dev,espaloma] (rdkit + expaloma) but does not fetch the GAFF2 DEF. RDKit returns NaN Gasteiger charges for organometallics (e.g. CC[Zn]C). Precedent for provenance keys: crates/proxide_py/src/py_chemistry.rs:170-233 (every key always present); constant CHARGE_SOURCE_ESPALOMA_AM1BCC in src/proxide/chem/partial_charges.py:24.
+Steps:
+1. Replace _get_espaloma_charges with `_assign_gaff2_charges(mol, charge_method)`:
+   - "espaloma" (DEFAULT): call assign_espaloma_charges_rdkit(..., backend="rust") from partial_charges.py; let its errors propagate (no except).
+   - "gasteiger": rdkit.Chem.rdPartialCharges.ComputeGasteigerCharges(mol, throwOnParamFailure=True); then post-check every value is finite and |q| <= GASTEIGER_BLOWUP_GUARD (named module constant = 10.0, documented as a numerical blow-up guard, NOT a calibrated physical bound — say no finite |q|>10 case is known); violation -> ValueError naming atom index, element, value.
+   - any other value -> ValueError. No "auto".
+   - Validate the output of EVERY branch (finite, length == n_atoms) and the total: |sum(q) - sum(formal charges)| <= a small named tolerance, else ValueError (catches implicit-H input).
+2. parameterize_gaff_with_rdkit(..., charge_method: str = "espaloma"): thread it through; the result dict ALWAYS includes "charges", "charge_method" (CHARGE_SOURCE_ESPALOMA_AM1BCC or a new sibling CHARGE_SOURCE_GASTEIGER in partial_charges.py). Fix the return docstring (~L1865-1871) to list charges and charge_method.
+3. Tests: new tests/chem/test_gaff2_charges.py.
+   - Pure tests (no rdkit needed, run in the main pytest job): the validator (NaN, inf, |q|>guard, wrong length, bad total) raises; dispatcher rejects unknown method.
+   - @pytest.mark.espaloma tests (run in the test-espaloma job): espaloma charges for methanol (explicit H) are finite, not all zero, sum to formal charge; gasteiger charges for methanol equal RDKit reference [0.0319, -0.3996, 0.0527, 0.0527, 0.0527, 0.2096] within 1e-3 (regenerate the reference with RDKit if these differ and say so); CC[Zn]C with gasteiger raises; implicit-H methanol raises the total-charge check. These call the charge helper directly (the DEF is not fetched in that job).
+   - Add the new file to the test-espaloma job's pytest command (ci.yml ~L175) and make that job fail on skips: add `-rs` and a check that the summary contains no "skipped" (or pass `-p no:skip`-equivalent; choose a robust mechanism and explain it).
+4. tests/test_gaff2.py: convert every `return failed == 0` style test into real asserts (the file's own docstring L13-16 names this bug); charge tests assert not-all-zero and pass charge_method explicitly where they only care about typing.
+5. Run: `uv run --no-project pytest tests/chem/test_gaff2_charges.py -q -rs` (espaloma-marked ones run locally since expaloma is installed), `uv run --no-project pytest tests/test_gaff2.py -q -rs` (DEF-dependent tests will raise Gaff2DefMissingError locally — report counts), ruff, ty on touched files.
+Commit: fix(gaff2): explicit, validated, recorded partial-charge method; no silent fallback or zero fill (debt #1900)
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+VERIFY: 1) diff limited to gaff2.py, partial_charges.py, tests/chem/test_gaff2_charges.py, tests/test_gaff2.py, .github/workflows/ci.yml; 2) `rg -n "except Exception|\[0\.0\] \*|= 0\.0$" src/proxide/chem/gaff2.py` shows no charge-path swallow/zero-fill; no duplicated espaloma code (calls assign_espaloma_charges_rdkit); 3) default charge_method == "espaloma"; no "auto"; 4) new test file passes locally with 0 unexpected skips; methanol Gasteiger reference asserted; CC[Zn]C raises; 5) independent control: make the validator accept NaN -> the NaN test fails; restore; 6) test_gaff2.py has no `return <bool>` tests left; 7) ci.yml test-espaloma runs the new file and fails on skips (read the mechanism; YAML parses); 8) ruff + ty clean on touched files. PASS = all 8.
+'''
+return_key = "debt-1900"
+
+[orchestration]
+sequential = []
+concurrent = ["r", "y", "c"]
+
+[filed_this_iteration]
+items = "backlog #5244 (P1: Dunbrack rotlib lacks ALA), backlog #5245 (real ConFind Python binding), debt #1905 (confind CLI .ok() swallows; gaff2 parameter zero/carbon fills)"

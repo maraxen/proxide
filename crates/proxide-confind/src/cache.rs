@@ -10,7 +10,9 @@ use std::sync::Arc;
 pub struct ResidueCache {
     pub surviving_rotamers: Vec<Arc<RotamerId>>,
     /// Per-aa proximity grid of surviving heavy-SC atoms.
-    /// None if no surviving rotamers for that aa.
+    /// `None` means every rotamer of that (library-known) aa was pruned by backbone clash;
+    /// it never means the aa was unknown to the library — an unknown aa is a hard error from
+    /// `cache_residue_impl` instead (`ConFindError::RotlibError(RotlibError::UnknownAa)`).
     pub rotamer_grids: HashMap<String, Option<ProximityGrid<Arc<RotamerId>>>>,
     pub fraction_pruned: f64,
     pub n_library_rotamers: usize,
@@ -35,7 +37,12 @@ pub fn weight_of_available_rotamers(
         .iter()
         .filter(|r| available_aa.contains(r.aa.as_str()))
         .map(|r| {
-            let p = rotlib.rotamer_probability_by_id(r).unwrap_or(0.0);
+            // RotamerId came from this library's own surviving_rotamers, so its (aa, bin,
+            // rot_index) is guaranteed valid here — an error would mean the cache and the
+            // library it was built from have gone out of sync.
+            let p = rotlib
+                .rotamer_probability_by_id(r)
+                .expect("RotamerId came from this library");
             aa_propensity(&r.aa) * p
         })
         .sum()
@@ -114,13 +121,9 @@ pub fn cache_residue_impl(
     let mut total_rotamers: usize = 0;
 
     for &aa in &AA_NAMES {
-        let nr = match rotlib.num_rotamers(aa, phi, psi, rb.is_cis_peptide) {
-            Ok(n) => n,
-            Err(_) => {
-                rotamer_grids.insert(aa.to_string(), None);
-                continue;
-            }
-        };
+        let nr = rotlib
+            .num_rotamers(aa, phi, psi, rb.is_cis_peptide)
+            .map_err(ConFindError::RotlibError)?;
         total_rotamers += nr;
 
         let mut aa_sc_points: Vec<[f64; 3]> = Vec::new();
@@ -132,7 +135,7 @@ pub fn cache_residue_impl(
                 .map_err(ConFindError::RotlibError)?;
 
             let rot_id = Arc::new(placed.id.clone());
-            let rot_prob = rotlib.rotamer_probability_by_id(&placed.id).unwrap_or(0.0);
+            let rot_prob = rotlib.rotamer_probability_by_id(&placed.id)?;
 
             // Accumulate interference for this rotamer across all its SC heavy atoms.
             // Track which resB values we've already accumulated for this rotamer (first-win).

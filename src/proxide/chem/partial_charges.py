@@ -22,6 +22,7 @@ import numpy as np
 from proxide.io.parsing.molecule import Molecule
 
 CHARGE_SOURCE_ESPALOMA_AM1BCC = "espaloma-am1bcc"
+CHARGE_SOURCE_GASTEIGER = "gasteiger"
 
 
 def assign_espaloma_charges_rdkit(
