@@ -3,9 +3,12 @@
 // violations reported by check_preconditions for each fixture.
 mod common;
 
-use common::{load_backbone, load_topology};
+use common::{load_backbone, load_processed, load_topology};
 use proxide_confind::error::ConFindError;
 use proxide_confind::precondition::{check_preconditions, require_preconditions, ViolationKind};
+use proxide_confind::{
+    extract_f64_backbone_with_options, BackboneOptions, ChainBreakPolicy, MissingAtomPolicy,
+};
 
 #[test]
 fn test_c1_clean_small() {
@@ -86,11 +89,18 @@ fn test_c1_disulfide_pair() {
 #[test]
 fn test_c1_missing_atoms() {
     // missing_atoms.pdb: 3 residues (ALA1, GLY2 with missing C and O, SER3).
-    // Expected violations:
+    // Default policy is now {Bridge, PerDihedral} (Mosaist semantics, debt
+    // #1890): GLY2's own MissingBackboneAtom/UndefinedPhi/UndefinedPsi still
+    // fire, and SER3 additionally gets its own UndefinedPhi because PerDihedral
+    // no longer silently bridges phi(SER3) over GLY2's missing C using ALA1's C
+    // (that bridging behaviour is now opt-in via MissingAtomPolicy::LegacyCompact
+    // — see test_c1_missing_atoms_legacy_compact_matches_golden below).
+    // Expected violations, in order:
     // - (ResidueIndex 1, res_id 2, GLY, MissingBackboneAtom "C") — Error
     // - (ResidueIndex 1, res_id 2, GLY, UndefinedPhi) — Error
     // - (ResidueIndex 1, res_id 2, GLY, UndefinedPsi) — Error
-    // Total: 3 errors, 0 warnings
+    // - (ResidueIndex 2, res_id 3, SER, UndefinedPhi) — Error
+    // Total: 4 errors, 0 warnings
     let topology = load_topology("missing_atoms.pdb");
     assert_eq!(
         (topology.chains.len(), topology.chains[0].residues.len()),
@@ -130,11 +140,146 @@ fn test_c1_missing_atoms() {
     let errors: Vec<_> = report.errors().collect();
     let warnings: Vec<_> = report.warnings().collect();
 
-    assert_eq!(errors.len(), 3, "Should have 3 errors");
+    assert_eq!(errors.len(), 4, "Should have 4 errors");
     assert_eq!(warnings.len(), 0, "Should have 0 warnings");
 
-    // Verify the EXACT ordered sequence of violations: MissingBackboneAtom("C"),
-    // UndefinedPhi, UndefinedPsi — each attributed to residue index 1, res_id 2, GLY.
+    // Verify the EXACT ordered sequence of violations and their attribution.
+    let expected: [(u32, i32, &str, ViolationKind); 4] = [
+        (
+            1,
+            2,
+            "GLY",
+            ViolationKind::MissingBackboneAtom { atom: "C" },
+        ),
+        (1, 2, "GLY", ViolationKind::UndefinedPhi),
+        (1, 2, "GLY", ViolationKind::UndefinedPsi),
+        (2, 3, "SER", ViolationKind::UndefinedPhi),
+    ];
+    assert_eq!(
+        errors.len(),
+        expected.len(),
+        "Expected exactly {} errors in order",
+        expected.len()
+    );
+    for (i, (error, (exp_residue, exp_res_id, exp_res_name, exp_kind))) in
+        errors.iter().zip(expected.iter()).enumerate()
+    {
+        assert_eq!(&error.kind, exp_kind, "Error {} kind mismatch", i);
+        assert_eq!(
+            error.residue.0, *exp_residue,
+            "Error {} should be attributed to residue index {}",
+            i, exp_residue
+        );
+        assert_eq!(
+            error.id.res_id, *exp_res_id,
+            "Error {} should be attributed to res_id {}",
+            i, exp_res_id
+        );
+        assert_eq!(
+            &error.res_name, exp_res_name,
+            "Error {} should be attributed to res_name {}",
+            i, exp_res_name
+        );
+    }
+
+    let result = require_preconditions(&backbone);
+    assert!(
+        matches!(result, Err(ConFindError::PreconditionsFailed(4))),
+        "Expected Err(ConFindError::PreconditionsFailed(4)), got {:?}",
+        result
+    );
+
+    // debt #1890: under the new default {Bridge, PerDihedral} policy, SER3's phi
+    // is undefined (GLY2's C, its true immediate predecessor, is missing) and its
+    // omega is undefined too (needs GLY2's CA and C); GLY2's own omega remains
+    // defined (it only needs ALA1's CA/C and GLY2's own N/CA, none of which are
+    // missing).
+    assert_eq!(
+        backbone.bb[2].phi, 9999.0,
+        "debt #1890: SER3 phi should be 9999.0 under PerDihedral (no bridging over GLY2's missing C)"
+    );
+    assert!(
+        backbone.bb[2].omega.is_none(),
+        "debt #1890: SER3 omega should be None (needs GLY2's CA/C, and GLY2's C is missing)"
+    );
+    assert!(
+        !backbone.bb[2].is_cis_peptide,
+        "debt #1890: SER3 is_cis_peptide should be false when omega is None"
+    );
+    let gly2_omega = backbone.bb[1]
+        .omega
+        .expect("debt #1890: GLY2 omega should be defined (doesn't need GLY2's own C)");
+    assert!(
+        gly2_omega.abs() > 150.0,
+        "debt #1890: GLY2 omega should be a trans-like angle (|omega| > 150), got {gly2_omega}"
+    );
+}
+
+#[test]
+fn test_c1_missing_atoms_legacy_compact_matches_golden() {
+    // debt #1890: MissingAtomPolicy::LegacyCompact reproduces base 316d1ab's
+    // dense-bridging output bit-for-bit — see
+    // crates/proxide-confind/tests/data/dihedral_golden_316d1ab.json,
+    // fixtures."missing_atoms.pdb".extract_f64_backbone (phi_bits/psi_bits are
+    // the IEEE-754 bit patterns of -180.0 and 9999.0; omega_bits 0 is 0.0).
+    // This test replaces the old #1890 canary that asserted this same bridging
+    // was ConFind's only (non-opt-in) behaviour.
+    let processed = load_processed("missing_atoms.pdb");
+    let opts = BackboneOptions::default().with_missing_atoms(MissingAtomPolicy::LegacyCompact);
+    let backbone = extract_f64_backbone_with_options(&processed, &opts)
+        .expect("LegacyCompact extract should not error");
+
+    assert_eq!(
+        backbone.bb[0].phi.to_bits(),
+        9999.0f64.to_bits(),
+        "ALA1 phi"
+    );
+    assert_eq!(
+        backbone.bb[0].psi.to_bits(),
+        (-180.0f64).to_bits(),
+        "ALA1 psi (bridged)"
+    );
+    assert!(backbone.bb[0].omega.is_none(), "ALA1 omega (chain-first)");
+
+    assert_eq!(
+        backbone.bb[1].phi.to_bits(),
+        9999.0f64.to_bits(),
+        "GLY2 phi (untouched, excluded from dense array)"
+    );
+    assert_eq!(
+        backbone.bb[1].psi.to_bits(),
+        9999.0f64.to_bits(),
+        "GLY2 psi (untouched, excluded from dense array)"
+    );
+    assert!(
+        backbone.bb[1].omega.is_none(),
+        "GLY2 omega (untouched, excluded from dense array)"
+    );
+
+    assert_eq!(
+        backbone.bb[2].phi.to_bits(),
+        (-180.0f64).to_bits(),
+        "SER3 phi (bridged)"
+    );
+    assert_eq!(
+        backbone.bb[2].psi.to_bits(),
+        9999.0f64.to_bits(),
+        "SER3 psi (chain-last)"
+    );
+    assert_eq!(
+        backbone.bb[2].omega.map(f64::to_bits),
+        Some(0.0f64.to_bits()),
+        "SER3 omega (bridged)"
+    );
+    assert!(
+        backbone.bb[2].is_cis_peptide,
+        "SER3 is_cis_peptide (bridged omega near 0)"
+    );
+
+    let report = check_preconditions(&backbone);
+    let errors: Vec<_> = report.errors().collect();
+    let warnings: Vec<_> = report.warnings().collect();
+    assert_eq!(warnings.len(), 0, "Should have 0 warnings");
     let expected_kinds = [
         ViolationKind::MissingBackboneAtom { atom: "C" },
         ViolationKind::UndefinedPhi,
@@ -143,26 +288,21 @@ fn test_c1_missing_atoms() {
     assert_eq!(
         errors.len(),
         expected_kinds.len(),
-        "Expected exactly {} errors in order",
-        expected_kinds.len()
+        "LegacyCompact should reproduce the old 3 violations (the #1890 canary)"
     );
     for (i, (error, expected_kind)) in errors.iter().zip(expected_kinds.iter()).enumerate() {
-        assert_eq!(&error.kind, expected_kind, "Error {} kind mismatch", i);
+        assert_eq!(
+            &error.kind, expected_kind,
+            "LegacyCompact error {} kind mismatch",
+            i
+        );
         assert_eq!(
             error.residue.0, 1,
-            "Error {} should be attributed to residue index 1",
+            "LegacyCompact error {} residue index",
             i
         );
-        assert_eq!(
-            error.id.res_id, 2,
-            "Error {} should be attributed to res_id 2",
-            i
-        );
-        assert_eq!(
-            error.res_name, "GLY",
-            "Error {} should be attributed to res_name GLY",
-            i
-        );
+        assert_eq!(error.id.res_id, 2, "LegacyCompact error {} res_id", i);
+        assert_eq!(error.res_name, "GLY", "LegacyCompact error {} res_name", i);
     }
 
     let result = require_preconditions(&backbone);
@@ -170,17 +310,6 @@ fn test_c1_missing_atoms() {
         matches!(result, Err(ConFindError::PreconditionsFailed(3))),
         "Expected Err(ConFindError::PreconditionsFailed(3)), got {:?}",
         result
-    );
-
-    // CANARY for debt #1890: verify the gap-bridging behaviour.
-    // bb[2] (SER3) should have phi != 9999.0 and is_cis_peptide == true.
-    assert_ne!(
-        backbone.bb[2].phi, 9999.0,
-        "CANARY (debt #1890): bb[2].phi should not be 9999.0 (gap-bridging is active)"
-    );
-    assert!(
-        backbone.bb[2].is_cis_peptide,
-        "CANARY (debt #1890): bb[2].is_cis_peptide should be true (gap-bridging is active)"
     );
 }
 
@@ -247,6 +376,57 @@ fn test_c1_chain_break() {
     assert!(
         require_preconditions(&backbone).is_ok(),
         "require_preconditions should pass (warnings don't fail)"
+    );
+}
+
+#[test]
+fn test_c1_chain_break_split() {
+    // chain_break.pdb under ChainBreakPolicy::Split (debt #1890): the break sits
+    // between GLY2 (index 1) and SER3 (index 2), so GLY2's psi and SER3's
+    // phi/omega are severed even though all their atoms are physically present.
+    // check_preconditions' step-5 exemption (spec D) means this does NOT show up
+    // as UndefinedPhi/UndefinedPsi errors — only the usual ChainBreak warning.
+    let processed = load_processed("chain_break.pdb");
+    let opts = BackboneOptions::default().with_chain_breaks(ChainBreakPolicy::Split);
+    let backbone = extract_f64_backbone_with_options(&processed, &opts)
+        .expect("Split extract should not error");
+
+    assert_eq!(
+        backbone.bb[1].psi, 9999.0,
+        "GLY2 psi should be severed by the Split policy"
+    );
+    assert_eq!(
+        backbone.bb[2].phi, 9999.0,
+        "SER3 phi should be severed by the Split policy"
+    );
+    assert!(
+        backbone.bb[2].omega.is_none(),
+        "SER3 omega should be severed by the Split policy"
+    );
+
+    let report = check_preconditions(&backbone);
+    let errors: Vec<_> = report.errors().collect();
+    let warnings: Vec<_> = report.warnings().collect();
+
+    assert_eq!(
+        errors.len(),
+        0,
+        "Split's severed dihedrals are exempted (their atoms are present): {:?}",
+        errors
+    );
+    assert_eq!(
+        warnings.len(),
+        1,
+        "Should still have exactly 1 ChainBreak warning"
+    );
+    assert!(
+        matches!(warnings[0].kind, ViolationKind::ChainBreak { .. }),
+        "the one warning should be ChainBreak"
+    );
+
+    assert!(
+        require_preconditions(&backbone).is_ok(),
+        "require_preconditions should pass under Split too"
     );
 }
 

@@ -50,7 +50,8 @@ pub mod precondition;
 pub use confind::ConFind;
 pub use contact_list::{ContactList, CONTACT_THRESHOLD};
 pub use coords::{
-    extract_f64_backbone, load_pdb_f64, ProteinBackbone, ResidueBackbone, ResidueIndex,
+    extract_f64_backbone, extract_f64_backbone_with_options, load_pdb_f64, BackboneOptions,
+    ChainBreakPolicy, MissingAtomPolicy, ProteinBackbone, ResidueBackbone, ResidueIndex,
 };
 pub use error::ConFindError;
 pub use freedom::compute_freedom;
@@ -58,6 +59,6 @@ pub use params::{
     aa_propensity, AA_NAMES, CLASH_DIST, CONT_DIST, DCUT, HI_COLL_PROB_CUT, LO_COLL_PROB_CUT,
 };
 pub use precondition::{
-    check_preconditions, require_preconditions, PreconditionReport, PreconditionViolation,
-    Severity, ViolationKind,
+    chain_breaks, check_preconditions, require_preconditions, ChainBreakAt, PreconditionReport,
+    PreconditionViolation, Severity, ViolationKind, CHAIN_BREAK_CA_ANGSTROM,
 };
