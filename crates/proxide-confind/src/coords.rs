@@ -1,9 +1,11 @@
 use crate::error::ConFindError;
 use crate::precondition::chain_breaks;
 use proxide_core::processing::residues::{ProcessedStructure, ResidueId};
+use proxide_core::structure::{AtomRecord, RawAtomData};
 use proxide_geometry::geometry::angles::{compute_backbone_dihedrals_f64, dihedral_angle_f64};
+use proxide_io::formats::pdb_fields::parse_pdb_records;
 use std::collections::HashSet;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::Path;
 
 /// Flat dense index into ProteinBackbone::bb (0-based, protein residues only).
@@ -254,33 +256,57 @@ pub fn load_pdb_f64<P: AsRef<Path>>(path: P) -> Result<ProteinBackbone, ConFindE
 /// `load_pdb_f64` with explicit dihedral-filling policies. `pub(crate)`: exercised
 /// only by this crate's own tests (spec D4, debt #1890); the public entry point
 /// is [`load_pdb_f64`].
+///
+/// Sprint 24 track b (debt #1885): this used to run two independent parses of
+/// the same file -- a hand-rolled first pass that hand-sliced columns 0..6 and
+/// 30..54 and silently zeroed (`unwrap_or(0.0)`) an unparseable coordinate,
+/// then a second, real parse via `proxide_io::formats::pdb::parse_pdb_file`
+/// for residue grouping -- and aligned the two by raw atom index, falling
+/// back to the f32 coordinate (cast to f64) whenever the hand-rolled pass had
+/// produced fewer records than the real parse. That fallback was a silent
+/// substitution (ledger A1/A4): a genuinely malformed coordinate was zeroed
+/// rather than rejected, and a length mismatch between the two passes was
+/// papered over instead of surfaced. Now there is exactly one parse
+/// (`parse_pdb_records`), so the f64 coordinates and the records used for
+/// residue grouping come from the identical record list, in the identical
+/// order, by construction -- there is no second pass to misalign against, and
+/// no fallback path is reachable.
 pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
     path: P,
     opts: &BackboneOptions,
 ) -> Result<ProteinBackbone, ConFindError> {
     use proxide_core::processing::residues::ProcessedStructure;
 
-    // First pass: f64 coords in atom-record order (parallel to raw_atoms).
-    let mut f64_coords: Vec<[f64; 3]> = Vec::new();
     let file = std::fs::File::open(path.as_ref())?;
-    for line in BufReader::new(file).lines() {
-        let line = line?;
-        if line.len() < 54 {
-            continue;
-        }
-        let rec = line[0..6].trim();
-        if rec != "ATOM" && rec != "HETATM" {
-            continue;
-        }
-        let x: f64 = line[30..38].trim().parse().unwrap_or(0.0);
-        let y: f64 = line[38..46].trim().parse().unwrap_or(0.0);
-        let z: f64 = line[46..54].trim().parse().unwrap_or(0.0);
-        f64_coords.push([x, y, z]);
-    }
-
-    // Second pass: use standard parser for residue grouping.
-    let (raw, _) = proxide_io::formats::pdb::parse_pdb_file(path.as_ref())
+    let records = parse_pdb_records(BufReader::new(file))
         .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    let mut f64_coords: Vec<[f64; 3]> = Vec::with_capacity(records.len());
+    let mut raw = RawAtomData::with_capacity(records.len());
+    for rec in records {
+        f64_coords.push([rec.x64, rec.y64, rec.z64]);
+        raw.add_atom(AtomRecord {
+            serial: rec.serial,
+            atom_name: rec.atom_name,
+            alt_loc: rec.alt_loc,
+            res_name: rec.res_name,
+            chain_id: rec.chain_id,
+            res_seq: rec.res_seq,
+            i_code: rec.i_code,
+            x: rec.x,
+            y: rec.y,
+            z: rec.z,
+            occupancy: rec.occupancy,
+            temp_factor: rec.temp_factor,
+            element: rec.element,
+            charge: rec.charge,
+            radius: rec.radius,
+            is_hetatm: rec.is_hetatm,
+        });
+    }
+    if raw.num_atoms == 0 {
+        return Err(std::io::Error::other("No atoms found in PDB file").into());
+    }
     let processed = ProcessedStructure::from_raw(raw).map_err(std::io::Error::other)?;
 
     let mut bb: Vec<ResidueBackbone> = Vec::new();
@@ -299,18 +325,19 @@ pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
         let mut c_pos = None;
         let mut o_pos = None;
 
-        for atom_idx in resinfo.start_atom..(resinfo.start_atom + resinfo.num_atoms) {
-            let name = processed.raw_atoms.atom_names[atom_idx].as_str();
-            let xyz = if atom_idx < f64_coords.len() {
-                f64_coords[atom_idx]
-            } else {
-                [
-                    processed.raw_atoms.coords[3 * atom_idx] as f64,
-                    processed.raw_atoms.coords[3 * atom_idx + 1] as f64,
-                    processed.raw_atoms.coords[3 * atom_idx + 2] as f64,
-                ]
-            };
-            match name {
+        let atom_range = resinfo.start_atom..(resinfo.start_atom + resinfo.num_atoms);
+        // `f64_coords` and `processed.raw_atoms` are built from the same
+        // `parse_pdb_records` call, one entry per record, in the same order
+        // -- `ProcessedStructure::from_raw` does not reorder atoms (see
+        // `residues.rs`) -- so zipping the two slices over this residue's
+        // atom range pairs each name with the coordinates parsed from the
+        // exact same record. No fallback: a mismatch here would be a real
+        // bug, not a case to paper over with a substituted value.
+        for (name, &xyz) in processed.raw_atoms.atom_names[atom_range.clone()]
+            .iter()
+            .zip(&f64_coords[atom_range])
+        {
+            match name.as_str() {
                 "N" => n_pos = Some(xyz),
                 "CA" => ca_pos = Some(xyz),
                 "C" => c_pos = Some(xyz),
@@ -1125,5 +1152,67 @@ mod tests {
                 &format!("{name} load_pdb_f64 (mosaist)"),
             );
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Sprint 24 track b (debt #1885): load_pdb_f64_with_options now fails
+    // loud instead of silently zeroing a malformed coordinate or panicking
+    // on non-ASCII content. These tests exercise that directly, rather than
+    // relying only on pdb_fields.rs's own unit tests, since coords.rs has
+    // its own error-mapping (`std::io::Error::other` -> `ConFindError::Io`)
+    // that could in principle lose the kind/field detail.
+    // ---------------------------------------------------------------
+
+    fn write_temp_pdb(content: &str) -> tempfile::NamedTempFile {
+        use std::io::Write as _;
+        let mut f = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        f.write_all(content.as_bytes())
+            .expect("failed to write temp PDB");
+        f
+    }
+
+    #[test]
+    fn garbage_x_errors_naming_line_and_field() {
+        let content = "\
+ATOM      1  N   MET A   1      xx.xxx  29.699   5.276  1.00 49.05           N
+ATOM      2  CA  MET A   1      21.154  29.699   5.276  1.00 49.05           C
+";
+        let f = write_temp_pdb(content);
+        let err = load_pdb_f64(f.path()).expect_err("garbage x coordinate must be a hard error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("line 1"),
+            "error should name the offending line, got: {msg}"
+        );
+        assert!(
+            msg.contains("'x'"),
+            "error should name the offending field, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn non_ascii_atom_name_errors_without_panic() {
+        // Column 13-16 (0-idx 12..16) is the atom-name field; byte 0xC3 there
+        // is invalid inside an ASCII-checked prefix and used to be sliced as
+        // `&str`, which could panic on a multibyte boundary (#1776). Now it
+        // must return a structured `Err`, never panic.
+        let mut line =
+            b"ATOM      1  N   ALA A   1      20.154  29.699   5.276  1.00 49.05           N  "
+                .to_vec();
+        line[12] = 0xC3;
+        line[13] = 0x28;
+        line.push(b'\n');
+
+        let f = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        std::fs::write(f.path(), &line).expect("failed to write raw non-ASCII bytes");
+
+        let path = f.path().to_path_buf();
+        let result = std::panic::catch_unwind(move || load_pdb_f64(&path));
+        let outcome = result.expect("non-ASCII atom name must error, not panic");
+        let err = outcome.expect_err("non-ASCII atom name must be a hard error");
+        assert!(
+            err.to_string().to_lowercase().contains("ascii"),
+            "error should mention the non-ASCII byte, got: {err}"
+        );
     }
 }
