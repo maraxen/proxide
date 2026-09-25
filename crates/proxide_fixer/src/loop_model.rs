@@ -1,8 +1,10 @@
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
+
+use proxide_io::formats::pdb_fields::parse_pdb_records;
 
 use crate::models::{Atom, Chain, Residue, Topology};
 
@@ -340,121 +342,69 @@ type ParsedLoops = Vec<(String, Vec<Residue>)>;
 /// chain/res_id ranges described by `loops`.
 ///
 /// Returns a list of `(chain_id, residues)` pairs, one per loop in `loops`.
+///
+/// Sprint 24 track b (debt #1886): this used to hand-slice fixed columns with
+/// `line.get(a..b).unwrap_or(default)` and silently substitute a sentinel
+/// (`res_id`/`serial` -> `0`, coordinates -> `0.0`) for anything that failed
+/// to parse -- a malformed Modeller output atom would silently land at the
+/// origin with residue number 0 instead of failing. It now reads through the
+/// same shared, fail-loud reader as `proxide-io`'s PDB parser
+/// (`pdb_fields::parse_pdb_records`): an unparseable or non-finite field
+/// anywhere in the file aborts the whole parse with a specific error instead
+/// of a substituted default.
+///
+/// Two behaviours from the original hand-rolled version are preserved
+/// exactly, as documented for this sprint:
+/// - **altloc-retaining**: every `alt_loc` variant of an atom is kept as its
+///   own `Atom` entry (no dedup/filter by occupancy or blank-alt_loc
+///   preference) -- this deliberately does NOT go through
+///   `Topology::from_raw_atom_data` (whose `filter_altlocs` keeps only one
+///   altloc per atom position), because Modeller's loop output atoms must
+///   all survive into `splice_loops_into_topology` untouched.
+/// - **by-chain-id grouping**: residues are grouped into `chains_map` by a
+///   linear `chain_id` match, matching today's grouping exactly (no reliance
+///   on `ProcessedStructure`'s chain-index assignment).
 fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedLoops, String> {
-    let content =
-        std::fs::read_to_string(pdb_path).map_err(|e| format!("cannot read output PDB: {e}"))?;
+    let file = std::fs::File::open(pdb_path).map_err(|e| format!("cannot read output PDB: {e}"))?;
+    let records = parse_pdb_records(BufReader::new(file))
+        .map_err(|e| format!("cannot parse output PDB: {e}"))?;
 
-    // Build a temporary topology from the ATOM/HETATM lines, then extract loop
-    // residues by range.
+    // Build a temporary topology from the ATOM/HETATM records, then extract
+    // loop residues by range.
     let mut chains_map: Vec<(String, Vec<Residue>)> = Vec::new();
 
-    for line in content.lines() {
-        let record = line.get(0..6).unwrap_or("").trim();
-        if record != "ATOM" && record != "HETATM" {
-            continue;
-        }
-
-        // PDB fixed-column fields.
-        let is_hetatm = record == "HETATM";
-        let atom_name = line.get(12..16).unwrap_or("    ").trim().to_string();
-        let alt_loc = line
-            .get(16..17)
-            .unwrap_or(" ")
-            .chars()
-            .next()
-            .unwrap_or(' ');
-        let res_name = line.get(17..20).unwrap_or("   ").trim().to_string();
-        let chain_id = line.get(21..22).unwrap_or(" ").trim().to_string();
-        let res_id: i32 = line
-            .get(22..26)
-            .unwrap_or("    ")
-            .trim()
-            .parse()
-            .unwrap_or(0);
-        let x: f32 = line
-            .get(30..38)
-            .unwrap_or("        ")
-            .trim()
-            .parse()
-            .unwrap_or(0.0);
-        let y: f32 = line
-            .get(38..46)
-            .unwrap_or("        ")
-            .trim()
-            .parse()
-            .unwrap_or(0.0);
-        let z: f32 = line
-            .get(46..54)
-            .unwrap_or("        ")
-            .trim()
-            .parse()
-            .unwrap_or(0.0);
-        let occupancy: f32 = line
-            .get(54..60)
-            .unwrap_or("      ")
-            .trim()
-            .parse()
-            .unwrap_or(1.0);
-        let b_factor: f32 = line
-            .get(60..66)
-            .unwrap_or("      ")
-            .trim()
-            .parse()
-            .unwrap_or(0.0);
-        let element = line.get(76..78).unwrap_or("  ").trim().to_string();
-        // Fall back: derive element from atom name if the column is blank.
-        let element = if element.is_empty() {
-            extract_element_from_name(&atom_name).to_string()
-        } else {
-            element
-        };
-
-        // Serial number (best-effort).
-        let serial: i32 = line
-            .get(6..11)
-            .unwrap_or("     ")
-            .trim()
-            .parse()
-            .unwrap_or(0);
-
+    for rec in records {
         let atom = Atom {
-            name: atom_name,
-            element,
-            coords: [x, y, z],
-            alt_loc,
-            serial,
-            b_factor,
-            occupancy,
-            is_hetatm,
+            name: rec.atom_name,
+            element: rec.element,
+            coords: [rec.x, rec.y, rec.z],
+            alt_loc: rec.alt_loc,
+            serial: rec.serial,
+            b_factor: rec.temp_factor,
+            occupancy: rec.occupancy,
+            is_hetatm: rec.is_hetatm,
         };
 
-        // Insert into chains_map.
-        let chain_entry = chains_map.iter_mut().find(|(id, _)| id == &chain_id);
+        // Insert into chains_map (by-chain-id grouping, preserved exactly).
+        let chain_entry = chains_map.iter_mut().find(|(id, _)| id == &rec.chain_id);
         let residues = if let Some((_, r)) = chain_entry {
             r
         } else {
-            chains_map.push((chain_id.clone(), Vec::new()));
+            chains_map.push((rec.chain_id.clone(), Vec::new()));
             &mut chains_map.last_mut().unwrap().1
         };
 
-        let ins_code = line
-            .get(26..27)
-            .unwrap_or(" ")
-            .chars()
-            .next()
-            .unwrap_or(' ');
-        let res_entry = residues
-            .iter_mut()
-            .rev()
-            .find(|r| r.res_id == res_id && r.name == res_name && r.insertion_code == ins_code);
+        let res_entry = residues.iter_mut().rev().find(|r| {
+            r.res_id == rec.res_seq && r.name == rec.res_name && r.insertion_code == rec.i_code
+        });
 
         if let Some(r) = res_entry {
             r.atoms.push(atom);
         } else {
             residues.push(Residue {
-                name: res_name,
-                res_id,
-                insertion_code: ins_code,
+                name: rec.res_name,
+                res_id: rec.res_seq,
+                insertion_code: rec.i_code,
                 atoms: vec![atom],
             });
         }
@@ -486,10 +436,24 @@ fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedL
 ///
 /// This handles the most common protein atoms.  Used only as a fallback when
 /// columns 77-78 are blank.
+///
+/// Sprint 24 decision g (task 260922_autonomous-loop): `infer_element` itself
+/// now strips a leading digit before inference (see
+/// `proxide_core::chem::masses::infer_element`'s corpus test
+/// `test_infer_element_leading_digit_stripped`, which proves it equivalent to
+/// this function's old separate `trim_start_matches` + delegate for every
+/// case this crate exercises, including digit-prefixed names like "1CL" and
+/// "2Cl") -- this is now a direct call, not a second, duplicate strip
+/// (ledger A5).
+///
+/// `parse_loop_residues` no longer calls this: it now reads `element`
+/// straight off `PdbAtomRecord`, which applies the identical blank-column
+/// fallback internally (`pdb_fields::parse_atom_record`). This helper is kept
+/// `#[cfg(test)]`-only for the `make_atom` test fixture and its own
+/// regression test below, both of which predate that change.
+#[cfg(test)]
 fn extract_element_from_name(name: &str) -> &str {
-    let trimmed = name.trim_start_matches(|c: char| c.is_ascii_digit());
-    // Delegate to proxide_core's two-letter-aware inference
-    proxide_core::chem::masses::infer_element(trimmed)
+    proxide_core::chem::masses::infer_element(name)
 }
 
 // ── Helper: splice loops into topology ───────────────────────────────────────
@@ -1013,6 +977,76 @@ mod tests {
         assert_eq!(residues[0].res_id, 2);
         assert_eq!(residues[1].res_id, 3);
         assert_eq!(residues[2].res_id, 4);
+    }
+
+    #[test]
+    fn parse_loop_residues_garbage_res_id_errors() {
+        // Sprint 24 track b (debt #1886): a non-numeric res_seq used to
+        // silently become `0` (`.unwrap_or(0)`); now it's a hard error via
+        // the shared `pdb_fields` reader.
+        let content =
+            "ATOM      1  N   MET Aabcd      20.154  29.699   5.276  1.00 49.05           N  \n";
+        let tmp = std::env::temp_dir().join(format!(
+            "proxide_test_parse_bad_res_id_{}.pdb",
+            std::process::id()
+        ));
+        std::fs::write(&tmp, content).expect("write failed");
+
+        let lp = MissingLoop {
+            chain_id: "A".to_string(),
+            start_res: 0,
+            end_res: 5,
+        };
+        let err = parse_loop_residues(&tmp, &[lp]).expect_err("garbage res_id must be an error");
+        std::fs::remove_file(&tmp).ok();
+
+        assert!(
+            err.contains("res_seq"),
+            "error should name the res_seq field, got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_loop_residues_retains_every_altloc() {
+        // altloc-retaining semantics (sprint 24 track b, hard constraint):
+        // parse_loop_residues must NOT deduplicate alt_loc variants the way
+        // `Topology::from_raw_atom_data`'s `filter_altlocs` does -- every
+        // alt_loc atom at the same (chain, res_id, name) survives as its own
+        // `Atom`, because Modeller's loop output atoms must all reach
+        // `splice_loops_into_topology` untouched. Two CA records for the
+        // same residue, alt_locs 'A' and 'B', must both come back.
+        let content = "\
+ATOM      1  CA AMET A   1      20.154  29.699   5.276  1.00 49.05           N
+ATOM      2  CA BMET A   1      20.154  29.699   5.276  1.00 49.05           N
+";
+        let tmp = std::env::temp_dir().join(format!(
+            "proxide_test_parse_altloc_{}.pdb",
+            std::process::id()
+        ));
+        std::fs::write(&tmp, content).expect("write failed");
+
+        let lp = MissingLoop {
+            chain_id: "A".to_string(),
+            start_res: 0,
+            end_res: 2,
+        };
+        let result = parse_loop_residues(&tmp, &[lp]).expect("parse failed");
+        std::fs::remove_file(&tmp).ok();
+
+        let (chain_id, residues) = &result[0];
+        assert_eq!(chain_id, "A");
+        assert_eq!(
+            residues.len(),
+            1,
+            "both records are the same residue (res_id=1)"
+        );
+        assert_eq!(
+            residues[0].atoms.len(),
+            2,
+            "both alt_loc variants must be retained, not deduplicated"
+        );
+        let alt_locs: Vec<char> = residues[0].atoms.iter().map(|a| a.alt_loc).collect();
+        assert_eq!(alt_locs, vec!['A', 'B']);
     }
 
     // ── geometry validation ──────────────────────────────────────────────────
