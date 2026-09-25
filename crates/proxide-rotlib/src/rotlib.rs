@@ -30,6 +30,25 @@ pub(crate) struct AaEntry {
     pub(crate) rotamers: Vec<BinData>,
 }
 
+/// Aggregate, non-identifying statistics for one amino acid's rotamer grid.
+/// See [`RotamerLibrary::aa_grid_summary`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AaGridSummary {
+    /// Total number of (phi, psi) bins for this residue.
+    pub bin_count: usize,
+    /// Fewest rotamers in any single bin.
+    pub min_rotamers_per_bin: usize,
+    /// Most rotamers in any single bin.
+    pub max_rotamers_per_bin: usize,
+    /// Lowest rotamer probability observed across all bins.
+    pub min_probability: f64,
+    /// Highest rotamer probability observed across all bins.
+    pub max_probability: f64,
+    /// Max pairwise distance (Angstrom) between the rotamer-0 CB position across all
+    /// bins, or `None` if this residue has no CB atom (e.g. GLY) or fewer than 2 bins.
+    pub max_cb_spread_angstrom: Option<f64>,
+}
+
 /// Map key for the cis-proline rotamer entry. The Dunbrack 2010 backbone-
 /// dependent library codes cis-proline as `CPR` (and trans-proline as `TPR`);
 /// this must match whatever the loaded library names its cis-PRO entry.
@@ -351,6 +370,73 @@ impl RotamerLibrary {
     /// Return `true` if the library contains rotamer data for amino acid `aa`.
     pub fn contains_aa(&self, aa: &str) -> bool {
         self.entries.contains_key(aa)
+    }
+
+    /// Aggregate, non-identifying statistics for one amino acid's rotamer grid: bin
+    /// count, rotamer-per-bin range, probability range, and CB-position spread across
+    /// bins. Exists so callers (and tests) can characterize a loaded library's shape for
+    /// a residue -- e.g. confirming a single-bin/single-rotamer synthetic entry -- without
+    /// exposing or copying any per-bin raw data.
+    pub fn aa_grid_summary(&self, aa: &str) -> Result<AaGridSummary, RotlibError> {
+        let entry = self
+            .entries
+            .get(aa)
+            .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
+
+        let bin_count = entry.rotamers.len();
+        let mut min_rotamers_per_bin = usize::MAX;
+        let mut max_rotamers_per_bin = 0usize;
+        let mut min_probability = f64::INFINITY;
+        let mut max_probability = f64::NEG_INFINITY;
+
+        for bin in &entry.rotamers {
+            let n = bin.probs.len();
+            min_rotamers_per_bin = min_rotamers_per_bin.min(n);
+            max_rotamers_per_bin = max_rotamers_per_bin.max(n);
+            for &p in &bin.probs {
+                min_probability = min_probability.min(p);
+                max_probability = max_probability.max(p);
+            }
+        }
+
+        if bin_count == 0 {
+            min_rotamers_per_bin = 0;
+            min_probability = 0.0;
+            max_probability = 0.0;
+        }
+
+        // CB spread: max pairwise distance (A) between the rotamer-0 CB position of
+        // every bin, if this residue has a CB atom. None for residues without CB.
+        let cb_idx = entry.atom_names.iter().position(|n| n == "CB");
+        let max_cb_spread_angstrom = cb_idx.map(|idx| {
+            let points: Vec<[f64; 3]> = entry
+                .rotamers
+                .iter()
+                .filter_map(|bin| bin.coords.first())
+                .filter_map(|rot0_coords| rot0_coords.get(idx).copied())
+                .collect();
+
+            let mut max_d = 0.0f64;
+            for i in 0..points.len() {
+                for j in (i + 1)..points.len() {
+                    let d = ((points[i][0] - points[j][0]).powi(2)
+                        + (points[i][1] - points[j][1]).powi(2)
+                        + (points[i][2] - points[j][2]).powi(2))
+                    .sqrt();
+                    max_d = max_d.max(d);
+                }
+            }
+            max_d
+        });
+
+        Ok(AaGridSummary {
+            bin_count,
+            min_rotamers_per_bin,
+            max_rotamers_per_bin,
+            min_probability,
+            max_probability,
+            max_cb_spread_angstrom,
+        })
     }
 
     /// Resolve the effective entry and bin index, handling cis-proline routing.

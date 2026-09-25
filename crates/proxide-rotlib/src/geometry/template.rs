@@ -162,10 +162,22 @@ fn alanine_template() -> ResidueTemplate {
         },
     );
 
-    t.add_dihedral(DihedralDef {
-        name: "χ1".to_string(),
-        atom_indices: [0, 1, 2, 4],
-    });
+    // ALA has no chi angles (num_chi == 0): CB is a rigid branch off the backbone
+    // improper C-N-CA-CB, fixed at the BondDef's torsion_deg above.
+    //
+    // A spurious "χ1" dihedral [0,1,2,4] (N-CA-C-CB) used to be declared here even
+    // though CB's BondDef has relative_chi: None (an absolute, non-chi torsion). Because
+    // `determine_torsion` (geometry/mod.rs) checks "does any dihedral's 4th atom equal
+    // this atom index" BEFORE consulting the BondDef's own relative_chi, and
+    // convert_rotlib zero-fills unused chi slots to `[0.0; 4]`, a synthetic ALA rotamer
+    // built from this template got CB placed at torsion_deg = chi_values[0] = 0.0
+    // instead of -119.7 — landing CB ~0.03 Å from the backbone C atom. Verified 2026-09-23
+    // (backlog #5244 / spec-challenger FATAL #1); see the torsion + SER-CB-identity tests
+    // below. Do not re-add a dihedral for CB here.
+    debug_assert!(
+        t.dihedrals.is_empty(),
+        "ALA must have num_chi == 0 (no DihedralDef entries) — its CB torsion is fixed, not chi"
+    );
 
     t
 }

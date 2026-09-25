@@ -19,24 +19,28 @@ fn test_converter_ac3_full_library() {
     );
     let output_path = Path::new("/tmp/ac3_test_rotlib.pb.zst");
 
-    if !input_path.exists() {
-        eprintln!(
-            "Input file not found: {}. Skipping test.",
-            input_path.display()
-        );
-        return;
-    }
+    assert!(
+        input_path.exists(),
+        "AC-3 input file not found at {} — this is a fail-loud test, not a skip: fix the \
+         path or the missing fixture, do not silently pass",
+        input_path.display()
+    );
 
-    // Build and run the converter
+    // Build and run the converter. --bin is explicit: this crate has two binaries
+    // (convert_rotlib, parse_master) and `cargo run` without --bin is ambiguous.
+    // --synthesize-ala is required for the "23 codes incl. ALA" assertion below.
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--release",
+            "--bin",
+            "convert_rotlib",
             "--",
-            "--input",
-            input_path.to_str().unwrap(),
+            "--rotlib-source",
+            &format!("dunbrack:{}", input_path.display()),
             "--output",
             output_path.to_str().unwrap(),
+            "--synthesize-ala",
         ])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
@@ -72,10 +76,8 @@ fn verify_rotamer_library(path: &Path) {
 
     // 1. Attribution field is non-empty
     assert!(!lib.attribution.is_empty(), "Attribution field is empty");
-    println!(
-        "✓ Attribution field is non-empty: {}",
-        &lib.attribution[..100]
-    );
+    let attribution_preview: String = lib.attribution.chars().take(100).collect();
+    println!("✓ Attribution field is non-empty: {}", attribution_preview);
 
     // 2. data_license == "ODC-BY-1.0"
     assert_eq!(
@@ -93,18 +95,18 @@ fn verify_rotamer_library(path: &Path) {
     );
     println!("✓ geometry_mode == PRECOMPUTED");
 
-    // 4. All 22 residue codes present in Dunbrack library
-    // (Note: ALA and GLY are not rotameric, so not in BBDEP library)
+    // 4. All 22 Dunbrack-rotameric residue codes plus the synthetic ALA (backlog #5244)
+    // (Note: GLY is still not rotameric and still not in this library)
     let expected_codes = vec![
-        "ARG", "ASN", "ASP", "CPR", "CYD", "CYH", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS",
-        "MET", "PHE", "PRO", "SER", "THR", "TPR", "TRP", "TYR", "VAL",
+        "ALA", "ARG", "ASN", "ASP", "CPR", "CYD", "CYH", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU",
+        "LYS", "MET", "PHE", "PRO", "SER", "THR", "TPR", "TRP", "TYR", "VAL",
     ];
     let actual_codes: Vec<&str> = lib.residues.iter().map(|r| r.code.as_str()).collect();
 
     assert_eq!(
         actual_codes.len(),
-        22,
-        "Expected 22 residues, got {}",
+        23,
+        "Expected 23 residues (22 Dunbrack-rotameric + synthetic ALA), got {}",
         actual_codes.len()
     );
 
@@ -115,7 +117,29 @@ fn verify_rotamer_library(path: &Path) {
             code
         );
     }
-    println!("✓ All 22 residue codes present: {:?}", actual_codes);
+    println!(
+        "✓ All 23 residue codes present (incl. synthetic ALA): {:?}",
+        actual_codes
+    );
+
+    // 4b. Synthetic ALA has the expected shape: 1 bin, 1 rotamer, p=1, num_chi=0.
+    let ala_entry = lib
+        .residues
+        .iter()
+        .find(|r| r.code == "ALA")
+        .expect("ALA not found");
+    assert_eq!(ala_entry.num_chi, 0, "ALA num_chi should be 0");
+    assert_eq!(ala_entry.bins.len(), 1, "ALA should have exactly 1 bin");
+    assert_eq!(
+        ala_entry.bins[0].rotamers.len(),
+        1,
+        "ALA bin should have exactly 1 rotamer"
+    );
+    assert_eq!(
+        ala_entry.bins[0].rotamers[0].prob, 1.0,
+        "ALA rotamer probability should be 1.0"
+    );
+    println!("✓ Synthetic ALA: 1 bin, 1 rotamer, p=1, num_chi=0");
 
     // 5. For PRO at (phi=-60, psi=-40): 2+ rotamers, first rotamer prob > 0
     let pro_entry = lib

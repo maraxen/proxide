@@ -39,6 +39,7 @@
 //!   *Structure* 19(6):844–858 (2011).
 
 pub mod binning;
+pub mod convert;
 pub mod error;
 pub mod frame;
 pub mod geometry;
@@ -48,10 +49,11 @@ pub mod rotlib;
 pub mod rotlib_source;
 pub mod sidechain;
 
+pub use convert::{add_synthetic_ala, build_library};
 pub use error::RotlibError;
 pub use frame::{backbone_frame, Frame, Transform};
 pub use geometry::{ProlineBuilder, ResidueTemplate};
 pub use pb::rotlib_v1;
 pub use rotamer_id::{PlacedAtom, PlacedRotamer, RotamerId};
-pub use rotlib::RotamerLibrary;
+pub use rotlib::{AaGridSummary, RotamerLibrary};
 pub use sidechain::{counts_as_sidechain, is_backbone_or_hydrogen};
