@@ -1,30 +1,36 @@
+[metadata]
+title = "proxide parse_amber_trajectory vs mdtraj on a real solvated AMBER parm7 + XTC"
+created = "260928"
+schema_version = "0.3"
+
 [experiment]
-hypothesis = """
-proxide.parse_amber_trajectory (new parm7 reader + XTC frame assembly, feat/parm7-amber-trajectory)
-reads a real solvated AMBER system identically to mdtraj, an independent reader of both formats.
-System: nanobody data/toxins_peptide_mhc/peptide_MHC/150_2_96 (parm7 + xtc), frames [0, -1].
-Pre-registered 2026-09-28 before any run of this script (task_id 260928_aminx-debt-sweep, debt #2016).
-"""
+hypothesis = "proxide.parse_amber_trajectory (feat/parm7-amber-trajectory) reads nanobody data/toxins_peptide_mhc/peptide_MHC/150_2_96 (parm7 + xtc), frames [0, -1], identically to mdtraj, an independent reader of both formats: same protein sequence, chain boundaries equal to the backbone breaks mdtraj's coordinates imply (C(i)-N(i+1) > 2.0 A), and CA coordinates within 0.02 A (2x XTC 0.001 nm precision). Pre-registered 2026-09-28 before any run (task_id 260928_aminx-debt-sweep, debt #2016); thresholds unchanged from the first draft of this sidecar, only reformatted to the 0.3 schema after bth rejected the prose draft pre-execution."
+stage_name = "confirmation"
+novel = false
 
 [outcomes.pass]
-condition = """
-ALL of:
-  - sequence_equal: proxide protein sequence == mdtraj protein-residue sequence (one-letter);
-  - chain_starts_equal: proxide chain boundaries == backbone breaks from mdtraj coordinates
-    (C(i)-N(i+1) > 2.0 A);
-  - ca_match: every selected frame's CA coordinates within 0.02 A of mdtraj's (both decode the
-    same lossy XTC; 0.02 A is 2x the XTC 0.001 nm precision);
-  - negative_control_fires: proxide frame 0 vs mdtraj LAST frame max |diff| > 0.5 A;
-  - selected_frames_distinct: proxide frame 0 vs frame -1 CA RMSD > 0.1 A.
-Script exits 0 and writes result.json with "pass": true.
-"""
-interpretation = "The parm7 reader, residue/chain assembly and frame selection are correct on real data."
+condition = "sequence_equal AND chain_starts_equal AND ca_max_abs_diff < 0.02 AND negative_max_abs_diff > 0.5 AND frames_ca_rmsd > 0.1"
+decision = "Treat the parm7 reader, residue/chain assembly and frame selection as correct on real data; cite this run from the debt #2016 resolution."
+reasoning = "Two independent readers agree on identities, chains and coordinates of two distinct frames, and the negative control (frame 0 vs mdtraj's last frame) proves the coordinate comparison can fail."
+is_residual = false
+adversarial_check = "negative_max_abs_diff <= 0.5"
 
 [outcomes.fail]
-condition = "Any check false, or the script errors."
-interpretation = """
-If only sequence_equal fails at AMBER variant residues, check whether mdtraj's residue code table
-lacks the variant (reference limitation) before blaming proxide. Any ca_match failure with a passing
-negative control is a real coordinate/ordering defect. A failing negative control means the
-comparison is uninformative and nothing else in this run can be cited.
-"""
+condition = "NOT (sequence_equal AND chain_starts_equal AND ca_max_abs_diff < 0.02 AND negative_max_abs_diff > 0.5 AND frames_ca_rmsd > 0.1)"
+decision = "Do not cite; debug the failing check. If only sequence_equal fails at AMBER variant residues, first check mdtraj's residue-code table (reference limitation). A failing negative control makes the whole run uninformative."
+reasoning = "Any disagreement with an independent reader, or an instrument that cannot fail, means the reader is not validated."
+is_residual = true
+
+[result_schema]
+all_pass = "bool"
+sequence_equal = "bool"
+chain_starts_equal = "bool"
+n_res_proxide = "int"
+n_res_mdtraj = "int"
+n_chains_proxide = "int"
+ca_max_abs_diff = "float"
+negative_max_abs_diff = "float"
+frames_ca_rmsd = "float"
+
+[dependencies]
+proxide_version = { type = "git_sha", required = true }

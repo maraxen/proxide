@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -142,6 +143,22 @@ def main() -> int:
   overall = all(c["pass"] for c in checks.values())
   result = {"pass": overall, "n_frames_in_file": ref["n_frames"], "frames": ref["frames"], "checks": checks}
   args.out.write_text(json.dumps(result, indent=2))
+  diffs = [f["max_abs_diff"] for f in per_frame]
+  flat = {
+    "all_pass": overall,
+    "sequence_equal": checks["sequence_equal"]["pass"],
+    "chain_starts_equal": checks["chain_starts_equal"]["pass"],
+    "n_res_proxide": len(got["sequence"]),
+    "n_res_mdtraj": len(ref["sequence"]),
+    "n_chains_proxide": len(got["chain_starts"]),
+    # Missing comparisons count as infinitely wrong, never as a pass.
+    "ca_max_abs_diff": max(d if d is not None else float("inf") for d in diffs),
+    "negative_max_abs_diff": neg if neg is not None else -1.0,
+    "frames_ca_rmsd": distinct if distinct is not None else -1.0,
+  }
+  results_path = os.environ.get("BTH_RESULTS_PATH")
+  if results_path:
+    Path(results_path).write_text(json.dumps(flat))
   for name, c in checks.items():
     log.info("%-26s %s", name, "PASS" if c["pass"] else "FAIL")
   log.info("overall: %s -> %s", "PASS" if overall else "FAIL", args.out)
