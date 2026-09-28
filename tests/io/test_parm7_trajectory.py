@@ -85,14 +85,19 @@ def test_frame0_matches_xtc_reader(parm7: Path) -> None:
   np.testing.assert_allclose(ca, frame0[8], atol=1e-4)  # atom 9 in native.pdb is ALA CA
 
 
-def test_multiple_frames_are_stacked(parm7: Path) -> None:
-  n_frames = proxide.frame_count(str(XTC))
-  if n_frames < 2:
-    pytest.skip("fixture trajectory has a single frame")
-  protein = proxide.parse_amber_trajectory(parm7, XTC, frames=[0, -1], use_jax=False)
-  coords = np.asarray(protein.coordinates)
-  assert coords.shape[:3] == (2, 1, 37)
-  assert not np.allclose(coords[0], coords[1])
+def test_frame_sequence_returns_one_protein_per_frame(parm7: Path) -> None:
+  proteins = proxide.parse_amber_trajectory(parm7, XTC, frames=[0, -1], use_jax=False)
+  assert isinstance(proteins, list) and len(proteins) == 2
+  a, b = (np.asarray(p.coordinates) for p in proteins)
+  assert a.shape == b.shape == (1, 37, 3)
+  assert not np.allclose(a, b), "first and last frames must differ"
+  frames = np.asarray(proxide.parse_xtc(str(XTC))["coordinates"])
+  np.testing.assert_allclose(b[0, 1], frames[-1].reshape(-1, 3)[8], atol=1e-4)
+
+
+def test_raw_binding_stacks_frames(parm7: Path) -> None:
+  result = _proxider.parse_amber_trajectory(str(parm7), str(XTC), [0, 1, 2], proxide.OutputSpec())
+  assert np.asarray(result["coordinates"]).shape == (3, 1, 37, 3)
 
 
 def test_atom_count_mismatch_raises(tmp_path: Path) -> None:

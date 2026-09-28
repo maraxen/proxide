@@ -73,10 +73,9 @@ def mdtraj_reference(topology: str, trajectory: str, frames: list[int]) -> dict:
 def proxide_result(topology: str, trajectory: str, frames: list[int]) -> dict:
   import proxide  # noqa: PLC0415
 
-  protein = proxide.parse_amber_trajectory(topology, trajectory, frames=frames, use_jax=False)
-  coords = np.asarray(protein.coordinates)
-  if coords.ndim == 3:
-    coords = coords[None]
+  proteins = proxide.parse_amber_trajectory(topology, trajectory, frames=list(frames), use_jax=False)
+  coords = np.stack([np.asarray(p.coordinates) for p in proteins])  # (F, R, 37, 3)
+  protein = proteins[0]
   aatype = np.asarray(protein.aatype)
   chain = np.asarray(protein.chain_index)
   # Rust aatype indices follow proxide-core RESTYPES (AlphaFold order); 20 = unknown.

@@ -663,40 +663,50 @@ def parse_parm7(file_path: str | Path) -> dict:
 def parse_amber_trajectory(
   topology: str | Path,
   trajectory: str | Path,
-  frames: Sequence[int] | None = None,
+  frames: int | Sequence[int] | None = None,
   spec=None,
   use_jax: bool = True,
-) -> Protein:
-  """Load an AMBER topology (parm7/prmtop) plus selected trajectory frames as a Protein.
+) -> Protein | list[Protein]:
+  """Load an AMBER topology (parm7/prmtop) plus trajectory frame(s) as Protein(s).
 
   A trajectory alone carries only coordinates; the topology supplies atom and residue
-  identities. Each selected frame becomes one model, stacked like a multi-model PDB, so
-  more than one frame gives Atom37 coordinates of shape ``(n_frames, n_res, 37, 3)``.
+  identities.
 
   Args:
       topology: Path to the ``.parm7``/``.prmtop`` file.
       trajectory: Path to the trajectory. ``.xtc`` is supported.
-      frames: Frame indices to load; negative indices count from the end.
-          ``None`` loads frame 0 only -- reading a whole trajectory must be explicit.
+      frames: ``None`` (frame 0) or an ``int`` returns one ``Protein``; a sequence of
+          ints returns one ``Protein`` per frame, in the order given. Negative indices
+          count from the end. Reading a whole trajectory must be requested explicitly.
       spec: Optional ``OutputSpec``.
       use_jax: Return JAX arrays if True, NumPy otherwise.
 
   Returns:
-      A ``Protein``. Water and ions are never protein residues and do not appear in it;
-      AMBER residue variants (``HIE``, ``CYX``, ``ASH``, ...) map to their parent amino
-      acids. Chains come from ``RESIDUE_CHAINID`` if present, otherwise from the bond
-      graph (disulfides excluded), labelled A, B, ... in file order.
+      ``Protein`` or ``list[Protein]``. Each frame is parsed on its own, so derived
+      features (RBF, neighbours, electrostatics) belong to that frame. Water and ions
+      are never protein residues; AMBER variants (``HIE``, ``CYX``, ``ASH``, ...) map
+      to their parent amino acids. Chains come from ``RESIDUE_CHAINID`` if present,
+      otherwise from the bond graph (disulfides excluded), labelled A, B, ... in file
+      order.
+
+  Note:
+      ``_proxider.parse_amber_trajectory`` with several frames returns ONE dict with
+      coordinates stacked ``(n_frames, n_res, 37, 3)`` (multi-model PDB layout); its
+      derived features are computed from the first frame only.
 
   """
   if spec is None:
     spec = OutputSpec()
-  result = _proxider.parse_amber_trajectory(
-    str(topology),
-    str(trajectory),
-    None if frames is None else [int(f) for f in frames],
-    spec,
-  )
-  return Protein.from_rust_dict(result, source=str(trajectory), use_jax=use_jax)
+
+  def one(frame: int) -> Protein:
+    result = _proxider.parse_amber_trajectory(str(topology), str(trajectory), [int(frame)], spec)
+    return Protein.from_rust_dict(result, source=f"{trajectory}#frame={frame}", use_jax=use_jax)
+
+  if frames is None:
+    return one(0)
+  if isinstance(frames, int | np.integer):
+    return one(int(frames))
+  return [one(f) for f in frames]
 
 
 parse_xtc = getattr(_proxider, "parse_xtc", None)
