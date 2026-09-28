@@ -73,6 +73,8 @@ __all__ = [
   "parse_mmcif",
   "parse_pqr",
   "parse_structure",
+  "parse_parm7",
+  "parse_amber_trajectory",
   # Force fields
   "load_forcefield",
   # Trajectory
@@ -122,10 +124,19 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
   # Lazy: parsing.backend imports jax.numpy.
-  if name in {"TrajectoryStream", "iterload", "parse_structure", "write_dcd"}:
+  if name in {
+    "TrajectoryStream",
+    "iterload",
+    "parse_structure",
+    "parse_parm7",
+    "parse_amber_trajectory",
+    "write_dcd",
+  }:
     from proxide.io.parsing.backend import (
       TrajectoryStream,
       iterload,
+      parse_amber_trajectory,
+      parse_parm7,
       parse_structure,
       write_dcd,
     )
@@ -134,6 +145,8 @@ def __getattr__(name: str) -> Any:
       "TrajectoryStream": TrajectoryStream,
       "iterload": iterload,
       "parse_structure": parse_structure,
+      "parse_parm7": parse_parm7,
+      "parse_amber_trajectory": parse_amber_trajectory,
       "write_dcd": write_dcd,
     }[name]
   raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

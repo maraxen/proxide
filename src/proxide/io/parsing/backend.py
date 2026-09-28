@@ -652,6 +652,53 @@ def parse_structure(
   return parse_pdb_to_protein(file_path, spec, use_jax, output_format_target, altloc=altloc)
 
 
+def parse_parm7(file_path: str | Path) -> dict:
+  """Parse an AMBER parm7/prmtop topology into per-atom and per-residue arrays.
+
+  Low level: no coordinates. See ``_proxider.parse_parm7`` for the returned keys.
+  """
+  return _proxider.parse_parm7(str(file_path))
+
+
+def parse_amber_trajectory(
+  topology: str | Path,
+  trajectory: str | Path,
+  frames: Sequence[int] | None = None,
+  spec=None,
+  use_jax: bool = True,
+) -> Protein:
+  """Load an AMBER topology (parm7/prmtop) plus selected trajectory frames as a Protein.
+
+  A trajectory alone carries only coordinates; the topology supplies atom and residue
+  identities. Each selected frame becomes one model, stacked like a multi-model PDB, so
+  more than one frame gives Atom37 coordinates of shape ``(n_frames, n_res, 37, 3)``.
+
+  Args:
+      topology: Path to the ``.parm7``/``.prmtop`` file.
+      trajectory: Path to the trajectory. ``.xtc`` is supported.
+      frames: Frame indices to load; negative indices count from the end.
+          ``None`` loads frame 0 only -- reading a whole trajectory must be explicit.
+      spec: Optional ``OutputSpec``.
+      use_jax: Return JAX arrays if True, NumPy otherwise.
+
+  Returns:
+      A ``Protein``. Water and ions are never protein residues and do not appear in it;
+      AMBER residue variants (``HIE``, ``CYX``, ``ASH``, ...) map to their parent amino
+      acids. Chains come from ``RESIDUE_CHAINID`` if present, otherwise from the bond
+      graph (disulfides excluded), labelled A, B, ... in file order.
+
+  """
+  if spec is None:
+    spec = OutputSpec()
+  result = _proxider.parse_amber_trajectory(
+    str(topology),
+    str(trajectory),
+    None if frames is None else [int(f) for f in frames],
+    spec,
+  )
+  return Protein.from_rust_dict(result, source=str(trajectory), use_jax=use_jax)
+
+
 parse_xtc = getattr(_proxider, "parse_xtc", None)
 parse_mdc = getattr(_proxider, "parse_mdc", None)
 
