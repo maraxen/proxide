@@ -495,6 +495,17 @@ fn chain_label(index: usize) -> String {
 
 fn chains_from_bond_graph(topo: &Parm7Topology, res_of_atom: &[usize]) -> Vec<String> {
     let mut parent: Vec<usize> = (0..topo.n_atoms).collect();
+    // A residue is one piece of one molecule by definition: join its atoms first, so a
+    // residue whose first atom happens to carry no listed bond still lands in its chain.
+    for (i, &r) in res_of_atom.iter().enumerate() {
+        let first = topo.res_first_atom[r];
+        if i != first {
+            let (ra, rb) = (union_find_root(&mut parent, first), union_find_root(&mut parent, i));
+            if ra != rb {
+                parent[ra.max(rb)] = ra.min(rb);
+            }
+        }
+    }
     for &(a, b) in &topo.bonds {
         // A disulfide links two cysteines that may belong to different chains.
         if topo.elements[a] == "S" && topo.elements[b] == "S" {
@@ -583,6 +594,14 @@ mod tests {
         let t = fixture();
         assert_eq!(t.res_chain_ids, vec!["A", "A", "B", "~", "~"]);
         assert_eq!(t.res_is_solvent, vec![false, false, false, true, true]);
+    }
+
+    #[test]
+    fn residue_with_unbonded_first_atom_keeps_its_chain() {
+        let mut t = fixture();
+        t.bonds.retain(|&(a, b)| a != 0 && b != 0);
+        let res_of_atom = t.atom_residue_index();
+        assert_eq!(chains_from_bond_graph(&t, &res_of_atom), vec!["A", "A", "B", "~", "~"]);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 """parse_parm7 / parse_amber_trajectory on the alanine-dipeptide trajectory fixture.
 
 The parm7 is generated here from ``trajectories/native.pdb`` (ACE-ALA-NME, 22 atoms, the
-topology of ``trajectories/test.xtc``) so the expected values are known by construction.
+topology of ``trajectories/frame0.xtc``) so the expected values are known by construction.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ if not hasattr(_proxider, "parse_amber_trajectory"):
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "trajectories"
 NATIVE = DATA / "native.pdb"
-XTC = DATA / "test.xtc"
+XTC = DATA / "frame0.xtc"  # 22 atoms, 501 frames (test.xtc is a 4-atom toy)
 Z = {"H": 1, "C": 6, "N": 7, "O": 8}
 MASS = {"H": 1.008, "C": 12.01, "N": 14.01, "O": 16.0}
 
