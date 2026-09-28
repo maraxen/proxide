@@ -1,0 +1,30 @@
+[experiment]
+hypothesis = """
+proxide.parse_amber_trajectory (new parm7 reader + XTC frame assembly, feat/parm7-amber-trajectory)
+reads a real solvated AMBER system identically to mdtraj, an independent reader of both formats.
+System: nanobody data/toxins_peptide_mhc/peptide_MHC/150_2_96 (parm7 + xtc), frames [0, -1].
+Pre-registered 2026-09-28 before any run of this script (task_id 260928_aminx-debt-sweep, debt #2016).
+"""
+
+[outcomes.pass]
+condition = """
+ALL of:
+  - sequence_equal: proxide protein sequence == mdtraj protein-residue sequence (one-letter);
+  - chain_starts_equal: proxide chain boundaries == backbone breaks from mdtraj coordinates
+    (C(i)-N(i+1) > 2.0 A);
+  - ca_match: every selected frame's CA coordinates within 0.02 A of mdtraj's (both decode the
+    same lossy XTC; 0.02 A is 2x the XTC 0.001 nm precision);
+  - negative_control_fires: proxide frame 0 vs mdtraj LAST frame max |diff| > 0.5 A;
+  - selected_frames_distinct: proxide frame 0 vs frame -1 CA RMSD > 0.1 A.
+Script exits 0 and writes result.json with "pass": true.
+"""
+interpretation = "The parm7 reader, residue/chain assembly and frame selection are correct on real data."
+
+[outcomes.fail]
+condition = "Any check false, or the script errors."
+interpretation = """
+If only sequence_equal fails at AMBER variant residues, check whether mdtraj's residue code table
+lacks the variant (reference limitation) before blaming proxide. Any ca_match failure with a passing
+negative control is a real coordinate/ordering defect. A failing negative control means the
+comparison is uninformative and nothing else in this run can be cited.
+"""
