@@ -44,7 +44,9 @@ def mdtraj_reference(topology: str, trajectory: str, frames: list[int]) -> dict:
   last = n_frames - 1
   loaded = {i: md.load_frame(trajectory, i, top=topology) for i in sorted({*resolved, last})}
   top = loaded[resolved[0]].topology
-  residues = [r for r in top.residues if r.is_protein]
+  # mdtraj counts ACE/NME caps as protein; they have no CA and proxide (correctly) does not
+  # treat them as residues, so compare amino-acid residues only.
+  residues = [r for r in top.residues if r.is_protein and any(a.name == "CA" for a in r.atoms)]
   seq = "".join(r.code or "X" for r in residues)
 
   def atom_index(res, name):
