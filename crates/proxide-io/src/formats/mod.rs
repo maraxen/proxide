@@ -7,6 +7,7 @@ pub mod dcd;
 #[cfg(test)]
 mod dcd_test;
 pub mod fasta;
+pub mod field_parse;
 #[cfg(feature = "foldcomp")]
 pub mod foldcomp;
 pub mod mmcif;
@@ -15,6 +16,7 @@ pub mod newick;
 mod newick_test;
 pub mod parm7;
 pub mod pdb;
+pub mod pdb_fields;
 pub mod pqr;
 pub mod trr;
 pub mod xdr;

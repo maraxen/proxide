@@ -113,6 +113,17 @@ pub struct OutputSpec {
     pub force_field: Option<String>,
     pub auto_terminal_caps: bool,
     pub missing_residue_mode: MissingResidueMode,
+    /// Water model used to parameterize solvent atoms during
+    /// `parameterize_md` (HOH/WAT/TIP3/SOL/DOD are excluded from
+    /// force-field residue templates and are otherwise left at
+    /// charge=sigma=epsilon=0.0 -- see
+    /// `proxide_physics::physics::water::get_water_model` for supported
+    /// names). Default `"TIP3P"`.
+    pub water_model: String,
+    /// If true, `parameterize_md` returns an error instead of a structure
+    /// with zeroed parameters when any atom could not be confidently
+    /// parameterized (see `unparameterized_atoms` in the output).
+    pub strict_parameterization: bool,
 
     // Environment
     pub ph: Option<f32>,
@@ -156,6 +167,8 @@ impl Default for OutputSpec {
             force_field: None,
             auto_terminal_caps: true,
             missing_residue_mode: MissingResidueMode::Fail,
+            water_model: "TIP3P".to_string(),
+            strict_parameterization: false,
             ph: Some(7.0),
             include_b_factors: false,
             include_occupancy: false,

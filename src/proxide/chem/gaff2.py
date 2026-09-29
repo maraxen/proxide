@@ -7,13 +7,22 @@ to RDKit molecules.
 
 from __future__ import annotations
 
+import hashlib
 import math as _math
+import os
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+
+from proxide.chem.partial_charges import (
+    CHARGE_SOURCE_ESPALOMA_AM1BCC,
+    CHARGE_SOURCE_GASTEIGER,
+    assign_espaloma_charges_rdkit,
+)
 
 if TYPE_CHECKING:
     from rdkit import Chem
@@ -22,6 +31,31 @@ try:
     from rdkit import Chem
 except ImportError:
     Chem = None
+
+#: Numerical blow-up guard for RDKit Gasteiger partial charges (elementary
+#: charge units). This is NOT a calibrated physical bound -- no finite
+#: |q| > 10 case is known for a real molecule. A value exceeding it means the
+#: PEOE iteration diverged (e.g. an exotic formal-charge/bonding pattern
+#: RDKit's Gasteiger parameters were never fit for), and is treated as a
+#: computation failure to raise on, never a value to clip or zero out.
+GASTEIGER_BLOWUP_GUARD = 10.0
+
+#: Maximum allowed |sum(charges) - sum(formal charges)| (elementary charge
+#: units) for any accepted GAFF2 partial-charge assignment. Measured: espaloma
+#: (backend="rust") conserves total charge to ~1e-9 for methanol (its loss
+#: function constrains this); RDKit Gasteiger with explicit hydrogens
+#: conserves to ~1e-17. An implicit-hydrogen input (e.g. methanol without
+#: AddHs) violates this by ~0.37 e -- exactly the input-shape bug this check
+#: exists to catch.
+_CHARGE_TOTAL_CONSERVATION_TOL = 1e-3
+
+#: Valid charge_method values -> the CHARGE_SOURCE_* provenance constant
+#: recorded in parameterize_gaff_with_rdkit's result dict. No "auto" entry
+#: (debt #1900 decision d2).
+_CHARGE_METHOD_SOURCES = {
+    "espaloma": CHARGE_SOURCE_ESPALOMA_AM1BCC,
+    "gasteiger": CHARGE_SOURCE_GASTEIGER,
+}
 
 
 @dataclass
@@ -1216,28 +1250,117 @@ def assign_gaff2_atom_types(
     return atom_types
 
 
+class Gaff2DefError(RuntimeError):
+    """Base class for ATOMTYPE_GFF2.DEF loading failures.
+
+    proxide never assigns GAFF2 atom types from a missing, altered, or
+    empty rule set -- see CLAUDE.md's fail-fast rule (no sentinel standing
+    in for "unknown"). Every such case raises one of this class's
+    subclasses at the point of determination instead of silently degrading
+    to an empty ruleset (which previously caused every atom to fall
+    through to the generic per-element placeholder types in
+    `assign_gaff2_atom_types`).
+    """
+
+
+class Gaff2DefMissingError(Gaff2DefError, FileNotFoundError):
+    """The resolved ATOMTYPE_GFF2.DEF path does not exist."""
+
+
+class Gaff2DefInvalidError(Gaff2DefError, ValueError):
+    """ATOMTYPE_GFF2.DEF exists but its content is wrong.
+
+    Raised for a digest mismatch against the pin (the default/env-var
+    path only) or for a file that parses to zero rules (any path).
+    """
+
+
+# Single source of truth for ATOMTYPE_GFF2.DEF's upstream location and
+# content digest -- see that file's own header comment. Mirrored (not read)
+# by .github/workflows/ci.yml's rust-checks job and
+# crates/proxide-gaff2/src/rules_loader.rs's digest test.
+_PIN_PATH = Path(__file__).parent.parent / "assets" / "gaff" / "ATOMTYPE_GFF2.pin.toml"
+
+
+def _load_pin() -> dict:
+    """Read the ATOMTYPE_GFF2.DEF pin file."""
+    with _PIN_PATH.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _default_def_path() -> Path:
+    """Resolve the default ATOMTYPE_GFF2.DEF path.
+
+    `PROXIDE_GAFF2_DEF`, if set, overrides the packaged location -- e.g.
+    for a dev checkout, a non-editable install whose wheel wasn't built
+    with the DEF present, or CI debugging.
+    """
+    env_path = os.environ.get("PROXIDE_GAFF2_DEF")
+    if env_path:
+        return Path(env_path)
+    return Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "ATOMTYPE_GFF2.DEF"
+
+
 _default_rules: list[Gaff2Rule] | None = None
 _default_wildatom: dict[str, list[str]] | None = None
 
 
 def _get_default_rules() -> tuple[list[Gaff2Rule], dict[str, list[str]]]:
-    """Get default GAFF2 rules (cached)."""
+    """Get default GAFF2 rules (cached).
+
+    Never caches a failed load: the module-level cache is only assigned
+    after the resolved DEF has been found, digest-verified against the
+    pin file, and successfully parsed into at least one rule. A missing
+    or altered default DEF raises on every call until it's fixed -- it
+    never silently degrades to an empty ruleset.
+    """
     global _default_rules, _default_wildatom
 
     if _default_rules is None:
-        # Use fixed relative path from project root
-        rules_path = Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "ATOMTYPE_GFF2.DEF"
+        rules_path = _default_def_path()
+        pin = _load_pin()
 
-        if rules_path.exists():
-            _default_rules, _default_wildatom = parse_gaff2_rules(rules_path)
-        else:
-            _default_rules = []
-            _default_wildatom = {}
+        if not rules_path.exists():
+            raise Gaff2DefMissingError(
+                f"ATOMTYPE_GFF2.DEF not found at {rules_path}. "
+                f"{pin['license_note']} It is deliberately excluded from this "
+                "repository's git history. Fetch it from a source checkout "
+                "with `uv run python scripts/fetch_amber_assets.py` (run from "
+                "the repo root), or set the PROXIDE_GAFF2_DEF environment "
+                "variable to point at an already-fetched copy. "
+                f"Pinned source: {pin['url']} (sha256 {pin['sha256']})."
+            )
 
-    return (
-        _default_rules if _default_rules is not None else [],
-        _default_wildatom if _default_wildatom is not None else {},
-    )
+        actual_digest = hashlib.sha256(rules_path.read_bytes()).hexdigest()
+        if actual_digest != pin["sha256"]:
+            raise Gaff2DefInvalidError(
+                f"ATOMTYPE_GFF2.DEF at {rules_path} does not match the pinned digest "
+                f"-- expected sha256 {pin['sha256']}, got {actual_digest}. The file "
+                "was altered, corrupted in transit, or is a different upstream "
+                "version than this proxide release expects. Re-fetch a verified copy "
+                "with `uv run python scripts/fetch_amber_assets.py`."
+            )
+
+        rules, wildatom = parse_gaff2_rules(rules_path)
+        if not rules:
+            raise Gaff2DefInvalidError(
+                f"ATOMTYPE_GFF2.DEF at {rules_path} matched its pinned digest but "
+                "parsed to zero rules. parse_gaff2_rules() silently skips "
+                "unparseable lines, so a zero-rule result here means the file's ATD "
+                "grammar diverged from the parser without the digest changing, which "
+                "should be impossible -- treat this as a parser bug, not a missing "
+                "file."
+            )
+
+        _default_rules, _default_wildatom = rules, wildatom
+
+    # The `if` block above either raises (never assigning the cache) or
+    # assigns both cache variables together, so both are guaranteed
+    # non-None here -- these asserts just make that guarantee legible to
+    # the type checker, which can't otherwise narrow a `global` this way.
+    assert _default_rules is not None
+    assert _default_wildatom is not None
+    return (_default_rules, _default_wildatom)
 
 
 def load_gaff2_rules(
@@ -1246,15 +1369,38 @@ def load_gaff2_rules(
     """Load GAFF2 rules from file.
 
     Args:
-        def_path: Path to ATOMTYPE_GFF2.DEF. If None, uses default bundled.
+        def_path: Path to ATOMTYPE_GFF2.DEF. If None, uses the packaged/
+            PROXIDE_GAFF2_DEF default, digest-verified against the pin
+            file (see `_get_default_rules`).
 
     Returns:
-        Tuple of (rules list, wildatom map)
+        Tuple of (rules list, wildatom map).
+
+    Raises:
+        Gaff2DefMissingError: the resolved DEF file does not exist.
+        Gaff2DefInvalidError: the DEF file exists but parses to zero
+            rules. (An explicit `def_path` skips the pin's digest check --
+            that check only applies to the default/env-var path -- but a
+            zero-rule result is always an error regardless of path: an
+            empty ruleset is never a legitimate "no rules" answer, it
+            means the file is empty, truncated, or not actually a GAFF2
+            DEF file.)
     """
     if def_path is None:
         return _get_default_rules()
 
-    return parse_gaff2_rules(def_path)
+    path = Path(def_path)
+    if not path.exists():
+        raise Gaff2DefMissingError(f"ATOMTYPE_GFF2.DEF not found at {path}.")
+
+    rules, wildatom = parse_gaff2_rules(path)
+    if not rules:
+        raise Gaff2DefInvalidError(
+            f"{path} parsed to zero GAFF2 rules. parse_gaff2_rules() silently skips "
+            "unparseable lines, so an empty result means the file is empty, "
+            "truncated, or not a valid ATOMTYPE_GFF2.DEF grammar."
+        )
+    return rules, wildatom
 
 
 def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
@@ -1677,66 +1823,117 @@ def build_gaff2_ffxml(
     return "\n".join(lines)
 
 
-def _get_espaloma_charges(mol: Chem.Mol) -> list[float]:
-    """Compute partial charges using expaloma or fallback to Gasteiger.
+def _check_gasteiger_blowup(atom_idx: int, atom_symbol: str, q: float) -> None:
+    """Raise if a single Gasteiger charge trips :data:`GASTEIGER_BLOWUP_GUARD`.
 
-    Tries native Rust expaloma first, then RDKit Gasteiger as fallback.
-    Returns zero charges if nothing is available.
+    Pulled out of :func:`_assign_gaff2_charges` so this guard is unit-testable
+    without RDKit's Gasteiger computation itself (no real molecule needed --
+    just a candidate charge value).
     """
-    from rdkit import Chem
-
-    mol_copy = Chem.Mol(mol)
-    Chem.SanitizeMol(mol_copy)
-
-    try:
-        from proxide._proxider import (
-            assign_espaloma_charges as assign_rust_charges,
+    if not np.isfinite(q) or abs(q) > GASTEIGER_BLOWUP_GUARD:
+        raise ValueError(
+            f"Gasteiger charge blow-up guard tripped at atom index {atom_idx} "
+            f"({atom_symbol}): q={q!r} exceeds +/-{GASTEIGER_BLOWUP_GUARD} "
+            "(a numerical blow-up guard, not a calibrated physical bound)"
         )
-    except ImportError:
-        assign_rust_charges = None
 
-    try:
-        from expaloma.featurize import from_rdkit_mol
-    except ImportError:
-        from_rdkit_mol = None
 
-    if assign_rust_charges and from_rdkit_mol:
-        try:
-            g = from_rdkit_mol(mol_copy)
-            h0 = np.ascontiguousarray(g.h0, dtype=np.float32)
-            senders = np.ascontiguousarray(g.senders, dtype=np.uint32)
-            receivers = np.ascontiguousarray(g.receivers, dtype=np.uint32)
-            q_ref = np.ascontiguousarray(g.q_ref, dtype=np.float32)
-            total_charge = float(q_ref.sum())
+def _validate_gaff2_charges(charges, mol: Chem.Mol, charge_method: str) -> np.ndarray:
+    """Validate a partial-charge assignment for GAFF2 parameterisation.
 
-            q_rust = assign_rust_charges(
-                h0,
-                senders,
-                receivers,
-                np.zeros(h0.shape[0], dtype=np.uint32),
-                1,
-                [total_charge],
-            )
-            return list(q_rust)
-        except Exception:
-            pass
+    Applied to the output of every ``charge_method`` branch. Checks: every
+    value finite, the length matches the atom count, and the total charge
+    conserves the molecule's formal charge within
+    :data:`_CHARGE_TOTAL_CONSERVATION_TOL`.
 
-    try:
-        mol_copy.ComputeGasteigerCharges()
-        charges = []
-        for atom in mol_copy.GetAtoms():
-            charge = atom.GetDoubleProp("_GasteigerCharge")
-            if charge == float("inf") or charge == float("-inf") or abs(charge) > 10:
-                charge = 0.0
-            charges.append(charge)
-        return charges
-    except Exception:
-        return [0.0] * mol.GetNumAtoms()
+    Raises:
+        ValueError: any of the above checks fails.
+    """
+    arr = np.asarray(charges, dtype=np.float64)
+    n_atoms = mol.GetNumAtoms()
+    if arr.shape != (n_atoms,):
+        raise ValueError(
+            f"{charge_method} charges have shape {arr.shape}, expected "
+            f"({n_atoms},) (mol atom count)"
+        )
+    if not np.all(np.isfinite(arr)):
+        bad = [i for i, q in enumerate(arr) if not np.isfinite(q)]
+        raise ValueError(
+            f"{charge_method} produced non-finite charge(s) at atom index(es) {bad}"
+        )
+    formal_total = float(sum(a.GetFormalCharge() for a in mol.GetAtoms()))
+    actual_total = float(arr.sum())
+    if abs(actual_total - formal_total) > _CHARGE_TOTAL_CONSERVATION_TOL:
+        raise ValueError(
+            f"{charge_method} charges sum to {actual_total:.6f}, expected "
+            f"{formal_total:.6f} (sum of formal charges) within "
+            f"{_CHARGE_TOTAL_CONSERVATION_TOL}; likely implicit-hydrogen "
+            "input or a broken charge model -- see debt #1900"
+        )
+    return arr
+
+
+def _assign_gaff2_charges(mol: Chem.Mol, charge_method: str = "espaloma") -> np.ndarray:
+    """Assign GAFF2 partial charges via an explicit, validated method.
+
+    No silent fallback and no "auto": GAFF2 is parameterised for
+    AM1-BCC-class charges, and Gasteiger is a different charge model, not a
+    lower-accuracy substitute for it -- silently swapping models changes the
+    physics without saying so (debt #1900, sprint-22 decision d2).
+
+    Args:
+        mol: RDKit molecule (explicit hydrogens expected).
+        charge_method: "espaloma" (default) -- calls
+            :func:`~proxide.chem.partial_charges.assign_espaloma_charges_rdkit`
+            (backend="rust"); its errors (e.g. missing expaloma) propagate
+            uncaught. "gasteiger" -- RDKit's Gasteiger/PEOE charges via
+            ``rdPartialCharges.ComputeGasteigerCharges(throwOnParamFailure=True)``,
+            explicit opt-in only.
+
+    Returns:
+        Partial charges (n_atoms,), atom-index order matching ``mol``.
+
+    Raises:
+        ValueError: ``charge_method`` is not "espaloma" or "gasteiger", a
+            Gasteiger charge exceeds :data:`GASTEIGER_BLOWUP_GUARD` in
+            magnitude, or the resulting charges fail
+            :func:`_validate_gaff2_charges`.
+        ImportError: espaloma's backend dependencies are missing (propagated
+            from ``assign_espaloma_charges_rdkit``, not caught here).
+    """
+    if charge_method not in _CHARGE_METHOD_SOURCES:
+        # Validated before touching RDKit at all, so an unknown method is
+        # rejected even when RDKit/the input mol aren't usable yet.
+        raise ValueError(
+            f"Unknown charge_method {charge_method!r}; expected 'espaloma' or "
+            "'gasteiger' (no 'auto' -- see debt #1900 decision d2)"
+        )
+
+    from rdkit import Chem as _Chem
+
+    mol_copy = _Chem.Mol(mol)
+    _Chem.SanitizeMol(mol_copy)
+
+    if charge_method == "espaloma":
+        charges = assign_espaloma_charges_rdkit(mol_copy, backend="rust")
+    else:  # "gasteiger"
+        from rdkit.Chem import rdPartialCharges
+
+        rdPartialCharges.ComputeGasteigerCharges(mol_copy, throwOnParamFailure=True)
+        raw_charges = [
+            atom.GetDoubleProp("_GasteigerCharge") for atom in mol_copy.GetAtoms()
+        ]
+        for idx, (atom, q) in enumerate(zip(mol_copy.GetAtoms(), raw_charges, strict=True)):
+            _check_gasteiger_blowup(idx, atom.GetSymbol(), q)
+        charges = raw_charges
+
+    return _validate_gaff2_charges(charges, mol_copy, charge_method)
 
 
 def parameterize_gaff_with_rdkit(
     mol: Chem.Mol,
     gaff_version: str = "gaff-2.2.20",
+    charge_method: str = "espaloma",
 ) -> dict:
     """Assign GAFF2 parameters to an RDKit molecule.
 
@@ -1746,10 +1943,17 @@ def parameterize_gaff_with_rdkit(
     Args:
         mol: RDKit molecule (should have explicit hydrogens)
         gaff_version: GAFF version string (default: gaff-2.2.20)
+        charge_method: "espaloma" (default, strict) or "gasteiger" (explicit
+            opt-in). No "auto" -- see :func:`_assign_gaff2_charges` and debt
+            #1900 decision d2. Raises ``ValueError`` for any other value.
 
     Returns:
         Dict with keys:
         - atom_types: list of atom type strings
+        - charges: list of partial charges (n_atoms,), atom-index order
+        - charge_method: the charge source, one of
+          ``proxide.chem.partial_charges.CHARGE_SOURCE_ESPALOMA_AM1BCC`` or
+          ``CHARGE_SOURCE_GASTEIGER`` -- always present, never inferred
         - masses: dict of atom type -> mass
         - bonds: dict of (type1, type2) -> (kb, r0)
         - angles: dict of (type1, type2, type3) -> (kt, t0)
@@ -1816,7 +2020,10 @@ def parameterize_gaff_with_rdkit(
                     'types': (t_i, t_j, t_k),
                 })
 
-    charges = _get_espaloma_charges(mol)
+    charges = _assign_gaff2_charges(mol, charge_method)
+    # _assign_gaff2_charges already rejected any charge_method not in this
+    # map, so the lookup below is safe.
+    charge_source = _CHARGE_METHOD_SOURCES[charge_method]
 
     used_types = set(atom_types)
     masses = {at: params['masses'].get(at, 0.0) for at in used_types}
@@ -1898,6 +2105,7 @@ def parameterize_gaff_with_rdkit(
     return {
         'atom_types': atom_types,
         'charges': charges,
+        'charge_method': charge_source,
         'masses': masses,
         'bonds': bonds,
         'angles': angles,

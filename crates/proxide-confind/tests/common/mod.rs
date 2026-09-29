@@ -241,13 +241,19 @@ pub fn real_rotlib_path() -> std::path::PathBuf {
     }
 }
 
-/// Load backbone from the real PDB fixture. Returns None if file not found.
+/// Load backbone from the real PDB fixture. Returns `None` only if the file is absent
+/// (an optional external fixture some environments won't have). If the file IS present
+/// but fails to parse, this panics rather than silently returning `None` via `.ok()` --
+/// a parse failure is a real bug (in the fixture or the parser), not "fixture not
+/// available", and callers that skip on `None` must not be able to mistake the two.
 pub fn load_real_backbone() -> Option<Arc<ProteinBackbone>> {
     let path = real_pdb_path();
     if !path.exists() {
         return None;
     }
-    proxide_confind::load_pdb_f64(&path).ok().map(Arc::new)
+    let backbone = proxide_confind::load_pdb_f64(&path)
+        .unwrap_or_else(|e| panic!("failed to parse PDB fixture at {}: {}", path.display(), e));
+    Some(Arc::new(backbone))
 }
 
 /// Load path to 1DC7.pdb. Uses DC7_PDB_PATH env var or defaults to Mosaist testfiles.

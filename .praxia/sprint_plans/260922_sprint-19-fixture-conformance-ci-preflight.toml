@@ -1,0 +1,156 @@
+[sprint]
+sprint_id = "260922_sprint-19-fixture-conformance-ci-preflight"
+sprint_num = 19
+name = "Sprint 19 — proxide_fixer fixture conformance + loud loaders; optional-dependency CI pre-flight"
+description = "Track T (backlog #2250 re-scoped + debt #1889): cross-API fixture conformance test (C1 preconditions + C2 disulfide) with exact per-fixture assertions, loaders that fail loudly with an atom-count check, repack fixture loaders fixed. Track P (debt #909, phase 1 of 2): pre-flight — install the optional-dependency extras in a Python 3.11 env and run every optional-dep-gated test file, producing a triage report; no CI change yet."
+context = '''
+task_id: 260922_autonomous-loop  (loop iteration 2)
+Base branch: autoloop/260922_autonomous-loop at f86ac3d (sprint 18 merged).
+Plan revised after a TIER2 spec-challenger review (Opus): verdict REVISE, 2 FATAL + 11 MAJOR, all FATALs verified by the orchestrator.
+Key consequences: (1) debt #909's guard cannot be keyed on importorskip (34+ skips use *_AVAILABLE skipif flags) and switching strict CI on
+would enable ~60 never-run tests at once -> split: this sprint runs the pre-flight only; the module-keyed guard + D15 ledger + pinned
+extras + CI change is a follow-up sprint built on the pre-flight data. (2) #2250's "C1+C2+C3 chain" is not a chain: C3 takes a rotlib
+template (split to backlog #5239), C1/C2 have no production caller; T7 becomes a cross-API fixture conformance test. (3) confind
+fill_dihedrals bridges gaps (debt #1890) — T7 CHARACTERISES current values with a canary; it does not fix them.
+Rules: CLAUDE.md fail-fast; never `git add -A` (sandbox dotfiles in tree); RUSTC_WRAPPER="" for cargo; narrow test runs only.
+'''
+max_fix_retries = 1
+worktree_shadow_mode = false
+
+[[tracks]]
+id = "t"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "2250+debt-1889"
+phase_name = "Track T — fixture conformance (C1+C2) + loud loaders (#2250 re-scoped, debt #1889)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop
+
+## Objective
+proxide_fixer's committed PDB fixtures load loudly (never None / skip), and one cross-API conformance test pins exactly what C1
+(ConFind precondition gate) and C2 (disulfide sanitizer) report for each fixture.
+
+## Verified facts
+- crates/proxide_fixer/tests/common/mod.rs:15-27 load_topology(name) -> Option<Topology>: None on missing file; parse Err(_) -> None.
+- crates/proxide_fixer/tests/test_harness_smoke.rs asserts topology.is_some() for clean_small, disulfide_pair, missing_atoms, chain_break (4 of 6 fixtures).
+- crates/proxide_fixer/src/repack.rs:1056-1070 load_test_topology: same None pattern; callers ~L1102, 1272, 1339, 1484, 1544, 1584 (all
+  rotlib-gated first). load_rotlib ~L1073-1090 maps an existing-but-unloadable rotlib to None.
+- proxide_io::formats::pdb::parse_pdb_from_reader silently drops malformed ATOM lines (debt #1883) -> a loader must cross-check atom counts.
+- C1: proxide_confind::precondition::{check_preconditions, require_preconditions} (precondition.rs:97, 289) on ProteinBackbone.
+  Build the backbone via proxide_confind::coords::extract_f64_backbone(&ProcessedStructure) (coords.rs:63) — NOT load_pdb_f64 (debt #1885).
+  ProcessedStructure::from_raw (proxide-core/src/processing/residues.rs:87).
+- C2: proxide_fixer::sanitizers::disulfide::DisulfideSanitizer::new(&mut Topology).run() -> Result<Vec<Disulfide>, DisulfideError>.
+  `sanitizers` only exists with feature protonation|capping|stereo|disulfide (lib.rs:20-26); CI runs `cargo test --workspace --no-default-features` (ci.yml:134).
+- ATOM/HETATM line counts: clean_small 15, disulfide_pair 12, missing_atoms 13, chain_break 20, truncated_sidechain 5, no_hydrogens 15.
+
+## Steps
+1. tests/common/mod.rs: add `#![allow(dead_code)]`. load_topology(name) -> Topology: panic naming the path if missing; panic with the
+   parse error if parse fails; panic if the ATOM/HETATM line count of the file text != raw.num_atoms. Add load_processed(name) ->
+   ProcessedStructure (same parse + count check, then from_raw, panic on Err) and load_backbone(name) -> ProteinBackbone =
+   extract_f64_backbone(&load_processed(name)) (panic on Err). Update test_harness_smoke.rs to the non-Option API and add a test that
+   read_dir's tests/data and loads EVERY *.pdb (assert the set is exactly the 6 fixtures).
+2. repack.rs test module: load_test_topology -> Topology with the same panic/count behaviour; update all 6 callers; make load_rotlib panic
+   when a candidate path exists but fails to load (absent rotlib may still skip — that is debt #1891, out of scope). Add one test that loads
+   truncated_sidechain.pdb and asserts its residue/atom content WITHOUT needing rotlib, so the fixture half runs in CI.
+3. New file crates/proxide_fixer/tests/test_fixture_conformance.rs (UNGATED, runs under --no-default-features) — C1 per fixture via
+   check_preconditions(&load_backbone(f)), asserting EXACT results:
+   - clean_small: 3 residues (ALA1, GLY2, SER3), no violations, require_preconditions Ok.
+   - disulfide_pair: 2 residues (CYS1, CYS2), no violations, Ok.
+   - missing_atoms: 3 residues; bb[1].c and bb[1].o are None; violations in order: (ResidueIndex 1, res_id 2, GLY, MissingBackboneAtom "C"),
+     (1, UndefinedPhi), (1, UndefinedPsi); 3 errors 0 warnings; require_preconditions Err(PreconditionsFailed(3)).
+     CANARY for debt #1890 (comment must cite it): bb[2].phi != 9999.0 and bb[2].is_cis_peptide == true — this pins the CURRENT bridging
+     defect; when #1890 is fixed this assertion must be updated deliberately.
+   - chain_break: 4 residues; exactly one warning (ResidueIndex 2, res_id 3, SER, ChainBreak) with |gap_to_next_ca - 8.466| < 0.01; 0 errors; Ok.
+   - truncated_sidechain: 1 residue (LYS), no violations, Ok.
+   VERIFY these values by running the test; if any differs from the above, do NOT change the assertion to match silently — report the
+   actual value and your reading of why in the report.
+   Also for every fixture: the ordered (chain, res_id, res_name) sequence from load_topology equals the one from load_backbone.
+4. New file crates/proxide_fixer/tests/test_fixture_disulfide.rs with `#![cfg(feature = "disulfide")]` — C2:
+   - disulfide_pair: exactly one Disulfide (chain_a "A", res_a 1, chain_b "A", res_b 2, |distance - 2.04| < 1e-3); both residues renamed "CYX".
+     Comment: CYS2's CB-SG is 5.54 A, so this fixture only exercises the SG-SG criterion (ledger B2) — not proof of physically valid detection.
+   - clean_small, missing_atoms, chain_break: first assert the fixture has 0 residues named CYS/CYH/CYM/CYX (so the zero is not vacuous), then Ok(vec![]) and names unchanged.
+5. Run: `RUSTC_WRAPPER="" cargo test -p proxide_fixer --no-default-features --tests` and `RUSTC_WRAPPER="" cargo test -p proxide_fixer --features disulfide --tests`
+   and `RUSTC_WRAPPER="" cargo test -p proxide_fixer --lib repack` and `cargo fmt -p proxide_fixer -- --check`. Logs to target/logs/trackT_*.log; paste test result lines.
+6. Stage only the files you changed (named), commit:
+   test(fixer): fixture conformance for C1/C2 and loud fixture loaders (#2250, debt #1889)
+   <body: C3 split to #5239; missing_atoms canary pins debt #1890; loaders cross-check atom counts>
+   Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+   Claude-Session: https://claude.ai/code/session_01SbXt9g5fCHS6EFnoubG2Ft
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+## VERIFY (commands / line reads only)
+1. Commit touches only crates/proxide_fixer/ (tests/, src/repack.rs test module).
+2. No `-> Option<Topology>` loader, no `Err(_) => None`, and no fixture-load skip remain (rg in crates/proxide_fixer/tests and repack.rs); load_rotlib panics on an existing-but-unloadable path.
+3. Loaders cross-check ATOM/HETATM line count vs num_atoms (read the code; then prove it: append a malformed ATOM line to a COPY of clean_small in a temp dir and call the loader logic via a scratch test or by reasoning from the code path — state which).
+4. test_fixture_conformance.rs has no cfg gate and passes under `cargo test -p proxide_fixer --no-default-features --test test_fixture_conformance`; its assertions match the per-fixture table in the plan exactly (compare line by line); the #1890 canary cites the debt.
+5. test_fixture_disulfide.rs is gated on feature disulfide and passes with `--features disulfide`; zero-CYS preconditions present.
+6. The read_dir test asserts exactly the 6 fixtures; the rotlib-independent truncated_sidechain test exists and runs without ROTLIB_PATH.
+7. `cargo test -p proxide_fixer --no-default-features --tests`, `--features disulfide --tests`, and `--lib repack` pass; `cargo fmt -p proxide_fixer -- --check` clean.
+8. Independent control: change one expected value in test_fixture_conformance.rs (e.g. the chain_break gap to 9.0), confirm the test fails, restore, confirm `git diff --quiet`.
+PASS = all 8. FAIL otherwise, cite item + evidence.
+'''
+return_key = "2250"
+
+[[tracks]]
+id = "p"
+is_research = true
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-909-phase1"
+phase_name = "Track P — optional-dependency test pre-flight on Python 3.11 (debt #909 phase 1)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop
+
+## Objective
+Produce data, not a CI change: which optional-dependency-gated tests pass, fail, or still skip when rdkit/mdtraj/h5py/tables are
+installed on Python 3.11 at uv.lock versions. Output: .praxia/docs/research/260922_optional-dep-test-preflight.md.
+
+## Facts
+- CI test job: python 3.11, `uv pip install .[dev]` (no rdkit/mdtraj/h5py/tables), then `pytest -m smoke` and `pytest`.
+- Locked versions (uv.lock): rdkit 2026.3.1, mdtraj 1.11.0, h5py 3.15.1, tables 3.10.2 — all have cp311 manylinux wheels.
+- Gated files (from review): importorskip sites (rg "importorskip\(" tests) and flag sites (rg "_AVAILABLE|HAS_H5PY|HAS_MDTRAJ" tests), incl.
+  tests/test_gaff2_golden.py, tests/test_gaff2_parity_invariants.py, tests/io/parsing/test_mdtraj.py, tests/io/parsing/test_hdf5_integration.py,
+  tests/validation/test_{xtc_reader,trajectory,xtc_distogram,physics}_parity.py, tests/io/streaming/test_mdcath*.py, tests/io/parsing/test_molecule.py, tests/io/parsing/test_dispatch.py.
+
+## Steps
+1. Scratch env ONLY under target/preflight/ (never modify .venv or pyproject.toml/uv.lock): `uv venv -p 3.11 target/preflight/venv`; install the
+   locked extras: `uv export --frozen --no-hashes --extra dev --extra molecules --extra trajectories --no-emit-project > target/preflight/req.txt`,
+   `uv pip install --python target/preflight/venv -r target/preflight/req.txt`, then build/install proxide into it (`maturin develop` with
+   VIRTUAL_ENV pointing at the scratch venv, or `uv pip install --python target/preflight/venv .`). Record exact commands and any failure.
+2. Enumerate the gated test files with rg (list them in the report with site counts per module).
+3. Run EACH file separately (never the whole suite; local compute limits): `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 timeout 600 target/preflight/venv/bin/python -m pytest <file> -q -rs -p no:cacheprovider > target/preflight/<name>.log 2>&1`.
+   Also run the same file under the normal .venv (current skip behaviour) for the baseline.
+4. Report table: file | gating module(s) | baseline (pass/fail/skip counts) | with extras (pass/fail/skip) | for each failure: test id + one-line cause | remaining skips + reason.
+   Classify each failure: real bug / test needs data file absent in repo / env-only (would not happen in CI) / timeout.
+5. Write the report with the praxia doc frontmatter (see other .praxia/docs/research/*.md for the format: name, description, metadata with task_id 260922_autonomous-loop).
+   Commit ONLY the report file:
+   docs(research): optional-dependency test pre-flight on Python 3.11 (debt #909)
+   Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+   Claude-Session: https://claude.ai/code/session_01SbXt9g5fCHS6EFnoubG2Ft
+Do not change tests, CI, or dependencies. Do not "fix" failures.
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+## VERIFY
+1. Commit adds only .praxia/docs/research/260922_optional-dep-test-preflight.md; .venv, pyproject.toml, uv.lock, tests/, .github/ untouched.
+2. The report lists every gated file found by `rg -l "importorskip\(|_AVAILABLE|HAS_H5PY|HAS_MDTRAJ" tests` (compare the sets).
+3. Spot-check 3 rows by re-running those files yourself with target/preflight/venv (if it exists) — counts match the report.
+4. Every failure has a classification and a cause line; no row claims pass without a log in target/preflight/.
+PASS = all 4.
+'''
+return_key = "debt-909-phase1"
+
+[orchestration]
+sequential = []
+concurrent = ["t", "p"]
+
+[deferred]
+debt_909_phase2 = "Module-keyed require_optional() helper migrating all ~60 gated sites; static check against importorskip/_AVAILABLE outside the helper; D15-style counted, stale-checked allowlist (openmm 3, openmmforcefields 3, expaloma 5 scoped to test_partial_charges.py, ligand-frame); pinned extras (uv export --frozen or --only-binary); -rs on pytest steps; strict mode as CI default; verification via gh workflow_dispatch reading both jobs. Built on Track P's report."
+pdb_parser_hardening = "debts #1776 #1883 #1885 #1886 — blocked on owner decision OBS-105."
+confind_dihedrals = "debt #1890 — owner decision (Mosaist parity) before fixing."

@@ -188,7 +188,9 @@ impl PyOutputSpec {
         include_occupancy = false,
         error_mode = PyErrorMode::Warn,
         enable_caching = false,
-        unit_system = PyUnitSystem::Amber
+        unit_system = PyUnitSystem::Amber,
+        water_model = "TIP3P".to_string(),
+        strict_parameterization = false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -220,6 +222,8 @@ impl PyOutputSpec {
         error_mode: PyErrorMode,
         enable_caching: bool,
         unit_system: PyUnitSystem,
+        water_model: String,
+        strict_parameterization: bool,
     ) -> Self {
         Self {
             inner: OutputSpec {
@@ -251,6 +255,8 @@ impl PyOutputSpec {
                 error_mode: error_mode.into(),
                 enable_caching,
                 unit_system: unit_system.into(),
+                water_model,
+                strict_parameterization,
             },
         }
     }
@@ -398,5 +404,23 @@ impl PyOutputSpec {
     #[setter]
     fn set_unit_system(&mut self, value: PyUnitSystem) {
         self.inner.unit_system = value.into();
+    }
+
+    #[getter]
+    fn get_water_model(&self) -> String {
+        self.inner.water_model.clone()
+    }
+    #[setter]
+    fn set_water_model(&mut self, val: String) {
+        self.inner.water_model = val;
+    }
+
+    #[getter]
+    fn get_strict_parameterization(&self) -> bool {
+        self.inner.strict_parameterization
+    }
+    #[setter]
+    fn set_strict_parameterization(&mut self, val: bool) {
+        self.inner.strict_parameterization = val;
     }
 }

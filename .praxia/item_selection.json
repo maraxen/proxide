@@ -1,0 +1,27 @@
+{
+  "task_id": "260922_autonomous-loop",
+  "written_at": "2026-09-22T17:31:00Z",
+  "triage_path": "step_b_pm_fallback",
+  "triage_note": "pm_triage microflow halted: node 'synthesis' exhausted step_budget, nothing written (debt #649). Claude pm agent (sonnet) fallback used; its staleness claims on #3760 and GAFF2 staging were spot-checked by the orchestrator before acting.",
+  "closed_as_stale": [
+    {"id": 5056, "source": "backlog", "evidence": "5f368ec; test_pairs_14_excludes_spurious_cross_water_bond passes"},
+    {"id": 5057, "source": "backlog", "evidence": "c24546a; pqr/pdb/mmcif fallback tests pass"},
+    {"id": 3760, "source": "backlog", "evidence": "e3c2159 pairwise_tm_scores + benches/bench_pairwise.rs"}
+  ],
+  "advisory_not_applied": [
+    {"ids": [208, 209, 210, 211, 212], "source": "staging", "recommendation": "discard: GAFF2 parity campaign closed at PARITY 260820 (.praxia/docs/audits/260820_gaff2-parity-verdict.md, decisions/260818_gaff2-parity-verdict-policy.md, parity.bth.toml)"},
+    {"ids": [213], "source": "staging", "recommendation": "defer: check whether existing CI already runs tests/test_gaff2_golden.py + test_gaff2_parity_invariants.py"},
+    {"ids": [2558], "source": "backlog", "recommendation": "rescope: PreparedSystem/assign_parameters do not exist (#2551, #977 archived); re-scope to an e2e over SystemPrepReport"}
+  ],
+  "selected_item_ids": ["debt:1775", "backlog:3789", "debt:1776+debt:1883"],
+  "selection_mode": "p2_fallback",
+  "orchestrator_override": "PM recommended #1776 alone and deferring #1883. Rejected: with parse_atom_line returning Option, the only way to remove the #1776 panic without #1883 is to return None, which the caller silently drops -- converting a loud crash into silent data loss (CLAUDE.md hard rule / ledger A1). #1776 and #1883 are one track or neither; its API shape is decided in the spec-coherence adversarial pass before the sprint gate.",
+  "difficulty": {"debt:1775": "quick", "backlog:3789": "standard", "debt:1776+debt:1883": "standard"},
+  "difficulty_total": 7,
+  "governor_note": "Over the default budget of 6 by 1 if track B survives the coherence pass; if the pass cannot settle track B's API shape, track B drops and the total is 4.",
+  "rubric_version": "default (no .praxia/sprint_rubric.toml)",
+  "brainstorm_needed": false,
+  "adversarial_tier": {"debt:1775": "TIER1", "backlog:3789": "TIER2", "debt:1776+debt:1883": "TIER2"},
+  "extra_step": "spec-coherence adversarial pass against .praxia/docs/specs/260910_proxide-silent-substitution-observability.md before sprint_approved gate (loop gap filed as praxia backlog #5219)",
+  "next_phase": "SPRINT_COMPOSE"
+}

@@ -20,14 +20,17 @@ proxide-geometry = { workspace = true }
 proxide-rotlib = { workspace = true }
 proxide-core = { workspace = true }
 proxide-confind = { workspace = true }
+# Sprint 24 track b (debt #1886): loop_model.rs::parse_loop_residues now
+# routes through proxide-io's shared fail-loud PDB reader
+# (formats::pdb_fields::parse_pdb_records) instead of hand-slicing columns
+# itself -- this is a real, non-test dependency now, not just the
+# test-fixture use it was before (see dev-dependencies removal below).
+proxide-io = { workspace = true }
 nalgebra.workspace = true
 thiserror.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log.workspace = true
-
-[dev-dependencies]
-proxide-io = { workspace = true }
 
 [features]
 default = ["disulfide", "protonation", "capping", "stereo"]

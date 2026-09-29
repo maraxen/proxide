@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  mbondi2 intrinsic Born radii and OBC/HCT screening parameters.
+
+  THIS FILE IS GROUND TRUTH. The values here are transcribed from a named
+  upstream implementation at a pinned revision (see <Provenance>). They are
+  deliberately NOT written as Rust literals: a physical constant embedded in
+  code is unreviewable as data, and this repository has already been bitten by
+  constants silently changing inside refactors (see CLAUDE.md, ledger A2/A3).
+
+  ===========================================================================
+  THE MOST IMPORTANT THING IN THIS FILE IS WHAT IS *ABSENT*.
+
+  mbondi2 is a protein/nucleic-acid radius set. It defines radii for exactly
+  the elements listed below and NO OTHERS. Se, Na, Cu, Fe, Zn, Mn, Br, I, K,
+  Mg and every other element are NOT part of mbondi2, not "missing from our
+  copy", not "to be filled in later". Upstream assigns them a documented
+  catch-all `default_radius`, and so do we.
+
+  Applying that catch-all is therefore an *unlicensed inference*, and it MUST
+  be reported to the caller rather than silently returned as though it were a
+  tabulated measurement. Do not "complete" this table by adding Bondi or
+  UFF values for absent elements: a plausible number from a different radius
+  set is precisely the silent-substitution failure this file exists to prevent.
+  If a caller needs real selenium radii, that is a different radius set and
+  belongs in a different file with its own provenance block.
+  ===========================================================================
+-->
+<GBParameters scheme="mbondi2" units="angstrom">
+
+  <Provenance>
+    <Citation>
+      Onufriev, A., Bashford, D., Case, D. A. "Exploring protein native states
+      and large-scale conformational changes with a modified generalized born
+      model." Proteins 55(2):383-394 (2004). doi:10.1002/prot.20033
+    </Citation>
+    <ReferenceImplementation
+        project="OpenMM"
+        path="wrappers/python/openmm/app/internal/customgbforces.py"
+        radii_symbol="_mbondi2_radii"
+        screen_symbol="_SCREEN_PARAMETERS"
+        repo="https://github.com/openmm/openmm"
+        ref="46376ea"
+        verified_against_version="8.4.0.dev-4768436"
+        captured="2026-09-12"/>
+    <Note>
+      Verified by transcription against the named symbols at the pinned ref.
+      `tests/test_gb_parameter_provenance.py` re-derives this table directly
+      from that upstream source when it is available and fails on any drift,
+      so this block is checkable evidence rather than an asserted citation.
+    </Note>
+  </Provenance>
+
+  <!-- Elements mbondi2 defines. Absence is meaningful: see header. -->
+  <Radii>
+    <Element symbol="C"  radius="1.70"/>
+    <Element symbol="N"  radius="1.55"/>
+    <Element symbol="O"  radius="1.50"/>
+    <Element symbol="F"  radius="1.50"/>
+    <Element symbol="Si" radius="2.10"/>
+    <Element symbol="P"  radius="1.85"/>
+    <Element symbol="S"  radius="1.80"/>
+    <Element symbol="Cl" radius="1.70"/>
+  </Radii>
+
+  <!--
+    Hydrogen is not a constant in mbondi2: its radius depends on the element it
+    is bonded to. Upstream branches on the FIRST bonded neighbour only, and we
+    reproduce that exactly (including the case where a hydrogen has no bonds at
+    all, which upstream would treat as an error and we report as unknown).
+  -->
+  <HydrogenRule>
+    <BondedTo symbol="N" radius="1.30"/>
+    <Otherwise radius="1.20"/>
+  </HydrogenRule>
+
+  <!--
+    OBC/HCT screening parameters: upstream `_SCREEN_PARAMETERS`, first column
+    ("normal"). The GBn / GBn2 / GBn2-nucleic columns are deliberately not
+    transcribed: this crate implements OBC2 only, and carrying unused columns
+    invites a future caller to read the wrong one.
+  -->
+  <Screen>
+    <Element symbol="H" screen="0.85"/>
+    <Element symbol="C" screen="0.72"/>
+    <Element symbol="N" screen="0.79"/>
+    <Element symbol="O" screen="0.85"/>
+    <Element symbol="F" screen="0.88"/>
+    <Element symbol="P" screen="0.86"/>
+    <Element symbol="S" screen="0.96"/>
+  </Screen>
+
+  <!--
+    Upstream's catch-all for every element absent from the tables above
+    (`default_radius = 1.5`, and the `None` key of `_SCREEN_PARAMETERS`).
+
+    These are NOT measurements. They are the value upstream substitutes when it
+    has no parameter. We keep them for numerical parity with the reference
+    implementation, and we tag every atom that receives one so the caller can
+    tell a tabulated value from a shrug. See `RadiusSource::Fallback`.
+  -->
+  <Fallback radius="1.50" screen="0.80"/>
+
+</GBParameters>

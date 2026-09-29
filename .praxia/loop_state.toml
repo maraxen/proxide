@@ -17,3 +17,43 @@
     wave_c_pending = ["C9 #2235 mutations", "C10 #2242 loops", "C11 #2237 water/ion", "C12 #2238 Amber-FF"]
     followups = ["#2250 e2e T7+load_backbone", "#2244 tracing->log", "#2298 HIS HID determinant", "#2305 legacy protonation reconcile"]
     next = "PI go-ahead -> /epic-audit over Wave A+B, then Wave C (staff design -> fixers -> review -> merge)"
+
+# ---- autonomous-praxia-dev-loop seed (260922_autonomous-loop). Legacy [run]/[progress] notes above preserved. ----
+[loop]
+version = "1.0"
+task_id = "260922_autonomous-loop"
+current_phase = "TRIAGE"
+last_subphase = ""
+last_artifact_path = ""
+iteration_count = 0
+last_activation = "2026-09-22T17:08:18Z"
+autonomy_level = "L2"
+fsm_id = "autoloop-260922_autonomous-loop"
+migrated_at = "2026-09-22T17:08:27.733260369+00:00"
+
+[loop.lock]
+token = ""
+expiry_ts = ""
+timeout_minutes = 45
+
+[loop.gates]
+spec_confirmed = false
+spec_path = ""
+sprint_approved = false
+sprint_plan_path = ""
+
+[loop.metrics]
+backlog_items_closed_per_iteration = 0
+consecutive_zero_progress_iterations = 0
+max_zero_progress = 3
+last_items_closed = 0
+remediate_attempt = 0
+
+[loop.popperian]
+max_cost_usd = 25.0
+max_walltime_seconds = 3600
+max_rewinds = 5
+
+[loop.fingerprint]
+recent_tool_hashes = []
+stall_threshold = 3

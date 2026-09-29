@@ -1,0 +1,121 @@
+[sprint]
+sprint_id = "260922_sprint-20-gaff2-def-fail-loud"
+sprint_num = 20
+name = "Sprint 20 — GAFF2 typing fails loudly without its rules file (debt #1896)"
+description = "Track G (debt #1896, P1): a missing, altered, or empty ATOMTYPE_GFF2.DEF raises a dedicated error instead of silently producing fallback atom types; one pinned source of truth for the DEF's URL/ref/sha256; CI packages and loads the DEF so the check runs there. Track D (debt #1890 two-mode dihedrals) is held for an owner decision."
+context = '''
+task_id: 260922_autonomous-loop (loop iteration 3). Branch autoloop/260922-sprint-20 stacked on autoloop/260922-sprint-19 (PR #43).
+Plan revised after an Opus spec-challenger review (REVISE; FATAL #1 verified: CI installs .[dev] non-editable BEFORE fetching the DEF
+and never installs rdkit, so no Python GAFF2 typing test runs in CI and the wheel never contains the DEF). Record: .praxia/spec_adversarial_reviews.jsonl.
+SECURITY RULE: never create, stub, vendor, download or fabricate ATOMTYPE_GFF2.DEF, and do not run scripts/fetch_amber_assets.py locally.
+Tests that need the REAL DEF cannot be exercised locally; they stay unexercised in CI until debt #909 phase 2d installs rdkit. Do not claim coverage.
+Rules: CLAUDE.md fail-fast; never `git add -A`; RUSTC_WRAPPER="" for cargo; narrow test runs only.
+'''
+max_fix_retries = 1
+worktree_shadow_mode = false
+
+[[tracks]]
+id = "g"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1896"
+phase_name = "Track G — ATOMTYPE_GFF2.DEF: pinned, verified, and loud when missing (debt #1896)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop
+
+## Objective
+proxide never assigns GAFF2 types from a missing, altered, or empty rule set. Any such case raises an actionable error at the point of
+determination. The DEF's upstream location and digest live in exactly one committed file.
+
+## Verified facts
+- src/proxide/chem/gaff2.py:1219-1256: module cache _default_rules/_default_wildatom; _get_default_rules() computes the path inline
+  (L1229, Path(__file__).parent.parent/"assets"/"gaff"/"dat"/"ATOMTYPE_GFF2.DEF"), caches [] / {} when missing (the bug), dead `else []`
+  fallbacks at L1237-1240; load_gaff2_rules(def_path=None) (L1243-1256); typing caller ~L1141 (`if rules is None: rules, wildatom_map = _get_default_rules()`),
+  which already raises ImportError when RDKit is absent. parse_gaff2_rules silently skips unparseable lines (~L857).
+- The pin is currently duplicated in 3 places: scripts/fetch_amber_assets.py (~L41 ref, ~L52 sha; destination is CWD-relative ~L51,126-127),
+  .github/workflows/ci.yml (~L99-100 rust-checks curl + sha256sum -c), crates/proxide-gaff2/src/rules_loader.rs (~L187 digest test; L37-43,54-55 include_str!).
+  Upstream: Amber-MD/AmberClassic @ 20e92d4b44e84cc0ca84bdf7f640eba0c1d1f2ed, dat/antechamber/ATOMTYPE_GFF2.DEF,
+  sha256 7a076ac2e667ab87057befc7a5985be4cead83e01ff5d2d3dab9f1d65bff637e (confirm all three copies agree; if not, STOP and report).
+- scripts/ is not in the wheel (maturin include = ["src/proxide/**/*"], pyproject.toml ~L113-116), so runtime code cannot read the script.
+- CI tests job (ci.yml ~L57-74): `uv venv`, `uv pip install .[dev]` (non-editable), THEN `python scripts/fetch_amber_assets.py`, then pytest.
+  tests/ has no __init__.py and no pythonpath=src, so tests import the installed wheel, which lacks the DEF.
+- tests/test_gaff2_golden.py:889-893 test_def_file_parses_without_dropping_fields hardcodes the repo DEF path (differs from the loader's in a non-editable install).
+
+## Steps
+1. Pin file: create src/proxide/assets/gaff/ATOMTYPE_GFF2.pin.toml with keys repo, ref, upstream_path, url, sha256, license_note
+   (one sentence: GPL-licensed antechamber file, not bundled in this MIT package). Values from the verified facts above.
+2. gaff2.py:
+   a. Exceptions: `class Gaff2DefError(RuntimeError)`, `class Gaff2DefMissingError(Gaff2DefError, FileNotFoundError)`,
+      `class Gaff2DefInvalidError(Gaff2DefError, ValueError)`; export them.
+   b. `_default_def_path() -> Path`: env var PROXIDE_GAFF2_DEF if set, else the packaged path (same as today's L1229).
+   c. Default load: if the resolved file is missing -> Gaff2DefMissingError whose message names: the path checked, the env var,
+      the source-checkout command (`uv run python scripts/fetch_amber_assets.py`, from the repo root), the pinned url + sha256 (read from the
+      pin file via tomllib), and the license_note. If present: compute sha256 once per process and compare to the pin; mismatch ->
+      Gaff2DefInvalidError (message: expected vs actual digest, path). Then parse; zero rules -> Gaff2DefInvalidError.
+   d. Explicit load_gaff2_rules(def_path): no pin check, but zero rules -> Gaff2DefInvalidError. Missing path -> Gaff2DefMissingError.
+   e. Never cache a failed load (only assign the module cache after success). Delete the dead `else []` fallbacks.
+3. scripts/fetch_amber_assets.py: read url/ref/sha256 from the pin file (path anchored to the script's __file__ -> repo root), and write the
+   destination anchored to the repo root, not the CWD. Keep --check. Do NOT run it.
+4. crates/proxide-gaff2/src/rules_loader.rs digest test: include_str! the pin file and compare its sha256 value to the constant the test
+   checks (or replace the constant with the pin value). Keep the include_str! of the DEF itself unchanged.
+5. New tests/chem/test_gaff2_def_loading.py — NO rdkit import or skip (load_gaff2_rules does not need rdkit). A fixture resets
+   gaff2._default_rules/_default_wildatom before and after each test. Tests:
+   - missing default DEF (monkeypatch PROXIDE_GAFF2_DEF to a nonexistent tmp path) -> Gaff2DefMissingError, message contains the path,
+     "PROXIDE_GAFF2_DEF", "fetch_amber_assets", the pin sha256; isinstance(err, FileNotFoundError).
+   - digest mismatch: tmp DEF containing one syntactically valid ATD line (copy the format from the parser's docstring / test_gaff2_golden's
+     grammar tests, do NOT copy real DEF content) reached via the default path (env var) -> Gaff2DefInvalidError naming both digests.
+   - explicit def_path to an empty/zero-rule file -> Gaff2DefInvalidError.
+   - failure is not cached: after a call that raises (env var -> missing path), assert gaff2._default_rules is None and
+     gaff2._default_wildatom is None (nothing cached), and a second call raises again rather than returning an empty set.
+   - the pin file parses and has all required keys; sha256 is 64 hex chars.
+   - ci.yml literals equal the pin: parse .github/workflows/ci.yml text for the curl ref and the sha256sum digest and assert equality with the pin.
+   Run them: `uv run --no-project pytest tests/chem/test_gaff2_def_loading.py -q -rs` (they must PASS locally without the DEF).
+6. tests/test_gaff2_golden.py:889-893: use gaff2._default_def_path() instead of the hardcoded path. Add NO skip markers anywhere.
+7. .github/workflows/ci.yml tests job: move the "Fetch AmberTools/antechamber assets" step BEFORE "Install dependencies" (so the wheel
+   packages the DEF), and add a step right after install:
+   `python -c "from proxide.chem.gaff2 import load_gaff2_rules; r, _ = load_gaff2_rules(); assert r, 'no GAFF2 rules loaded'"`.
+   Do not change the rust-checks job except, if simple, to read ref/sha from the pin file (optional; if you do, keep sha256sum -c).
+8. .praxia/docs/research/260922_optional-dep-test-preflight.md: correct the claims (~L181, ~L211, ~L281) that the GAFF2 typing tests
+   "will pass in CI" -> they are not exercised in CI at all until debt #909 phase 2d installs rdkit; the DEF-loading check is what CI now covers.
+9. Run: the new test file; `uv run --no-project pytest tests/test_gaff2.py tests/test_gaff2_parity_invariants.py -q -rs` and
+   `uv run --no-project pytest tests/test_gaff2_golden.py -q -rs -k "Grammar or def_file"` — record results (locally, DEF-dependent tests now
+   ERROR with Gaff2DefMissingError instead of failing with wrong types; that is expected — report the exact counts);
+   `RUSTC_WRAPPER="" cargo check -p proxide-gaff2 --tests` only if the rust test change compiles without the DEF locally — if the crate
+   cannot compile locally because the DEF is absent (include_str!), say so and do not work around it.
+   Logs in target/logs/trackG_*.log.
+10. Stage only changed files by name; commit:
+    fix(gaff2): raise when ATOMTYPE_GFF2.DEF is missing, altered, or empty (debt #1896)
+    <body: pin file is the single source of truth; CI now packages and loads the DEF; DEF-dependent typing tests still unexercised in CI until #909 phase 2d>
+    Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01SbXt9g5fCHS6EFnoubG2Ft
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+## VERIFY (commands / line reads; never create or fetch the DEF)
+1. Diff touches only: gaff2.py, the new pin file, scripts/fetch_amber_assets.py, crates/proxide-gaff2/src/rules_loader.rs, tests/chem/test_gaff2_def_loading.py, tests/test_gaff2_golden.py, .github/workflows/ci.yml, the pre-flight report.
+2. `rg -n "_default_rules = \[\]|else \[\]" src/proxide/chem/gaff2.py` empty; module cache assigned only after a successful load (read the code).
+3. The pin sha256/ref equal the literals in ci.yml (both jobs), fetch_amber_assets.py (now read from the pin), and rules_loader.rs's test.
+4. `uv run --no-project pytest tests/chem/test_gaff2_def_loading.py -q -rs` passes with 0 skips; the file imports no rdkit.
+5. Negative control: temporarily change the pin's sha256 by one character; the digest test and the ci.yml-literal test FAIL; restore; `git diff --quiet` on the pin.
+6. Error message quality: trigger Gaff2DefMissingError via PROXIDE_GAFF2_DEF=/nonexistent in a python -c; the message names the path, the env var, the fetch command, url and sha256, and the license reason.
+7. No skip markers were added (`rg -n "requires_gaff2_def|skipif.*DEF|importorskip" tests/chem/test_gaff2_def_loading.py` empty).
+8. ci.yml: fetch step precedes install in the tests job; a post-install load step exists. Report whether DEF-dependent tests now ERROR locally (expected) with counts.
+PASS = all 8.
+'''
+return_key = "debt-1896"
+
+[orchestration]
+sequential = []
+concurrent = ["g"]
+
+[verification_after_merge]
+ci_dispatch = "With owner approval of this plan: `gh workflow run ci.yml --ref autoloop/260922-sprint-20` (workflow_dispatch) so the new post-install load step and the rust-checks digest actually run in CI (stacked PRs to non-main bases do not trigger CI). Read both jobs' conclusions with `gh run view`."
+
+[held]
+track_d = "debt #1890: awaiting owner confirmation — (i) 'Mosaist parity' = Mosaist semantics (missing-atom bridging removed in both modes; sprint-19 canary + missing_atoms error count 3->4 change deliberately); (ii) existing functions default to Bridge, Split opt-in via _with_policy; enum named ChainBreakPolicy{Bridge,Split}, #[non_exhaustive], no Default impl until ruled."
+
+[deferred]
+new_debts = "#1897 sentinel->Option (cross-crate), #1898 cache.rs silent rotamer drop, #1899 GAFF2 per-element fallback types, #1900 gaff2 charges 0.0 on exception, #1901 run_confind stub returns [], #1902 Rust gaff2 accepts zero-rule DEF"

@@ -1,0 +1,154 @@
+[sprint]
+sprint_id = "260925_sprint-25-pqr-mmcif-hardening"
+sprint_num = 25
+name = "Sprint 25 — PQR and mmCIF readers fail loud: no silent drops, zero-fills, row skips, or ./? collapse (debts #1919 #1920)"
+description = "The PQR and mmCIF readers in proxide-io silently drop atoms, zero-fill serial/res_seq, default occupancy/B on garbage, skip mis-sized rows, and collapse mmCIF '.' and '?' into one empty string. Put both on the sprint-24 discipline: shared token helpers and error kinds, a line-anchored CIF row reader, and checked-in snapshot + real-file fixtures whose atom counts are verified independently."
+context = '''
+task_id: 260922_autonomous-loop (loop iteration 8). Branch autoloop/260925-sprint-25 stacked on autoloop/260924-sprint-24 (PR #48).
+Recon (sonnet, 260925) — anchors orchestrator-verified by direct read:
+- crates/proxide-io/src/formats/pqr.rs: whitespace-split (L22); parts.len() < 11 -> None, line silently dropped (L35-37) — lines with >= 12 tokens parse today,
+  extras ignored; serial .ok()? drop (L39); res_seq take_while(digit|'-').parse().unwrap_or(0) (L46-51, #1919); x/y/z/charge/radius .ok()? -> atom silently
+  dropped (L59-63); caller drops None with no log (L108); a first token like 'HETATM10000' fails the record check (L28-31) and is silently ignored.
+  Only PQR fixture: tests/data/1a00.pqr (pdb2pqr output, 11 tokens/line, no HETATM; NO matching 1a00.pdb exists anywhere).
+- crates/proxide-io/src/formats/mmcif.rs: line-at-a-time state machine (L35-99); parse_cif_values (L109) tokenizes ONE line, rows never accumulated, so a legally
+  wrapped row or ';' text field is silently skipped by `if values.len() != column_names.len() { continue; }` (L82-84, #1920); quotes open mid-token (L119/L132);
+  unterminated quote silently drops the rest of the line; `_atom_site` prefix check (L63) also matches `_atom_sites.` / `_atom_site_anisotrop.`; `loop_` (L45-50)
+  silently resets; data_/save_/global_/stop_ are not boundaries; non-loop `_atom_site.x value` form mis-stores columns (L54-58); multiple data_ blocks concatenate.
+  get_str maps '.' and '?' both to "" (L170-175 — A1 only for REQUIRED fields; for optional fields both mean "not specified", spec line 139).
+  serial get_i32("id").unwrap_or(0) (L207); res_seq label_seq_id -> auth_seq_id -> unwrap_or(0) (L212-214); occupancy/B get_f32(..).unwrap_or(1.0/0.0) (L219-220,
+  garbage -> default, "nan" passes through as NaN — contradicts OBS-105 option a, spec line 996); Cartn get_f32(..)? -> row silently dropped;
+  pdbx_PDB_model_num unparseable -> previous model kept (L86-91); label_alt_id truncated by chars().next() (L209); group_PDB other than ATOM/HETATM -> is_hetatm false.
+- crates/proxide-rotlib/tests/helpers.rs:144-160 parse_pdb_backbone (test-only): .lines().flatten() drops I/O errors (L144); res_seq unwrap_or(0) (L154);
+  coords unwrap_or(f64::NAN) (L156-158, literal NaN-as-unknown); (chain,res_seq) key ignores icode. EVERY caller is #[ignore] (test_distogram.rs:79,190,243,1228;
+  test_placement.rs:281) and reads /home/marielle/repos/mosaist -> `cargo test -p proxide-rotlib` exercises the helper zero times.
+- Second CIF tokenizer: crates/proxide-rotlib/src/geometry/ccd_parser.rs (quote toggle on any quote L96-124; `>=` drops overflow tokens L70; lookup_bond
+  unwrap_or(1.5) L412 and lookup_angle unwrap_or(109.5) L426 = silent physics defaults) -> debt, not this sprint.
+- Python: py_parsers.rs:69,81,205,1082 map errors to PyValueError via to_string(); pqr.py:159-161 wraps in ParsingError; no Python test depends on silent behaviour.
+  tests/validation/test_structure_parity.py:214 globs tests/data/*.cif (biotite) -> new fixtures go in crates/proxide-io/tests/data/, NOT tests/data/.
+- Deferred: #1918 (hex vs hybrid-36 ambiguous from A010), #1921 (no PROX- registry; OBS-110 unimplemented), #1911 (needs Tier-1 DiagPolicy).
+Rules: CLAUDE.md fail-fast / ledger A1-A6, B1-B9; never `git add -A`; RUSTC_WRAPPER="" for cargo; never write the main checkout or /home/marielle/projects/proxide/data;
+no whole-suite local runs; never create/stub/fetch ATOMTYPE_GFF2.DEF.
+'''
+max_fix_retries = 1
+worktree_shadow_mode = false
+revision = '''
+Revised after an Opus spec-challenger review (REVISE: 1 FATAL, 10 MAJOR, 3 MINOR; record 260925_sprint25_plan_spec_challenge in .praxia/audits.jsonl).
+All 14 accepted. Orchestrator-verified: mmcif.rs:219-220 occupancy/B unwrap_or(1.0/0.0); every parse_pdb_backbone caller #[ignore]; ccd_parser.rs L70 `>=`,
+L412 unwrap_or(1.5), L426 unwrap_or(109.5); no 1a00.pdb; tests/data/1crn.pdb is a 4-ATOM stub. Changes: FATAL obj 1 -> rows are line-anchored (d);
+obj 2 -> CIF tokenizer/boundary rules (d); obj 3 -> decision l (occupancy/B/model/group_PDB); obj 4 -> decision a rewritten; obj 5/13 -> enumerated per-fixture
+snapshot files; obj 6 -> 1A00 dropped, real 1CRN.cif + 1CRN.pdb (parity) + 1UBQ.cif (HOH '.' seq-id path), independent row counts + PROVENANCE.md;
+obj 7 -> explicit Python parse step + test_rust_integration.py gate; obj 8 -> non-ignored helper tests; obj 9 -> shared TokenFieldErrorKind, Box<dyn Error> kept;
+obj 10 -> per-column label/auth choice; obj 11 -> ccd_parser debt; obj 12 -> explicit exclusions (m); obj 14 -> A1 scoped to required fields.
+'''
+
+[decisions]
+a_pqr_token_count = "RECOMMENDED: 11 tokens -> chain = token 4, res_seq = token 5 (no grammar test on the chain, so digit chains like '1' work). 10 tokens -> token 4 must match the res_seq grammar (else TokenCount) and chain = ''; if res_name (token 3) is longer than 3 characters on a 10-token line -> TokenCount 'merged columns (4-char residue name fused with chain); regenerate with pdb2pqr --whitespace' (stops CHARMM 'TIP3A 1' from silently becoming res_name TIP3A/chain ''). 12+ tokens -> TokenCount, a DELIBERATE change (today extras are ignored). A first token matching ^(ATOM|HETATM)[0-9]+$ -> TokenCount 'merged record/serial', never silently ignored."
+b_pqr_res_seq = "RECOMMENDED: res_seq grammar -?[0-9]+ followed by at most one ASCII letter (insertion code); anything else ('A52', '', '5-2', '52AB') -> Unparseable naming res_seq. A chain merged with the number ('A1000') on a 10-token line therefore fails as TokenCount per decision a, not as a misleading res_seq error."
+c_pqr_numbers = "RECOMMENDED: serial/x/y/z/charge/radius unparseable -> Unparseable, nan/inf -> NonFinite, naming the field (today: atom silently dropped). No range checks on charge/radius (0.0 radius is legitimate for some force-field hydrogens)."
+d_cif_rows = "RECOMMENDED: (1) rows are LINE-ANCHORED: a row must end at a line end; when a line's tokens would push the pending row past N columns, or a completed row leaves tokens on the same line, raise RowLength naming THAT line (multiple rows per line are rejected though CIF allows them — RCSB/gemmi/Biopython never write them). A row may continue onto following lines only while it has fewer than N tokens. (2) A quote opens only at token start; an unterminated quote -> UnterminatedQuote. (3) Values carry whether they were quoted: quoted '.' / '?' are Present text. (4) ';' text fields are recognised only at column 1 of the UNTRIMMED line, and text-field scanning takes precedence over every line classifier ('#', 'loop_', tag lines). (5) Category = text before the first '.' of a tag, compared exactly to '_atom_site'. (6) 'loop_', 'data_', 'save_', 'global_', 'stop_' (case-insensitive) and any tag line are boundaries; a boundary or EOF with a row pending -> RowLength naming the row's start line and its token count."
+e_cif_dot_question = "RECOMMENDED: CifValue {Present(&str), Inapplicable('.'), Unknown('?')}. REQUIRED fields (id, Cartn_x/y/z, atom id, comp id, asym id, seq id after decision f's fallback) error on Inapplicable or Unknown, naming which. OPTIONAL fields label_alt_id, pdbx_PDB_ins_code, type_symbol treat both as absent: RCSB writes '.' for alt_id and '?' for ins_code routinely; type_symbol absent -> infer_element as today. pdbx_formal_charge is NOT read (unchanged; charge stays None)."
+f_cif_label_auth = "RECOMMENDED: for atom id, comp id and asym id choose the source PER COLUMN, once per loop header: label_* if the column exists, else auth_* if it exists, else required-field error. A '?' or '.' in a present label_* column is an error, never a per-row borrow from auth_* (mixing namespaces in one file would be A1/A2). seq id: label_seq_id, and ONLY when it is Inapplicable '.' (the RCSB HETATM/HOH case, today's behaviour) fall back per row to auth_seq_id; label_seq_id '?' -> Unknown error. Debt for whether proxide should prefer auth_* (PDB-compatible chains/numbering)."
+g_cif_numbers_model = "RECOMMENDED: id / seq id unparseable -> Unparseable (today: unwrap_or(0)); Cartn unparseable -> Unparseable, nan/inf -> NonFinite (today: row dropped); pdbx_PDB_model_num present but unparseable, '.' or '?' -> InvalidModel (today: previous model silently kept); a label_alt_id longer than one character -> Unparseable (today: truncated)."
+h_error_shape = "RECOMMENDED: new crates/proxide-io/src/formats/field_parse.rs holds format-neutral token helpers (parse_decimal_i32, parse_finite_f32/f64 on &str), used by pdb_fields.rs with unchanged behaviour, AND one shared TokenFieldErrorKind {Unparseable, NonFinite, InvalidModel, TokenCount, RowLength, UnterminatedQuote, Inapplicable, Unknown, NonLoopUnsupported, MultipleDataBlocks, BadGroup, Io}. PqrFieldError (line, token index, field, raw) and CifFieldError (row start line, column name, field, raw) both use it; both #[non_exhaustive], Error+Display incl. literal PROX-IO-MALFORMED-RECORD, raw truncated with '…(+N bytes)'. PdbFieldError/PdbFieldErrorKind are NOT changed. Public parse_pqr_file / parse_mmcif_file / parse_mmcif_from_reader keep returning Box<dyn Error>; tests downcast_ref."
+i_real_files = "RECOMMENDED: add under crates/proxide-io/tests/data/ (not tests/data/, which test_structure_parity.py globs) real wwPDB files 1CRN.cif, 1CRN.pdb and 1UBQ.cif (1UBQ has HOH, exercising the '.' label_seq_id path) fetched from files.rcsb.org — an unsandboxed fetch of that host only is allowed; wwPDB data is CC0 1.0. Check in PROVENANCE.md with URL, retrieval date, sha256, CC0 note. Step 0 asserts for each real .cif status ok and num_atoms == an independent count of ATOM/HETATM rows in its _atom_site loop (and for 1CRN.pdb the ATOM/HETATM line count); a mismatch means the OLD parser drops rows -> STOP and report. 1CRN.cif vs 1CRN.pdb parity test: same atom count, names, and coordinates to the file precision. The 4-atom stub tests/data/1crn.pdb is NOT replaced."
+j_rotlib_helper = "RECOMMENDED: parse_pdb_backbone panics naming line + field on unparseable res_seq/coords and propagates I/O errors (no .lines().flatten()); the (chain, res_seq) key gains the insertion code. Gate: a NEW non-ignored test with a checked-in 3-residue PDB snippet under crates/proxide-rotlib/tests/data/ plus #[should_panic(expected = ...)] variants for bad res_seq and bad x — because every existing caller is #[ignore]."
+l_cif_occ_b_group = "RECOMMENDED (OBS-105 option a, spec line 996): occupancy / B_iso_or_equiv absent, '.' or '?' -> documented defaults 1.0 / 0.0; present but unparseable -> Unparseable; nan/inf -> NonFinite. group_PDB when present must be ATOM or HETATM else BadGroup; absent -> ATOM (today's behaviour). Every remaining unwrap_or / unwrap_or_default in mmcif.rs and pqr.rs outside #[cfg(test)] carries a `// documented-default:` comment on the same line (checked by rg)."
+m_exclusions = "RECOMMENDED: non-loop `_atom_site.x value` form -> NonLoopUnsupported error; more than one data_ block containing _atom_site -> MultipleDataBlocks error. Explicitly OUT: ResidueReappears for PQR/mmCIF (debt), PQR MODEL records (ignored as today; debt), crates/proxide_rs/tests/fixtures/test.cif (unreferenced; left in place, included in the snapshot), ccd_parser.rs tokenizer + 1.5 Å / 109.5° silent fallbacks (debt), #1918, #1921, #1911."
+n_debts = "RECOMMENDED: file (MCP debt tool) and report IDs for: Python PDB writer overflow (writing.py:154, backend.py:391); writing.py:149 atom_name[0] element fallback (A2); MOL2 charge 0.0 default (molecule.py:120); mmCIF label_* vs auth_* preference; ResidueReappears for PQR/mmCIF; PQR MODEL records; ccd_parser tokenizer + bond/angle silent defaults (physics — needs citation-backed fix)."
+
+[[tracks]]
+id = "a"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1919"
+phase_name = "Track A — snapshot + real fixtures, shared token helpers, PQR fail-loud, rotlib test helper"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop. Read the whole plan (.praxia/sprint_plans/260925_sprint-25-pqr-mmcif-hardening.toml) first — decisions a-n are binding.
+Report every contradiction with actual values. Separate commits where marked.
+Step 0 (own commit, BEFORE any parser change):
+ - Fetch 1CRN.cif, 1CRN.pdb, 1UBQ.cif from https://files.rcsb.org/download/ into crates/proxide-io/tests/data/ (unsandboxed fetch of files.rcsb.org only).
+   If unreachable, STOP and report — never fabricate or hand-write a structure file. Write PROVENANCE.md (URL, retrieval date, sha256, CC0 1.0).
+ - Snapshot test crates/proxide-io/tests/pqr_cif_snapshot.rs (mirror pdb_snapshot.rs): ONE JSON per fixture under crates/proxide-io/tests/data/pqr_cif_snapshot/,
+   over an ENUMERATED fixture list asserted exactly (test fails on any added/removed fixture): tests/data/1a00.pqr, tests/io/parsing/altloc_two_conf.cif,
+   crates/proxide_rs/tests/fixtures/test.cif, and the three new files. Rotlib CCD .cif files are excluded. Fields: f32 bit patterns of coords/occupancy/B,
+   charges/radii (null when None), names, res_names, elements, serials, res_seqs, icodes, chains, altlocs, is_hetatm, model ids; or {status:error, message}.
+   #[ignore] generator + comparing test; an EXPECTED_DIVERGENCES table (fixture, field, justification) like pdb_snapshot.rs.
+ - Independent-count test (decision i): for each real .cif, count ATOM/HETATM data rows in the _atom_site loop by a separate minimal scan and assert it equals
+   the parse's num_atoms; for 1CRN.pdb count ATOM/HETATM lines. If the OLD parser disagrees, STOP and report before changing anything.
+Step 1 (own commit) — decision h: formats/field_parse.rs (helpers + TokenFieldErrorKind); pdb_fields.rs uses the helpers; pdb_snapshot.rs and every pdb_fields test pass unchanged.
+Step 2 (own commit) — decisions a-c, l: pqr.rs returns Result via PqrFieldError; no silent line drop (non-ATOM/HETATM records still ignored, except the merged
+'HETATM10000' shape which is TokenCount). Tests, each asserting kind AND field via downcast_ref (no bare is_err()): garbage res_seq, 'A52', '52A' Ok icode 'A',
+bad x, 'nan' charge, 'inf' radius, 9 tokens -> TokenCount, 12 tokens -> TokenCount, 10-token no-chain line Ok chain '', digit chain '1' on 11 tokens Ok,
+'TIP3A 1' 10-token -> TokenCount, 'A1000' 10-token -> TokenCount, 'HETATM10000' -> TokenCount, merged coordinates '-12.345-100.456' -> TokenCount.
+1a00.pqr must match its snapshot exactly.
+Step 3 (own commit) — decision j: rotlib helper + new non-ignored tests + checked-in snippet; cargo test -p proxide-rotlib passes and the new tests run (quote them).
+Step 4 — Python: add tests/io/parsing/test_real_fixtures.py calling proxide's parse_input on each new real file (path crates/proxide-io/tests/data/...) asserting
+num_atoms equals the Step-0 independent count, and on 1a00.pqr.
+Step 5 — run and quote every `test result:` line: cargo test -p proxide-io; cargo test -p proxide-rotlib; cargo check -p proxide-io --no-default-features --features pdb;
+cargo hack check -p proxide-io --feature-powerset --exclude-features hdf5,fetching (if cargo-hack is absent say so and check default / --no-default-features --features pdb / full);
+cargo check -p proxide-wasm; cargo fmt --all -- --check; cargo clippy -p proxide-io -p proxide-rotlib -- -D warnings; rebuild extension
+(RUSTC_WRAPPER="" uv run --no-project --with maturin maturin develop) then uv run --no-project pytest tests/io/parsing/test_pqr.py tests/io/parsing/test_dispatch.py tests/io/parsing/test_real_fixtures.py -q.
+Commits end with:
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+VERIFY (execute, quote evidence): 1) git log order: Step-0 commit (fixtures + snapshot + count test) precedes every parser change; PROVENANCE.md sha256 values
+match `sha256sum` of the files and each .cif's _entry.id matches its name; 2) the independent-count test runs and passes; the snapshot test asserts the exact
+enumerated fixture set (read the assertion: an added or removed fixture must fail it) and all snapshots match, with any EXPECTED_DIVERGENCES entry justified;
+3) pdb_snapshot.rs still passes after field_parse extraction; 4) `rg -n 'ok\(\)\?|unwrap_or' crates/proxide-io/src/formats/pqr.rs` — every hit outside #[cfg(test)]
+has a `// documented-default:` comment; 5) new PQR tests use downcast_ref and assert kind AND field, none is a bare is_err(); the 10-token, digit-chain and '52A'
+cases parse Ok with the right chain/icode; 6) rotlib helper has no unwrap_or(0)/NaN/.flatten(), and the new non-ignored tests appear as run (not ignored) in
+cargo test output; 7) all Step-5 commands pass (fmt, clippy, feature checks, Python tests). PASS = all 7.
+'''
+return_key = "a"
+
+[[tracks]]
+id = "b"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1920"
+phase_name = "Track B — mmCIF fail-loud: line-anchored rows, CIF tokenizer, CifValue ./?, per-column label/auth, occupancy/B"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop. Read the whole plan first — decisions d-g, h, l, m, n are binding. Track A is committed: reuse formats/field_parse.rs
+(TokenFieldErrorKind) and the per-fixture snapshots; do NOT regenerate a snapshot unless a divergence is added to EXPECTED_DIVERGENCES with justification.
+Report every contradiction with actual values. Separate commits where marked.
+Step 1 (own commit) — decision d: CIF tokenizer (quote only at token start, UnterminatedQuote, quoted-flag on values, ';' text fields at column 1 of the untrimmed
+line scanned before any classifier), exact '_atom_site' category, reserved-word and tag-line boundaries, line-anchored row assembly with RowLength naming the line.
+Step 2 (own commit) — decisions e-g, l, m: CifValue; CifFieldError; required/optional split; per-column label/auth choice; model/alt_id/group_PDB/occupancy/B rules;
+NonLoopUnsupported; MultipleDataBlocks. No get_*(..)? and no undocumented unwrap_or remains on a parsed field.
+Tests, each asserting kind AND column/field via downcast_ref (no bare is_err()): row wrapped over two lines Ok; ';' text field in a row Ok; text field containing a
+line starting with '_' Ok; unquoted O5' Ok; "O5'" Ok; 'O5'' Ok; unterminated quote -> UnterminatedQuote; one extra token on a line -> RowLength naming THAT line;
+row cut by EOF -> RowLength naming the row start; `loop_` mid-row -> RowLength; `_atom_sites.` category is a boundary; quoted '?' in label_atom_id is Present text;
+'?' Cartn_x -> Unknown; '.' label_atom_id -> Inapplicable (label column present, auth ignored); auth-only header (no label_* columns) Ok; '.' label_seq_id with
+auth_seq_id Ok; '?' label_seq_id -> Unknown; '?' ins_code Ok blank; '.' alt_id Ok blank; 'AB' alt_id -> Unparseable; garbage id -> Unparseable; 'x' / '.' model
+num -> InvalidModel; 'garbage' occupancy -> Unparseable; '.' occupancy -> 1.0; 'nan' B -> NonFinite; group_PDB 'FOO' -> BadGroup; non-loop _atom_site ->
+NonLoopUnsupported; two data_ blocks -> MultipleDataBlocks. test_extract_atom_record_missing_type_symbol_falls_back_to_name still passes.
+All six fixture snapshots match (1CRN/1UBQ identical: label precedence unchanged); 1CRN.cif vs 1CRN.pdb parity test (decision i) passes.
+Step 3 — run and quote every `test result:` line: cargo test -p proxide-io; cargo check -p proxide-io --no-default-features --features pdb; cargo hack feature
+powerset as Track A; cargo check -p proxide-wasm; cargo fmt --all -- --check; cargo clippy -p proxide-io -- -D warnings; rebuild extension then
+uv run --no-project pytest tests/io/parsing/test_altloc_resolution.py tests/io/parsing/test_dispatch.py tests/io/parsing/test_rust_integration.py tests/io/parsing/test_real_fixtures.py -q.
+Step 4 — file the decision-n debts with the MCP debt tool (mcp__plugin_praxia_core__debt action add; resolve its schema via ToolSearch) and list their IDs.
+Commits end with:
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+VERIFY (execute, quote evidence): 1) `rg -n 'continue|\)\?|unwrap_or' crates/proxide-io/src/formats/mmcif.rs` — no `continue` on a mis-sized row, no get_*(..)?,
+every unwrap_or outside #[cfg(test)] has `// documented-default:`; 2) '.' and '?' stay distinct through the required-field check and quoted '?' is Present
+(read the CifValue path and run those tests); 3) the extra-token test asserts the offending line number, and row assembly is line-anchored (read the code);
+4) tokenizer tests for O5' forms, ';' text field with '_' line, unterminated quote, _atom_sites boundary all run and pass; 5) all six snapshots match with any
+EXPECTED_DIVERGENCES entry justified, 1CRN/1UBQ identical, and the 1CRN cif/pdb parity test passes; 6) every new test uses downcast_ref and asserts kind AND
+column/field (no bare is_err()); 7) all Step-3 commands pass and every decision-n debt ID resolves in `praxia debt list`. PASS = all 7.
+'''
+return_key = "b"
+
+[orchestration]
+sequential = ["a", "b"]
+concurrent = []

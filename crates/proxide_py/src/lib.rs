@@ -10,14 +10,11 @@ mod bindings {
 }
 
 mod py_chemistry;
-mod py_confind;
 mod py_forcefield;
-mod py_frag;
 mod py_geometry;
 mod py_hdf5;
 mod py_jaccard;
 mod py_parsers;
-mod py_rotlib;
 mod py_stream;
 mod py_tmalign;
 mod py_trajectory;
@@ -145,6 +142,15 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
         py_chemistry::assign_obc2_scaling_factors,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        py_chemistry::assign_mbondi2_radii_with_provenance,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        py_chemistry::assign_obc2_scaling_factors_with_provenance,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(py_chemistry::mbondi2_table_info, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::get_water_model, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::compute_bicubic_params, m)?)?;
     m.add_function(wrap_pyfunction!(py_chemistry::parameterize_molecule, m)?)?;
@@ -194,11 +200,6 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Streaming support
     m.add_class::<py_stream::PyTrajectoryIterator>()?;
     m.add_class::<py_stream::PyDcdWriter>()?;
-
-    // ConFind, RotLib, and fragment search stubs
-    m.add_function(wrap_pyfunction!(py_confind::run_confind, m)?)?;
-    m.add_class::<py_rotlib::PyRotamerLibrary>()?;
-    m.add_function(wrap_pyfunction!(py_frag::search_fragments, m)?)?;
 
     Ok(())
 }

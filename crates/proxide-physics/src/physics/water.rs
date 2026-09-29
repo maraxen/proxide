@@ -6,6 +6,23 @@
 use std::collections::HashMap;
 
 /// Parameters for a specific water model.
+///
+/// # Units
+/// This catalog is written in AMBER convention throughout: **Angstroms**
+/// for length and **kcal/mol** for energy (bond/angle force constants are
+/// kcal/mol/Angstrom^2 and kcal/mol/rad^2 respectively; `bonds`/`angles`'
+/// equilibrium values are already in the units named on each field, and
+/// `angles`' equilibrium angle is pre-converted to radians).
+///
+/// This is a DIFFERENT convention from `proxide_core::forcefield::{
+/// NonbondedParam, HarmonicBondParam, HarmonicAngleParam}`, which are
+/// nm/kJ-mol (parsed directly from OpenMM-XML force fields such as
+/// `protein.ff14SB.xml`). Any caller that mixes values from this catalog
+/// with values from an OpenMM-XML-sourced `ForceField` MUST convert one
+/// side to match the other -- see `md_params::parameterize_structure`'s
+/// solvent-assignment block for the conversion this crate actually applies
+/// (Angstrom -> nm via `ANGSTROM_TO_NM`, kcal/mol -> kJ/mol via
+/// `KCAL_TO_KJ`, both from `proxide_units`).
 #[derive(Debug, Clone)]
 pub struct WaterModel {
     pub name: String,

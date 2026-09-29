@@ -407,4 +407,99 @@ mod tests {
             og_bond.bond_length
         );
     }
+
+    // --- ALA template regression tests (backlog #5244) -----------------------------------
+    //
+    // The bug: alanine_template() used to declare a spurious "χ1" DihedralDef
+    // [0,1,2,4] (N-CA-C-CB) even though CB's own BondDef has relative_chi: None (an
+    // absolute torsion, not chi-relative). determine_torsion() checks "is this atom a
+    // dihedral's 4th atom" BEFORE consulting the BondDef, so with a zero-filled chi
+    // slice (as convert_rotlib always passes) CB was placed at torsion 0.0 instead of
+    // the template's -119.7 — landing it ~0.03 Å from the backbone C atom instead of
+    // ~2.4 Å away. These tests build ALA's CB with both an EMPTY chi slice and an
+    // explicit zero-filled [0.0; 4] slice (the shape convert_rotlib actually passes) and
+    // confirm the fixed torsion is honored in both cases.
+
+    fn ala_cb_torsion(coords: &[[f32; 3]]) -> f32 {
+        // Placement order for CB (parent=CA): resolve_parent_chain maps
+        // parent_idx=1(CA) -> B=0(N), A=2(C), i.e. the improper C-N-CA-CB.
+        //
+        // NOTE: this crate's `torsion_deg` field (consumed by Nerf::place_atom) uses the
+        // OPPOSITE sign convention from `proxide_geometry::geometry::angles::dihedral_angle`.
+        // Verified empirically: building SER with chi1=60.0 and independently measuring
+        // dihedral_angle(N, CA, CB, OG) returns -60.0, not +60.0. So a BondDef's
+        // torsion_deg of -119.7 must read back as dihedral_angle(...) == +119.7 here;
+        // negate to compare directly against the template's own torsion_deg convention.
+        let c = coords[2];
+        let n = coords[0];
+        let ca = coords[1];
+        let cb = coords[4];
+        -proxide_geometry::geometry::angles::dihedral_angle(&c, &n, &ca, &cb).to_degrees()
+    }
+
+    #[test]
+    fn test_ala_cb_torsion_empty_chi_slice() {
+        let tmpl = standard_residue_template("ALA").unwrap();
+        assert_eq!(tmpl.dihedrals.len(), 0, "ALA must have num_chi == 0");
+        let coords = build_standard_sidechain(&tmpl, &[], N, CA, C);
+        let torsion = ala_cb_torsion(&coords);
+        assert!(
+            (torsion - (-119.7)).abs() < 0.5,
+            "ALA CB torsion (C-N-CA-CB) with empty chi slice: expected -119.7 +-0.5, got {:.3}",
+            torsion
+        );
+        let cb = coords[4];
+        let d_to_c = dist(cb, C);
+        assert!(
+            d_to_c > 2.3,
+            "ALA CB must not collapse onto backbone C: |CB-C| = {:.3} (must be > 2.3 A)",
+            d_to_c
+        );
+    }
+
+    #[test]
+    fn test_ala_cb_torsion_zero_filled_chi_slice() {
+        // convert_rotlib always passes a zero-filled [f32; 4] chi slice, regardless of
+        // num_chi. This is the exact shape that triggered the FATAL bug.
+        let tmpl = standard_residue_template("ALA").unwrap();
+        let chi_vals_arr: [f32; 4] = [0.0; 4];
+        let coords = build_standard_sidechain(&tmpl, &chi_vals_arr, N, CA, C);
+        let torsion = ala_cb_torsion(&coords);
+        assert!(
+            (torsion - (-119.7)).abs() < 0.5,
+            "ALA CB torsion (C-N-CA-CB) with zero-filled [0;4] chi slice: expected -119.7 +-0.5, got {:.3}",
+            torsion
+        );
+        let cb = coords[4];
+        let d_to_c = dist(cb, C);
+        assert!(
+            d_to_c > 2.3,
+            "ALA CB must not collapse onto backbone C: |CB-C| = {:.3} (must be > 2.3 A)",
+            d_to_c
+        );
+    }
+
+    #[test]
+    fn test_ala_cb_bit_identical_to_ser_cb() {
+        // Every non-PRO template shares the same CB BondDef (parent=CA, 1.540 A, 110.5 deg,
+        // torsion -119.7 deg, relative_chi: None). With no IC table applied (Engh-Huber
+        // template defaults), ALA's CB and SER's CB must therefore be bit-identical when
+        // built from the same backbone frame — this is what "the same geometry path as
+        // every other residue in the build" means for the synthetic ALA entry (step 3).
+        let ala_tmpl = standard_residue_template("ALA").unwrap();
+        let ser_tmpl = standard_residue_template("SER").unwrap();
+
+        let ala_coords = build_standard_sidechain(&ala_tmpl, &[], N, CA, C);
+        // SER has num_chi == 1; pass chi1 = 0.0 so its own OG placement is deterministic
+        // (irrelevant here — we only compare CB, which does not depend on chi).
+        let ser_coords = build_standard_sidechain(&ser_tmpl, &[0.0], N, CA, C);
+
+        let ala_cb = ala_coords[4];
+        let ser_cb = ser_coords[4];
+        assert_eq!(
+            ala_cb, ser_cb,
+            "ALA CB must be bit-identical to SER CB (same BondDef, same backbone frame): {:?} vs {:?}",
+            ala_cb, ser_cb
+        );
+    }
 }

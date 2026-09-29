@@ -56,14 +56,27 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - name: Create virtual environment
         run: uv venv
-      - name: Install dependencies
-        run: |
-          source .venv/bin/activate
-          uv pip install .[dev]
       - name: Fetch AmberTools/antechamber assets (not vendored in git)
+        # Runs BEFORE install so the DEF is present on disk when `uv pip
+        # install .[dev]` (non-editable) builds the wheel -- maturin's
+        # `include = ["src/proxide/**/*"]` only packages what already
+        # exists at build time; fetching after install would leave the
+        # installed wheel without the DEF regardless of what's on disk.
         run: |
           source .venv/bin/activate
           python scripts/fetch_amber_assets.py
+      - name: Install dependencies
+        run: |
+          source .venv/bin/activate
+          uv pip install .[dev,openmm]
+      - name: Verify GAFF2 rules load from the installed package
+        # Fail-loud smoke gate for debt #1896: confirms the packaged DEF
+        # round-tripped through the (non-editable) wheel build and loads
+        # via the same PROXIDE_GAFF2_DEF-aware path gaff2.py's real callers
+        # use -- not just that the file exists on the checkout's disk.
+        run: |
+          source .venv/bin/activate
+          python -c "from proxide.chem.gaff2 import load_gaff2_rules; r, _ = load_gaff2_rules(); assert r, 'no GAFF2 rules loaded'"
       - name: Run Smoke Tests
         run: |
           source .venv/bin/activate
@@ -157,6 +170,29 @@ jobs:
           source .venv/bin/activate
           uv pip install -e ".[dev,espaloma]"
       - name: Run Espaloma-marked tests
+        # debt #1900: this job installs the [espaloma] extra specifically so
+        # these tests run for real, not via pytest.importorskip's silent
+        # skip path (which is what the plain `tests` job -- no rdkit/expaloma
+        # installed -- correctly falls back to). A skip here means the extra
+        # failed to import for some other reason and the test never actually
+        # ran, which this job exists to catch -- so it must fail the build,
+        # not just report green with a quiet asterisk.
+        #
+        # Mechanism: `set -o pipefail` makes the job fail on pytest's own
+        # nonzero exit (a real failure, or exit code 5 for "no tests
+        # collected" if -m espaloma matched nothing at all) same as before;
+        # `-rs` is what buffers */reports the skip reasons/count into the
+        # terminal summary; the trailing grep then fails the step on its own
+        # if pytest itself exited 0 but the summary line still shows one or
+        # more skips (e.g. an individual pytest.importorskip firing inside a
+        # test that otherwise collected and "passed" as a skip). YAML-valid
+        # multi-line `run:` block, no shell escaping surprises.
         run: |
           source .venv/bin/activate
-          pytest -m espaloma tests/chem/test_partial_charges.py -v
+          set -o pipefail
+          pytest -m espaloma tests/chem/test_partial_charges.py tests/chem/test_gaff2_charges.py -v -rs \
+            | tee pytest_espaloma.log
+          if grep -qE '[0-9]+ skipped' pytest_espaloma.log; then
+            echo "::error::Espaloma-marked tests were skipped in the test-espaloma job, which installs the [espaloma] extra specifically to run them for real. A skip here means expaloma/rdkit import failed silently instead of the extra actually being exercised -- failing the build instead of reporting a quiet green."
+            exit 1
+          fi

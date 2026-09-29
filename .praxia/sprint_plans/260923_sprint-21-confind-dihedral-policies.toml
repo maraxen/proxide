@@ -1,0 +1,122 @@
+[sprint]
+sprint_id = "260923_sprint-21-confind-dihedral-policies"
+sprint_num = 21
+name = "Sprint 21 — ConFind backbone dihedrals: Mosaist semantics by default, both gap behaviours configurable (debt #1890)"
+description = "Track D (debt #1890): per-dihedral computation from immediate neighbours (Mosaist getPhi/getPsi/getOmega) by default, never across a missing atom or a skipped non-protein residue; geometric chain breaks governed by ChainBreakPolicy {Bridge (default, Mosaist), Split}; today's missing-atom compaction kept as an opt-in library setting (MissingAtomPolicy::LegacyCompact)."
+context = '''
+task_id: 260922_autonomous-loop (loop iteration 4). Branch autoloop/260923-sprint-21 stacked on autoloop/260922-sprint-20 (PR #44). Base commit 316d1ab.
+Owner decisions (260923, on debt #1890): Mosaist parity = Mosaist semantics; today's compaction stays configurable as an opt-in setting "if reasonable";
+existing entry points default to Bridge; Split opt-in.
+Revised after TWO Opus spec-challenger reviews (sprint-20 #10-#17; sprint-21 REVISE 8 MAJOR / 7 MINOR, all key facts verified by the orchestrator:
+params.rs:48/60 contain 4.50/4.52 Mosaist propensity constants that a naive "4.5" grep would hit; coords.rs:69 skips non-protein residues).
+Orchestrator rulings: LegacyCompact x Split -> Err (no silent substitution); PerDihedral never computes across a skipped non-protein residue; LegacyCompact
+is library-only (extract path), documented as reproducing extract_f64_backbone output as of 316d1ab — not load_pdb_f64/CLI (that path reads f64 text
+coordinates and carries debt #1885); other Mosaist divergences (ACE/NH2 caps, TER within a chain ID, file order vs sorted order) documented + filed as debt.
+Out of scope: 9999.0 sentinel -> Option (#1897), cache.rs silent rotamer drop (#1898), omega sign vs Mosaist (new debt, bits unchanged).
+Rules: CLAUDE.md fail-fast; never `git add -A`; RUSTC_WRAPPER="" for cargo; narrow test runs; do NOT modify precondition.rs `mod tests` (spec OBS-102) or params.rs.
+'''
+max_fix_retries = 1
+worktree_shadow_mode = false
+
+[[tracks]]
+id = "d"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "debt-1890"
+phase_name = "Track D — ConFind dihedral policies (debt #1890)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop
+
+## Objective
+Backbone dihedrals follow Mosaist's per-dihedral semantics by default; both gap behaviours are explicit named settings; C1 (check_preconditions)
+and the dihedral code share one chain-break predicate; complete-backbone outputs are bit-identical to base 316d1ab (proved by a committed golden file).
+
+## Step 0 — golden capture BEFORE any code change
+Write a small throwaway program/test (not committed as code) that, at base 316d1ab, loads each of: tests/data/1crn.pdb,
+crates/proxide-tmalign/tests/data/ubiquitin_1ubq_A.pdb, crates/proxide_fixer/tests/data/{missing_atoms,chain_break}.pdb, and (if present locally)
+/home/marielle/repos/mosaist/testfiles/1DC7.pdb and the small.pdb used by crates/proxide-confind/tests/test_parity_small_pdb.rs — through BOTH
+extract_f64_backbone(&ProcessedStructure) and load_pdb_f64 — and records per residue f64::to_bits of phi, psi, omega (None -> sentinel string) and
+is_cis_peptide. Commit the committed-fixture results as crates/proxide-confind/tests/data/dihedral_golden_316d1ab.json (mosaist fixtures in a
+separate section, used only by the #[ignore] test). This golden is the reference for "unchanged" and for LegacyCompact.
+
+## Steps
+1. Shared break predicate (precondition.rs, outside `mod tests`): `pub const CHAIN_BREAK_CA_ANGSTROM: f64 = 4.5;` and
+   `pub fn chain_breaks(bb: &[ResidueBackbone], chain_map: &[usize]) -> Vec<ChainBreakAt>` with
+   `pub struct ChainBreakAt { pub index: usize, pub prev_with_ca: usize, pub gap: f64 }` (global indices; same carry-over-CA-less rule as today, L237-280).
+   check_preconditions uses it (report identical to base). Comments name the const, not the number.
+2. Options (coords.rs), all `#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]` with `#[default]` variants (no manual impl Default — clippy derivable_impls):
+   `#[non_exhaustive] pub enum ChainBreakPolicy { #[default] Bridge, Split }`,
+   `#[non_exhaustive] pub enum MissingAtomPolicy { #[default] PerDihedral, LegacyCompact }`,
+   `#[non_exhaustive] pub struct BackboneOptions { pub chain_breaks: ChainBreakPolicy, pub missing_atoms: MissingAtomPolicy }` with
+   `#[must_use] pub const fn with_chain_breaks(self, p) -> Self` and `with_missing_atoms`. Re-export all from lib.rs.
+   Docs: neither variant fails fast (the loud path is check_preconditions/require_preconditions, which ConFind and the CLI do not call);
+   9999.0 maps to the rotamer library's default bin, matching Mosaist's non-strict behaviour; LegacyCompact "reproduces extract_f64_backbone
+   output as of 316d1ab; computes dihedrals from non-adjacent residues; not physically meaningful; not available via load_pdb_f64 (debt #1885)".
+   Known Mosaist divergences (caps, TER within a chain ID, file vs sorted order) listed in the MissingAtomPolicy docs.
+3. fill_dihedrals(bb, chain_map, skipped_before: &[bool], opts) -> Result<(), ConFindError>, where skipped_before[i] = a non-protein residue
+   was skipped between bb[i-1] and bb[i] in the same chain (computed during extraction; NOT a ProteinBackbone field).
+   - LegacyCompact + Split -> Err(ConFindError::<new or existing variant, e.g. InvalidOptions>) with a message; no silent fallback.
+   - PerDihedral: neighbour(i-1) exists iff same chain_map segment AND !skipped_before[i] (AND, under Split, i is not a break index);
+     phi(i) = -deg(dihedral_angle_f64(C(i-1), N(i), CA(i), C(i))), psi(i) = -deg(dihedral_angle_f64(N(i), CA(i), C(i), N(i+1))),
+     omega(i) = deg(dihedral_angle_f64(CA(i-1), C(i-1), N(i), CA(i))) — call dihedral_angle_f64 exactly (no re-derived arithmetic), same
+     sign handling as today (phi/psi negated, omega not). Each dihedral independently: undefined only if ITS four atoms/neighbour are missing
+     (phi/psi -> 9999.0, omega -> None, is_cis_peptide = omega.is_some_and(|w| w.abs() < 30.0)).
+   - Split boundary is between bb[i-1] and bb[i] for each ChainBreakAt.index = i.
+   - LegacyCompact (+Bridge): today's code moved verbatim.
+   Fix the coords.rs:243-245 comment: dihedral_angle_f64 returns the negative of the IUPAC angle; phi/psi are negated to match Mosaist; omega is
+   NOT negated and therefore is the negative of Mosaist's getOmega (bits unchanged; is_cis unaffected). Update stale docs coords.rs:19-21, 34-42.
+4. API (additive, spec D3): `pub fn extract_f64_backbone_with_options(s, &BackboneOptions) -> Result<ProteinBackbone, ConFindError>`;
+   extract_f64_backbone = default options. load_pdb_f64 keeps its signature (default options); add `pub(crate) fn load_pdb_f64_with_options` for tests only.
+5. precondition.rs (outside mod tests): exempt UndefinedPhi(i) only when i is a ChainBreakAt.index AND all four phi atoms are present
+   (C(i-1), N, CA, C); exempt UndefinedPsi(i-1) only when all four psi atoms are present — i.e. only when the dihedral could be undefined
+   solely because of Split. Under Bridge those dihedrals are defined, so the exemption never fires and every report equals base.
+6. Unit tests (#[cfg(test)] in coords.rs; fill_dihedrals is private):
+   - Golden: for every committed fixture, both loaders, options {Bridge,PerDihedral} and {Split,PerDihedral}, assert bit-equality with
+     dihedral_golden_316d1ab.json wherever the fixture has zero ChainBreak and no missing backbone atoms (assert those preconditions first);
+     {Bridge, LegacyCompact} via the extract path equals the golden for ALL fixtures (incl. missing_atoms, chain_break).
+   - Mosaist fixtures: a separate `#[ignore = "needs /home/marielle/repos/mosaist/testfiles"]` test that panics if files are absent and asserts golden equality for 1DC7/small.
+   - Synthetic NON-planar backbone with one residue missing C: PerDihedral phi/psi/omega of neighbours equal dihedral_angle_f64 on the immediate
+     named atoms (compute expected inline); LegacyCompact reproduces the bridged values.
+   - Synthetic A / B(no CA, has N and C) / C: Bridge check_preconditions report == what base produces (write it via the golden-capture approach
+     or construct expectations explicitly); Split does not suppress B's errors.
+   - Synthetic skipped-non-protein: skipped_before=true -> phi of that residue 9999.0, omega None.
+   - LegacyCompact + Split returns Err.
+7. crates/proxide_fixer/tests/test_fixture_conformance.rs (call extract_f64_backbone_with_options(&load_processed(..), &opts) inline; do not edit tests/common):
+   - missing_atoms default: exact per-entry tuples, 4 errors, 0 warnings, in order:
+     (1, res_id 2, GLY, MissingBackboneAtom{C}), (1, 2, GLY, UndefinedPhi), (1, 2, GLY, UndefinedPsi), (2, 3, SER, UndefinedPhi);
+     require_preconditions -> PreconditionsFailed(4); SER3 phi == 9999.0 and omega None and not cis; GLY2 omega is Some with |omega| > 150.
+   - missing_atoms LegacyCompact: bit-for-bit equal to the golden values AND PreconditionsFailed(3) with the old three violations (replaces the #1890 canary).
+   - chain_break default (Bridge): unchanged from base. chain_break Split: GLY2 psi == 9999.0, SER3 phi == 9999.0 and omega None, exactly one
+     ChainBreak warning, require_preconditions Ok.
+8. File debts (praxia debt add): (a) omega sign is the negative of Mosaist getOmega; (b) Mosaist divergences: ACE/NH2 caps, TER within a chain ID, file vs sorted order.
+9. Run: `RUSTC_WRAPPER="" cargo test -p proxide-confind`, `RUSTC_WRAPPER="" cargo test -p proxide-confind -- --ignored` (mosaist fixtures are local),
+   `RUSTC_WRAPPER="" cargo test -p proxide_fixer --no-default-features --tests`, `--features disulfide --tests`, `cargo fmt --all -- --check`,
+   `RUSTC_WRAPPER="" cargo clippy --workspace -- -D warnings` (CI's exact command), and `cargo clippy -p proxide-confind --tests` warning list
+   diffed against base 316d1ab (no NEW warnings; pre-existing unused_mut in precondition.rs tests stays untouched). Logs target/logs/trackD_*.log.
+10. Stage by name; commit(s) — golden file may be its own commit:
+    feat(confind): Mosaist-semantics backbone dihedrals with configurable chain-break and legacy missing-atom policies (debt #1890)
+    Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_01SbXt9g5fCHS6EFnoubG2Ft
+Report every expectation above that the real code contradicts, with actual values — never silently re-fit.
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+## VERIFY
+1. Diff limited to crates/proxide-confind/ (src + tests/data golden) and crates/proxide_fixer/tests/test_fixture_conformance.rs; params.rs and precondition.rs `mod tests` untouched (`git diff 316d1ab -- crates/proxide-confind/src/params.rs` empty; mod tests hunk-free).
+2. `rg -n '\b4\.5\b' crates/proxide-confind/src --glob '!params.rs'` shows only the const; check_preconditions and fill_dihedrals both call chain_breaks().
+3. BackboneOptions::default() == {Bridge, PerDihedral} (assert via ==); derives incl. PartialEq/Eq; #[default] variants; with_* builders; re-exported; LegacyCompact+Split returns Err.
+4. Golden provenance: `git log --oneline 316d1ab..HEAD -- crates/proxide-confind` shows the golden file committed BEFORE any change to crates/proxide-confind/src (or in the same commit with src unchanged); `git diff 316d1ab <golden-commit> -- crates/proxide-confind/src` is empty. Golden tests pass, and LegacyCompact reproduces the golden for every fixture.
+5. `cargo test -p proxide-confind -- --ignored` runs the mosaist-fixture tests locally and they pass (show output lines proving they executed); existing parity tests pass and executed.
+6. conformance.rs expectations exactly as planned (per-entry tuples, PreconditionsFailed(4), LegacyCompact == golden + PreconditionsFailed(3), Split chain_break); pass under --no-default-features and --features disulfide.
+7. Independent control: change the golden file's bits for one 1crn residue; golden test FAILS; restore; git diff --quiet.
+8. fmt clean; `cargo clippy --workspace -- -D warnings` clean; no new --tests clippy warnings vs base; debts from step 8 filed (show ids).
+PASS = all 8.
+'''
+return_key = "debt-1890"
+
+[orchestration]
+sequential = []
+concurrent = ["d"]

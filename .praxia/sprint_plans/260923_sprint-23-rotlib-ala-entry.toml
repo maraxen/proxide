@@ -1,0 +1,94 @@
+[sprint]
+sprint_id = "260923_sprint-23-rotlib-ala-entry"
+sprint_num = 23
+name = "Sprint 23 — add ALA to the Dunbrack-derived rotamer library (backlog #5244, owner: critical)"
+description = "The Dunbrack BBDEP format never contains ALA/GLY, so proxide-rotlib-*.pb.zst lacks ALA; ConFind needs ALA (one of its 18 amino acids, as in Mosaist). Fix the ALA template's spurious chi1 (which would place CB on top of C), add a synthetic, provenance-recorded ALA entry in the converter, regenerate the committed library, and measure ConFind drift vs Mosaist before/after with a test that cannot pass silently."
+context = '''
+task_id: 260922_autonomous-loop (loop iteration 6). Branch autoloop/260923-sprint-23 stacked on autoloop/260923-sprint-22 (PR #46).
+Revised after an Opus spec-challenger review (REVISE; FATAL #1 verified by the orchestrator: geometry/template.rs alanine_template adds
+DihedralDef "chi1" atom_indices [0,1,2,4] (N-CA-C-CB); geometry/mod.rs:216-222 determine_torsion returns chi_values[0] for the 4th atom of any
+dihedral; convert_rotlib build_library always passes a zero-filled [f32;4] -> a synthetic ALA CB would sit at torsion 0, ~0.03 A from C, while
+CA-CB distance and N-CA-CB angle stay correct). Record: .praxia/spec_adversarial_reviews.jsonl (260923_loop_sprint23_coherence).
+Facts: loader accepts a 1x1 grid (rotlib.rs:248-262); ConFind keys rotamer maps per residue; sprint-21 golden and sprint-22 synthetic-library
+tests are unaffected. The committed artifact carries geometry_source/geometry_license/provenance (convert_rotlib.rs:303-316). A CCD dir exists at
+crates/proxide-rotlib/tests/data/ccd/ (20 .cif incl. ALA). Sprint 14's older converter defaulted --ic-source to "ccd" meaning "skip CHARMM, keep
+template.rs geometry" (.claude/workflows/sprint14-rotlib-ccd-migration.js; spec 260604_rotlib-multi-source-arch.md:222-226 records 0.043 as
+"Dunbrack + Engh-Huber"). Input .lib sha256 is recorded in 260602_dunbrack-rotlib-protobuf-cis-pro.md:303. Source .lib and
+proxide-rotlib-bbdep2010.pb.zst exist only in /home/marielle/projects/proxide/data/rotlibs/ (read-only).
+Rules: CLAUDE.md fail-fast; physics changes need a citation and their own commit; never `git add -A`; RUSTC_WRAPPER="" for cargo; never write the main checkout; never read rotlib.bin bytes directly (CC-BY-NC-SA) — only aggregates via proxide's own loader.
+'''
+max_fix_retries = 1
+worktree_shadow_mode = false
+
+[decisions]
+a_artifact = "RECOMMENDED: commit the regenerated ~12.6 MB data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst (force-tracked, as in c3a45bf/5471fae), with old/new sha256, sizes and the exact command in the commit body, and write the recipe into crates/proxide-rotlib/README.md. Alternative: do not commit the artifact; ship converter + tests only and regenerate out of band."
+b_cb_constant = "RECOMMENDED: keep the shared template CB (1.540 A / 110.5 / -119.7) unchanged this sprint and document it honestly as 'placeholder geometry of unverified provenance' (not cited as Engh & Huber); file a debt to check the Engh-Huber Ala CA-CB (~1.52 A recalled, unverified) and fix it in its own cited physics commit. Alternative: change ALA's CB now, with a verified citation, in its own commit."
+c_drift_regression = "RECOMMENDED: gate 'after <= before' where before is re-measured on the same fixture and metric (6+ decimals); if after > before, the sprint STOPS and escalates with the numbers (no automatic revert, no silent acceptance)."
+d_repro_fallback = "RECOMMENDED: do not block on byte-reproducing the committed artifact. With the current code and the recovered recipe, build A (no ALA) and B (with ALA); assert B == A + exactly one ALA entry (full decoded-message diff with an explicit allow-list); report A-vs-committed diff separately (non-blocking, recorded as debt if it differs); commit B."
+
+[[tracks]]
+id = "a"
+is_research = false
+worktree = true
+skip_worktree = false
+
+[[tracks.items]]
+backlog_id = "5244"
+phase_name = "Track A — ALA template fix + synthetic ALA entry + regeneration + honest drift test (#5244)"
+fixer_prompt = '''
+task_id: 260922_autonomous-loop — execute steps in order; separate commits where marked; report every contradiction with actual values.
+## Step 1 (own commit) — ALA template bug
+Remove the spurious "chi1" DihedralDef from alanine_template (template.rs ~L165-168) so ALA's num_chi == 0 and CB keeps its BondDef torsion.
+Add a unit test (library crate): build ALA side chain from the template with an EMPTY chi slice and with a zero-filled [0;4] slice; assert the
+C-N-CA-CB improper / N-C-CA-CB torsion equals the template's -119.7 (+-0.5 deg) and |CB - C| > 2.3 A; and assert ALA's CB is bit-identical to
+SER's CB built from the same backbone with no IC source (every non-PRO template shares the CB BondDef). Confirm with rg that nothing else built ALA
+through the old dihedral (proxide_fixer repack.rs ~L817-820, ~L340/358 — list consumers and the effect in the report).
+## Step 2 — probe Mosaist's ALA shape (no data copied)
+Add an #[ignore] test that loads /home/marielle/repos/mosaist/testfiles/rotlib.bin with proxide's RotamerLibrary::load and prints ONLY aggregates
+for ALA: bin count, min/max rotamers per bin, min/max probability, max CB spread across bins (A). Decision rule: 1 rotamer/bin, p == 1, spread
+< 0.05 A => the 1x1 model is faithful; otherwise record the divergence in the report and in a debt (do not change the model this sprint).
+## Step 3 (own commit) — synthetic ALA in the converter, testable
+Move build_library (and the new step) into the proxide-rotlib library (or a #[cfg(test)]-reachable module) so tests can call it. Add a named
+step `add_synthetic_ala` in the converter pipeline (NOT inside DunbrackSource): returns Err if the source already has ALA; adds one 1x1 bin
+(phi center 0.0, psi center 0.0, freq 1.0 — documented as structural placeholders that no reader consumes; verify load_pb ignores freq and that
+find_closest_angle/9999->default_bin always select bin 0), default_bin 0, one rotamer p = 1.0, num_chi 0, empty chi, CB from the same geometry
+path as every other residue in the build. Record it in the artifact provenance string (e.g. "ALA: synthetic, 1 rotamer, p=1, geometry=<source>")
+and in README's data-provenance section (not Dunbrack ODC-BY data). Unit test via build_library on a small fixture: with synthesis -> ALA present
+(1 bin, 1 rotamer, p=1, num_chi 0, CB torsion correct); without -> absent; source already containing ALA -> Err. Fix test_converter_ac3.rs:
+use `--bin convert_rotlib` with the recipe flags, panic if the input is missing, expect 23 codes incl. ALA; run it with --ignored.
+Document the CB geometry per decision b (placeholder of unverified provenance; do not cite Engh & Huber for 1.540).
+## Step 4 — recover the recipe (non-blocking per decision d)
+Decode the committed artifact's geometry_source / geometry_license / provenance first; check the input .lib sha256 against
+260602_dunbrack-rotlib-protobuf-cis-pro.md:303; consider crates/proxide-rotlib/tests/data/ccd/ and the sprint-14 meaning of "ccd". Build A (current
+code, recovered recipe, synthesis OFF) and report its full decoded diff vs the committed artifact (allow-list: provenance/version strings).
+## Step 5 (own commit) — regenerate
+Build B (same recipe, synthesis ON). Assert decoded(B) == decoded(A) + exactly one ALA entry, comparing EVERY field (top-level fields, codes,
+atom names, num_chi, grids, default bins, bin freq, per-bin rotamer probs/chi/coords bit-for-bit). Commit B as
+data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst (per decision a) with old/new sha256, sizes and exact command in the body; write the recipe into README.
+Add a NON-ignored test on the committed artifact: ALA present with 1 bin, 1 rotamer, p=1, num_chi 0, correct CB torsion.
+## Step 6 (own commit) — drift test that cannot pass silently
+crates/proxide-confind/tests/test_drift_loadpb_small_pdb.rs: default library path = the committed artifact via CARGO_MANIFEST_DIR (env var
+override); a missing/unparseable input PANICS (also fix tests/common/mod.rs .ok() PDB loading used here). Build the report BEFORE asserting;
+count a missing reference pair as delta = |reference| (or assert missing set == baseline); assert matched count >= baseline; fix the "5e-4" label.
+BEFORE: re-measure on the same fixture/metric with ALA silently omitted, using code at 47c397d (parent of a12de2b) — try
+`git worktree add target/before-47c397d 47c397d` inside this worktree and run the test there; if the harness refuses, cite 0.043081 from the #869 record
+and say so. Record BEFORE/AFTER to 6+ decimals. Gate per decision c. Remove the sprint-22 UnknownAa(ALA) branch and the needless_return.
+Run the confind CLI once on small.pdb with the new artifact (must succeed).
+## Step 7 — run and report
+cargo test -p proxide-rotlib (+ --ignored AC-3 and Mosaist probe), cargo test -p proxide-confind (+ --ignored drift with the committed artifact; parity with
+RLIB=/home/marielle/repos/mosaist/testfiles/rotlib.bin), fmt, `cargo clippy -p proxide-rotlib -p proxide-confind --lib -- -D warnings`.
+File debts (praxia debt add, unsandboxed for DB): the CB constant check (decision b); Mosaist ALA-shape divergence if found; A-vs-committed
+non-reproducibility if found.
+Commits end with:
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01SbXt9g5fCHS6EFnoubG2Ft
+'''
+reviewer_prompt = '''
+task_id: 260922_autonomous-loop
+VERIFY: 1) ALA template has no chi dihedral; torsion test (-119.7 +-0.5, |CB-C| > 2.3) and SER-CB bit-identity test pass; 2) Mosaist ALA probe ran, printed aggregates only, and the decision-rule outcome is stated; 3) add_synthetic_ala is a named converter step outside DunbrackSource, errors if ALA exists, recorded in provenance + README, bin placeholders documented and shown unread; 4) build_library unit tests (with/without/ALA-exists) pass; AC-3 test runs with --ignored and expects 23; 5) decoded(B) == decoded(A) + one ALA entry across every field (inspect the diff tool); committed artifact == B (sha); non-ignored artifact test passes; 6) drift test: CARGO_MANIFEST_DIR default, panics on missing input, report before assert, missing pairs counted, matched >= baseline, BEFORE/AFTER recorded to 6+ decimals and gate per decision c; CLI succeeds on small.pdb; 7) independent control: regenerate B WITHOUT synthesis to a temp file, point the drift test's env override at it -> it fails loudly (UnknownAa ALA); restore; 8) MASTER parity tests still pass (executed); fmt + clippy lib clean; separate commits as specified; debts filed. PASS = all 8.
+'''
+return_key = "5244"
+
+[orchestration]
+sequential = []
+concurrent = ["a"]

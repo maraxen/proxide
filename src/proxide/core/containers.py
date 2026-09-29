@@ -130,6 +130,15 @@ class Protein:
   epsilons: Any | None = None
   radii: Any | None = None
   masses: Any | None = None
+  # Indices (into the flat/full atom ordering, same as `charges`/`sigmas`)
+  # of atoms `parameterize_md` could NOT confidently parameterize -- e.g.
+  # solvent that didn't match a known water model, or ligand/ion atoms
+  # outside the residue-template path. Empty/None means every atom got a
+  # real force-field- or water-model-sourced value; a non-empty array means
+  # some atoms silently kept charge=sigma=epsilon=0.0 (or a crude
+  # element-based LJ fallback) -- see `OutputSpec.strict_parameterization`
+  # to turn this into a hard error instead of a value to check.
+  unparameterized_atoms: Any | None = None
 
   # MD parameters
   constrained_bonds: Any | None = None
@@ -320,6 +329,9 @@ class Protein:
         if rust_dict.get("molecule_type") is not None
         else None,
         atom_types=rust_dict.get("atom_types"),
+        unparameterized_atoms=convert(rust_dict.get("unparameterized_atoms"))
+        if rust_dict.get("unparameterized_atoms") is not None
+        else None,
         bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
         bond_params=convert(rust_dict.get("bond_params"), dtype=np.float32)
         if rust_dict.get("bond_params") is not None
@@ -439,6 +451,9 @@ class Protein:
       if rust_dict.get("molecule_type") is not None
       else None,
       atom_types=rust_dict.get("atom_types"),
+      unparameterized_atoms=convert(rust_dict.get("unparameterized_atoms"))
+      if rust_dict.get("unparameterized_atoms") is not None
+      else None,
       bonds=convert(rust_dict["bonds"]) if rust_dict.get("bonds") is not None else None,
       bond_params=convert(rust_dict.get("bond_params"), dtype=np.float32)
       if rust_dict.get("bond_params") is not None

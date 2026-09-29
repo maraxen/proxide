@@ -1,0 +1,7 @@
+REMARK   1 Fixture for OBS-105 option a (sprint 24, task 260922_autonomous-loop):
+REMARK   2 occupancy column (55-60) holds "x.xx" -- present but unparseable, not
+REMARK   3 blank. Must be a hard PdbFieldError (Unparseable, field "occupancy"),
+REMARK   4 never the substituted 1.0 default that decision a's predecessor code
+REMARK   5 used for both blank AND malformed occupancy alike.
+ATOM      1  N   ALA A   1      20.154  29.699   5.276  x.xx 49.05           N
+END

@@ -125,18 +125,135 @@ pub fn assign_gaff_atom_types(
     proxide_gaff2::assign_gaff2_atom_types(&mol).map_err(pyo3::exceptions::PyValueError::new_err)
 }
 
-/// Assign intrinsic radii using the MBondi2 scheme
+/// Assign intrinsic radii using the MBondi2 scheme.
+///
+/// Values only. This cannot distinguish a tabulated radius from the catch-all
+/// substituted for an element mbondi2 does not define -- use
+/// `assign_mbondi2_radii_with_provenance` where that matters.
 #[pyfunction]
 pub fn assign_mbondi2_radii(atom_names: Vec<String>, bonds: Vec<[usize; 2]>) -> PyResult<Vec<f32>> {
     let radii = physics::gbsa::assign_mbondi2_radii(&atom_names, &bonds);
     Ok(radii)
 }
 
-/// Assign scaling factors for OBC2 GBSA calculation
+/// Assign scaling factors for OBC2 GBSA calculation.
+///
+/// Values only; see `assign_mbondi2_radii` on the discarded provenance.
 #[pyfunction]
 pub fn assign_obc2_scaling_factors(atom_names: Vec<String>) -> Result<Vec<f32>, PyErr> {
     let factors = physics::gbsa::assign_obc2_scaling_factors(&atom_names);
     Ok(factors)
+}
+
+/// Build the provenance block shared by every GBSA return value.
+fn gb_provenance_dict(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+    let prov = physics::gb_params::table().provenance();
+    let provenance = PyDict::new_bound(py);
+    provenance.set_item("scheme", &prov.scheme)?;
+    provenance.set_item("citation", &prov.citation)?;
+    provenance.set_item("reference_project", &prov.reference_project)?;
+    provenance.set_item("reference_path", &prov.reference_path)?;
+    provenance.set_item("reference_ref", &prov.reference_ref)?;
+    provenance.set_item("captured", &prov.captured)?;
+    Ok(provenance)
+}
+
+/// The `sources` code schema, so a consumer never hard-codes discriminants.
+fn gb_source_meanings_dict(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+    let meanings = PyDict::new_bound(py);
+    for (code, label) in physics::gb_params::source_code_meanings() {
+        meanings.set_item(code, label)?;
+    }
+    Ok(meanings)
+}
+
+/// Shared builder for the provenance-carrying GBSA return value.
+///
+/// Every field is emitted unconditionally, including the empty cases. A field
+/// that appears only when something went wrong trains callers not to look for
+/// it, and makes "no problems" indistinguishable from "an older build that
+/// never reported" -- the same one-signal-two-meanings defect as a silent
+/// fallback.
+fn gb_result_dict(
+    py: Python<'_>,
+    assigned: &physics::gbsa::AssignedParameters,
+) -> PyResult<PyObject> {
+    let dict = PyDict::new_bound(py);
+
+    // Values and provenance are returned together, as parallel index-aligned
+    // arrays. uint8 rather than a structured dtype or per-atom objects: JAX
+    // refuses structured dtypes outright, and boxing one object per atom would
+    // mean 10^4-10^6 Python objects on a hot path.
+    dict.set_item("values", PyArray1::from_slice_bound(py, &assigned.values))?;
+    dict.set_item("sources", PyArray1::from_slice_bound(py, &assigned.sources))?;
+
+    let unlicensed = assigned.unlicensed_atoms();
+    let unlicensed_u64: Vec<u64> = unlicensed.iter().map(|&i| i as u64).collect();
+    dict.set_item(
+        "unlicensed_atoms",
+        PyArray1::from_slice_bound(py, &unlicensed_u64),
+    )?;
+    dict.set_item("num_unlicensed", unlicensed.len())?;
+    dict.set_item("all_licensed", unlicensed.is_empty())?;
+
+    // Paired with `schema_version`, a code the consumer does not recognise is
+    // visible as unknown rather than silently dropped.
+    dict.set_item("source_code_meanings", gb_source_meanings_dict(py)?)?;
+    dict.set_item("schema_version", 1u32)?;
+    dict.set_item("provenance", gb_provenance_dict(py)?)?;
+
+    Ok(dict.into())
+}
+
+/// Assign mbondi2 radii, returning the provenance of every value alongside it.
+///
+/// Additive counterpart to `assign_mbondi2_radii`, which returns bare floats and
+/// therefore cannot distinguish a tabulated radius from the catch-all
+/// substituted for an element mbondi2 does not define (Se, Na, Cu, Fe, Zn, ...).
+///
+/// Returns a dict with `values`, a uint8 `sources` array, `unlicensed_atoms`,
+/// `num_unlicensed`, `all_licensed`, `source_code_meanings`, `schema_version`
+/// and `provenance`. Every key is always present.
+#[pyfunction]
+pub fn assign_mbondi2_radii_with_provenance(
+    atom_names: Vec<String>,
+    bonds: Vec<[usize; 2]>,
+) -> PyResult<PyObject> {
+    let assigned = physics::gbsa::assign_mbondi2_radii_with_provenance(&atom_names, &bonds);
+    Python::with_gil(|py| gb_result_dict(py, &assigned))
+}
+
+/// Assign OBC2 screening factors, returning the provenance of every value.
+///
+/// Same return shape as `assign_mbondi2_radii_with_provenance`.
+#[pyfunction]
+pub fn assign_obc2_scaling_factors_with_provenance(atom_names: Vec<String>) -> PyResult<PyObject> {
+    let assigned = physics::gbsa::assign_obc2_scaling_factors_with_provenance(&atom_names);
+    Python::with_gil(|py| gb_result_dict(py, &assigned))
+}
+
+/// Describe the mbondi2 parameter table itself: coverage and provenance.
+///
+/// `radius_elements` and `screen_elements` are the elements mbondi2 actually
+/// defines. Anything absent from them receives `fallback_radius` /
+/// `fallback_screen`, which are NOT measurements -- they are what the reference
+/// implementation substitutes when it has no parameter.
+#[pyfunction]
+pub fn mbondi2_table_info() -> PyResult<PyObject> {
+    Python::with_gil(|py| {
+        let table = physics::gb_params::table();
+        let dict = PyDict::new_bound(py);
+
+        dict.set_item("radius_elements", table.defined_radius_elements())?;
+        dict.set_item("screen_elements", table.defined_screen_elements())?;
+        dict.set_item("fallback_radius", table.fallback_radius())?;
+        dict.set_item("fallback_screen", table.fallback_screen())?;
+        dict.set_item("source_code_meanings", gb_source_meanings_dict(py)?)?;
+        dict.set_item("schema_version", 1u32)?;
+        dict.set_item("provenance", gb_provenance_dict(py)?)?;
+
+        Ok(dict.into())
+    })
 }
 
 /// Get water model parameters
