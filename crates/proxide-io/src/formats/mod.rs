@@ -14,6 +14,7 @@ pub mod mmcif;
 pub mod newick;
 #[cfg(test)]
 mod newick_test;
+pub mod parm7;
 pub mod pdb;
 pub mod pdb_fields;
 pub mod pqr;

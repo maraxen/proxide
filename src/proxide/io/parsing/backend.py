@@ -652,6 +652,63 @@ def parse_structure(
   return parse_pdb_to_protein(file_path, spec, use_jax, output_format_target, altloc=altloc)
 
 
+def parse_parm7(file_path: str | Path) -> dict:
+  """Parse an AMBER parm7/prmtop topology into per-atom and per-residue arrays.
+
+  Low level: no coordinates. See ``_proxider.parse_parm7`` for the returned keys.
+  """
+  return _proxider.parse_parm7(str(file_path))
+
+
+def parse_amber_trajectory(
+  topology: str | Path,
+  trajectory: str | Path,
+  frames: int | Sequence[int] | None = None,
+  spec=None,
+  use_jax: bool = True,
+) -> Protein | list[Protein]:
+  """Load an AMBER topology (parm7/prmtop) plus trajectory frame(s) as Protein(s).
+
+  A trajectory alone carries only coordinates; the topology supplies atom and residue
+  identities.
+
+  Args:
+      topology: Path to the ``.parm7``/``.prmtop`` file.
+      trajectory: Path to the trajectory. ``.xtc`` is supported.
+      frames: ``None`` (frame 0) or an ``int`` returns one ``Protein``; a sequence of
+          ints returns one ``Protein`` per frame, in the order given. Negative indices
+          count from the end. Reading a whole trajectory must be requested explicitly.
+      spec: Optional ``OutputSpec``.
+      use_jax: Return JAX arrays if True, NumPy otherwise.
+
+  Returns:
+      ``Protein`` or ``list[Protein]``. Each frame is parsed on its own, so derived
+      features (RBF, neighbours, electrostatics) belong to that frame. Water and ions
+      are never protein residues; AMBER variants (``HIE``, ``CYX``, ``ASH``, ...) map
+      to their parent amino acids. Chains come from ``RESIDUE_CHAINID`` if present,
+      otherwise from the bond graph (disulfides excluded), labelled A, B, ... in file
+      order.
+
+  Note:
+      ``_proxider.parse_amber_trajectory`` with several frames returns ONE dict with
+      coordinates stacked ``(n_frames, n_res, 37, 3)`` (multi-model PDB layout); its
+      derived features are computed from the first frame only.
+
+  """
+  if spec is None:
+    spec = OutputSpec()
+
+  def one(frame: int) -> Protein:
+    result = _proxider.parse_amber_trajectory(str(topology), str(trajectory), [int(frame)], spec)
+    return Protein.from_rust_dict(result, source=f"{trajectory}#frame={frame}", use_jax=use_jax)
+
+  if frames is None:
+    return one(0)
+  if isinstance(frames, int | np.integer):
+    return one(int(frames))
+  return [one(f) for f in frames]
+
+
 parse_xtc = getattr(_proxider, "parse_xtc", None)
 parse_mdc = getattr(_proxider, "parse_mdc", None)
 
