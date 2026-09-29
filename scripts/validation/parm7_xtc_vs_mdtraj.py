@@ -76,7 +76,9 @@ def mdtraj_reference(topology: str, trajectory: str, frames: list[int]) -> dict:
 def proxide_result(topology: str, trajectory: str, frames: list[int]) -> dict:
   import proxide  # noqa: PLC0415
 
-  proteins = proxide.parse_amber_trajectory(topology, trajectory, frames=list(frames), use_jax=False)
+  proteins = proxide.parse_amber_trajectory(
+    topology, trajectory, frames=list(frames), use_jax=False
+  )
   coords = np.stack([np.asarray(p.coordinates) for p in proteins])  # (F, R, 37, 3)
   protein = proteins[0]
   aatype = np.asarray(protein.aatype)
@@ -85,7 +87,12 @@ def proxide_result(topology: str, trajectory: str, frames: list[int]) -> dict:
   alphabet = "ARNDCQEGHILKMFPSTWYV"
   seq = "".join(alphabet[a] if a < len(alphabet) else "X" for a in aatype)
   starts = [0, *[k for k in range(1, len(chain)) if chain[k] != chain[k - 1]]]
-  return {"sequence": seq, "chain_starts": starts, "ca": coords[:, :, CA, :], "module": proxide.__file__}
+  return {
+    "sequence": seq,
+    "chain_starts": starts,
+    "ca": coords[:, :, CA, :],
+    "module": proxide.__file__,
+  }
 
 
 def main() -> int:
@@ -109,7 +116,8 @@ def main() -> int:
     "n_res_proxide": len(got["sequence"]),
     "n_res_mdtraj": len(ref["sequence"]),
     "first_mismatch": next(
-      (i for i, (a, b) in enumerate(zip(got["sequence"], ref["sequence"], strict=False)) if a != b), None
+      (i for i, (a, b) in enumerate(zip(got["sequence"], ref["sequence"], strict=False)) if a != b),
+      None,
     ),
   }
   checks["chain_starts_equal"] = {
@@ -125,7 +133,9 @@ def main() -> int:
     diff = float(np.nanmax(np.abs(got["ca"][pos] - ref["ca"][frame])))
     per_frame.append({"frame": frame, "max_abs_diff": diff})
   checks["ca_match"] = {
-    "pass": all(f["max_abs_diff"] is not None and f["max_abs_diff"] < args.ca_tol for f in per_frame),
+    "pass": all(
+      f["max_abs_diff"] is not None and f["max_abs_diff"] < args.ca_tol for f in per_frame
+    ),
     "tol": args.ca_tol,
     "frames": per_frame,
   }
@@ -140,10 +150,18 @@ def main() -> int:
   distinct = None
   if got["ca"].shape[0] > 1:
     distinct = float(np.sqrt(np.nanmean(np.sum((got["ca"][0] - got["ca"][-1]) ** 2, axis=-1))))
-  checks["selected_frames_distinct"] = {"pass": distinct is not None and distinct > 0.1, "ca_rmsd": distinct}
+  checks["selected_frames_distinct"] = {
+    "pass": distinct is not None and distinct > 0.1,
+    "ca_rmsd": distinct,
+  }
 
   overall = all(c["pass"] for c in checks.values())
-  result = {"pass": overall, "n_frames_in_file": ref["n_frames"], "frames": ref["frames"], "checks": checks}
+  result = {
+    "pass": overall,
+    "n_frames_in_file": ref["n_frames"],
+    "frames": ref["frames"],
+    "checks": checks,
+  }
   args.out.write_text(json.dumps(result, indent=2))
   diffs = [f["max_abs_diff"] for f in per_frame]
   flat = {

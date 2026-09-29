@@ -6,11 +6,11 @@ use crate::bindings::conversion::ToPyDict;
 use crate::bindings::spec::PyOutputSpec;
 use crate::processing::ProcessedStructure;
 use crate::processing::ResidueClassificationConfig;
-use proxide_rs::structure::RawAtomData;
 use crate::spec::CoordFormat;
 use crate::{forcefield, formats, formatters, geometry, physics, processing, spec};
 use numpy::PyArray1;
 use numpy::PyArrayMethods;
+use proxide_rs::structure::RawAtomData;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::str::FromStr;
@@ -175,7 +175,9 @@ pub fn parse_foldcomp(py: Python<'_>, path: String) -> Result<PyAtomicSystem, Py
 pub fn parse_parm7(py: Python<'_>, path: String) -> PyResult<PyObject> {
     let topo = py
         .allow_threads(|| formats::parm7::parse_parm7(&path))
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("parm7 parsing failed: {e}")))?;
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("parm7 parsing failed: {e}"))
+        })?;
 
     let dict = PyDict::new_bound(py);
     dict.set_item("n_atoms", topo.n_atoms)?;
@@ -184,8 +186,15 @@ pub fn parse_parm7(py: Python<'_>, path: String) -> PyResult<PyObject> {
     dict.set_item("elements", &topo.elements)?;
     dict.set_item("charges", PyArray1::from_slice_bound(py, &topo.charges))?;
     dict.set_item("masses", PyArray1::from_slice_bound(py, &topo.masses))?;
-    let res_of_atom: Vec<i64> = topo.atom_residue_index().iter().map(|&r| r as i64).collect();
-    dict.set_item("atom_residue_index", PyArray1::from_slice_bound(py, &res_of_atom))?;
+    let res_of_atom: Vec<i64> = topo
+        .atom_residue_index()
+        .iter()
+        .map(|&r| r as i64)
+        .collect();
+    dict.set_item(
+        "atom_residue_index",
+        PyArray1::from_slice_bound(py, &res_of_atom),
+    )?;
     dict.set_item("res_names", &topo.res_names)?;
     dict.set_item("res_ids", &topo.res_ids)?;
     dict.set_item("res_chain_ids", &topo.res_chain_ids)?;
@@ -226,7 +235,9 @@ pub fn parse_amber_trajectory(
     let spec = spec.map(|s| s.borrow().inner.clone()).unwrap_or_default();
     let topo = py
         .allow_threads(|| formats::parm7::parse_parm7(&topology))
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("parm7 parsing failed: {e}")))?;
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("parm7 parsing failed: {e}"))
+        })?;
 
     let frame_coords = read_trajectory_frames(&trajectory, topo.n_atoms, frames)?;
     let (raw_all, model_ids) = topo
@@ -247,6 +258,7 @@ pub fn parse_amber_trajectory(
 }
 
 /// Resolve Python-style frame indices against `n_frames` (None -> frame 0).
+#[cfg(feature = "xtc")]
 fn resolve_frame_indices(frames: Option<Vec<i64>>, n_frames: usize) -> PyResult<Vec<usize>> {
     let requested = frames.unwrap_or_else(|| vec![0]);
     if requested.is_empty() {
@@ -281,7 +293,8 @@ fn read_trajectory_frames(
              (AMBER NetCDF .nc/.ncdf, .dcd and .trr are not wired up yet)"
         )));
     }
-    let mut reader = formats::xtc::XtcReader::open(trajectory).map_err(|e| value_err(e.to_string()))?;
+    let mut reader =
+        formats::xtc::XtcReader::open(trajectory).map_err(|e| value_err(e.to_string()))?;
     let traj_atoms = reader.n_atoms().map_err(|e| value_err(e.to_string()))?;
     if traj_atoms != n_atoms {
         return Err(value_err(format!(
@@ -293,7 +306,9 @@ fn read_trajectory_frames(
         .into_iter()
         .map(|i| {
             // read_range decodes exactly this frame and converts nm -> Å.
-            let mut batch = reader.read_range(i..i + 1).map_err(|e| value_err(e.to_string()))?;
+            let mut batch = reader
+                .read_range(i..i + 1)
+                .map_err(|e| value_err(e.to_string()))?;
             batch
                 .coords
                 .pop()
@@ -425,7 +440,8 @@ fn process_models(
 
     // 3. Process Reference Model (First)
     let ref_raw = models_to_process[0];
-    let mut processed = ProcessedStructure::from_raw_with_config(ref_raw.clone(), classification).map_err(|e| {
+    let mut processed = ProcessedStructure::from_raw_with_config(ref_raw.clone(), classification)
+        .map_err(|e| {
         pyo3::exceptions::PyValueError::new_err(format!("Structure processing failed: {}", e))
     })?;
 
@@ -564,7 +580,7 @@ fn process_models(
         CoordFormat::Atom37 => {
             let _formatter = formatters::Atom37Formatter;
             let ref_formatted =
-                formatters::Atom37Formatter::format(&processed, &spec).map_err(|e| {
+                formatters::Atom37Formatter::format(&processed, spec).map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
                 })?;
 
@@ -581,13 +597,14 @@ fn process_models(
                 for (i, m_raw) in models_to_process.iter().enumerate().skip(1) {
                     // We must process each model to map atoms correctly
                     let mut m_processed =
-                        ProcessedStructure::from_raw_with_config((*m_raw).clone(), classification).map_err(|e| {
-                            pyo3::exceptions::PyValueError::new_err(format!(
-                                "Processing model {} failed: {}",
-                                i + 1,
-                                e
-                            ))
-                        })?;
+                        ProcessedStructure::from_raw_with_config((*m_raw).clone(), classification)
+                            .map_err(|e| {
+                                pyo3::exceptions::PyValueError::new_err(format!(
+                                    "Processing model {} failed: {}",
+                                    i + 1,
+                                    e
+                                ))
+                            })?;
 
                     // Normalize protonation states based on local topology and pH
                     crate::processing::protonation::determine_protonation_states(
@@ -624,7 +641,7 @@ fn process_models(
                         // m_processed is updated in-place, no reassignment needed
                     }
 
-                    let m_formatted = formatters::Atom37Formatter::format(&m_processed, &spec)
+                    let m_formatted = formatters::Atom37Formatter::format(&m_processed, spec)
                         .map_err(|e| {
                             pyo3::exceptions::PyValueError::new_err(format!(
                                 "Format model {}: {}",
@@ -672,24 +689,23 @@ fn process_models(
             (dict, cached)
         }
         CoordFormat::Atom14 => {
-            let formatted =
-                formatters::Atom14Formatter::format(&processed, &spec).map_err(|e| {
-                    pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
-                })?;
+            let formatted = formatters::Atom14Formatter::format(&processed, spec).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
+            })?;
             let dict = formatted.to_py_dict(py)?;
             // No multi-model stacking implemented for Atom14 yet
             (dict, None)
         }
         CoordFormat::BackboneOnly => {
             let formatted =
-                formatters::BackboneFormatter::format(&processed, &spec).map_err(|e| {
+                formatters::BackboneFormatter::format(&processed, spec).map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
                 })?;
             let dict = formatted.to_py_dict(py)?;
             (dict, None)
         }
         CoordFormat::Full => {
-            let formatted = formatters::FullFormatter::format(&processed, &spec).map_err(|e| {
+            let formatted = formatters::FullFormatter::format(&processed, spec).map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
             })?;
 

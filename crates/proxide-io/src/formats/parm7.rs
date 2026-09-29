@@ -94,7 +94,11 @@ impl Section {
     /// Fixed-width strings. Blank cells are kept (a residue label can never be blank,
     /// but truncating on the first blank would silently shift every later value).
     fn strings(&self, count: usize, flag: &str) -> Result<Vec<String>, Parm7Error> {
-        let out: Vec<String> = self.cells().take(count).map(|c| c.trim().to_string()).collect();
+        let out: Vec<String> = self
+            .cells()
+            .take(count)
+            .map(|c| c.trim().to_string())
+            .collect();
         if out.len() != count {
             return Err(Parm7Error::Count {
                 flag: flag.to_string(),
@@ -143,7 +147,9 @@ fn read_sections<R: BufRead>(reader: R) -> Result<HashMap<String, Section>, Parm
             );
             current = Some(flag);
         } else if line.starts_with("%FORMAT") {
-            let Some(flag) = current.as_ref() else { continue };
+            let Some(flag) = current.as_ref() else {
+                continue;
+            };
             let width = parse_format_width(line).map_err(|msg| Parm7Error::Parse {
                 flag: flag.clone(),
                 msg,
@@ -199,7 +205,9 @@ const AMINO_ACIDS: &[&str] = &[
     "CYX", "CYM", "ASH", "GLH", "LYN",
 ];
 
-const WATER_RESIDUES: &[&str] = &["WAT", "HOH", "TIP3", "TP3", "TIP4", "T4P", "TIP5", "SOL", "SPC", "OPC"];
+const WATER_RESIDUES: &[&str] = &[
+    "WAT", "HOH", "TIP3", "TP3", "TIP4", "T4P", "TIP5", "SOL", "SPC", "OPC",
+];
 
 /// A single-atom residue carrying a monatomic ion (AMBER labels: `Na+`, `Cl-`, `K+`,
 /// `MG`, `Zn`, ...).
@@ -281,7 +289,7 @@ impl Parm7Topology {
         let mut model_ids = Vec::with_capacity(self.n_atoms * frames.len());
         for (position, coords) in frames.iter().enumerate() {
             self.push_frame(&mut raw, coords)?;
-            model_ids.extend(std::iter::repeat(position + 1).take(self.n_atoms));
+            model_ids.extend(std::iter::repeat_n(position + 1, self.n_atoms));
         }
         Ok((raw, model_ids))
     }
@@ -371,7 +379,9 @@ pub fn parse_parm7_reader<R: BufRead>(reader: R) -> Result<Parm7Topology, Parm7E
         if first < 0 || first as usize >= n_atoms.max(1) || prev.is_some_and(|q| first <= q) {
             return Err(Parm7Error::Parse {
                 flag: "RESIDUE_POINTER".to_string(),
-                msg: format!("residue {r} pointer {p} is not strictly increasing within 1..={n_atoms}"),
+                msg: format!(
+                    "residue {r} pointer {p} is not strictly increasing within 1..={n_atoms}"
+                ),
             });
         }
         res_first_atom.push(first as usize);
@@ -408,15 +418,20 @@ pub fn parse_parm7_reader<R: BufRead>(reader: R) -> Result<Parm7Topology, Parm7E
 
     let mut bonds = Vec::new();
     for flag in ["BONDS_INC_HYDROGEN", "BONDS_WITHOUT_HYDROGEN"] {
-        let Some(section) = sections.get(flag) else { continue };
+        let Some(section) = sections.get(flag) else {
+            continue;
+        };
         let values = section.ints(flag)?;
         if values.len() % 3 != 0 {
             return Err(Parm7Error::Parse {
                 flag: flag.to_string(),
-                msg: format!("{} values is not a multiple of 3 (i, j, type)", values.len()),
+                msg: format!(
+                    "{} values is not a multiple of 3 (i, j, type)",
+                    values.len()
+                ),
             });
         }
-        for triple in values.chunks_exact(3) {
+        for triple in values.as_chunks::<3>().0 {
             // Atom indices are stored as 3 * (0-based index), a legacy of coordinate-array offsets.
             let (a, b) = ((triple[0] / 3) as usize, (triple[1] / 3) as usize);
             if a >= n_atoms || b >= n_atoms {
@@ -500,7 +515,10 @@ fn chains_from_bond_graph(topo: &Parm7Topology, res_of_atom: &[usize]) -> Vec<St
     for (i, &r) in res_of_atom.iter().enumerate() {
         let first = topo.res_first_atom[r];
         if i != first {
-            let (ra, rb) = (union_find_root(&mut parent, first), union_find_root(&mut parent, i));
+            let (ra, rb) = (
+                union_find_root(&mut parent, first),
+                union_find_root(&mut parent, i),
+            );
             if ra != rb {
                 parent[ra.max(rb)] = ra.min(rb);
             }
@@ -511,7 +529,10 @@ fn chains_from_bond_graph(topo: &Parm7Topology, res_of_atom: &[usize]) -> Vec<St
         if topo.elements[a] == "S" && topo.elements[b] == "S" {
             continue;
         }
-        let (ra, rb) = (union_find_root(&mut parent, a), union_find_root(&mut parent, b));
+        let (ra, rb) = (
+            union_find_root(&mut parent, a),
+            union_find_root(&mut parent, b),
+        );
         if ra != rb {
             parent[ra.max(rb)] = ra.min(rb);
         }
@@ -579,7 +600,10 @@ mod tests {
         assert_eq!(t.elements[0], "N");
         assert_eq!(t.elements[5], "S");
         assert_eq!(t.elements[30], "NA");
-        assert!((t.charges[30] - 1.0).abs() < 1e-5, "charge divided by 18.2223");
+        assert!(
+            (t.charges[30] - 1.0).abs() < 1e-5,
+            "charge divided by 18.2223"
+        );
     }
 
     #[test]
@@ -601,7 +625,10 @@ mod tests {
         let mut t = fixture();
         t.bonds.retain(|&(a, b)| a != 0 && b != 0);
         let res_of_atom = t.atom_residue_index();
-        assert_eq!(chains_from_bond_graph(&t, &res_of_atom), vec!["A", "A", "B", "~", "~"]);
+        assert_eq!(
+            chains_from_bond_graph(&t, &res_of_atom),
+            vec!["A", "A", "B", "~", "~"]
+        );
     }
 
     #[test]
