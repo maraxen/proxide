@@ -121,10 +121,11 @@ def _atom_rows(
   * per-atom fields (``atom_names`` present, e.g. the flat "Full" format):
     ``res_names`` and per-atom residue ids are required, and every per-atom
     field must match the coordinate count exactly;
-  * Atom37 (no ``atom_names``): names come from the Atom37 vocabulary,
-    residue names from ``aatype``, and only slots flagged in ``atom_mask``
-    are written -- an unresolved slot is zero-filled, so without the mask a
-    real atom cannot be told from a hole.
+  * Atom37 / Atom14 (no ``atom_names``): names come from the Atom37
+    vocabulary or the per-residue-type Atom14 table, residue names from
+    ``aatype``, and only slots flagged in ``atom_mask`` are written -- an
+    unresolved slot is zero-filled, so without the mask a real atom cannot
+    be told from a hole.
 
   Anything else raises. The previous writer filled gaps with "CA", "UNK",
   ``i + 1`` and ``atom_name[0]`` (debt #1928, ledger A1/A5); unknown elements
@@ -175,17 +176,22 @@ def _atom_rows(
     )
 
   coords = np.asarray(protein.coordinates)
-  from proxide.chem.residues import atom_types, resnames
+  from proxide.chem.residues import atom_types, resnames, restype_name_to_atom14_names
 
-  if coords.ndim != 3 or coords.shape[1] != len(atom_types):
+  # Dispatch on shape, not `protein.format`: from_rust_dict labels Atom14
+  # output "Atom37".
+  n_slots = coords.shape[1] if coords.ndim == 3 else None
+  if n_slots not in (len(atom_types), 14):
     msg = (
-      f"{fn_name}: protein has no per-atom atom_names and its coordinates are not "
-      f"Atom37 (got shape {coords.shape}); cannot name the atoms without inventing them"
+      f"{fn_name}: protein has no per-atom atom_names and its coordinates are neither "
+      f"Atom37 nor Atom14 (got shape {coords.shape}); cannot name the atoms without "
+      "inventing them"
     )
     raise ValueError(msg)
+  layout = "Atom37" if n_slots == len(atom_types) else "Atom14"
   if protein.atom_mask is None:
     msg = (
-      f"{fn_name}: Atom37 protein has no atom_mask, so resolved atoms cannot be told "
+      f"{fn_name}: {layout} protein has no atom_mask, so resolved atoms cannot be told "
       "from zero-filled empty slots; refusing to write every slot"
     )
     raise ValueError(msg)
@@ -205,7 +211,24 @@ def _atom_rows(
       f"0..{len(resnames) - 1}; refusing to name those residues"
     )
     raise ValueError(msg)
-  names = [atom_types[k] for k in slot_idx]
+  if layout == "Atom37":
+    names = [atom_types[k] for k in slot_idx]
+  else:
+    # Atom14 slots are per-residue-type: slot k of an ALA is not slot k of a
+    # TRP. The table gives "" for slots that residue type does not have, so a
+    # masked "" slot is inconsistent data, not something to name.
+    names = [
+      restype_name_to_atom14_names[resnames[int(aatype[r])]][k]
+      for r, k in zip(res_idx, slot_idx, strict=True)
+    ]
+    empty = [(int(r), int(k)) for r, k, n in zip(res_idx, slot_idx, names, strict=True) if not n]
+    if empty:
+      msg = (
+        f"{fn_name}: {len(empty)} Atom14 slot(s) are flagged in atom_mask but have no "
+        f"atom for their residue type (first (residue, slot): {empty[0]}); "
+        "refusing to name them"
+      )
+      raise ValueError(msg)
   return (
     coords[res_idx, slot_idx],
     names,

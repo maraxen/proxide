@@ -392,6 +392,41 @@ class TestWritePdbOnRealParsedStructures:
       atol=1e-3,
     )
 
+  def test_atom14_writes_the_same_atoms_as_atom37(self, tmp_path) -> None:
+    # Backlog #5687: Atom14 slot names follow from aatype, so nothing has to
+    # be invented. The two layouts of one structure must write identical atoms.
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    def atoms(fmt, name):
+      protein = parse_structure(self.PDB, OutputSpec(coord_format=fmt))
+      return sorted(
+        (line[17:20], int(line[22:26]), line[12:16].strip(), line[30:54], line[76:78])
+        for line in _atom_lines(write_pdb(protein, tmp_path / name))
+      )
+
+    a14 = atoms(CoordFormat.Atom14, "a14.pdb")
+    a37 = atoms(CoordFormat.Atom37, "a37.pdb")
+    # Atom14 has no OXT slot, so the C-terminal OXT exists only in Atom37.
+    assert a14 == [a for a in a37 if a[2] != "OXT"]
+    assert len(a14) > 0 and len(a37) - len(a14) == 1
+
+  def test_atom14_mask_on_a_slot_the_residue_lacks_raises(self, tmp_path) -> None:
+    from proxide.chem.residues import restype_order
+
+    mask = np.zeros((1, 14), dtype=np.float32)
+    mask[0, :5] = 1.0  # N, CA, C, O, CB
+    mask[0, 5] = 1.0  # ALA has no 6th atom14 slot
+    protein = Protein(
+      coordinates=np.ones((1, 14, 3), dtype=np.float32),
+      aatype=np.array([restype_order["A"]], dtype=np.int8),
+      residue_index=np.zeros(1, dtype=np.int32),
+      chain_index=np.zeros(1, dtype=np.int32),
+      chain_ids=["A"],
+      atom_mask=mask,
+    )
+    with pytest.raises(ValueError, match="no atom for their residue type"):
+      write_pdb(protein, tmp_path / "out.pdb")
+
   def test_chain_filtered_structure_keeps_its_chain_letter(self, tmp_path) -> None:
     # Debt #2354: load_rust(chain_id="B") used to keep chain_index=1 while
     # setting chain_ids=["B"], so the writer emitted chain "A".
