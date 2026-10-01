@@ -307,28 +307,35 @@ fn parse_rule_fields(parts: &[&str]) -> Option<Gaff2Rule> {
     }
 
     // f8: bracketed atomic-property expression, "[...]" or "*" or absent.
+    // A malformed f8/f9 body makes the whole line malformed (`None` here is
+    // recorded by the caller), mirroring gaff2.py, which raises on each of
+    // these (debt #2363). They used to be dropped, which made the rule MORE
+    // permissive than the DEF says.
     let mut atomic_prop_raw: Option<String> = None;
     if let Some(after_bracket) = remaining.strip_prefix('[') {
-        if let Some(close_rel) = after_bracket.find(']') {
-            atomic_prop_raw = Some(after_bracket[..close_rel].to_string());
-            remaining = after_bracket[close_rel + 1..].trim().to_string();
+        let close_rel = after_bracket.find(']')?; // unclosed "[" is malformed
+        let body = &after_bracket[..close_rel];
+        if !crate::atomic_prop::is_well_formed(body) {
+            return None; // a token that is not a property token
         }
-        // else: unmatched "[" — leave remaining untouched (still starting
-        // with "["), atomic_prop_raw stays None. Matches Python's
-        // `if close != -1:` guard, which has no else-branch mutation.
+        atomic_prop_raw = Some(body.to_string());
+        remaining = after_bracket[close_rel + 1..].trim().to_string();
     } else if let Some(rest) = remaining.strip_prefix('*') {
         remaining = rest.trim().to_string();
     }
 
     // f9: parenthesized chemical-environment neighbor pattern, "(...)" or
-    // "*" or absent (end of line before "&"). There is no true f10 —
-    // anything left after this is a malformed line, not a further field
-    // (gaff2.py lines 838-840) — so, unlike f7/f8, there is no "*" branch
-    // here and `remaining` is not consumed any further.
+    // absent (end of line before "&"). There is no f10: f9 must be the rest
+    // of the line, and any other leftover text is malformed.
     let chem_env_raw: Option<String> = if remaining.starts_with('(') {
+        if !crate::chem_env::is_well_formed(&remaining) {
+            return None; // unbalanced, unclosed "[", or trailing text
+        }
         Some(remaining)
-    } else {
+    } else if remaining.is_empty() {
         None
+    } else {
+        return None; // text after f8 that is not an f9 pattern
     };
 
     Some(Gaff2Rule {
@@ -647,6 +654,43 @@ mod tests {
         let content = "DEFINATION BEGIN\nATD  c3 * 6 4 &\n";
         let (rules, _) = parse_gaff2_rules(content).unwrap();
         assert_eq!(rules.len(), 1);
+    }
+
+    /// Debt #2363, Rust half: the same malformed f8/f9 bodies that
+    /// tests/chem/test_gaff2_def_loading.py feeds the Python parser (verbatim
+    /// lines) must be malformed here too -- they used to load as a looser rule.
+    #[test]
+    fn test_malformed_f8_f9_bodies_are_errors_like_python() {
+        for line in [
+            "ATD  c3 * 6 4 * [unclosed &",
+            "ATD  c3 * 6 4 * [invalid-token] &",
+            "ATD  c3 * 6 4 * [2] &",
+            "ATD  c3 * 6 4 * * (unclosed &",
+            "ATD  c3 * 6 4 * * (N3)extra &",
+            "ATD  c3 * 6 4 * * JUNK &",
+            "ATD  c3 * 6 4 * * (N3,[AR1 &",
+            "ATD  x * 6 3 * * (XX[AR1,junk!]) &",
+        ] {
+            let err = parse_gaff2_rules(&wrap_def(line))
+                .expect_err(&format!("should be malformed: {line}"));
+            assert!(err.contains("1 malformed ATD rule line"), "{line}: {err}");
+        }
+    }
+
+    #[test]
+    fn test_well_formed_f8_f9_bodies_still_parse() {
+        // Positive controls, incl. the nested and bracket-in-f9 shapes the
+        // real DEF uses (cc / cp rows).
+        for line in [
+            "ATD  c3 * 6 4 * * (N3(N3)) &",
+            "ATD  cc * 6 3 * * [sb,db,AR2] (C3(C3)) &",
+            "ATD  cp * 6 3 * * [AR1,1RG6] (XX[AR1],XX[AR1],XX[AR1]) &",
+            "ATD  c3 * 6 4 * * [RG3] &",
+        ] {
+            let (rules, _) =
+                parse_gaff2_rules(&wrap_def(line)).unwrap_or_else(|e| panic!("{line}: {e}"));
+            assert_eq!(rules.len(), 1, "{line}");
+        }
     }
 
     #[test]

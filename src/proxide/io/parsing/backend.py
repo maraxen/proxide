@@ -174,6 +174,14 @@ def load_rust(
           allowed_indices = {i for i, cid in enumerate(unique_ids) if cid in target_chains}
 
           if allowed_indices:
+            if obj.n_models > 1:
+              # The per-residue mask below cannot index a model stack's
+              # leading model axis (it raised an opaque IndexError).
+              msg = (
+                f"chain_id={chain_id!r} with a {obj.n_models}-model structure is not "
+                "supported; select a model with OutputSpec(models=[k]) first"
+              )
+              raise ValueError(msg)
             c_idx = np.array(obj.chain_index)
             mask = np.isin(c_idx, list(allowed_indices))
             if mask.sum() == 0:

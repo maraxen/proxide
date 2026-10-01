@@ -75,6 +75,15 @@ impl ToPyDict for CachedStructure {
         if let Some(shape) = self.coord_shape {
             dict.set_item("coord_shape", shape)?;
         }
+        if let Some(ref ids) = self.unique_chain_ids {
+            dict.set_item("unique_chain_ids", ids.clone())?;
+        }
+        if let Some(ref per_atom) = self.full_per_atom {
+            dict.set_item("atom_residue_ids", per_atom.atom_residue_ids.clone())?;
+            dict.set_item("elements", per_atom.elements.clone())?;
+            dict.set_item("res_names", per_atom.res_names.clone())?;
+            dict.set_item("atom_chain_ids", per_atom.atom_chain_ids.clone())?;
+        }
 
         Ok(dict)
     }
@@ -118,6 +127,7 @@ impl ToPyDict for FormattedAtom14 {
             "chain_index",
             PyArray1::from_slice_bound(py, &self.chain_index),
         )?;
+        dict.set_item("unplaced_residues", &self.unplaced_residues)?;
         Ok(dict)
     }
 }
@@ -162,6 +172,9 @@ impl ToPyDict for FormattedFull {
         )?;
         dict.set_item("atom_names", self.atom_names.clone())?;
         dict.set_item("atom_residue_ids", self.atom_residue_ids.clone())?;
+        dict.set_item("elements", self.elements.clone())?;
+        dict.set_item("res_names", self.res_names.clone())?;
+        dict.set_item("atom_chain_ids", self.atom_chain_ids.clone())?;
         dict.set_item("coord_shape", self.coord_shape)?;
         Ok(dict)
     }

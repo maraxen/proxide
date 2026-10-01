@@ -33,6 +33,15 @@ pub struct FormattedFull {
     pub chain_index: Vec<i32>,
     /// Atom-level residue IDs: (N_atoms)
     pub atom_residue_ids: Vec<i32>,
+    /// Per-atom element symbols as the parser resolved them: (N_atoms).
+    /// Passed through so Python never re-derives elements from atom names
+    /// (debt #2353).
+    pub elements: Vec<String>,
+    /// Per-atom residue names as read: (N_atoms) (backlog #5684).
+    pub res_names: Vec<String>,
+    /// Per-atom chain ids as read: (N_atoms) (backlog #5684). `chain_index`
+    /// stays per-residue.
+    pub atom_chain_ids: Vec<String>,
     /// Shape info: (num_residues, max_atoms_in_any_residue, 3)
     pub coord_shape: (usize, usize, usize),
 }
@@ -112,6 +121,9 @@ impl FullFormatter {
             aatype,
             residue_index,
             atom_residue_ids,
+            elements: processed.raw_atoms.elements.clone(),
+            res_names: processed.raw_atoms.res_names.clone(),
+            atom_chain_ids: processed.raw_atoms.chain_ids.clone(),
             chain_index,
             coord_shape: (num_atoms, 3, 1), // Flat shape indicator
         })

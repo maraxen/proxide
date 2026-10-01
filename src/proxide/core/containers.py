@@ -114,6 +114,9 @@ class Protein:
   atom_names: Any | None = None
   chain_ids: Any | None = None
   res_names: Any | None = None
+  # Per-atom chain ids as read (Full format; backlog #5684). Distinct from
+  # `chain_ids`, which is the per-chain vocabulary that `chain_index` indexes.
+  atom_chain_ids: Any | None = None
   molecule_type: Any | None = None
   atom_types: Any | None = None
   bonds: Any | None = None
@@ -162,11 +165,32 @@ class Protein:
   atom_res_index: Any | None = None
 
   @property
+  def n_models(self) -> int:
+    """Models stacked on a leading axis, or 1.
+
+    A multi-model Atom37/Atom14 parse is a model stack: coordinates
+    (n_models, n_res, slots, 3), atom_mask (n_models, n_res, slots), with
+    per-residue fields shared (debt #2355). Code that assumes one structure
+    must check this.
+    """
+    c = self.coordinates
+    return int(c.shape[0]) if c is not None and getattr(c, "ndim", 0) == 4 else 1
+
+  def _require_single_model(self, what: str) -> None:
+    if self.n_models > 1:
+      msg = (
+        f"{what}: this Protein stacks {self.n_models} models; select one first "
+        "(OutputSpec(models=[k]), or index the leading axis)"
+      )
+      raise ValueError(msg)
+
+  @property
   def num_atoms(self) -> int:
-    """Total number of atoms."""
+    """Number of atoms in ONE structure (all models of a stack share it)."""
     if self.atom_mask is not None:
-      return int(jnp.sum(self.atom_mask))
-    return int(self.coordinates.size / 3)
+      mask = self.atom_mask[0] if self.n_models > 1 else self.atom_mask
+      return int(jnp.sum(mask))
+    return int(self.coordinates.size / 3 / self.n_models)
 
   @property
   def num_protein_atoms(self) -> int:
@@ -181,6 +205,8 @@ class Protein:
     """Get the residue index for each atom."""
     if self.atom_res_index is not None:
       return self.atom_res_index
+    # A model stack's flattened atoms are n_models x this; refuse to guess.
+    self._require_single_model("atom_residue_ids")
     if self.format == "Atom37":
       return jnp.repeat(self.residue_index, 37)
     if self.format == "Atom14":
@@ -216,7 +242,11 @@ class Protein:
     # Attempt to extract fields
     # Note: This is an incomplete conversion, but mimics the requested interface.
     system = AtomicSystem(
-        topology=MolecularTopology(),
+        # The Protein's own per-atom elements and names: this was an empty
+        # MolecularTopology(), so the projector treated every atom -- hydrogens
+        # included -- as carbon (review #8). Formats with no per-atom
+        # elements (Atom37/Atom14) now raise there instead.
+        topology=MolecularTopology(elements=self.elements, atom_names=self.atom_names),
         state=AtomicState(coordinates=coords),
         atom_mask=self.full_atom_mask,
     )
@@ -235,7 +265,11 @@ class Protein:
     coords = self.full_coordinates if self.full_coordinates is not None else jnp.zeros((0, 3))
 
     system = AtomicSystem(
-        topology=MolecularTopology(),
+        # The Protein's own per-atom elements and names: this was an empty
+        # MolecularTopology(), so the projector treated every atom -- hydrogens
+        # included -- as carbon (review #8). Formats with no per-atom
+        # elements (Atom37/Atom14) now raise there instead.
+        topology=MolecularTopology(elements=self.elements, atom_names=self.atom_names),
         state=AtomicState(coordinates=coords),
         atom_mask=self.full_atom_mask,
     )
@@ -278,14 +312,32 @@ class Protein:
     raw_coords = rust_dict["coordinates"]
     raw_mask = rust_dict["atom_mask"]
 
+    # A multi-model Atom37 parse stacks models: (n_models, n_res, 37, 3), with
+    # an (n_models, n_res, 37) mask. Per-residue fields (aatype, residue_index,
+    # chain_index) are shared -- Rust checks every model formats to the same
+    # size. This used to be misread as "Full" (debt #2355).
+    n_models = (
+      int(raw_coords.shape[0])
+      if raw_coords.ndim == 4 and raw_coords.shape[1] == num_residues
+      else 1
+    )
+    if n_models > 1 and np.asarray(raw_mask).size * 3 != raw_coords.size:
+      msg = (
+        f"multi-model coordinates {raw_coords.shape} came with an atom_mask of "
+        f"{np.asarray(raw_mask).size} entries; refusing to pair them"
+      )
+      raise ValueError(msg)
+
     is_atom37 = (
       (raw_coords.ndim == 3 and raw_coords.shape[1] == 37)
+      or (raw_coords.ndim == 4 and n_models > 1 and raw_coords.shape[2] == 37)
       or (raw_coords.ndim == 2 and raw_coords.size == num_residues * 37 * 3)
       or (raw_coords.ndim == 1 and raw_coords.size == num_residues * 37 * 3)
     )
 
     is_atom14 = (
       (raw_coords.ndim == 3 and raw_coords.shape[1] == 14)
+      or (raw_coords.ndim == 4 and n_models > 1 and raw_coords.shape[2] == 14)
       or (raw_coords.ndim == 2 and raw_coords.size == num_residues * 14 * 3)
       or (raw_coords.ndim == 1 and raw_coords.size == num_residues * 14 * 3)
     )
@@ -297,14 +349,15 @@ class Protein:
 
     if is_atom37 or is_atom14:
       n_slots = 37 if is_atom37 else 14
-      coordinates = raw_coords.reshape(num_residues, n_slots, 3)
-      atom_mask_2d = raw_mask.reshape(num_residues, n_slots)
+      lead = (n_models,) if n_models > 1 else ()
+      coordinates = raw_coords.reshape(*lead, num_residues, n_slots, 3)
+      atom_mask_2d = np.asarray(raw_mask).reshape(*lead, num_residues, n_slots)
 
       if is_atom37:
-        mask_ca = atom_mask_2d[:, atom_order["CA"]]
+        mask_ca = atom_mask_2d[..., atom_order["CA"]]
       else:
         # For Atom14, CA is also usually at index 1
-        mask_ca = atom_mask_2d[:, 1]
+        mask_ca = atom_mask_2d[..., 1]
 
       return cls(
         coordinates=convert(coordinates, dtype=np.float32),
@@ -416,9 +469,12 @@ class Protein:
 
     # Flat format (Full)
     atom_names = rust_dict.get("atom_names")
+    # Elements come from the parser (the Full dict carries them since
+    # debt #2353). If a dict lacks them they are unknown: None, never
+    # re-derived here -- the old `name[0].upper() if name else "C"` read
+    # "CL" as carbon, "NA" as nitrogen and an empty name as carbon (ledger
+    # A1/A2/A5).
     elements = rust_dict.get("elements")
-    if elements is None and atom_names is not None:
-      elements = [name[0].upper() if name else "C" for name in atom_names]
 
     # Slice parameters if they are padded (Match Atom37 count but format is Full)
     mask = convert(raw_mask, dtype=bool).flatten()
@@ -443,6 +499,8 @@ class Protein:
       atom_mask=_slice_if_padded(raw_mask, dtype=np.float32),
       elements=elements,
       atom_names=atom_names,
+      res_names=rust_dict.get("res_names"),
+      atom_chain_ids=rust_dict.get("atom_chain_ids"),
       charges=_slice_if_padded(rust_dict.get("charges")),
       radii=_slice_if_padded(
           rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32

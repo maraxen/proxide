@@ -1,0 +1,47 @@
+[metadata]
+title = "proxide GAFF2 .dat loader vs ParmEd AmberParameterSet: full-table parity on gaff-2.2.20.dat (v2 controls)"
+created = "261001"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "At the sprint head (after 495ef10/b23680d), proxide.chem.gaff2.load_gaff2_parameters reads the pinned src/proxide/assets/gaff/dat/gaff-2.2.20.dat identically to ParmEd's AmberParameterSet, an independent AMBER parm.dat reader: every mass, vdW pair, bond, angle, torsion term (periodicity, barrier PK/IDIVF, phase) and improper (PK, phase; the loader does not keep improper PN, debt #2375) agrees within 1e-6 with no entry missing on either side, keys compared orientation-insensitively (impropers in ParmEd's canonical form). Negative controls: the SAME compare() run with proxide reading a tampered copy -- one value changed in each of mass, vdW, bond, angle, torsion and improper, plus one angle row deleted -- must report >= 1 mismatch in that table, every time. v2 of this pre-registration (2026-10-01): v1 (99f5f7f) had a single inline angle-only control that bypassed compare() (review #7); v1 runs 9e8d6de2 (fail) and 68dcb74c (pass) stay on record and are superseded, not deleted. Pre-registered before any run of this version (task_id 261001_proxide-debt-sweep-2)."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "mass_mismatch == 0 AND vdw_mismatch == 0 AND bond_mismatch == 0 AND angle_mismatch == 0 AND torsion_mismatch == 0 AND improper_mismatch == 0 AND negative_controls_min >= 1"
+decision = "Treat the GAFF2 .dat loader as a faithful parm.dat reader for gaff-2.2.20.dat; cite this run from the debt #2368 resolution and the sprint PR."
+reasoning = "An independent reader agrees on every entry of every table, and each table's comparison is shown to detect a single wrong value (and a missing row) through the same code path."
+is_residual = false
+adversarial_check = "negative_controls_min == 0"
+
+[outcomes.fail]
+condition = "NOT (mass_mismatch == 0 AND vdw_mismatch == 0 AND bond_mismatch == 0 AND angle_mismatch == 0 AND torsion_mismatch == 0 AND improper_mismatch == 0 AND negative_controls_min >= 1)"
+decision = "Do not cite; inspect the failing table. A failing negative control means that table's comparison cannot detect errors -- fix the script under a new pre-registration, never by editing thresholds."
+reasoning = "Any disagreement with an independent reader, or a table comparison that cannot fail, means the loader is not validated."
+is_residual = true
+
+[result_schema]
+all_pass = "bool"
+mass_mismatch = "int"
+vdw_mismatch = "int"
+bond_mismatch = "int"
+angle_mismatch = "int"
+torsion_mismatch = "int"
+improper_mismatch = "int"
+negative_controls_min = "int"
+neg_mass = "int"
+neg_vdw = "int"
+neg_bond = "int"
+neg_angle = "int"
+neg_angle_row_deleted = "int"
+neg_torsion = "int"
+neg_improper = "int"
+n_bonds = "int"
+n_angles = "int"
+n_torsion_keys = "int"
+n_impropers = "int"
+parmed_version = "str"
+
+[dependencies]
+proxide_version = { type = "git_sha", required = true }

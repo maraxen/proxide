@@ -1,5 +1,7 @@
 """Tests for proxide.io.writing."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -365,15 +367,122 @@ class TestWritePdbOnRealParsedStructures:
 
   PDB = "tests/data/5awl.pdb"  # single model, 10 residues
 
-  def test_multimodel_atom37_request_raises(self, tmp_path) -> None:
-    # 1uao is an 18-model NMR file; an Atom37 request returns format="Full"
-    # with 6660 flattened coordinates and no atom names. The old writer
-    # emitted 6660 "CA"/"UNK" rows; refusing is the honest answer.
+  def test_model_stack_consumers_count_one_structure_or_refuse(self) -> None:
+    # Review #9: consumers that assume one structure used to silently
+    # mis-handle an 18-model stack (CLI info said 18 residues, num_atoms was
+    # summed over all models, truncate_protein cropped the model axis).
+    from proxide import CoordFormat, OutputSpec, parse_structure
+    from proxide.ops.transforms import truncate_protein
+
+    stack = parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Atom37))
+    one = parse_structure(
+      "tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Atom37, models=[1])
+    )
+    assert stack.n_models == 18 and one.n_models == 1
+    assert stack.num_atoms == one.num_atoms  # one structure's atoms, not 18x
+    with pytest.raises(ValueError, match="18 models"):
+      _ = stack.atom_residue_ids
+    with pytest.raises(ValueError, match="18 models"):
+      truncate_protein(stack, max_length=5, strategy="center_crop")
+
+  def test_cli_info_reports_residues_not_models(self) -> None:
+    from typer.testing import CliRunner
+
+    from proxide.cli.main import app
+
+    result = CliRunner().invoke(app, ["info", "tests/data/1uao.pdb"])
+    assert result.exit_code == 0, result.output
+    assert "Number of Residues" in result.output
+    residues_row = next(x for x in result.output.splitlines() if "Number of Residues" in x)
+    assert "10" in residues_row and "18" not in residues_row, residues_row
+
+  def test_multimodel_atom37_is_a_consistent_model_stack(self, tmp_path) -> None:
+    # Debt #2355: 1uao is an 18-model NMR file. An Atom37 request used to
+    # return format="Full" with 6660 flattened coordinates next to a
+    # 77-entry mask. It is now a model stack whose mask matches it, the
+    # writer refuses it as batched, and one selected model still writes.
     from proxide import CoordFormat, OutputSpec, parse_structure
 
-    protein = parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Atom37))
-    with pytest.raises(ValueError, match="cannot name the atoms"):
-      write_pdb(protein, tmp_path / "out.pdb")
+    path = "tests/data/1uao.pdb"
+    stack = parse_structure(path, OutputSpec(coord_format=CoordFormat.Atom37))
+    assert stack.format == "Atom37"
+    assert np.shape(stack.coordinates) == (18, 10, 37, 3)
+    assert np.shape(stack.atom_mask) == (18, 10, 37)
+    with pytest.raises(ValueError, match="batched"):
+      write_pdb(stack, tmp_path / "out.pdb")
+
+    one = parse_structure(path, OutputSpec(coord_format=CoordFormat.Atom37, models=[1]))
+    lines = _atom_lines(write_pdb(one, tmp_path / "one.pdb"))
+    assert len(lines) == int(np.asarray(one.atom_mask).sum())
+    # Model 1 of the stack is exactly the single-model parse.
+    np.testing.assert_array_equal(np.asarray(stack.atom_mask)[0], np.asarray(one.atom_mask))
+    np.testing.assert_allclose(np.asarray(stack.coordinates)[0], np.asarray(one.coordinates))
+
+  def test_multimodel_non_atom37_request_warns(self) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    with pytest.warns(UserWarning, match="18 models present"):
+      parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Full))
+    # A second parse (no cache for multi-model results) must warn again.
+    with pytest.warns(UserWarning, match="18 models present"):
+      parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Full))
+
+  @staticmethod
+  def _cache_probe(tmp_path, name: str) -> tuple[Path, str]:
+    """A private copy of the fixture, plus the same file with x shifted.
+
+    The format cache is keyed by path alone, so after overwriting the file a
+    cache HIT still returns the old coordinates and a miss the new ones --
+    which is how these tests know the second parse came from the cache.
+    """
+    src = Path(TestWritePdbOnRealParsedStructures.PDB).read_text()
+    shifted = "".join(
+      (x[:30] + f"{float(x[30:38]) + 50.0:8.3f}" + x[38:]) if x.startswith("ATOM") else x
+      for x in src.splitlines(keepends=True)
+    )
+    path = tmp_path / name
+    path.write_text(src)
+    return path, shifted
+
+  def test_full_format_cache_hit_returns_the_same_per_atom_fields(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    path, shifted = self._cache_probe(tmp_path, "full_cache.pdb")
+    spec = OutputSpec(coord_format=CoordFormat.Full, enable_caching=True)
+    first = parse_structure(str(path), spec)
+    path.write_text(shifted)
+    second = parse_structure(str(path), spec)
+    # Proof of a cache hit: the old coordinates came back.
+    np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
+    for field in ("elements", "res_names", "atom_chain_ids", "atom_res_index"):
+      a, b = getattr(first, field), getattr(second, field)
+      assert a is not None and b is not None, field
+      assert list(np.asarray(a)) == list(np.asarray(b)), field
+
+  def test_atom37_cache_hit_keeps_the_chain_vocabulary(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    path, shifted = self._cache_probe(tmp_path, "a37_cache.pdb")
+    spec = OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True)
+    first = parse_structure(str(path), spec)
+    path.write_text(shifted)
+    second = parse_structure(str(path), spec)
+    np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
+    assert second.chain_ids == first.chain_ids == ["A"]
+
+  def test_model_selected_parse_is_not_cached(self, tmp_path) -> None:
+    # The cache key has no model selection: models=[2] must not be served to
+    # (or from) an all-models request.
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    path = tmp_path / "nmr.pdb"
+    path.write_text(Path("tests/data/1uao.pdb").read_text())
+    one = parse_structure(
+      str(path), OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True, models=[2])
+    )
+    assert np.shape(one.coordinates) == (10, 37, 3)
+    every = parse_structure(str(path), OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True))
+    assert np.shape(every.coordinates) == (18, 10, 37, 3)
 
   def test_atom37_round_trips_resolved_atoms(self, tmp_path) -> None:
     from proxide import CoordFormat, OutputSpec, parse_structure
@@ -471,13 +580,57 @@ class TestWritePdbOnRealParsedStructures:
     assert len(lines) == len(src)
     assert {line[21] for line in lines} == {"B"}
 
-  def test_full_format_raises_rather_than_writing_unk_residues(self, tmp_path) -> None:
-    # parse_structure's Full output carries no per-atom residue names (and
-    # from_rust_dict drops chain ids), so the old writer emitted every residue
-    # as "UNK" in chain "A" with per-atom-misindexed residue numbers. Until
-    # that data is plumbed through, refusing is the honest answer.
+  @staticmethod
+  def _atom_key(line: str) -> tuple:
+    # name, residue, chain, number, x, element -- everything write_pdb takes
+    # from the structure (occupancy/B-factor are not carried, see debt).
+    return (
+      line[12:16].strip(), line[17:20], line[21], int(line[22:26]),
+      round(float(line[30:38]), 2), line[76:78].strip(),
+    )
+
+  def test_full_format_round_trips_every_atom(self, tmp_path) -> None:
+    # Backlog #5684: parse_structure's Full output now carries per-atom
+    # elements, residue names and chain ids. It used to carry none, and the
+    # writer emitted every residue as "UNK" in chain "A" (then, after debt
+    # #1928, refused). Every source atom must come back identical.
     from proxide import CoordFormat, OutputSpec, parse_structure
 
     protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
-    with pytest.raises(ValueError, match="res_names"):
-      write_pdb(protein, tmp_path / "out.pdb")
+    written = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    source = [x for x in open(self.PDB) if x.startswith(("ATOM", "HETATM"))]
+    assert sorted(map(self._atom_key, written)) == sorted(map(self._atom_key, source))
+
+  def test_full_format_round_trips_two_chains(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    src = [x for x in open(self.PDB) if x.startswith("ATOM")]
+    b_shifted = [
+      x[:21] + "B" + x[22:30] + f"{float(x[30:38]) + 100.0:8.3f}" + x[38:] for x in src
+    ]
+    two = tmp_path / "two.pdb"
+    two.write_text("".join(b_shifted) + "TER\n" + "".join(src) + "END\n")
+    protein = parse_structure(str(two), OutputSpec(coord_format=CoordFormat.Full))
+    written = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    assert sorted(map(self._atom_key, written)) == sorted(map(self._atom_key, b_shifted + src))
+
+  def test_full_format_elements_come_from_the_parser_not_the_name(self, tmp_path) -> None:
+    # Debt #2353: elements reach Python from the parser. A calcium ion named
+    # "CA" (element column "CA") must stay calcium -- a first-letter rule in
+    # Python would make it carbon.
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    src = [x for x in open(self.PDB) if x.startswith("ATOM")]
+    ca = "HETATM 9999 CA    CA B 900      30.000  30.000  30.000  1.00  0.00          CA\n"
+    path = tmp_path / "with_ion.pdb"
+    path.write_text("".join(src) + "TER\n" + ca + "END\n")
+    protein = parse_structure(
+      str(path), OutputSpec(coord_format=CoordFormat.Full, include_hetatm=True)
+    )
+    assert protein.elements is not None
+    names = list(protein.atom_names)
+    ion = [i for i, (n, r) in enumerate(zip(names, protein.res_names)) if r == "CA"]
+    assert len(ion) == 1, (names[-3:], list(protein.res_names)[-3:])
+    # The PDB reader keeps the element column's case as written ("CA"; see
+    # the element-case debt). What matters here: calcium, not carbon.
+    assert protein.elements[ion[0]].upper() == "CA"

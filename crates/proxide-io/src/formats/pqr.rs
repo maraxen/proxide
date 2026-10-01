@@ -20,8 +20,10 @@
 use crate::formats::field_parse::{
     self, truncate_raw_str, TokenFieldErrorKind, IO_MALFORMED_RECORD_CODE,
 };
+use crate::formats::pdb_fields::ResidueTracker;
 use proxide_core::chem::masses::infer_element;
 use proxide_core::structure::{AtomRecord, RawAtomData};
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -285,19 +287,104 @@ fn parse_field_f32(
         .map_err(|kind| PqrFieldError::new(line_no, token_index, field, raw_line, kind))
 }
 
+/// Errors specific to PQR parsing that are not field-level parse errors.
+#[derive(Debug, Clone)]
+pub struct PqrMultiModelError {
+    pub line: usize,
+    pub message: String,
+}
+
+impl fmt::Display for PqrMultiModelError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[{}] line {}: {}",
+            IO_MALFORMED_RECORD_CODE, self.line, self.message
+        )
+    }
+}
+
+impl std::error::Error for PqrMultiModelError {}
+
+/// Residue reappearance error: a (chain, seq, icode) key appeared again
+/// after a different residue in the same model+chain.
+#[derive(Debug, Clone)]
+pub struct PqrResidueReappearanceError {
+    pub line: usize,
+    pub chain_id: String,
+    pub res_seq: i32,
+    pub i_code: char,
+}
+
+impl fmt::Display for PqrResidueReappearanceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[{}] line {}: residue reappears (chain={}, res_seq={}, i_code='{}'); wrapped residue ID not allowed in PQR",
+            IO_MALFORMED_RECORD_CODE, self.line, self.chain_id, self.res_seq, self.i_code
+        )
+    }
+}
+
+impl std::error::Error for PqrResidueReappearanceError {}
+
 /// Parse PQR file and return raw atom data with charges and radii. The first
 /// malformed ATOM/HETATM line anywhere in the file aborts the whole parse
 /// with a [`PqrFieldError`] -- there is no partial result and no silent drop.
+/// Multi-model PQR files are not supported and return a [`PqrMultiModelError`]
+/// on the second MODEL record. Residue wraparound (reappearance of a
+/// chain/seq/icode after a different residue) returns [`PqrResidueReappearanceError`].
 pub fn parse_pqr_file<P: AsRef<Path>>(path: P) -> Result<RawAtomData, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
-    let reader = BufReader::new(file);
+    parse_pqr_reader(BufReader::new(file))
+}
 
+/// [`parse_pqr_file`]'s parser over any reader -- the single implementation
+/// both the file path and the tests use.
+pub fn parse_pqr_reader<R: BufRead>(reader: R) -> Result<RawAtomData, Box<dyn std::error::Error>> {
     let mut raw_data = RawAtomData::new();
+    let mut seen_model = false;
+    let mut residue_trackers: HashMap<(usize, String), ResidueTracker> = HashMap::new();
+    let current_model: usize = 1; // PQR doesn't support models, but track for consistency
 
     for (idx, line) in reader.lines().enumerate() {
         let line = line?;
         let line_no = idx + 1;
+
+        // Check for MODEL/ENDMDL records
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        if !tokens.is_empty() {
+            let record_type = tokens[0];
+            if record_type == "MODEL" {
+                if seen_model {
+                    return Err(Box::new(PqrMultiModelError {
+                        line: line_no,
+                        message: "multi-model PQR is not supported".to_string(),
+                    }));
+                }
+                seen_model = true;
+                continue; // Skip MODEL record, don't parse as atom
+            } else if record_type == "ENDMDL" {
+                continue; // Skip ENDMDL record
+            }
+        }
+
         if let Some(atom) = parse_pqr_line(&line, line_no)? {
+            // Check for residue reappearance
+            let key = (atom.res_seq, atom.i_code);
+            let tracker = residue_trackers
+                .entry((current_model, atom.chain_id.clone()))
+                .or_insert_with(ResidueTracker::new);
+
+            if tracker.check_reappearance(key).is_err() {
+                return Err(Box::new(PqrResidueReappearanceError {
+                    line: line_no,
+                    chain_id: atom.chain_id.clone(),
+                    res_seq: atom.res_seq,
+                    i_code: atom.i_code,
+                }));
+            }
+
             raw_data.add_atom(atom);
         }
     }
@@ -516,5 +603,89 @@ mod tests {
     fn empty_line_is_ok_none() {
         assert!(parse_one("").unwrap().is_none());
         assert!(parse_one("   ").unwrap().is_none());
+    }
+
+    // -------------------------------------------------------
+    // A2: Multi-model PQR tracking (debt #1932)
+    // -------------------------------------------------------
+
+    // Drives the production parser (parse_pqr_reader), never a copy of it:
+    // a test-local re-implementation could not catch a regression in the
+    // real loop (review finding, task 261001_proxide-debt-sweep-2).
+    fn parse_from_string(s: &str) -> Result<RawAtomData, Box<dyn std::error::Error>> {
+        parse_pqr_reader(std::io::Cursor::new(s))
+    }
+
+    #[test]
+    fn single_model_with_wrappers_parses() {
+        // Single model with MODEL 1 / ENDMDL wrappers should parse successfully
+        let pqr = "MODEL        1\n\
+                   ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ATOM      2  CA  MET A   1      21.154  30.699   6.276  -0.1234  1.7000\n\
+                   ENDMDL\n";
+        let result = parse_from_string(pqr);
+        assert!(result.is_ok());
+        let raw_data = result.unwrap();
+        assert_eq!(raw_data.num_atoms, 2);
+    }
+
+    #[test]
+    fn unwrapped_single_model_parses() {
+        // Single model without MODEL/ENDMDL wrappers should also parse
+        let pqr = "ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ATOM      2  CA  MET A   1      21.154  30.699   6.276  -0.1234  1.7000\n";
+        let result = parse_from_string(pqr);
+        assert!(result.is_ok());
+        let raw_data = result.unwrap();
+        assert_eq!(raw_data.num_atoms, 2);
+    }
+
+    #[test]
+    fn second_model_is_error() {
+        // Two models should error on the second MODEL record
+        let pqr = "MODEL        1\n\
+                   ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ENDMDL\n\
+                   MODEL        2\n\
+                   ATOM      2  N   MET A   1      22.154  31.699   7.276  -0.4157  1.8240\n\
+                   ENDMDL\n";
+        let result = parse_from_string(pqr);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_str = err.to_string();
+        assert!(err_str.contains("multi-model"));
+        assert!(err_str.contains("line 4")); // Second MODEL is on line 4
+    }
+
+    #[test]
+    fn residue_wraparound_contiguous_is_ok() {
+        // Contiguous repeat of the same (chain, seq, icode) should be OK
+        let pqr = "ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ATOM      2  CA  MET A   1      21.154  30.699   6.276  -0.1234  1.7000\n\
+                   ATOM      3  C   MET A   1      22.154  31.699   7.276  -0.0500  1.7000\n";
+        let result = parse_from_string(pqr);
+        assert!(result.is_ok());
+        let raw_data = result.unwrap();
+        assert_eq!(raw_data.num_atoms, 3);
+    }
+
+    #[test]
+    fn residue_wraparound_duplicate_is_error() {
+        // (chain, seq, icode) reappearing after a different residue should error
+        let pqr = "ATOM      1  N   ALA A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ATOM      2  CA  ALA A   1      21.154  30.699   6.276  -0.1234  1.7000\n\
+                   ATOM      3  N   GLY A   2      22.154  31.699   7.276  -0.3500  1.5000\n\
+                   ATOM      4  CA  GLY A   2      23.154  32.699   8.276  -0.0800  1.6000\n\
+                   ATOM      5  N   ALA A   1      24.154  33.699   9.276  -0.4157  1.8240\n";
+        // Residue A1 appears at atoms 1-2, then A2 appears at atoms 3-4,
+        // then A1 appears again at atom 5 -> error on line 5
+        let result = parse_from_string(pqr);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_str = err.to_string();
+        assert!(err_str.contains("residue reappears"));
+        assert!(err_str.contains("chain=A"));
+        assert!(err_str.contains("res_seq=1"));
+        assert!(err_str.contains("line 5"));
     }
 }

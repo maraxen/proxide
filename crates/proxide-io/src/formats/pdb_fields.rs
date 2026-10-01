@@ -378,13 +378,40 @@ fn optional_f32_blank_default(
 // Residue-reappearance tracking (decision d).
 // ---------------------------------------------------------------------
 
-struct ChainTracker {
+/// Generic residue tracking for detecting wraparound reappearance
+/// (reappearance of a chain/seq/icode after a different residue).
+pub(crate) struct ResidueTracker {
     last_key: Option<(i32, char)>,
     seen: HashSet<(i32, char)>,
 }
 
+impl ResidueTracker {
+    pub(crate) fn new() -> Self {
+        Self {
+            last_key: None,
+            seen: HashSet::new(),
+        }
+    }
+
+    /// Check if a residue (seq, icode) is valid on this tracker.
+    /// Returns Ok(()) if the key is valid or contiguous, Err(key) if it reappears.
+    pub(crate) fn check_reappearance(&mut self, key: (i32, char)) -> Result<(), (i32, char)> {
+        if Some(key) == self.last_key {
+            return Ok(());
+        }
+        if self.seen.contains(&key) {
+            return Err(key);
+        }
+        if let Some(prev) = self.last_key.take() {
+            self.seen.insert(prev);
+        }
+        self.last_key = Some(key);
+        Ok(())
+    }
+}
+
 fn check_residue_reappearance(
-    trackers: &mut HashMap<(usize, String), ChainTracker>,
+    trackers: &mut HashMap<(usize, String), ResidueTracker>,
     model: usize,
     rec: &PdbAtomRecord,
     raw_line: &[u8],
@@ -392,29 +419,19 @@ fn check_residue_reappearance(
     let key = (rec.res_seq, rec.i_code);
     let tracker = trackers
         .entry((model, rec.chain_id.clone()))
-        .or_insert_with(|| ChainTracker {
-            last_key: None,
-            seen: HashSet::new(),
-        });
+        .or_insert_with(ResidueTracker::new);
 
-    if Some(key) == tracker.last_key {
-        return Ok(());
-    }
-    if tracker.seen.contains(&key) {
-        return Err(PdbFieldError::new(
+    match tracker.check_reappearance(key) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(PdbFieldError::new(
             rec.line,
             if rec.is_hetatm { "HETATM" } else { "ATOM" },
             "res_seq+i_code",
             (23, 27),
             raw_line,
             PdbFieldErrorKind::ResidueReappears,
-        ));
+        )),
     }
-    if let Some(prev) = tracker.last_key.take() {
-        tracker.seen.insert(prev);
-    }
-    tracker.last_key = Some(key);
-    Ok(())
 }
 
 // ---------------------------------------------------------------------
@@ -527,7 +544,7 @@ fn parse_model_number(line_bytes: &[u8], line_no: usize) -> Result<usize, PdbFie
 pub fn parse_pdb_records<R: BufRead>(mut reader: R) -> Result<Vec<PdbAtomRecord>, PdbFieldError> {
     let mut records = Vec::new();
     let mut current_model: usize = 1;
-    let mut trackers: HashMap<(usize, String), ChainTracker> = HashMap::new();
+    let mut trackers: HashMap<(usize, String), ResidueTracker> = HashMap::new();
     let mut line_no: usize = 0;
     let mut buf: Vec<u8> = Vec::new();
 

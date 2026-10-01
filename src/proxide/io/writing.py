@@ -166,12 +166,26 @@ def _atom_rows(
         )
         raise ValueError(msg)
     assert res_names is not None  # narrowed by the loop above
+    # Per-atom chain ids, when the Protein carries them (Full format,
+    # backlog #5684), are the ground truth; otherwise resolve through the
+    # per-chain vocabulary, which needs a per-atom chain_index.
+    atom_chain_ids = getattr(protein, "atom_chain_ids", None)
+    if atom_chain_ids is not None:
+      if len(atom_chain_ids) != n:
+        msg = (
+          f"{fn_name}: {len(atom_chain_ids)} atom_chain_ids for {n} atoms; refusing to "
+          "pad or truncate a per-atom field"
+        )
+        raise ValueError(msg)
+      chain_letters = [str(c) for c in atom_chain_ids]
+    else:
+      chain_letters = _resolve_chain_letters(protein, n, fn_name)
     return (
       coords,
       [str(a) for a in atom_names],
       [str(r) for r in res_names],
       np.asarray(res_seqs),
-      _resolve_chain_letters(protein, n, fn_name),
+      chain_letters,
       [str(e) for e in fields["elements"]],
     )
 

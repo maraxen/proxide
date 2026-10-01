@@ -14,7 +14,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -106,7 +106,12 @@ def _tokenize_prop_list(raw: str) -> tuple[str, list[str]]:
 
 
 def parse_atomic_prop(raw: str) -> AtomicPropExpr | None:
-    """Parse an f8 bracket body (without the surrounding `[...]`) into an AST."""
+    """Parse an f8 bracket body (without the surrounding `[...]`) into an AST.
+
+    Raises:
+        ValueError: if a token does not match the property token regex (debt #2363),
+            or if raw_tokens contains any text that cannot be parsed.
+    """
     raw = raw.strip()
     if not raw or raw == "*":
         return None
@@ -116,7 +121,7 @@ def parse_atomic_prop(raw: str) -> AtomicPropExpr | None:
     for raw_tok in raw_tokens:
         m = _PROP_TOKEN_RE.match(raw_tok)
         if not m:
-            continue
+            raise ValueError(f"f8 token does not match property pattern: {raw_tok!r}")
         count_str, word = m.group(1), m.group(2)
         tokens.append(PropToken(word=word, count=int(count_str) if count_str else None))
     return AtomicPropExpr(op=op, tokens=tokens) if tokens else None
@@ -177,7 +182,12 @@ class _TokenStream:
 
 
 def parse_chem_env(raw: str) -> ChemEnvExpr | None:
-    """Parse an f9 pattern (including its outer parens) into an AST."""
+    """Parse an f9 pattern (including its outer parens) into an AST.
+
+    Raises:
+        ValueError: if f9 starts with "(" but is unbalanced (debt #2363),
+            or if there is trailing non-whitespace text after the closing "()".
+    """
     raw = raw.strip()
     if not raw or raw == "*":
         return None
@@ -186,6 +196,13 @@ def parse_chem_env(raw: str) -> ChemEnvExpr | None:
 
     stream = _TokenStream(raw)
     expr = _parse_paren_group(stream)
+
+    # Check for trailing non-whitespace text after closing paren (debt #2363)
+    if not stream.eof():
+        remaining = stream.raw[stream.pos:].strip()
+        if remaining:
+            raise ValueError(f"f9 has trailing text after closing paren: {remaining!r}")
+
     return expr
 
 
@@ -197,6 +214,7 @@ def _parse_paren_group(stream: _TokenStream) -> ChemEnvExpr | None:
     neighbors: list[NeighborSpec | None] = []
     current = []
     depth = 0
+    found_closing_paren = False
     while not stream.eof():
         ch = stream.peek()
         if ch == "(" or ch == "[":
@@ -208,10 +226,14 @@ def _parse_paren_group(stream: _TokenStream) -> ChemEnvExpr | None:
                     current.append(stream.advance())
                 if not stream.eof():
                     current.append(stream.advance())
+                else:
+                    # Hit EOF with unclosed "[" inside f9 (debt #2363)
+                    raise ValueError("f9 bracket opened but never closed")
             continue
         if ch == ")":
             if depth == 0:
                 stream.advance()  # consume closing ")"
+                found_closing_paren = True
                 break
             depth -= 1
             current.append(stream.advance())
@@ -222,6 +244,14 @@ def _parse_paren_group(stream: _TokenStream) -> ChemEnvExpr | None:
             stream.advance()
             continue
         current.append(stream.advance())
+
+    # Check for unmatched opening parens (debt #2363)
+    if depth > 0:
+        raise ValueError("f9 has unmatched opening paren")
+
+    # Check for missing top-level closing paren (debt #2363)
+    if not found_closing_paren:
+        raise ValueError("f9 has unmatched opening paren")
 
     if current:
         neighbors.append(_parse_neighbor_spec("".join(current)))
@@ -875,21 +905,28 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
                     remaining = remaining[f7_match.end():].strip()
 
             # f8: bracketed atomic-property expression, "[...]" or "*" or absent.
+            # Unclosed "[" is a malformed line (debt #2363), not a silent skip.
             atomic_prop: AtomicPropExpr | None = None
             if remaining.startswith("["):
                 close = remaining.find("]")
-                if close != -1:
-                    atomic_prop = parse_atomic_prop(remaining[1:close])
-                    remaining = remaining[close + 1:].strip()
+                if close == -1:
+                    raise ValueError(f"f8 bracket opened at position {idx} but never closed")
+                atomic_prop = parse_atomic_prop(remaining[1:close])
+                remaining = remaining[close + 1:].strip()
             elif remaining.startswith("*"):
                 remaining = remaining[1:].strip()
 
             # f9: parenthesized chemical-environment neighbor pattern, "(...)" or
             # "*" or absent (end of line before "&"). There is no true f10 --
-            # anything left after this is a malformed line, not a further field.
+            # anything left after this is a malformed line, not a further field (debt #2363).
             chem_env: ChemEnvExpr | None = None
             if remaining.startswith("("):
                 chem_env = parse_chem_env(remaining)
+                # parse_chem_env will raise ValueError if f9 is malformed
+                remaining = ""  # f9 consumes the rest of the line
+            elif remaining:
+                # Non-empty text that doesn't start with "(" is malformed (debt #2363)
+                raise ValueError(f"Unexpected text after f8 (no f9 pattern): {remaining!r}")
 
             rule = Gaff2Rule(
                 atom_type=atom_type,
@@ -1289,6 +1326,15 @@ class Gaff2DefMissingError(Gaff2DefError, FileNotFoundError):
     """The resolved ATOMTYPE_GFF2.DEF path does not exist."""
 
 
+class Gaff2ParameterMissingError(ValueError):
+    """A GAFF2 force-field term has no parameters in the loaded .dat table.
+
+    Raised instead of filling a stand-in (0.0 force constants, a 1.50 A bond,
+    a 120 degree angle, carbon's mass): a made-up parameter integrates as if it
+    were real (debt #1905, #2368).
+    """
+
+
 class Gaff2DefInvalidError(Gaff2DefError, ValueError):
     """ATOMTYPE_GFF2.DEF exists but its content is wrong.
 
@@ -1447,108 +1493,153 @@ def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
         'vdw': {},
     }
 
-    content = Path(dat_path).read_text()
-    lines = content.split('\n')
-
-    in_vdw = False
-    for line in lines:
-        line_stripped = line.strip()
-
-        # Detect VdW section (MOD4 RE header)
-        if line_stripped.startswith('MOD4'):
-            in_vdw = True
-            continue
-
-        if in_vdw:
-            if not line_stripped:
-                continue
-            parts = line_stripped.split()
-            if len(parts) >= 3:
-                try:
-                    params['vdw'][parts[0]] = (float(parts[1]), float(parts[2]))
-                except ValueError:
-                    pass
-            continue
-
-        if not line_stripped:
-            continue
-
-        parts = line_stripped.split()
-        if len(parts) < 2:
-            continue
-
-        # Handle AMBER .dat quirk: single-char types are padded, so "c -o kb r0"
-        # splits as ["c", "-o", "kb", "r0"]. Reconstruct the dash-joined key.
-        if '-' not in parts[0] and len(parts) >= 2 and parts[1].startswith('-'):
-            parts = [parts[0] + parts[1]] + list(parts[2:])
-
-        first = parts[0]
-
-        if '-' in first:
-            dash_count = first.count('-')
-
-            # Parse bond: type1-type2  kb  r0
-            if dash_count == 1:
-                t1, t2 = first.split('-')
-                if len(t1) <= 3 and len(t2) <= 3:
-                    try:
-                        kb = float(parts[1])
-                        r0 = float(parts[2])
-                        if kb > 0:
-                            params['bonds'][(t1, t2)] = (kb, r0)
-                    except (ValueError, IndexError):
-                        pass
-
-            # Parse angle: type1-type2-type3  kt  t0
-            elif dash_count == 2:
-                t1, rest = first.split('-', 1)
-                t2, t3 = rest.split('-', 1)
-                if len(t1) <= 3 and len(t2) <= 3 and len(t3) <= 3:
-                    try:
-                        kt = float(parts[1])
-                        t0 = float(parts[2])
-                        if kt > 0:
-                            params['angles'][(t1, t2, t3)] = (kt, t0)
-                    except (ValueError, IndexError):
-                        pass
-
-            # Parse torsion or improper: type1-type2-type3-type4  ...
-            elif dash_count == 3:
-                t1, rest = first.split('-', 1)
-                t2, rest2 = rest.split('-', 1)
-                t3, t4 = rest2.split('-', 1)
-                if len(t1) <= 3 and len(t2) <= 3 and len(t3) <= 3 and len(t4) <= 3:
-                    try:
-                        periodicity = int(parts[1])
-                        kt = float(parts[2])
-                        phase = float(parts[3])
-                        # Torsion: has 4+ terms per line (may have multiple periodicity)
-                        if len(parts) >= 5:
-                            # This is a torsion
-                            key = (t1, t2, t3, t4)
-                            if key not in params['torsions']:
-                                params['torsions'][key] = []
-                            params['torsions'][key].append((periodicity, kt, phase))
-                        else:
-                            # This could be improper
-                            try:
-                                kt_imp = float(parts[2])
-                                phase_imp = float(parts[3])
-                                if kt_imp > 0:
-                                    params['impropers'][(t1, t2, t3, t4)] = (kt_imp, phase_imp)
-                            except (ValueError, IndexError):
-                                pass
-                    except (ValueError, IndexError):
-                        pass
-
-        # Parse mass: type  mass
-        elif len(first) <= 3 and first.replace('+', '').islower():
-            try:
-                params['masses'][first] = float(parts[1])
-            except (ValueError, IndexError):
-                pass
-
+    lines = Path(dat_path).read_text().split('\n')
+    _parse_parm_dat(lines, params, str(dat_path))
     return params
+
+
+def _dat_types(line: str, n: int) -> tuple[str, ...]:
+    """The n atom types at the start of an AMBER parm.dat record.
+
+    Types are fixed-width two-column fields joined by "-" (FORMAT
+    ``A2,1X,A2,...``), so a single-letter type keeps its padding space:
+    ``c3-c -c3``, ``X -c -c -X``. Splitting on whitespace mangles exactly
+    those rows -- the previous loader misread them as bonds and dropped 720
+    angle types and every generic ``X-..-X`` torsion (debt #2368).
+    """
+    types = tuple(line[3 * k : 3 * k + 2].strip() for k in range(n))
+    if not all(types) or any(line[3 * k + 2 : 3 * k + 3] != "-" for k in range(n - 1)):
+        raise ValueError(f"not a {n}-type parm.dat record: {line!r}")
+    return types
+
+
+def _dat_num(line: str, start: int, end: int) -> float:
+    """The number in fixed-width field ``line[start:end]`` (FORTRAN F-format).
+
+    The column is authoritative; only its first token is read, so trailing
+    comment text that runs into the field (gaff-1.8.dat has a tab after a PN
+    value) does not corrupt it. An empty field raises.
+    """
+    tokens = line[start:end].split()
+    if not tokens:
+        raise ValueError(f"empty numeric field at columns {start}-{end}")
+    return float(tokens[0])
+
+
+def _parse_parm_dat(lines: list[str], params: dict, source: str) -> None:
+    """Fill ``params`` from AMBER parm.dat-format lines, section by section.
+
+    Format per the AmberTools Reference Manual's parm.dat description (the
+    same reading as ParmEd's ``AmberParameterSet``): title; MASS block;
+    hydrophilic-types line; BOND (``kb, r0``); ANGLE (``kt, theta0``); DIHE
+    (``IDIVF, PK, PHASE, PN``: barrier PK/IDIVF, periodicity |PN|, a negative
+    PN meaning another term for the same quartet follows); IMPROPER (``PK,
+    PHASE, PN`` -- no IDIVF); HBOND; equivalencing; ``MOD4 RE`` van der Waals
+    block up to ``END``. Each block ends at a blank line.
+
+    The previous loader read DIHE's IDIVF column as the periodicity (so
+    c3-c3-c3-c3 came out n=1 instead of n=3), never divided PK by IDIVF,
+    and dropped every IMPROPER row (``int("10.5")`` raised and was
+    swallowed). A row that does not fit its section now raises. Explicit zero
+    force constants in the file are kept: a source-given 0.0 is data, not a
+    missing parameter (the old ``k > 0`` filters made 18 such angles look
+    absent).
+    """
+    i = 1  # line 0 is the title
+
+    def block() -> list[tuple[int, str]]:
+        nonlocal i
+        rows = []
+        while i < len(lines) and lines[i].strip():
+            rows.append((i + 1, lines[i]))
+            i += 1
+        i += 1  # the terminating blank line
+        return rows
+
+    def fail(lineno: int, line: str, what: str, err: Exception) -> ValueError:
+        return ValueError(f"{source}:{lineno}: malformed {what} record {line!r}: {err}")
+
+    for lineno, line in block():  # MASS
+        try:
+            params['masses'][line[0:2].strip()] = float(line[2:].split()[0])
+        except (ValueError, IndexError) as e:
+            raise fail(lineno, line, "MASS", e) from e
+    i += 1  # hydrophilic atom-type list (one line), then BOND begins
+
+    for lineno, line in block():  # BOND
+        try:
+            t1, t2 = _dat_types(line, 2)
+            kb, r0 = _dat_num(line, 5, 15), _dat_num(line, 15, 25)  # 2F10.2
+        except ValueError as e:
+            raise fail(lineno, line, "BOND", e) from e
+        params['bonds'][(t1, t2)] = (kb, r0)
+
+    for lineno, line in block():  # ANGLE
+        try:
+            t1, t2, t3 = _dat_types(line, 3)
+            kt, t0 = _dat_num(line, 8, 18), _dat_num(line, 18, 28)  # 2F10.2
+        except ValueError as e:
+            raise fail(lineno, line, "ANGLE", e) from e
+        params['angles'][(t1, t2, t3)] = (kt, t0)
+
+    # A negative PN means the next row continues the SAME definition; a
+    # positive PN ends it. A later row with an already-defined key after the
+    # terminator is a REdefinition and replaces the earlier one (ParmEd's
+    # reading). gaff-2.2.20.dat does this for c3-c3-n-c (two fits, rows
+    # 12147-12152): appending across the terminator summed both fits.
+    open_key: tuple[str, ...] | None = None
+    redefined: list[str] = []
+    for lineno, line in block():  # DIHE
+        try:
+            key = _dat_types(line, 4)
+            # I4, 3F15.2
+            idivf = _dat_num(line, 11, 15)
+            pk, phase, pn = _dat_num(line, 15, 30), _dat_num(line, 30, 45), _dat_num(line, 45, 60)
+            if idivf == 0:
+                raise ValueError("IDIVF is 0")
+        except ValueError as e:
+            raise fail(lineno, line, "DIHE", e) from e
+        term = (int(abs(round(pn))), pk / idivf, phase)
+        if key == open_key:
+            params['torsions'][key].append(term)
+        else:
+            if key in params['torsions']:
+                redefined.append(f"{'-'.join(key)} (line {lineno})")
+            params['torsions'][key] = [term]
+        open_key = key if pn < 0 else None
+    if redefined:
+        import logging as _logging
+
+        _logging.getLogger(__name__).info(
+            "%s: %d torsion(s) redefined later in the file; the later definition is used: %s",
+            source, len(redefined), ", ".join(redefined),
+        )
+
+    for lineno, line in block():  # IMPROPER
+        try:
+            key = _dat_types(line, 4)
+            # IDIVF column (I4) is unused for impropers; then 3F15.2
+            pk, phase = _dat_num(line, 15, 30), _dat_num(line, 30, 45)
+        except ValueError as e:
+            raise fail(lineno, line, "IMPROPER", e) from e
+        params['impropers'][key] = (pk, phase)
+
+    while i < len(lines) and not lines[i].startswith('MOD4'):  # HBOND, equivalencing
+        i += 1
+    if i >= len(lines):
+        # A truncated file used to load with an empty vdW table.
+        raise ValueError(f"{source}: no 'MOD4 RE' van der Waals section (truncated .dat?)")
+    i += 1
+    while i < len(lines) and lines[i].strip() != 'END':  # MOD4 RE
+        parts = lines[i].split()
+        if parts:
+            try:
+                params['vdw'][parts[0]] = (float(parts[1]), float(parts[2]))
+            except (ValueError, IndexError) as e:
+                raise fail(i + 1, lines[i], "MOD4 RE", e) from e
+        i += 1
+    if i >= len(lines):
+        raise ValueError(f"{source}: 'MOD4 RE' section has no terminating END (truncated .dat?)")
 
 
 # ---------------------------------------------------------------------------
@@ -1564,18 +1655,6 @@ _TORSION_K_CONV = _KCAL_TO_KJ                       # kcal/mol → kJ/mol
 _TORSION_P_CONV = _math.pi / 180.0                  # deg → rad
 _LJ_SIGMA_CONV = 2.0 * (2.0 ** (-1.0 / 6.0)) * 0.1  # Rmin/2 (Å) → σ (nm)
 _LJ_EPS_CONV = _KCAL_TO_KJ                          # kcal/mol → kJ/mol
-
-_ELEM_MASS_DEFAULT = {
-    "C": 12.011, "O": 15.999, "H": 1.008, "N": 14.007,
-    "S": 32.06, "P": 30.974, "F": 18.998, "Cl": 35.453,
-    "Br": 79.904, "I": 126.904,
-}
-
-_VDW_ELEM_DEFAULT = {
-    "C": (1.9080, 0.0860), "O": (1.6612, 0.2100),
-    "H": (1.4593, 0.0208), "N": (1.8240, 0.1700),
-    "S": (2.0000, 0.2500), "P": (2.1000, 0.2000),
-}
 
 _BOND_TYPE_SUB = {
     "cx": "c3", "cy": "c3", "c5": "c3", "c6": "c3",
@@ -1612,6 +1691,24 @@ def assign_pdb_atom_names(rdmol: Chem.Mol) -> list[str]:
     return names
 
 
+def _lookup_torsion_terms(
+    ti: str, tj: str, tk: str, tl: str, params: dict
+) -> list[tuple[int, float, float]]:
+    """Torsion terms for i-j-k-l in AMBER (tleap) precedence, or [] if none.
+
+    Specific quartet in either direction first, then the generic
+    ``X-j-k-X`` wildcard row in either direction. Generic rows were never
+    available before debt #2368 (the loader dropped them), so every torsion
+    without a specific row came back empty. Callers apply their own
+    type-substitution fallback after this, and record it.
+    """
+    for key in ((ti, tj, tk, tl), (tl, tk, tj, ti), ("X", tj, tk, "X"), ("X", tk, tj, "X")):
+        terms = params['torsions'].get(key)
+        if terms:
+            return terms
+    return []
+
+
 def _lookup_bond_params(
     ti: str, tj: str, params: dict
 ) -> tuple[float, float]:
@@ -1625,7 +1722,7 @@ def _lookup_bond_params(
     for a, b in [(ti_s, tj_s), (tj_s, ti_s)]:
         if (a, b) in params['bonds']:
             return params['bonds'][(a, b)]
-    return (0.0, 1.50)
+    raise Gaff2ParameterMissingError(f"no GAFF2 bond parameters for {ti}-{tj}")
 
 
 def _lookup_angle_params(
@@ -1641,7 +1738,7 @@ def _lookup_angle_params(
     for a, b, c in [(ti_s, tj_s, tk_s), (tk_s, tj_s, ti_s)]:
         if (a, b, c) in params['angles']:
             return params['angles'][(a, b, c)]
-    return (0.0, 120.0)
+    raise Gaff2ParameterMissingError(f"no GAFF2 angle parameters for {ti}-{tj}-{tk}")
 
 
 def build_gaff2_ffxml(
@@ -1650,6 +1747,7 @@ def build_gaff2_ffxml(
     charges: list[float],
     *,
     gaff_version: str = "gaff-2.2.20",
+    missing_torsions: Literal["raise", "omit"] = "raise",
 ) -> str:
     """Build a complete OpenMM FFXML string for a single small-molecule residue.
 
@@ -1658,12 +1756,26 @@ def build_gaff2_ffxml(
         resname: PDB residue name (e.g. "OHP").
         charges: Partial charges, one per atom in mol atom-index order (including H).
         gaff_version: GAFF version string used to select the .dat file.
+        missing_torsions: what to do with a torsion quartet that has no
+            parameters after specific, generic ``X-b-c-X`` and substitution
+            lookup (e.g. GAFF2.2's amide ``nt`` has no torsion rows; AMBER's
+            parmchk2 would supply them). ``"raise"`` (default) raises
+            Gaff2ParameterMissingError; ``"omit"`` leaves the term out and
+            emits one UserWarning listing every omitted quartet. Omission
+            used to happen silently for every such torsion (debt #2368).
 
     Returns:
         FFXML string suitable for openmm.app.ForceField.loadFile(StringIO(xml)).
+
+    Raises:
+        Gaff2ParameterMissingError: a bond, angle or mass has no parameters,
+            or a torsion has none and ``missing_torsions="raise"``.
     """
     if Chem is None:
         raise ImportError("RDKit is required.")
+    if missing_torsions not in ("raise", "omit"):
+        raise ValueError(f"missing_torsions must be 'raise' or 'omit', got {missing_torsions!r}")
+    omitted_torsions: list[str] = []
 
     atom_names = assign_pdb_atom_names(rdmol)
     n_atoms = rdmol.GetNumAtoms()
@@ -1696,7 +1808,14 @@ def build_gaff2_ffxml(
         idx = atom.GetIdx()
         gaff_type = idx_to_type[idx]
         elem = atom.GetSymbol()
-        mass = params['masses'].get(gaff_type, _ELEM_MASS_DEFAULT.get(elem, 12.011))
+        # DAT mass for the type, else the element's real mass; never a default.
+        # The type's own MASS entry; a type absent from the table is unknown,
+        # not "its element's mass" (review #5).
+        mass = params['masses'].get(gaff_type)
+        if mass is None:
+            raise Gaff2ParameterMissingError(
+                f"no mass for GAFF2 type {gaff_type!r} (element {elem!r})"
+            )
         lines.append(
             f'    <Type name="{resname}_{idx}" class="{gaff_type}"'
             f' element="{elem}" mass="{mass:.4f}"/>'
@@ -1791,11 +1910,7 @@ def build_gaff2_ffxml(
                 tj = idx_to_type[j]
                 tk_ = idx_to_type[k]
                 tl = idx_to_type[ll]
-                torsion_key = (ti, tj, tk_, tl)
-                torsion_params = params['torsions'].get(torsion_key, [])
-                if not torsion_params:
-                    rev_key = (tl, tk_, tj, ti)
-                    torsion_params = params['torsions'].get(rev_key, [])
+                torsion_params = _lookup_torsion_terms(ti, tj, tk_, tl, params)
                 if not torsion_params:
                     ti_s = _BOND_TYPE_SUB.get(ti, ti)
                     tj_s = _BOND_TYPE_SUB.get(tj, tj)
@@ -1806,6 +1921,16 @@ def build_gaff2_ffxml(
                         if torsion_params:
                             break
                 if not torsion_params:
+                    # Silently skipping the term used to drop the torsion from
+                    # the force field. With generic X-b-c-X rows loaded
+                    # (debt #2368), a quartet with no terms really has none.
+                    quartet = f"{ti}-{tj}-{tk_}-{tl}"
+                    if missing_torsions == "raise":
+                        raise Gaff2ParameterMissingError(
+                            f"no GAFF2 torsion parameters for {quartet} (pass "
+                            "missing_torsions='omit' to leave such terms out, with a warning)"
+                        )
+                    omitted_torsions.append(quartet)
                     continue
                 attrs = (
                     f'type1="{resname}_{i}" type2="{resname}_{j}"'
@@ -1829,10 +1954,13 @@ def build_gaff2_ffxml(
         gaff_type = idx_to_type[idx]
         elem = atom.GetSymbol()
         q = charges[idx]
-        if gaff_type in params['vdw']:
-            rmin_half, epsilon = params['vdw'][gaff_type]
-        else:
-            rmin_half, epsilon = _VDW_ELEM_DEFAULT.get(elem, (1.9080, 0.0860))
+        if gaff_type not in params['vdw']:
+            # This used to fall back to an element default and finally to
+            # carbon's c3 LJ (1.9080, 0.0860) for anything else (review #5).
+            raise Gaff2ParameterMissingError(
+                f"no GAFF2 van der Waals parameters for type {gaff_type!r} (element {elem!r})"
+            )
+        rmin_half, epsilon = params['vdw'][gaff_type]
         sigma_nm = rmin_half * _LJ_SIGMA_CONV
         eps_kj = epsilon * _LJ_EPS_CONV
         lines.append(
@@ -1841,6 +1969,16 @@ def build_gaff2_ffxml(
         )
     lines.append("  </NonbondedForce>")
     lines.append("</ForceField>")
+    if omitted_torsions:
+        import warnings
+
+        unique = sorted(set(omitted_torsions))
+        warnings.warn(
+            f"build_gaff2_ffxml: omitted {len(omitted_torsions)} torsion term(s) with no "
+            f"GAFF2 parameters ({len(unique)} type quartet(s)): {', '.join(unique)}",
+            UserWarning,
+            stacklevel=2,
+        )
     return "\n".join(lines)
 
 
@@ -1955,8 +2093,14 @@ def parameterize_gaff_with_rdkit(
     mol: Chem.Mol,
     gaff_version: str = "gaff-2.2.20",
     charge_method: str = "espaloma",
+    missing_torsions: Literal["raise", "omit"] = "raise",
 ) -> dict:
     """Assign GAFF2 parameters to an RDKit molecule.
+
+    ``missing_torsions`` works as in :func:`build_gaff2_ffxml`: a torsion
+    with no GAFF2 parameters raises by default; ``"omit"`` leaves it out of
+    ``torsions`` with one UserWarning naming every omitted quartet (e.g.
+    thioacetone's hc-c3-cs-s, which gaff-2.2.20.dat does not define).
 
     This function assigns GAFF2 atom types and looks up force field parameters
     without requiring AmberTools.
@@ -1979,6 +2123,14 @@ def parameterize_gaff_with_rdkit(
         - bonds: dict of (type1, type2) -> (kb, r0)
         - angles: dict of (type1, type2, type3) -> (kt, t0)
         - torsions: list of torsion parameters
+        - substitutions: list of {"term": "torsion", "from": [...], "to": [...]}
+          for torsion type substitutions applied (cx->c3, etc.) (debt #1905)
+
+    Raises:
+        Gaff2ParameterMissingError: any mass, bond, angle or torsion has no
+            parameters in the .dat table (after either-orientation and, for
+            torsions, generic ``X-b-c-X`` and recorded-substitution lookup).
+            These used to be filled with 0.0 (debt #1905).
     """
     if Chem is None:
         raise ImportError("RDKit is required. Install with: pip install rdkit")
@@ -1991,15 +2143,17 @@ def parameterize_gaff_with_rdkit(
 
     # Extract molecule topology
     n_atoms = mol.GetNumAtoms()
+    if len(atom_types) != n_atoms:
+        # Atoms beyond the type list used to be typed "x" (and their torsions
+        # looked up as "hc") -- placeholder types, not assignments.
+        raise ValueError(f"{len(atom_types)} GAFF2 atom types for {n_atoms} atoms")
 
     # Build bond list
     bonds = []
     for bond in mol.GetBonds():
         i = bond.GetBeginAtomIdx()
         j = bond.GetOtherAtomIdx(i)
-        # Get atom types
-        t_i = atom_types[i] if i < len(atom_types) else "x"
-        t_j = atom_types[j] if j < len(atom_types) else "x"
+        t_i, t_j = atom_types[i], atom_types[j]
 
         # Get bond order
         bo = bond.GetBondTypeAsDouble()
@@ -2021,24 +2175,21 @@ def parameterize_gaff_with_rdkit(
             'gaff_type_j': t_j,
         })
 
-    # Build angle list (1-2-3 connections)
+    # Build angle list: every pair of neighbours of every centre atom. This
+    # used to require i < j < k, so any angle whose centre was not the middle
+    # index was never generated (acetone: O-C-C missing), and the
+    # missing-parameter check below only ever saw that subset.
+    neighbors = [
+        sorted(nb.GetIdx() for nb in mol.GetAtomWithIdx(a).GetNeighbors()) for a in range(n_atoms)
+    ]
     angles = []
-    for i in range(n_atoms):
-        atom_i = mol.GetAtomWithIdx(i)
-        for bond in atom_i.GetBonds():
-            j = bond.GetOtherAtomIdx(i)
-            if j <= i:
-                continue
-            for bond2 in mol.GetAtomWithIdx(j).GetBonds():
-                k = bond2.GetOtherAtomIdx(j)
-                if k <= j or k == i:
-                    continue
-                t_i = atom_types[i] if i < len(atom_types) else "x"
-                t_j = atom_types[j] if j < len(atom_types) else "x"
-                t_k = atom_types[k] if k < len(atom_types) else "x"
+    for j in range(n_atoms):
+        nbs = neighbors[j]
+        for x, i in enumerate(nbs):
+            for k in nbs[x + 1:]:
                 angles.append({
                     'i': i, 'j': j, 'k': k,
-                    'types': (t_i, t_j, t_k),
+                    'types': (atom_types[i], atom_types[j], atom_types[k]),
                 })
 
     charges = _assign_gaff2_charges(mol, charge_method)
@@ -2047,34 +2198,40 @@ def parameterize_gaff_with_rdkit(
     charge_source = _CHARGE_METHOD_SOURCES[charge_method]
 
     used_types = set(atom_types)
-    masses = {at: params['masses'].get(at, 0.0) for at in used_types}
+    # Every term must have real parameters: anything absent from the .dat
+    # table is collected and raised together, never filled with 0.0 (debt
+    # #1905). Before debt #2368 fixed the loader, acetone's c3-c-c3 angle and
+    # 720 other angle types hit the 0.0 fill.
+    missing: list[str] = sorted(f"mass {at}" for at in used_types if at not in params['masses'])
+    masses = {at: params['masses'][at] for at in used_types if at in params['masses']}
 
-    # Look up bond parameters
+    # Bonds: the file stores each once, in one orientation -- look up both
+    # (this used a sorted key, which misses rows stored unsorted).
     for b in bonds:
         t1, t2 = b['gaff_type_i'], b['gaff_type_j']
-        key = tuple(sorted([t1, t2]))
-        if key in params['bonds']:
-            kb, r0 = params['bonds'][key]
-            b['kb'] = kb
-            b['r0'] = r0
-        else:
-            b['kb'] = 0.0
-            b['r0'] = 0.0
+        key = next(((a, c) for a, c in ((t1, t2), (t2, t1)) if (a, c) in params['bonds']), None)
+        if key is None:
+            missing.append(f"bond {t1}-{t2}")
+            continue
+        b['kb'], b['r0'] = params['bonds'][key]
 
-    # Look up angle parameters
+    # Angles: either orientation (this used to look forward only).
     for a in angles:
         t1, t2, t3 = a['types']  # ty: ignore[not-iterable]
-        key = (t1, t2, t3)
-        if key in params['angles']:
-            kt, t0 = params['angles'][key]
-            a['kt'] = kt
-            a['t0'] = t0
-        else:
-            a['kt'] = 0.0
-            a['t0'] = 0.0
+        key = next((k for k in ((t1, t2, t3), (t3, t2, t1)) if k in params['angles']), None)
+        if key is None:
+            missing.append(f"angle {t1}-{t2}-{t3}")
+            continue
+        a['kt'], a['t0'] = params['angles'][key]
 
     # Build torsion list (1-2-3-4 connections)
     torsions = []
+
+    # Track torsion substitutions for observability (debt #1905)
+    substitutions: list[dict] = []
+    if missing_torsions not in ("raise", "omit"):
+        raise ValueError(f"missing_torsions must be 'raise' or 'omit', got {missing_torsions!r}")
+    omitted_torsions: list[str] = []
 
     # Substitutions for atom type looking (cx->c3, etc.)
     type_substitutions = {
@@ -2084,44 +2241,72 @@ def parameterize_gaff_with_rdkit(
     }
 
     def _substitute_type(t: str) -> str:
-        if t == 'x':
-            return 'hc'  # default H type
+        # The untyped placeholder "x" used to be looked up as "hc" (a
+        # hydrogen's parameters for an atom nobody typed); it now has no
+        # substitute, so its terms are reported missing.
         return type_substitutions.get(t, t)
 
-    for i in range(n_atoms):
-        atom_i = mol.GetAtomWithIdx(i)
-        for bond1 in atom_i.GetBonds():
-            j = bond1.GetOtherAtomIdx(i)
-            if j <= i:
+    # Every i-j-k-l across every bond j-k (each bond once). This used to
+    # require i < j < k < l, which skipped most real torsions (ethane: all
+    # nine H-C-C-H).
+    for bond in mol.GetBonds():
+        j, k = sorted((bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()))
+        for i in neighbors[j]:
+            if i == k:
                 continue
-            for bond2 in mol.GetAtomWithIdx(j).GetBonds():
-                k = bond2.GetOtherAtomIdx(j)
-                if k <= j or k == i:
+            for l_idx in neighbors[k]:
+                if l_idx == j or l_idx == i:
                     continue
-                for bond3 in mol.GetAtomWithIdx(k).GetBonds():
-                    neighbor_idx = bond3.GetOtherAtomIdx(k)
-                    if neighbor_idx <= k or neighbor_idx == j:
-                        continue
-                    l_idx = neighbor_idx
-                    t_i = atom_types[i] if i < len(atom_types) else "x"
-                    t_j = atom_types[j] if j < len(atom_types) else "x"
-                    t_k = atom_types[k] if k < len(atom_types) else "x"
-                    t_l = atom_types[neighbor_idx] if neighbor_idx < len(atom_types) else "x"
+                t_i, t_j, t_k, t_l = (atom_types[a] for a in (i, j, k, l_idx))
 
-                    key = (t_i, t_j, t_k, t_l)
+                key = (t_i, t_j, t_k, t_l)
 
-                    # Try exact match first, then with substitutions
-                    torsion_params = params['torsions'].get(key, [])
-                    if not torsion_params:
-                        # Try with substitutions (cx->c3, etc.)
-                        key_sub = tuple(_substitute_type(x) for x in key)
-                        torsion_params = params['torsions'].get(key_sub, [])
+                # Specific / generic rows first (either direction), then
+                # with substitutions (cx->c3, etc.), recorded.
+                torsion_params = _lookup_torsion_terms(t_i, t_j, t_k, t_l, params)
+                if not torsion_params:
+                    key_sub = (
+                        _substitute_type(t_i), _substitute_type(t_j),
+                        _substitute_type(t_k), _substitute_type(t_l),
+                    )
+                    sub_terms = _lookup_torsion_terms(*key_sub, params)
+                    if key != key_sub and sub_terms:
+                        torsion_params = sub_terms
+                        substitutions.append({
+                            "term": "torsion",
+                            "from": list(key),
+                            "to": list(key_sub),
+                        })
+                if not torsion_params:
+                    if missing_torsions == "raise":
+                        missing.append("torsion " + "-".join(key))
+                    else:
+                        omitted_torsions.append("-".join(key))
+                    continue
 
-                    torsions.append({
-                        'i': i, 'j': j, 'k': k, 'l': l_idx,
-                        'types': key,
-                        'params': torsion_params,
-                    })
+                torsions.append({
+                    'i': i, 'j': j, 'k': k, 'l': l_idx,
+                    'types': key,
+                    'params': torsion_params,
+                })
+
+    if omitted_torsions:
+        import warnings
+
+        unique = sorted(set(omitted_torsions))
+        warnings.warn(
+            f"parameterize_gaff_with_rdkit: omitted {len(omitted_torsions)} torsion term(s) "
+            f"with no GAFF2 parameters ({len(unique)} type quartet(s)): {', '.join(unique)}",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    if missing:
+        raise Gaff2ParameterMissingError(
+            f"{len(missing)} GAFF2 term(s) have no parameters in the .dat table: "
+            + ", ".join(missing[:10])
+            + (f" (+{len(missing) - 10} more)" if len(missing) > 10 else "")
+        )
 
     return {
         'atom_types': atom_types,
@@ -2131,4 +2316,5 @@ def parameterize_gaff_with_rdkit(
         'bonds': bonds,
         'angles': angles,
         'torsions': torsions,
+        'substitutions': substitutions,
     }

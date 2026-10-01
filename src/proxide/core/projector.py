@@ -157,6 +157,28 @@ class OpenMMSpec:
   lj14scale: float = 1.0
 
 
+def _require_elements(system: AtomicSystem, n_atoms: int, fn_name: str) -> list[str]:
+  """One element symbol per projected atom, or a ValueError -- never carbon."""
+  elements = system.topology.elements
+  if not elements:
+    raise ValueError(
+      f"{fn_name}: the system has no element symbols; refusing to treat every atom as carbon"
+    )
+  if len(elements) != n_atoms:
+    raise ValueError(f"{fn_name}: {len(elements)} element symbols for {n_atoms} atoms")
+  return [str(e) for e in elements]
+
+
+def _omm_element(symbol: str, index: int) -> Any:
+  """OpenMM's Element for ``symbol`` (any case), or a ValueError naming the atom."""
+  from openmm.app import Element
+
+  try:
+    return Element.getBySymbol(symbol.strip().capitalize())
+  except KeyError as e:
+    raise ValueError(f"atom {index}: unknown element symbol {symbol!r}") from e
+
+
 @register_projector("openmm")
 def project_to_openmm_system(
     system: AtomicSystem, spec: OpenMMSpec | None = None, **kwargs: Any
@@ -202,13 +224,12 @@ def project_to_openmm_system(
 
   omm_system = System()
 
-  # Element masses
-  elements = system.topology.elements or ["C"] * n_atoms
-  for i in range(n_atoms):
-    elem = elements[i] if i < len(elements) else "C"
-    # Basic mass approximation
-    mass = {"H": 1.008, "C": 12.011, "N": 14.007, "O": 15.999, "S": 32.065}.get(elem, 12.011)
-    omm_system.addParticle(mass * u.amu)
+  # Element masses. Every atom needs a known element: this used to default
+  # missing elements -- or ALL of them, when the topology had none, as for
+  # every Protein.to_openmm_system() call -- to carbon, and any element
+  # outside a 5-entry table to 12.011 amu (review #8, ledger A1).
+  for i, elem in enumerate(_require_elements(system, n_atoms, "project_to_openmm_system")):
+    omm_system.addParticle(_omm_element(elem, i).mass)
 
   # Nonbonded force
   nonbonded = NonbondedForce()
@@ -415,7 +436,7 @@ def project_to_openmm_topology(system: AtomicSystem, spec: OutputSpec) -> Any:
 
   """
   try:
-    from openmm.app import Element, Topology
+    from openmm.app import Topology
   except ImportError as e:
     raise ImportError(
       "OpenMM is required. Install with: conda install -c conda-forge openmm",
@@ -434,15 +455,15 @@ def project_to_openmm_topology(system: AtomicSystem, spec: OutputSpec) -> Any:
     return topology
 
   residue = topology.addResidue("UNK", chain)
-  elements = system.topology.elements or ["C"] * n_atoms
+  elements = _require_elements(system, n_atoms, "project_to_openmm_topology")
   atom_names = system.topology.atom_names or [f"A{i}" for i in range(n_atoms)]
 
   atoms = []
   atom_idx = 0
   for i in range(len(mask)):
     if mask[i]:
-      elem_str = elements[atom_idx] if atom_idx < len(elements) else "C"
-      elem = Element.getBySymbol(elem_str) if len(elem_str) <= 2 else Element.getBySymbol("C")
+      # No carbon stand-in for a missing or unknown element (review #8).
+      elem = _omm_element(elements[atom_idx], atom_idx)
       name = atom_names[atom_idx] if atom_idx < len(atom_names) else f"A{atom_idx}"
       atom = topology.addAtom(name, elem, residue)
       atoms.append(atom)
