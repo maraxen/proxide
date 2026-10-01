@@ -1,0 +1,19 @@
+# Calibration fixture: REAL historical defects, copied verbatim.
+# Source: src/proxide/core/projector.py @ 495ef10, lines 206-210 and 437-445
+# (project_to_openmm_system / project_to_openmm_topology). Every atom of a
+# system without elements -- every Protein.to_openmm_system() call -- became
+# carbon (mass 12.011). Found by review #8 of task 261001_proxide-debt-sweep-2.
+def project_to_openmm_system(system, n_atoms, omm_system, u):
+  elements = system.topology.elements or ["C"] * n_atoms
+  for i in range(n_atoms):
+    elem = elements[i] if i < len(elements) else "C"
+    mass = {"H": 1.008, "C": 12.011, "N": 14.007, "O": 15.999, "S": 32.065}.get(elem, 12.011)
+    omm_system.addParticle(mass * u.amu)
+
+
+def project_to_openmm_topology(system, n_atoms, mask, atom_idx, Element):
+  elements = system.topology.elements or ["C"] * n_atoms
+  for i in range(len(mask)):
+    if mask[i]:
+      elem_str = elements[atom_idx] if atom_idx < len(elements) else "C"
+      elem = Element.getBySymbol(elem_str) if len(elem_str) <= 2 else Element.getBySymbol("C")

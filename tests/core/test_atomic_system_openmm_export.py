@@ -38,6 +38,8 @@ def test_openmm_exclusions_and_scaling():
     system = AtomicSystem.from_arrays(
         coordinates=coords,
         atom_mask=mask,
+        # Explicit: the projector no longer assumes carbon for missing elements.
+        elements=["C"] * n_atoms,
         charges=charges,
         sigmas=sigmas,
         epsilons=epsilons,
@@ -111,4 +113,25 @@ def test_openmm_exclusions_and_scaling():
     assert pytest.approx(q._value, rel=1e-4) == expected_q
     assert pytest.approx(sig._value, rel=1e-4) == expected_sig
     assert pytest.approx(eps._value, rel=1e-4) == expected_eps
+
+
+@pytest.mark.skipif(not OPENMM_AVAILABLE, reason="OpenMM not installed")
+def test_protein_openmm_masses_follow_its_elements_not_carbon():
+    """Review #8: Protein.to_openmm_system built an EMPTY topology, so the
+    projector gave every atom carbon's 12.011 amu. Masses must follow the
+    Protein's own elements; a system without elements must raise."""
+    from openmm.app import Element
+
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    protein = parse_structure("tests/data/5awl.pdb", OutputSpec(coord_format=CoordFormat.Full))
+    omm = protein.to_openmm_system()
+    masses = [omm.getParticleMass(i).value_in_unit(u.dalton) for i in range(omm.getNumParticles())]
+    expected = [Element.getBySymbol(e.capitalize()).mass.value_in_unit(u.dalton) for e in protein.elements]
+    assert masses == pytest.approx(expected)
+    assert {round(m, 3) for m in masses} == {12.011, 14.007, 15.999}  # C, N, O -- not all carbon
+
+    no_elements = AtomicSystem.from_arrays(coordinates=jnp.zeros((2, 3)), atom_mask=jnp.ones(2))
+    with pytest.raises(ValueError, match="no element symbols"):
+        no_elements.to_openmm_system()
 

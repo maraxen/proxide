@@ -219,7 +219,11 @@ class Protein:
     # Attempt to extract fields
     # Note: This is an incomplete conversion, but mimics the requested interface.
     system = AtomicSystem(
-        topology=MolecularTopology(),
+        # The Protein's own per-atom elements and names: this was an empty
+        # MolecularTopology(), so the projector treated every atom -- hydrogens
+        # included -- as carbon (review #8). Formats with no per-atom
+        # elements (Atom37/Atom14) now raise there instead.
+        topology=MolecularTopology(elements=self.elements, atom_names=self.atom_names),
         state=AtomicState(coordinates=coords),
         atom_mask=self.full_atom_mask,
     )
@@ -238,7 +242,11 @@ class Protein:
     coords = self.full_coordinates if self.full_coordinates is not None else jnp.zeros((0, 3))
 
     system = AtomicSystem(
-        topology=MolecularTopology(),
+        # The Protein's own per-atom elements and names: this was an empty
+        # MolecularTopology(), so the projector treated every atom -- hydrogens
+        # included -- as carbon (review #8). Formats with no per-atom
+        # elements (Atom37/Atom14) now raise there instead.
+        topology=MolecularTopology(elements=self.elements, atom_names=self.atom_names),
         state=AtomicState(coordinates=coords),
         atom_mask=self.full_atom_mask,
     )
