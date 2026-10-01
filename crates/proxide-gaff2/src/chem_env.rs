@@ -94,6 +94,40 @@ impl TokenStream {
 
 /// Parse an f9 pattern (including its outer parens) into an AST. Direct
 /// port of `gaff2.py:145-155`'s `parse_chem_env`.
+/// Whether an f9 body (starting with `(`) is structurally well formed: every
+/// `[` is closed, parentheses balance, the top-level group closes, and
+/// nothing but whitespace follows it.
+///
+/// Mirrors the checks gaff2.py's `parse_chem_env` / `_parse_paren_group`
+/// raise on (debt #2363); the DEF parser calls this at load time so a
+/// malformed f9 is a malformed line, not a silently looser rule.
+pub(crate) fn is_well_formed(raw: &str) -> bool {
+    let raw = raw.trim();
+    let mut chars = raw.chars();
+    if chars.next() != Some('(') {
+        return false;
+    }
+    let mut depth: i32 = 0;
+    while let Some(ch) = chars.next() {
+        match ch {
+            '[' => {
+                // Brackets do not nest; consume through the matching "]".
+                if !chars.by_ref().any(|c| c == ']') {
+                    return false; // "[" opened but never closed
+                }
+            }
+            '(' => depth += 1,
+            ')' if depth == 0 => {
+                // Top-level group closed: only whitespace may follow.
+                return chars.as_str().trim().is_empty();
+            }
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    false // top-level "(" never closed
+}
+
 pub fn parse_chem_env(raw: &str) -> Option<ChemEnvExpr> {
     let raw = raw.trim();
     if raw.is_empty() || raw == "*" {

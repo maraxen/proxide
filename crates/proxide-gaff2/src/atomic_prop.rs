@@ -118,6 +118,22 @@ fn match_prop_token(raw_tok: &str) -> Option<PropToken> {
     Some(PropToken { word, count })
 }
 
+/// Whether an f8 bracket body is well formed: empty, the wildcard `*`, or a
+/// list whose EVERY token matches the property-token shape.
+///
+/// `parse_atomic_prop` filters non-matching tokens out, so a typo'd
+/// constraint used to vanish and the rule became MORE permissive. The DEF
+/// parser calls this at load time and records a failure as a malformed line,
+/// mirroring gaff2.py's `parse_atomic_prop`, which raises (debt #2363).
+pub(crate) fn is_well_formed(raw: &str) -> bool {
+    let raw = raw.trim();
+    if raw.is_empty() || raw == "*" {
+        return true;
+    }
+    let (_op, raw_tokens) = tokenize_prop_list(raw);
+    raw_tokens.iter().all(|t| match_prop_token(t).is_some())
+}
+
 /// Parse an f8 bracket body (without the surrounding `[...]`) into an AST.
 ///
 /// Ports `parse_atomic_prop` (gaff2.py:74-88). Returns `None` for an empty or
