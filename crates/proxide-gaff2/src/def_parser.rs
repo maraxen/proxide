@@ -669,6 +669,7 @@ mod tests {
             "ATD  c3 * 6 4 * * (N3)extra &",
             "ATD  c3 * 6 4 * * JUNK &",
             "ATD  c3 * 6 4 * * (N3,[AR1 &",
+            "ATD  x * 6 3 * * (XX[AR1,junk!]) &",
         ] {
             let err = parse_gaff2_rules(&wrap_def(line))
                 .expect_err(&format!("should be malformed: {line}"));

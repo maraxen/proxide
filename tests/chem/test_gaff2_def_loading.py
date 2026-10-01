@@ -205,6 +205,7 @@ def test_malformed_f8_bracket_is_an_error(tmp_path, bad_f8):
     [
         "(unclosed",  # f9 with unmatched opening "("
         "(N3)extra",  # f9 with trailing text after closing ")"
+        "(XX[AR1,junk!])",  # bad token inside a neighbour's [...] (Python/Rust parity)
         "(N3(N3))",  # properly balanced nested pattern (should parse)
     ],
 )

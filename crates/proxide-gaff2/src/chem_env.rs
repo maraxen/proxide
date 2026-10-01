@@ -112,8 +112,21 @@ pub(crate) fn is_well_formed(raw: &str) -> bool {
         match ch {
             '[' => {
                 // Brackets do not nest; consume through the matching "]".
-                if !chars.by_ref().any(|c| c == ']') {
-                    return false; // "[" opened but never closed
+                // The body is a neighbour's atomic-property list, which
+                // gaff2.py's _parse_neighbor_spec validates through
+                // parse_atomic_prop -- check it the same way, or a bad token
+                // there would be dropped at match time (review #4).
+                let mut body = String::new();
+                let mut closed = false;
+                for c in chars.by_ref() {
+                    if c == ']' {
+                        closed = true;
+                        break;
+                    }
+                    body.push(c);
+                }
+                if !closed || !neighbor_bracket_is_well_formed(&body) {
+                    return false;
                 }
             }
             '(' => depth += 1,
@@ -126,6 +139,23 @@ pub(crate) fn is_well_formed(raw: &str) -> bool {
         }
     }
     false // top-level "(" never closed
+}
+
+/// Mirrors how gaff2.py's `_parse_neighbor_spec` reads a neighbour's
+/// `[...]` body: with a "." it is one OR-list of property tokens; otherwise
+/// comma-separated tokens ending in `'`/`''` are edge-bond requirements (the
+/// DEF's `sb'`, `SB',DB`) and every remaining plain token must be a property
+/// token -- the part `parse_atomic_prop` validates.
+fn neighbor_bracket_is_well_formed(body: &str) -> bool {
+    if body.contains('.') {
+        return crate::atomic_prop::is_well_formed(body);
+    }
+    let plain: Vec<&str> = body
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && !t.ends_with('\''))
+        .collect();
+    plain.is_empty() || crate::atomic_prop::is_well_formed(&plain.join(","))
 }
 
 pub fn parse_chem_env(raw: &str) -> Option<ChemEnvExpr> {
