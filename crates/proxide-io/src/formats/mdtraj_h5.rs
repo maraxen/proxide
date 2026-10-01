@@ -170,11 +170,11 @@ pub fn mdtraj_to_raw_atom_data(metadata: &MdtrajH5Result, frame: &MdtrajFrame) -
     }
 }
 
-// Stub for when mdcath feature is disabled
+// Stub for when the hdf5 feature is disabled
 #[cfg(not(feature = "hdf5"))]
 pub fn parse_mdtraj_h5_metadata(_path: &str) -> Result<MdtrajH5Result, String> {
     Err(
-        "HDF5 support requires 'mdcath' feature. Rebuild with: cargo build --features mdcath"
+        "HDF5 support requires the 'hdf5' feature. Rebuild with: cargo build --features hdf5"
             .to_string(),
     )
 }
@@ -182,7 +182,7 @@ pub fn parse_mdtraj_h5_metadata(_path: &str) -> Result<MdtrajH5Result, String> {
 #[cfg(not(feature = "hdf5"))]
 pub fn parse_mdtraj_h5_frame(_path: &str, _frame_idx: usize) -> Result<MdtrajFrame, String> {
     Err(
-        "HDF5 support requires 'mdcath' feature. Rebuild with: cargo build --features mdcath"
+        "HDF5 support requires the 'hdf5' feature. Rebuild with: cargo build --features hdf5"
             .to_string(),
     )
 }

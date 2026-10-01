@@ -129,12 +129,12 @@ pub fn parse_mdcath_frame(
     Ok(dict.into_py(py))
 }
 
-// Stub functions when mdcath feature is not enabled
+// Stub functions when the hdf5 feature is not enabled
 #[cfg(not(feature = "hdf5"))]
 #[pyfunction]
 pub fn parse_mdtraj_h5_metadata(_path: String) -> PyResult<PyObject> {
     Err(pyo3::exceptions::PyImportError::new_err(
-        "HDF5 support requires compiling with 'mdcath' feature. Rebuild with: maturin develop --features mdcath",
+        "HDF5 support requires compiling with the 'hdf5' feature. Rebuild from the repo root with: maturin develop --release --features hdf5",
     ))
 }
 
@@ -142,7 +142,7 @@ pub fn parse_mdtraj_h5_metadata(_path: String) -> PyResult<PyObject> {
 #[pyfunction]
 pub fn parse_mdtraj_h5_frame(_path: String, _frame_idx: usize) -> PyResult<PyObject> {
     Err(pyo3::exceptions::PyImportError::new_err(
-        "HDF5 support requires compiling with 'mdcath' feature.",
+        "HDF5 support requires compiling with the 'hdf5' feature.",
     ))
 }
 
@@ -150,7 +150,7 @@ pub fn parse_mdtraj_h5_frame(_path: String, _frame_idx: usize) -> PyResult<PyObj
 #[pyfunction]
 pub fn parse_mdcath_metadata(_path: String) -> PyResult<PyObject> {
     Err(pyo3::exceptions::PyImportError::new_err(
-        "HDF5 support requires compiling with 'mdcath' feature.",
+        "HDF5 support requires compiling with the 'hdf5' feature.",
     ))
 }
 
@@ -162,7 +162,7 @@ pub fn get_mdcath_replicas(
     _temperature: String,
 ) -> PyResult<PyObject> {
     Err(pyo3::exceptions::PyImportError::new_err(
-        "HDF5 support requires compiling with 'mdcath' feature.",
+        "HDF5 support requires compiling with the 'hdf5' feature.",
     ))
 }
 
@@ -177,6 +177,6 @@ pub fn parse_mdcath_frame(
     _frame_idx: usize,
 ) -> PyResult<PyObject> {
     Err(pyo3::exceptions::PyImportError::new_err(
-        "HDF5 support requires compiling with 'mdcath' feature.",
+        "HDF5 support requires compiling with the 'hdf5' feature.",
     ))
 }

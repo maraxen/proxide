@@ -103,6 +103,13 @@ dev = [
 ]
 
 [tool.maturin]
+# REBUILD FROM THE REPO ROOT ONLY (`maturin develop --release`, or
+# `uv pip install -e .`). This table is what makes the build land at
+# src/proxide/_proxider.abi3.so. Running maturin from crates/proxide_py skips
+# it: that crate's lib is named `_proxider`, so the build installs a top-level
+# `_proxider` decoy that `import proxide` never loads, and your edit silently
+# does not take effect (#15). tests/test_extension_build_location.py fails
+# when such a decoy is importable.
 # Path to the Rust crate
 manifest-path = "crates/proxide_py/Cargo.toml"
 # Python source directory

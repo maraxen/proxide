@@ -203,11 +203,11 @@ pub fn mdcath_to_raw_atom_data(metadata: &MdcathDomain, frame: &MdcathFrame) -> 
     }
 }
 
-// Stubs for when mdcath feature is disabled
+// Stubs for when the hdf5 feature is disabled
 #[cfg(not(feature = "hdf5"))]
 pub fn parse_mdcath_metadata(_path: &str) -> Result<MdcathDomain, String> {
     Err(
-        "HDF5 support requires 'mdcath' feature. Rebuild with: cargo build --features mdcath"
+        "HDF5 support requires the 'hdf5' feature. Rebuild with: cargo build --features hdf5"
             .to_string(),
     )
 }
@@ -218,7 +218,7 @@ pub fn get_replicas(
     _domain_id: &str,
     _temperature: &str,
 ) -> Result<Vec<String>, String> {
-    Err("HDF5 support requires 'mdcath' feature".to_string())
+    Err("HDF5 support requires the 'hdf5' feature".to_string())
 }
 
 #[cfg(not(feature = "hdf5"))]
@@ -229,7 +229,7 @@ pub fn parse_mdcath_frame(
     _replica: &str,
     _frame_idx: usize,
 ) -> Result<MdcathFrame, String> {
-    Err("HDF5 support requires 'mdcath' feature".to_string())
+    Err("HDF5 support requires the 'hdf5' feature".to_string())
 }
 
 #[cfg(test)]
