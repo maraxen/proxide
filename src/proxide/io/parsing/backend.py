@@ -169,7 +169,18 @@ def load_rust(
               new_coords = obj.coordinates[mask]
               new_aatype = obj.aatype[mask]
               new_res_idx = obj.residue_index[mask] if obj.residue_index is not None else None
-              new_chain_idx = obj.chain_index[mask] if obj.chain_index is not None else None
+              # Keep the surviving chains in their original order and remap
+              # chain_index onto the shortened vocabulary. (This used to set
+              # chain_ids=list(target_chains) -- a set's arbitrary order -- while
+              # keeping the ORIGINAL indices, so parsing chain "B" alone gave
+              # chain_ids=["B"], chain_index=1, written out as chain "A";
+              # debt #2354.)
+              kept_old = sorted(allowed_indices)
+              new_chain_ids = [unique_ids[i] for i in kept_old]
+              old_to_new = {old: new for new, old in enumerate(kept_old)}
+              new_chain_idx = np.array(
+                [old_to_new[int(i)] for i in c_idx[mask]], dtype=np.asarray(c_idx).dtype
+              )
               new_mask = obj.mask[mask] if obj.mask is not None else None
               new_seq = obj.one_hot_sequence[mask] if obj.one_hot_sequence is not None else None
 
@@ -207,12 +218,9 @@ def load_rust(
               # Protein doesn't explicitly slice them here (TODO).
               # For now we just filter the main residue-based fields.
 
-              if new_atom_mask is None:
-                # Fallback if mask slicing failed
-                if new_coords.ndim == ATOM37_DIM:
-                  new_atom_mask = jnp.ones((new_coords.shape[0], 37), dtype=jnp.float32)
-                else:
-                  new_atom_mask = jnp.ones(new_coords.shape[0], dtype=jnp.float32)
+              # If the mask could not be sliced it stays None (unknown). It used
+              # to be replaced by all-ones, claiming every Atom37 slot -- empty,
+              # zero-filled ones included -- was a resolved atom (ledger A1).
 
               obj = Protein(
                 coordinates=new_coords,
@@ -230,7 +238,7 @@ def load_rust(
                   if (new_atom_mask is not None and new_atom_mask.ndim > 1)
                   else new_atom_mask
                 ),
-                chain_ids=list(target_chains),  # Update chain list
+                chain_ids=new_chain_ids,
                 source=obj.source,
                 coulomb14scale=getattr(obj, "coulomb14scale", None),
                 lj14scale=getattr(obj, "lj14scale", None),

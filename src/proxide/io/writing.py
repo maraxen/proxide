@@ -45,43 +45,44 @@ def _reject_if_batched(protein: Protein, fn_name: str) -> None:
     raise ValueError(msg)
 
 
-def _resolve_chain_letters(protein: Protein, n_rows: int) -> list[str]:
-  """Resolve a chain letter for each of the `n_rows` flattened coordinate rows.
+def _resolve_chain_letters(protein: Protein, n_rows: int, fn_name: str = "write") -> list[str]:
+  """Resolve a chain id for each of `n_rows` rows, or "" where it is unknown.
 
   `chain_ids` is a per-CHAIN vocabulary (Shape (N_chains,), e.g. ["A", "B"]) --
   see `Protein.from_rust_dict`, which populates it from `unique_chain_ids` -- and
-  `chain_index` is per-RESIDUE (Shape (N_res,)) for Atom37/Atom14-format Proteins.
-  Neither is safe to index directly by a flattened per-atom-slot row index: the
-  previous code did `chain_ids[i]` for `i` up to `len(coords) - 1`, which for an
-  Atom37 Protein is `len(full_coordinates) == N_res * atoms_per_residue`, far
-  larger than `len(chain_ids) == N_chains` -- so every residue past the first
-  `N_chains` atom-slots silently fell back to "A".
+  `chain_index` maps each row to an entry in it. Callers pass rows that
+  `chain_index` is aligned with: residues for Atom37/Atom14, atoms for per-atom
+  Proteins.
 
-  Resolve through `chain_index`, expanded to match whatever per-residue-slot
-  flattening produced `n_rows` rows of coordinates, then look up each row's
-  chain letter in `chain_ids`.
+  * No chain information at all -> "" for every row: unknown, written as the
+    PDB's blank chain column / mmCIF "?".
+  * `chain_index` not aligned with the rows, or pointing outside `chain_ids`
+    -> ValueError.
+
+  This used to return "A" in all of those cases and to `np.repeat` a
+  per-residue `chain_index` over atom rows whenever the counts happened to
+  divide, which silently merged or mislabeled chains (debt #2354, ledger A1).
   """
   chain_ids = getattr(protein, "chain_ids", None)
   chain_index = getattr(protein, "chain_index", None)
   if not chain_ids or chain_index is None:
-    return ["A"] * n_rows
+    return [""] * n_rows
 
   chain_index = np.asarray(chain_index)
-  n_res = chain_index.shape[0]
-  if n_res == 0:
-    return ["A"] * n_rows
-  if n_rows == n_res:
-    # Already per-residue-aligned (e.g. the flat "Full" format).
-    row_chain_index = chain_index
-  elif n_rows % n_res == 0:
-    # Atom37/Atom14: each residue expands to n_rows // n_res atom slots.
-    row_chain_index = np.repeat(chain_index, n_rows // n_res)
-  else:
-    # Cannot align chain_index to the coordinate rows -- degrade to the
-    # single-chain default rather than guess at a misaligned mapping.
-    return ["A"] * n_rows
-
-  return [chain_ids[idx] if 0 <= idx < len(chain_ids) else "A" for idx in row_chain_index]
+  if chain_index.shape != (n_rows,):
+    msg = (
+      f"{fn_name}: chain_index has shape {chain_index.shape} but there are {n_rows} "
+      "rows to label; refusing to guess an alignment"
+    )
+    raise ValueError(msg)
+  bad = sorted({int(i) for i in chain_index if not 0 <= int(i) < len(chain_ids)})
+  if bad:
+    msg = (
+      f"{fn_name}: chain_index values {bad} are outside chain_ids "
+      f"(len {len(chain_ids)}); refusing to relabel them"
+    )
+    raise ValueError(msg)
+  return [str(chain_ids[int(i)]) for i in chain_index]
 
 
 # Element of each Atom37 slot. Definitional data for a closed protein
@@ -169,7 +170,7 @@ def _atom_rows(
       [str(a) for a in atom_names],
       [str(r) for r in res_names],
       np.asarray(res_seqs),
-      _resolve_chain_letters(protein, n),
+      _resolve_chain_letters(protein, n, fn_name),
       [str(e) for e in fields["elements"]],
     )
 
@@ -191,7 +192,7 @@ def _atom_rows(
   atom_mask = np.asarray(protein.atom_mask).astype(bool)
   residue_index = np.asarray(protein.residue_index)
   aatype = np.asarray(protein.aatype)
-  res_chain = _resolve_chain_letters(protein, coords.shape[0])
+  res_chain = _resolve_chain_letters(protein, coords.shape[0], fn_name)
 
   res_idx, slot_idx = np.nonzero(atom_mask)
   # aatype indexes `resnames` (20 = the explicit "UNK" class). Anything outside
@@ -273,8 +274,9 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
       raise _overflow(f"residue name {res_name!r} (atom {i})")
     if len(element) > 2:
       raise _overflow(f"element {element!r} (atom {i})")
-    if len(chain_id) != 1:
+    if len(chain_id) > 1:
       raise _overflow(f"chain id {chain_id!r} (atom {i})")
+    chain_id = chain_id or " "  # unknown chain: the PDB's own blank column
     if not -999 <= res_seq <= 9999:
       raise _overflow(f"residue number {res_seq} (atom {i})")
     # The criterion is the formatted width itself (8 chars, %8.3f), not a
@@ -337,7 +339,7 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
     rows.append(
       f"ATOM {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
       f"{_cif_token(res_names[i], 'residue name', i)} "
-      f"{_cif_token(chain_letters[i], 'chain id', i)} "
+      f"{_cif_token(chain_letters[i], 'chain id', i) if chain_letters[i] else '?'} "
       f"{int(res_seqs[i])} {x:.3f} {y:.3f} {z:.3f} 1.00 0.00\n"
     )
 

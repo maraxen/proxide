@@ -93,79 +93,58 @@ class TestWriteMmcifRejectsBatched:
 
 
 class TestResolveChainLetters:
-  """Regression: chain_ids (per-CHAIN, Shape (N_chains,)) must be resolved through
-  chain_index (per-RESIDUE, Shape (N_res,)), not indexed directly by a flattened
-  per-atom-slot row index.
+  """chain_ids (per-CHAIN vocabulary) are resolved through chain_index, which
+  must already be aligned with the rows being labeled.
 
-  Before this fix, write_pdb/write_mmcif did `chain_ids[i]` for `i` up to
-  `len(full_coordinates) - 1` (== N_res * atoms_per_residue for Atom37/Atom14).
-  Since `len(chain_ids) == N_chains` is far smaller, every atom past the first
-  `N_chains` positions silently fell back to "A" -- meaning any real multi-chain,
-  multi-residue Atom37 Protein got every residue after the first one or two
-  mislabeled as chain "A", independent of the batching bug this PR also fixes.
+  Debt #2354: this used to return "A" when chain info was missing, misaligned
+  or out of range, and to np.repeat a per-residue chain_index over atom rows
+  whenever the counts happened to divide -- silently merging or mislabeling
+  chains. Now: missing -> "" (unknown), misaligned/out-of-range -> ValueError.
   """
 
-  def test_atom37_multi_chain_expands_correctly(self) -> None:
-    protein = Protein(
-      coordinates=np.ones((4, 37, 3), dtype=np.float32),
-      aatype=np.zeros(4, dtype=np.int8),
-      residue_index=np.arange(4, dtype=np.int32),
-      chain_index=np.array([0, 0, 1, 1], dtype=np.int32),
-      chain_ids=["A", "B"],
+  @staticmethod
+  def _protein(chain_index, chain_ids) -> Protein:
+    n = len(chain_index)
+    return Protein(
+      coordinates=np.ones((n, 37, 3), dtype=np.float32),
+      aatype=np.zeros(n, dtype=np.int8),
+      residue_index=np.arange(n, dtype=np.int32),
+      chain_index=np.asarray(chain_index, dtype=np.int32),
+      chain_ids=chain_ids,
     )
-    n_rows = 4 * 37
-    resolved = _resolve_chain_letters(protein, n_rows)
-    assert len(resolved) == n_rows
-    assert resolved[:74] == ["A"] * 74, "residues 0-1 (74 atom slots) must be chain A"
-    assert resolved[74:] == ["B"] * 74, "residues 2-3 (74 atom slots) must be chain B"
 
-  def test_single_chain_still_resolves(self) -> None:
-    protein = Protein(
-      coordinates=np.ones((2, 37, 3), dtype=np.float32),
-      aatype=np.zeros(2, dtype=np.int8),
-      residue_index=np.arange(2, dtype=np.int32),
-      chain_index=np.zeros(2, dtype=np.int32),
-      chain_ids=["A"],
-    )
-    resolved = _resolve_chain_letters(protein, 2 * 37)
-    assert resolved == ["A"] * 74
+  def test_multi_chain_resolves_per_row(self) -> None:
+    protein = self._protein([0, 0, 1, 1], ["A", "B"])
+    assert _resolve_chain_letters(protein, 4) == ["A", "A", "B", "B"]
 
-  def test_flat_full_format_is_already_aligned(self) -> None:
-    """The flat "Full" format's chain_index is already per-atom (see
-    Protein.from_rust_dict's Full-format branch), so no expansion is needed.
-    """
-    protein = Protein(
-      coordinates=np.ones((5, 3), dtype=np.float32),
-      aatype=np.zeros(5, dtype=np.int8),
-      residue_index=np.arange(5, dtype=np.int32),
-      chain_index=np.array([0, 0, 0, 1, 1], dtype=np.int32),
-      chain_ids=["X", "Y"],
-    )
-    resolved = _resolve_chain_letters(protein, 5)
-    assert resolved == ["X", "X", "X", "Y", "Y"]
+  def test_no_chain_ids_is_unknown_not_a(self) -> None:
+    protein = self._protein([0, 0], None)
+    assert _resolve_chain_letters(protein, 2) == ["", ""]
 
-  def test_no_chain_ids_defaults_to_a(self) -> None:
-    protein = Protein(
-      coordinates=np.ones((2, 37, 3), dtype=np.float32),
-      aatype=np.zeros(2, dtype=np.int8),
-      residue_index=np.arange(2, dtype=np.int32),
-      chain_index=np.zeros(2, dtype=np.int32),
-      chain_ids=None,
-    )
-    resolved = _resolve_chain_letters(protein, 2 * 37)
-    assert resolved == ["A"] * 74
+  def test_misaligned_rows_raise_instead_of_repeating(self) -> None:
+    # 4 residues, 148 atom rows: divisible, so the old code np.repeat-ed.
+    protein = self._protein([0, 0, 1, 1], ["A", "B"])
+    with pytest.raises(ValueError, match="refusing to guess an alignment"):
+      _resolve_chain_letters(protein, 4 * 37)
 
-  def test_unalignable_row_count_degrades_to_a_rather_than_crash(self) -> None:
-    protein = Protein(
-      coordinates=np.ones((3, 37, 3), dtype=np.float32),
-      aatype=np.zeros(3, dtype=np.int8),
-      residue_index=np.arange(3, dtype=np.int32),
-      chain_index=np.array([0, 0, 1], dtype=np.int32),
-      chain_ids=["A", "B"],
-    )
-    # 100 does not divide evenly by n_res=3 -- cannot align, must not crash.
-    resolved = _resolve_chain_letters(protein, 100)
-    assert resolved == ["A"] * 100
+  def test_unalignable_row_count_raises(self) -> None:
+    protein = self._protein([0, 0, 1], ["A", "B"])
+    with pytest.raises(ValueError, match="refusing to guess an alignment"):
+      _resolve_chain_letters(protein, 100)
+
+  def test_out_of_range_chain_index_raises(self) -> None:
+    protein = self._protein([0, 1], ["B"])
+    with pytest.raises(ValueError, match=r"chain_index values \[1\]"):
+      _resolve_chain_letters(protein, 2)
+
+  def test_unknown_chain_is_written_blank_in_pdb_and_question_mark_in_mmcif(
+    self, tmp_path
+  ) -> None:
+    protein = _flat_protein(2, chain_ids=None)
+    pdb_lines = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    assert [line[21] for line in pdb_lines] == [" ", " "]
+    cif_lines = _atom_lines(write_mmcif(protein, tmp_path / "out.cif"))
+    assert [line.split()[5] for line in cif_lines] == ["?", "?"]
 
 
 class TestWritePdbChainLetterColumn:
@@ -412,6 +391,22 @@ class TestWritePdbOnRealParsedStructures:
       np.asarray(protein.coordinates)[np.asarray(protein.atom_mask).astype(bool)],
       atol=1e-3,
     )
+
+  def test_chain_filtered_structure_keeps_its_chain_letter(self, tmp_path) -> None:
+    # Debt #2354: load_rust(chain_id="B") used to keep chain_index=1 while
+    # setting chain_ids=["B"], so the writer emitted chain "A".
+    from proxide.io.parsing.backend import load_rust
+
+    src = [line for line in open(self.PDB) if line.startswith("ATOM")]
+    two_chains = tmp_path / "two.pdb"
+    two_chains.write_text(
+      "".join(src) + "TER\n" + "".join(line[:21] + "B" + line[22:] for line in src) + "END\n"
+    )
+    protein_b = next(iter(load_rust(str(two_chains), chain_id="B")))
+    assert protein_b.chain_ids == ["B"]
+    lines = _atom_lines(write_pdb(protein_b, tmp_path / "b.pdb"))
+    assert len(lines) == len(src)
+    assert {line[21] for line in lines} == {"B"}
 
   def test_full_format_raises_rather_than_writing_unk_residues(self, tmp_path) -> None:
     # parse_structure's Full output carries no per-atom residue names (and
