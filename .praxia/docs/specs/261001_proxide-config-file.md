@@ -25,13 +25,13 @@ is in effect. Inventory on `main` (`d4ac812`, 2026-10-01):
 | `PDB_PATH`, `DC7_PDB_PATH`, `PDB_2ZTA_PATH`, `RLIB`, `PROXIDE_ROTLIB_PB` | test-only fixture paths | `proxide-rotlib/tests/helpers.rs`, `proxide-confind/tests/common/mod.rs`, `test_drift_loadpb_small_pdb.rs` |
 | `USALIGN_REPO` | test-only, fallback `~/repos/USalign` | `crates/proxide-tmalign/src/structure.rs:110` (test module from :101) |
 | `PROTOC` | build time | `crates/proxide-core/build.rs` |
-| `RAYON_NUM_THREADS` | implicit: read by rayon itself | wherever rayon's global pool is used |
+| `ORX_PARALLEL_MAX_NUM_THREADS` | implicit: read by orx-parallel itself — a global cap on every parallel iterator (`0` = no cap) | `orx-parallel-2.4.0/src/env.rs`, applied in `runner/fixed_chunk_runner/num_threads.rs` |
 
 **Hard-coded knobs:**
 
 | knob | today | site |
 |---|---|---|
-| thread count | **two inconsistent defaults**: `proxide-parallel-rt` = 1 (`static NUM_THREADS = 1`, used by confind, fasta, wasm), while `read_frames_parallel` and other `into_par` paths use rayon's global pool = all node cores, ignoring the SLURM allocation; Python cannot set either | `proxide-parallel-rt/src/lib.rs:3`, `proxide-io/src/formats/xtc.rs:634` |
+| thread count | proxide parallelises **only with orx-parallel** (no rayon dependency). On native builds all ~15 `into_par()` sites use orx's `NumThreads::Auto` = `min(input len, std::thread::available_parallelism())`, capped by `ORX_PARALLEL_MAX_NUM_THREADS`. `proxide-parallel-rt` (`static NUM_THREADS = 1`) is applied **only under `cfg(wasm32)`** (confind.rs:103/164, fasta.rs:69, xtc.rs:666), so the 1-thread default is wasm-only. Python cannot set the count. Whether `available_parallelism()` honours a SLURM allocation depends on the cluster's CPU affinity/cgroup setup — **unverified** (probe pending, §7 Q1) | `proxide-parallel-rt/src/lib.rs:3`, `proxide-io/src/formats/xtc.rs:634` |
 | download location | `output_dir="."` default; repeats re-download | `src/proxide/io/fetching.py:6-47` |
 | endpoints | RCSB / AFDB / mdCATH / foldcomp base URLs are constants; AFDB `version=4` default | `proxide-io/src/io/fetching.rs:13-16, 227` |
 | retry policy | `max_retries = 3`, 1 s initial backoff | `fetching.rs:178-179` |
@@ -61,7 +61,7 @@ is in effect. Inventory on `main` (`d4ac812`, 2026-10-01):
 
 | section.key | type | default | replaces | priority |
 |---|---|---|---|---|
-| `parallel.num_threads` | int ≥ 1 | `$SLURM_CPUS_PER_TASK` if set, else `available_parallelism()` | `parallel-rt` default 1 **and** rayon's all-cores pool; `RAYON_NUM_THREADS` honoured as the env layer's alias | **P1** |
+| `parallel.num_threads` | int ≥ 1, or `auto` | `auto` = orx's `Auto` (today's native behaviour); if Q1's probe shows `available_parallelism()` ignores the SLURM allocation, `auto` also clamps to `$SLURM_CPUS_PER_TASK` | a single knob applied as `.num_threads(n)` at every `into_par()` site via one `proxide-parallel-rt` helper (native **and** wasm), so the count is settable instead of implicit; `ORX_PARALLEL_MAX_NUM_THREADS` stays honoured as orx's own global cap | **P1** |
 | `xtc.offsets_dir` | path or unset | unset = next to the XTC (today) | always-adjacent sidecar | **P1** (blocks isochore spec `260930_parallel-xtc-read-via-proxide` T1/O1) |
 | `xtc.import_mdanalysis_offsets` | bool | `true` (today) | — | P1 |
 | `fetch.cache_dir` | path or unset | unset = today's `output_dir="."` | cwd downloads | P2 |
@@ -85,8 +85,10 @@ temp files (`TMPDIR` already governs them), and every scientific parameter (Prin
   initialised (`OnceLock`), with `Config::reload()` for tests.
 - **wasm:** `cfg(target_arch = "wasm32")` builds use defaults plus explicit arguments only (no
   filesystem, no env).
-- **Threads:** at first use, initialise rayon's global pool and `parallel-rt` from `parallel.num_threads`,
-  so every parallel path agrees. Python: `proxide.set_num_threads(n)` / `proxide.get_num_threads()`.
+- **Threads:** `proxide-parallel-rt` becomes the single source for every `into_par()` site on all targets:
+  a helper returning orx's `NumThreads` (`Auto` or `Max(n)`) from `parallel.num_threads`, replacing the
+  wasm-only `cfg` blocks. orx's own `ORX_PARALLEL_MAX_NUM_THREADS` cap keeps working underneath.
+  Python: `proxide.set_num_threads(n)` / `proxide.get_num_threads()`.
 - **Python:** `proxide.config.show()` returns `{key: (value, source)}`; the `proxide config show` CLI
   prints it. Python reads the Rust-resolved view (one implementation, not two).
 - **Unknown keys:** warn (`tracing::warn!`) naming the file, so typos are visible. **Wrong types:** error.
@@ -96,8 +98,10 @@ temp files (`TMPDIR` already governs them), and every scientific parameter (Prin
 1. Layer precedence for each layer, including "env set to empty or `none`" where a key accepts unset.
 2. `~` / `$VAR` expansion; relative paths resolve against the defining file.
 3. Malformed TOML → error naming the file; wrong type → error naming the key; unknown key → warning.
-4. Threads: with `SLURM_CPUS_PER_TASK=2` and no config, both rayon and `parallel-rt` report 2; an explicit
-   `set_num_threads(3)` wins. Negative control: without the fix, rayon reports all cores.
+4. Threads: every `into_par()` site goes through the helper (a grep test: no bare `into_par()` without it);
+   `parallel.num_threads = 3` limits a probe workload to 3 worker threads (count distinct thread ids); an
+   explicit `set_num_threads(2)` wins; unset keeps orx `Auto`. Negative control: the probe with no setting
+   uses more than 3 threads on a machine with more cores.
 5. `offsets_dir`: the sidecar lands there and is found on reopen; nothing is written next to the XTC;
    unset keeps today's location (existing XTC tests pass unchanged).
 6. `fetch.cache_dir`: a second fetch of the same ID makes no network call (mock transport).
@@ -108,22 +112,26 @@ temp files (`TMPDIR` already governs them), and every scientific parameter (Prin
 ## 6. Rollout
 
 1. **T1** `proxide-config` crate + precedence/expansion/error tests (§5.1–5.3).
-2. **T2** threads (§5.4) — fixes the live oversubscription on cluster jobs.
+2. **T2** threads (§5.4) — one settable knob for every parallel site; adds a SLURM clamp only if Q1 shows `Auto` ignores the allocation.
 3. **T3** `xtc.offsets_dir` (+ import flag) (§5.5) — unblocks isochore's parallel-reader spec.
 4. **T4** `fetch.*` (§5.6).
 5. **T5** `tools.*`.
 6. **T6** `dev.fixtures.*` and removal of hard-coded user paths (§5.7).
 7. **T7** `proxide config show` + Python `config.show()`, README section with an example `config.toml`.
 
-Each task lands with today's behaviour as the default, so nothing changes until a config value is set,
-except T2, which deliberately changes the thread default (documented in the changelog).
+Each task lands with today's behaviour as the default, so nothing changes until a config value is set
+(T2 changes the default only if Q1 shows `Auto` oversubscribes under SLURM).
 
 ## 7. Open questions
 
-- **Q1** T2 changes default behaviour (rayon no longer uses every node core under SLURM). Acceptable as a
-  fix, or keep the old default behind a flag for one release?
+- **Q1** Does `std::thread::available_parallelism()` (orx `Auto`) honour a SLURM allocation on Engaging?
+  It checks CPU affinity, then the cgroup quota; if SLURM pins tasks to their cores it already does, and
+  `auto` needs no SLURM clamp. Probe: a 2-CPU job printing `nproc` (same affinity call), `nproc --all`,
+  `Cpus_allowed_list` and `cpu.max` (`~/venv_migrate/affinity_probe.sh` on Engaging; first attempt
+  2026-10-01 failed — Slurm controller unreachable). With the answer, T2 either only adds the knob
+  (default unchanged) or also adds the clamp.
 - **Q2** Should `xtc.offsets_dir` default to a subdirectory of the `traj_cache` root when that is
   configured, or stay independent? (Recommendation: independent; set it explicitly to point inside the
   traj_cache root. No cross-project coupling.)
-- **Q3** Env var naming: `PROXIDE_<SECTION>_<KEY>` for everything, keeping `PDBFIXER_EXEC` and
-  `RAYON_NUM_THREADS` as aliases?
+- **Q3** Env var naming: `PROXIDE_<SECTION>_<KEY>` for everything, keeping `PDBFIXER_EXEC` as an alias?
+  (`ORX_PARALLEL_MAX_NUM_THREADS` is orx's own cap, not a proxide alias; it keeps applying regardless.)
