@@ -97,9 +97,12 @@ def info(
     table.add_column("Value", style="magenta")
 
     # Use internal attributes from Protein container
-    n_res = protein.coordinates.shape[0] if hasattr(protein, "coordinates") else 0
+    # Residues from aatype: coordinates.shape[0] is the MODEL count for a
+    # multi-model parse (an 18-model NMR file reported 18 residues).
+    n_res = len(protein.aatype)
 
     table.add_row("Number of Residues", str(n_res))
+    table.add_row("Number of Models", str(protein.n_models))
     table.add_row(
       "Number of Chains",
       str(len(np.unique(protein.chain_index)) if hasattr(protein, "chain_index") else "N/A"),

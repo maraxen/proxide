@@ -165,11 +165,32 @@ class Protein:
   atom_res_index: Any | None = None
 
   @property
+  def n_models(self) -> int:
+    """Models stacked on a leading axis, or 1.
+
+    A multi-model Atom37/Atom14 parse is a model stack: coordinates
+    (n_models, n_res, slots, 3), atom_mask (n_models, n_res, slots), with
+    per-residue fields shared (debt #2355). Code that assumes one structure
+    must check this.
+    """
+    c = self.coordinates
+    return int(c.shape[0]) if c is not None and getattr(c, "ndim", 0) == 4 else 1
+
+  def _require_single_model(self, what: str) -> None:
+    if self.n_models > 1:
+      msg = (
+        f"{what}: this Protein stacks {self.n_models} models; select one first "
+        "(OutputSpec(models=[k]), or index the leading axis)"
+      )
+      raise ValueError(msg)
+
+  @property
   def num_atoms(self) -> int:
-    """Total number of atoms."""
+    """Number of atoms in ONE structure (all models of a stack share it)."""
     if self.atom_mask is not None:
-      return int(jnp.sum(self.atom_mask))
-    return int(self.coordinates.size / 3)
+      mask = self.atom_mask[0] if self.n_models > 1 else self.atom_mask
+      return int(jnp.sum(mask))
+    return int(self.coordinates.size / 3 / self.n_models)
 
   @property
   def num_protein_atoms(self) -> int:
@@ -184,6 +205,8 @@ class Protein:
     """Get the residue index for each atom."""
     if self.atom_res_index is not None:
       return self.atom_res_index
+    # A model stack's flattened atoms are n_models x this; refuse to guess.
+    self._require_single_model("atom_residue_ids")
     if self.format == "Atom37":
       return jnp.repeat(self.residue_index, 37)
     if self.format == "Atom14":

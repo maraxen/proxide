@@ -135,6 +135,11 @@ def truncate_protein(
   """
   if max_length is None or strategy == "none":
     return protein
+  # On a model stack coordinates.shape[0] is the model count: cropping it
+  # would leave aatype/residue_index untouched (an inconsistent Protein).
+  if getattr(protein, "n_models", 1) > 1:
+    msg = f"truncate_protein: Protein stacks {protein.n_models} models; select one first"
+    raise ValueError(msg)
 
   length = protein.coordinates.shape[0]
   if length <= max_length:

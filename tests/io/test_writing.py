@@ -367,6 +367,35 @@ class TestWritePdbOnRealParsedStructures:
 
   PDB = "tests/data/5awl.pdb"  # single model, 10 residues
 
+  def test_model_stack_consumers_count_one_structure_or_refuse(self) -> None:
+    # Review #9: consumers that assume one structure used to silently
+    # mis-handle an 18-model stack (CLI info said 18 residues, num_atoms was
+    # summed over all models, truncate_protein cropped the model axis).
+    from proxide import CoordFormat, OutputSpec, parse_structure
+    from proxide.ops.transforms import truncate_protein
+
+    stack = parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Atom37))
+    one = parse_structure(
+      "tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Atom37, models=[1])
+    )
+    assert stack.n_models == 18 and one.n_models == 1
+    assert stack.num_atoms == one.num_atoms  # one structure's atoms, not 18x
+    with pytest.raises(ValueError, match="18 models"):
+      _ = stack.atom_residue_ids
+    with pytest.raises(ValueError, match="18 models"):
+      truncate_protein(stack, max_length=5, strategy="center_crop")
+
+  def test_cli_info_reports_residues_not_models(self) -> None:
+    from typer.testing import CliRunner
+
+    from proxide.cli.main import app
+
+    result = CliRunner().invoke(app, ["info", "tests/data/1uao.pdb"])
+    assert result.exit_code == 0, result.output
+    assert "Number of Residues" in result.output
+    residues_row = next(x for x in result.output.splitlines() if "Number of Residues" in x)
+    assert "10" in residues_row and "18" not in residues_row, residues_row
+
   def test_multimodel_atom37_is_a_consistent_model_stack(self, tmp_path) -> None:
     # Debt #2355: 1uao is an 18-model NMR file. An Atom37 request used to
     # return format="Full" with 6660 flattened coordinates next to a
