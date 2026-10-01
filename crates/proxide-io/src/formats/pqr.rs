@@ -20,8 +20,10 @@
 use crate::formats::field_parse::{
     self, truncate_raw_str, TokenFieldErrorKind, IO_MALFORMED_RECORD_CODE,
 };
+use crate::formats::pdb_fields::ResidueTracker;
 use proxide_core::chem::masses::infer_element;
 use proxide_core::structure::{AtomRecord, RawAtomData};
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -304,17 +306,42 @@ impl fmt::Display for PqrMultiModelError {
 
 impl std::error::Error for PqrMultiModelError {}
 
+/// Residue reappearance error: a (chain, seq, icode) key appeared again
+/// after a different residue in the same model+chain.
+#[derive(Debug, Clone)]
+pub struct PqrResidueReappearanceError {
+    pub line: usize,
+    pub chain_id: String,
+    pub res_seq: i32,
+    pub i_code: char,
+}
+
+impl fmt::Display for PqrResidueReappearanceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[{}] line {}: residue reappears (chain={}, res_seq={}, i_code='{}'); wrapped residue ID not allowed in PQR",
+            IO_MALFORMED_RECORD_CODE, self.line, self.chain_id, self.res_seq, self.i_code
+        )
+    }
+}
+
+impl std::error::Error for PqrResidueReappearanceError {}
+
 /// Parse PQR file and return raw atom data with charges and radii. The first
 /// malformed ATOM/HETATM line anywhere in the file aborts the whole parse
 /// with a [`PqrFieldError`] -- there is no partial result and no silent drop.
 /// Multi-model PQR files are not supported and return a [`PqrMultiModelError`]
-/// on the second MODEL record.
+/// on the second MODEL record. Residue wraparound (reappearance of a
+/// chain/seq/icode after a different residue) returns [`PqrResidueReappearanceError`].
 pub fn parse_pqr_file<P: AsRef<Path>>(path: P) -> Result<RawAtomData, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
     let mut raw_data = RawAtomData::new();
     let mut seen_model = false;
+    let mut residue_trackers: HashMap<(usize, String), ResidueTracker> = HashMap::new();
+    let current_model: usize = 1; // PQR doesn't support models, but track for consistency
 
     for (idx, line) in reader.lines().enumerate() {
         let line = line?;
@@ -339,6 +366,21 @@ pub fn parse_pqr_file<P: AsRef<Path>>(path: P) -> Result<RawAtomData, Box<dyn st
         }
 
         if let Some(atom) = parse_pqr_line(&line, line_no)? {
+            // Check for residue reappearance
+            let key = (atom.res_seq, atom.i_code);
+            let tracker = residue_trackers
+                .entry((current_model, atom.chain_id.clone()))
+                .or_insert_with(ResidueTracker::new);
+
+            if let Err(_) = tracker.check_reappearance(key) {
+                return Err(Box::new(PqrResidueReappearanceError {
+                    line: line_no,
+                    chain_id: atom.chain_id.clone(),
+                    res_seq: atom.res_seq,
+                    i_code: atom.i_code,
+                }));
+            }
+
             raw_data.add_atom(atom);
         }
     }
@@ -568,6 +610,8 @@ mod tests {
     ) -> Result<RawAtomData, Box<dyn std::error::Error>> {
         let mut raw_data = RawAtomData::new();
         let mut seen_model = false;
+        let mut residue_trackers: HashMap<(usize, String), ResidueTracker> = HashMap::new();
+        let current_model: usize = 1;
 
         for (idx, line) in s.lines().enumerate() {
             let line_no = idx + 1;
@@ -591,6 +635,21 @@ mod tests {
             }
 
             if let Some(atom) = parse_pqr_line(&line, line_no)? {
+                // Check for residue reappearance
+                let key = (atom.res_seq, atom.i_code);
+                let tracker = residue_trackers
+                    .entry((current_model, atom.chain_id.clone()))
+                    .or_insert_with(ResidueTracker::new);
+
+                if let Err(_) = tracker.check_reappearance(key) {
+                    return Err(Box::new(PqrResidueReappearanceError {
+                        line: line_no,
+                        chain_id: atom.chain_id.clone(),
+                        res_seq: atom.res_seq,
+                        i_code: atom.i_code,
+                    }));
+                }
+
                 raw_data.add_atom(atom);
             }
         }
@@ -641,5 +700,37 @@ mod tests {
         let err_str = err.to_string();
         assert!(err_str.contains("multi-model"));
         assert!(err_str.contains("line 4")); // Second MODEL is on line 4
+    }
+
+    #[test]
+    fn residue_wraparound_contiguous_is_ok() {
+        // Contiguous repeat of the same (chain, seq, icode) should be OK
+        let pqr = "ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ATOM      2  CA  MET A   1      21.154  30.699   6.276  -0.1234  1.7000\n\
+                   ATOM      3  C   MET A   1      22.154  31.699   7.276  -0.0500  1.7000\n";
+        let result = parse_from_string(pqr);
+        assert!(result.is_ok());
+        let raw_data = result.unwrap();
+        assert_eq!(raw_data.num_atoms, 3);
+    }
+
+    #[test]
+    fn residue_wraparound_duplicate_is_error() {
+        // (chain, seq, icode) reappearing after a different residue should error
+        let pqr = "ATOM      1  N   ALA A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ATOM      2  CA  ALA A   1      21.154  30.699   6.276  -0.1234  1.7000\n\
+                   ATOM      3  N   GLY A   2      22.154  31.699   7.276  -0.3500  1.5000\n\
+                   ATOM      4  CA  GLY A   2      23.154  32.699   8.276  -0.0800  1.6000\n\
+                   ATOM      5  N   ALA A   1      24.154  33.699   9.276  -0.4157  1.8240\n";
+        // Residue A1 appears at atoms 1-2, then A2 appears at atoms 3-4,
+        // then A1 appears again at atom 5 -> error on line 5
+        let result = parse_from_string(pqr);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_str = err.to_string();
+        assert!(err_str.contains("residue reappears"));
+        assert!(err_str.contains("chain=A"));
+        assert!(err_str.contains("res_seq=1"));
+        assert!(err_str.contains("line 5"));
     }
 }

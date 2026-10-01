@@ -23,6 +23,7 @@
 use crate::formats::field_parse::{
     self, truncate_raw_str, TokenFieldErrorKind, IO_MALFORMED_RECORD_CODE,
 };
+use crate::formats::pdb_fields::ResidueTracker;
 use proxide_core::chem::masses::infer_element;
 use proxide_core::structure::{AtomRecord, RawAtomData};
 use std::collections::HashMap;
@@ -742,6 +743,8 @@ struct CifParseState {
     pending_row: Option<(usize, Vec<(String, bool)>)>,
     raw_data: RawAtomData,
     model_ids: Vec<usize>,
+    /// Residue reappearance trackers, keyed by (model, chain_id)
+    residue_trackers: HashMap<(i32, String), ResidueTracker>,
 }
 
 impl CifParseState {
@@ -757,6 +760,7 @@ impl CifParseState {
             pending_row: None,
             raw_data: RawAtomData::new(),
             model_ids: Vec::new(),
+            residue_trackers: HashMap::new(),
         }
     }
 
@@ -812,6 +816,23 @@ impl CifParseState {
         )?;
         self.current_model = new_model;
         self.model_ids.push(new_model as usize);
+
+        // Check for residue reappearance
+        let key = (atom.res_seq, atom.i_code);
+        let tracker = self.residue_trackers
+            .entry((new_model, atom.chain_id.clone()))
+            .or_insert_with(ResidueTracker::new);
+
+        if let Err(_) = tracker.check_reappearance(key) {
+            return Err(Box::new(CifFieldError::new(
+                start_line,
+                "auth_seq_id/pdbx_PDB_model_num+auth_asym_id",
+                "res_seq+i_code",
+                &format!("{}|{}", atom.res_seq, atom.i_code),
+                TokenFieldErrorKind::TokenCount, // Using TokenCount as a stand-in for reappearance
+            )));
+        }
+
         self.raw_data.add_atom(atom);
         Ok(())
     }
@@ -1536,5 +1557,46 @@ _atom_site.label_seq_id
         let text = format!("{}{}", block("ONE"), block("TWO"));
         let err = expect_cif_err(&text);
         assert_eq!(err.kind, TokenFieldErrorKind::MultipleDataBlocks);
+    }
+
+    // -------------------------------------------------------
+    // A3: Residue reappearance check (debt #1931)
+    // -------------------------------------------------------
+
+    #[test]
+    fn residue_wraparound_contiguous_is_ok() {
+        // Contiguous repeat of the same (chain, seq, icode) should be OK
+        let cols = ["group_PDB", "id", "label_atom_id", "label_comp_id",
+                    "label_asym_id", "label_seq_id", "pdbx_PDB_ins_code",
+                    "Cartn_x", "Cartn_y", "Cartn_z", "occupancy", "B_iso_or_equiv"];
+        let text = format!(
+            "{}ATOM 1 N ALA A 1 ? 0.000 0.000 0.000 1.00 10.00\n\
+             ATOM 2 CA ALA A 1 . 1.000 1.000 1.000 1.00 10.00\n\
+             ATOM 3 C ALA A 1 . 2.000 2.000 2.000 1.00 10.00\n",
+            atom_site_header(&cols)
+        );
+        let (raw_data, _) = parse_mmcif_from_reader(text.as_bytes()).unwrap();
+        assert_eq!(raw_data.num_atoms, 3);
+    }
+
+    #[test]
+    fn residue_wraparound_duplicate_is_error() {
+        // (chain, seq, icode) reappearing after a different residue should error
+        let cols = ["group_PDB", "id", "label_atom_id", "label_comp_id",
+                    "label_asym_id", "label_seq_id", "pdbx_PDB_ins_code",
+                    "Cartn_x", "Cartn_y", "Cartn_z", "occupancy", "B_iso_or_equiv"];
+        let text = format!(
+            "{}ATOM 1 N ALA A 1 ? 0.000 0.000 0.000 1.00 10.00\n\
+             ATOM 2 CA ALA A 1 . 1.000 1.000 1.000 1.00 10.00\n\
+             ATOM 3 N GLY A 2 . 2.000 2.000 2.000 1.00 10.00\n\
+             ATOM 4 CA GLY A 2 . 3.000 3.000 3.000 1.00 10.00\n\
+             ATOM 5 N ALA A 1 . 4.000 4.000 4.000 1.00 10.00\n",
+            atom_site_header(&cols)
+        );
+        // Residue A 1 appears at atoms 1-2, then A 2 appears at atoms 3-4,
+        // then A 1 appears again at atom 5 -> error
+        let err = expect_cif_err(&text);
+        // The error should be about residue reappearance
+        assert_eq!(err.kind, TokenFieldErrorKind::TokenCount);
     }
 }
