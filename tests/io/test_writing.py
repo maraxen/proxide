@@ -137,14 +137,16 @@ class TestResolveChainLetters:
     with pytest.raises(ValueError, match=r"chain_index values \[1\]"):
       _resolve_chain_letters(protein, 2)
 
-  def test_unknown_chain_is_written_blank_in_pdb_and_question_mark_in_mmcif(
-    self, tmp_path
-  ) -> None:
+  def test_unknown_chain_is_blank_in_pdb_and_refused_by_mmcif(self, tmp_path) -> None:
     protein = _flat_protein(2, chain_ids=None)
     pdb_lines = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
     assert [line[21] for line in pdb_lines] == [" ", " "]
-    cif_lines = _atom_lines(write_mmcif(protein, tmp_path / "out.cif"))
-    assert [line.split()[5] for line in cif_lines] == ["?", "?"]
+    # label_asym_id is mandatory and proxide's reader rejects "?", so mmCIF
+    # cannot represent an unknown chain: refuse rather than write an
+    # unreadable file.
+    with pytest.raises(ValueError, match="chain ids are unknown"):
+      write_mmcif(protein, tmp_path / "out.cif")
+    assert not (tmp_path / "out.cif").exists()
 
 
 class TestWritePdbChainLetterColumn:
@@ -427,6 +429,26 @@ class TestWritePdbOnRealParsedStructures:
     with pytest.raises(ValueError, match="no atom for their residue type"):
       write_pdb(protein, tmp_path / "out.pdb")
 
+  def test_chains_out_of_sorted_order_keep_their_letters(self, tmp_path) -> None:
+    # Review finding 2026-10-01: unique_chain_ids was built in file order
+    # while chain_index comes from a sorted map, so a file with chain B before
+    # chain A swapped every atom's chain letter. Chain B is shifted +100 A in
+    # x so each written atom's true chain is recoverable from its coordinate.
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    src = [line for line in open(self.PDB) if line.startswith("ATOM")]
+
+    def as_shifted_b(line: str) -> str:
+      return line[:21] + "B" + line[22:30] + f"{float(line[30:38]) + 100.0:8.3f}" + line[38:]
+
+    b_first = tmp_path / "b_first.pdb"
+    b_first.write_text("".join(as_shifted_b(x) for x in src) + "TER\n" + "".join(src) + "END\n")
+    for fmt in (CoordFormat.Atom37, CoordFormat.Atom14):
+      protein = parse_structure(str(b_first), OutputSpec(coord_format=fmt))
+      lines = _atom_lines(write_pdb(protein, tmp_path / f"{fmt}.pdb"))
+      truth = ["B" if float(line[30:38]) > 50 else "A" for line in lines]
+      assert [line[21] for line in lines] == truth, fmt
+
   def test_chain_filtered_structure_keeps_its_chain_letter(self, tmp_path) -> None:
     # Debt #2354: load_rust(chain_id="B") used to keep chain_index=1 while
     # setting chain_ids=["B"], so the writer emitted chain "A".
@@ -439,6 +461,12 @@ class TestWritePdbOnRealParsedStructures:
     )
     protein_b = next(iter(load_rust(str(two_chains), chain_id="B")))
     assert protein_b.chain_ids == ["B"]
+    # A chain that isn't there used to return the unfiltered structure.
+    # (load_rust wraps the ValueError in its ParsingError.)
+    from proxide.io.parsing.registry import ParsingError
+
+    with pytest.raises(ParsingError, match=r"chain\(s\) \['Z'\] not in structure"):
+      next(iter(load_rust(str(two_chains), chain_id="Z")))
     lines = _atom_lines(write_pdb(protein_b, tmp_path / "b.pdb"))
     assert len(lines) == len(src)
     assert {line[21] for line in lines} == {"B"}

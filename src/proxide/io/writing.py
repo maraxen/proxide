@@ -343,7 +343,8 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
 
   Raises:
       ValueError: If a field would have to be invented (see `_atom_rows`),
-          a coordinate is non-finite, or a name/chain value is empty or
+          a coordinate is non-finite, chain ids are unknown (mmCIF requires
+          label_asym_id), or a name/chain value is empty or
           contains whitespace (see `_cif_token`).
   """
   path = Path(path)
@@ -353,6 +354,12 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
     protein, "write_mmcif"
   )
   _reject_nonfinite(coords, "write_mmcif")
+  if not all(chain_letters):
+    # label_asym_id is mandatory in mmCIF, and proxide's own reader rejects
+    # "?" there -- so an unknown chain cannot be written honestly. (PDB has a
+    # legitimate blank chain column; use write_pdb.)
+    msg = "write_mmcif: chain ids are unknown (no chain_ids); mmCIF requires them -- use write_pdb"
+    raise ValueError(msg)
 
   rows = []
   for i in range(len(coords)):
@@ -362,7 +369,7 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
     rows.append(
       f"ATOM {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
       f"{_cif_token(res_names[i], 'residue name', i)} "
-      f"{_cif_token(chain_letters[i], 'chain id', i) if chain_letters[i] else '?'} "
+      f"{_cif_token(chain_letters[i], 'chain id', i)} "
       f"{int(res_seqs[i])} {x:.3f} {y:.3f} {z:.3f} 1.00 0.00\n"
     )
 

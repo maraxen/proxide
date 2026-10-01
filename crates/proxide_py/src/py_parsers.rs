@@ -745,30 +745,29 @@ fn process_models(
     // --- Chain Information ---
     // Expose unique chain IDs corresponding to chain_index
     // chain_index (from formatters) maps to index in this list
-    // Note: processed.raw_atoms.chain_ids contains per-atom chain IDs.
-    // We need to extract unique ones preserving order of appearance/index.
-
-    let mut unique_chains: Vec<String> = Vec::new();
-    let mut seen_chains = std::collections::HashSet::new();
-
-    // We iterate over atoms to find unique chains in order
-    for cid in &processed.raw_atoms.chain_ids {
-        if !seen_chains.contains(cid) {
-            seen_chains.insert(cid.clone());
-            unique_chains.push(cid.clone());
-        }
+    // Build the vocabulary from the SAME map the formatters index through
+    // (`processed.chain_indices`, built from sorted chain ids in
+    // processing/residues.rs), ordered by index. This used to be the
+    // first-appearance order of raw atom chain ids, which disagrees with that
+    // map whenever chains are not in sorted order in the file: a file with
+    // chain B before A wrote every atom with the other chain's letter
+    // (debt #2354 follow-up, found by review 2026-10-01).
+    let mut unique_chains: Vec<(usize, String)> = processed
+        .chain_indices
+        .iter()
+        .map(|(cid, &idx)| (idx, cid.clone()))
+        .collect();
+    unique_chains.sort();
+    if let Some(i) = unique_chains
+        .iter()
+        .enumerate()
+        .position(|(i, (idx, _))| i != *idx)
+    {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "chain index map is not contiguous at position {i}: {unique_chains:?}"
+        )));
     }
-    // However, if we filtered models/atoms, we should check `formatted.chain_index` (if accessible)
-    // But `formatters` don't return chain_index map easily, they just output indices.
-    // The indices 0..K usually correspond to the unique chains found in the structure.
-    // Let's assume the formatter follows standard unique-order.
-
-    // But wait, Atom37 formatter groups by residue.
-    // `processed` structure has raw atoms.
-    // If we grouped by residue, the chain index is per residue.
-    // The mapping 0->ChainA, 1->ChainB depends on how formatter assigned indices.
-    // Atom37Formatter usually assigns based on appearance.
-    // So `unique_chains` calculated above (in order of appearance) should match.
+    let unique_chains: Vec<String> = unique_chains.into_iter().map(|(_, cid)| cid).collect();
 
     let unique_chains_list: Vec<&str> = unique_chains.iter().map(|s| s.as_str()).collect();
     dict_bound.set_item("unique_chain_ids", unique_chains_list)?;

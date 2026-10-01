@@ -157,6 +157,17 @@ def load_rust(
       if chain_id:
         target_chains = {chain_id} if isinstance(chain_id, str) else set(chain_id)
 
+        # A chain filter that cannot be applied used to fall through and
+        # return the WHOLE structure, indistinguishable from a successful
+        # filter (ledger B3). Every way it can fail is now an error.
+        if getattr(obj, "chain_ids", None) is None:
+          msg = f"chain_id={chain_id!r} requested, but the parsed structure has no chain ids"
+          raise ValueError(msg)
+        missing = sorted(target_chains - set(cast(Sequence[str], obj.chain_ids)))
+        if missing:
+          msg = f"chain(s) {missing} not in structure (chains: {list(obj.chain_ids)})"
+          raise ValueError(msg)
+
         if getattr(obj, "chain_ids", None) is not None:
           unique_ids = cast(Sequence[str], obj.chain_ids)
           allowed_indices = {i for i, cid in enumerate(unique_ids) if cid in target_chains}
@@ -164,6 +175,9 @@ def load_rust(
           if allowed_indices:
             c_idx = np.array(obj.chain_index)
             mask = np.isin(c_idx, list(allowed_indices))
+            if mask.sum() == 0:
+              msg = f"chain(s) {sorted(target_chains)} have no residues in this structure"
+              raise ValueError(msg)
 
             if mask.sum() > 0:
               new_coords = obj.coordinates[mask]
