@@ -1,0 +1,40 @@
+[metadata]
+title = "proxide GAFF2 .dat loader vs ParmEd AmberParameterSet: full-table parity on gaff-2.2.20.dat"
+created = "261001"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "After commit a3d9c2b (debt #2368), proxide.chem.gaff2.load_gaff2_parameters reads the pinned src/proxide/assets/gaff/dat/gaff-2.2.20.dat identically to ParmEd's AmberParameterSet, an independent AMBER parm.dat reader: every mass, vdW pair, bond, angle, torsion term (periodicity, barrier PK/IDIVF, phase) and improper agrees within 1e-6 with no entry missing on either side, keys compared orientation-insensitively (impropers with the central atom fixed and the outer three sorted, ParmEd's canonical form). Negative control: proxide on a copy with one angle constant changed (c3-c-c3 59.15 -> 60.15) must disagree with ParmEd on >= 1 angle. Pre-registered 2026-10-01 before any run of this script (task_id 261001_proxide-debt-sweep-2). Disclosure: exploratory, unregistered ParmEd comparisons were run while developing a3d9c2b (they motivated it); none of their numbers is cited -- only this run's are."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "mass_mismatch == 0 AND vdw_mismatch == 0 AND bond_mismatch == 0 AND angle_mismatch == 0 AND torsion_mismatch == 0 AND improper_mismatch == 0 AND negative_control_angle_mismatch >= 1"
+decision = "Treat the GAFF2 .dat loader as a faithful parm.dat reader for gaff-2.2.20.dat; cite this run from the debt #2368 resolution and the sprint PR."
+reasoning = "An independent reader agrees on every entry of every table, and the tampered copy proves the comparison detects a single wrong value."
+is_residual = false
+adversarial_check = "negative_control_angle_mismatch == 0"
+
+[outcomes.fail]
+condition = "NOT (mass_mismatch == 0 AND vdw_mismatch == 0 AND bond_mismatch == 0 AND angle_mismatch == 0 AND torsion_mismatch == 0 AND improper_mismatch == 0 AND negative_control_angle_mismatch >= 1)"
+decision = "Do not cite; inspect the failing table. A mismatch only in a ParmEd-specific normalisation (e.g. improper permutation) is a comparison bug to fix in the script with a new pre-registration, not a reason to edit thresholds. A failing negative control makes the run uninformative."
+reasoning = "Any disagreement with an independent reader, or an instrument that cannot fail, means the loader is not validated."
+is_residual = true
+
+[result_schema]
+all_pass = "bool"
+mass_mismatch = "int"
+vdw_mismatch = "int"
+bond_mismatch = "int"
+angle_mismatch = "int"
+torsion_mismatch = "int"
+improper_mismatch = "int"
+negative_control_angle_mismatch = "int"
+n_bonds = "int"
+n_angles = "int"
+n_torsion_keys = "int"
+n_impropers = "int"
+parmed_version = "str"
+
+[dependencies]
+proxide_version = { type = "git_sha", required = true }
