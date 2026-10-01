@@ -183,6 +183,9 @@ class TestWritePdbChainLetterColumn:
       chain_index=np.array([0, 0, 1, 1], dtype=np.int32),
       chain_ids=["A", "B"],
       full_coordinates=np.ones((n_res * n_slots, 3), dtype=np.float32),
+      # Every slot resolved, so every slot is written (debt #1928: the writer
+      # now emits only atom_mask-resolved Atom37 slots).
+      atom_mask=np.ones((n_res, n_slots), dtype=np.float32),
     )
     out = write_pdb(protein, tmp_path / "out.pdb")
     lines = [line for line in out.read_text().splitlines() if line.startswith("ATOM")]
@@ -191,3 +194,137 @@ class TestWritePdbChainLetterColumn:
     chain_col = [line[21] for line in lines]
     assert chain_col[: 2 * n_slots] == ["A"] * (2 * n_slots)
     assert chain_col[2 * n_slots :] == ["B"] * (2 * n_slots)
+
+
+def _atom_lines(path) -> list[str]:
+  return [line for line in path.read_text().splitlines() if line.startswith("ATOM")]
+
+
+def _flat_protein(n_atoms: int, **overrides) -> Protein:
+  """A flat per-atom ("Full"-style) Protein with every per-atom field set."""
+  fields = dict(
+    coordinates=np.zeros((n_atoms, 37, 3), dtype=np.float32),
+    aatype=np.zeros(n_atoms, dtype=np.int8),
+    residue_index=np.arange(n_atoms, dtype=np.int32),
+    chain_index=np.zeros(n_atoms, dtype=np.int32),
+    chain_ids=["A"],
+    full_coordinates=np.zeros((n_atoms, 3), dtype=np.float32),
+    atom_names=["CA"] * n_atoms,
+    res_names=["ALA"] * n_atoms,
+    elements=["C"] * n_atoms,
+  )
+  fields.update(overrides)
+  return Protein(**fields)
+
+
+class TestWritePdbInventsNothing:
+  """Debt #1928: write_pdb must not fabricate atoms, names, numbers or elements.
+
+  The old writer filled gaps with "CA" / "UNK" / ``i + 1`` / ``atom_name[0]``:
+  an Atom37 protein without per-atom names came out as 37 "CA" atoms per
+  residue (unresolved zero-filled slots included), numbered 1..37*N.
+  """
+
+  def test_atom37_writes_only_resolved_slots_with_real_names(self, tmp_path) -> None:
+    from proxide.chem.residues import atom_types, resnames, restype_order
+
+    mask = np.zeros((2, 37), dtype=np.float32)
+    mask[:, :5] = 1.0  # N, CA, C, CB, O
+    gly = restype_order["G"]
+    ala = restype_order["A"]
+    protein = Protein(
+      coordinates=np.ones((2, 37, 3), dtype=np.float32),
+      aatype=np.array([ala, gly], dtype=np.int8),
+      residue_index=np.array([10, 11], dtype=np.int32),
+      chain_index=np.zeros(2, dtype=np.int32),
+      chain_ids=["A"],
+      atom_mask=mask,
+    )
+    lines = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    assert len(lines) == 10
+    assert [line[12:16].strip() for line in lines[:5]] == atom_types[:5]
+    assert {line[17:20] for line in lines[:5]} == {resnames[ala]}
+    assert {line[17:20] for line in lines[5:]} == {resnames[gly]}
+    assert [int(line[22:26]) for line in lines] == [10] * 5 + [11] * 5
+    # Element unknown to the writer: blank, not atom_name[0].
+    assert {line[76:78] for line in lines} == {"  "}
+
+  def test_atom37_without_atom_mask_raises(self, tmp_path) -> None:
+    protein = Protein(
+      coordinates=np.ones((1, 37, 3), dtype=np.float32),
+      aatype=np.zeros(1, dtype=np.int8),
+      residue_index=np.zeros(1, dtype=np.int32),
+      chain_index=np.zeros(1, dtype=np.int32),
+    )
+    with pytest.raises(ValueError, match="atom_mask"):
+      write_pdb(protein, tmp_path / "out.pdb")
+    assert not (tmp_path / "out.pdb").exists()
+
+  def test_per_atom_missing_res_names_raises(self, tmp_path) -> None:
+    with pytest.raises(ValueError, match="res_names"):
+      write_pdb(_flat_protein(3, res_names=None), tmp_path / "out.pdb")
+
+  def test_per_atom_length_mismatch_raises(self, tmp_path) -> None:
+    with pytest.raises(ValueError, match="2 atom_names for 3 atoms"):
+      write_pdb(_flat_protein(3, atom_names=["N", "CA"]), tmp_path / "out.pdb")
+
+  def test_missing_elements_are_blank(self, tmp_path) -> None:
+    lines = _atom_lines(write_pdb(_flat_protein(2, elements=None), tmp_path / "out.pdb"))
+    assert {line[76:78] for line in lines} == {"  "}
+
+  def test_given_elements_are_written(self, tmp_path) -> None:
+    lines = _atom_lines(write_pdb(_flat_protein(2), tmp_path / "out.pdb"))
+    assert {line[76:78] for line in lines} == {" C"}
+
+  def test_mmcif_shares_the_same_rules(self, tmp_path) -> None:
+    unmasked = Protein(
+      coordinates=np.ones((1, 37, 3), dtype=np.float32),
+      aatype=np.zeros(1, dtype=np.int8),
+      residue_index=np.zeros(1, dtype=np.int32),
+      chain_index=np.zeros(1, dtype=np.int32),
+    )
+    with pytest.raises(ValueError, match="write_mmcif: .*atom_mask"):
+      write_mmcif(unmasked, tmp_path / "out.cif")
+    lines = _atom_lines(write_mmcif(_flat_protein(2, elements=None), tmp_path / "out.cif"))
+    # CIF's unknown marker, not atom_name[0].
+    assert [line.split()[2] for line in lines] == ["?", "?"]
+
+
+class TestWritePdbRejectsColumnOverflow:
+  """Debt #1927: values that overflow a fixed-width column raise, and leave no file."""
+
+  @pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+      ({"residue_index": np.array([0, 10000], dtype=np.int32)}, "residue number 10000"),
+      ({"residue_index": np.array([0, -1000], dtype=np.int32)}, "residue number -1000"),
+      ({"atom_names": ["CA", "CAXYZ"]}, "atom name"),
+      ({"res_names": ["ALA", "ALAX"]}, "residue name"),
+      ({"elements": ["C", "XYZ"]}, "element"),
+      ({"full_coordinates": np.array([[0, 0, 0], [10000.0, 0, 0]], np.float32)}, "coordinate"),
+    ],
+  )
+  def test_overflow_raises(self, tmp_path, overrides, match) -> None:
+    out = tmp_path / "out.pdb"
+    with pytest.raises(ValueError, match=match):
+      write_pdb(_flat_protein(2, **overrides), out)
+    assert not out.exists()
+
+  def test_serial_overflow_raises(self, tmp_path) -> None:
+    n = 100_000
+    protein = _flat_protein(
+      n,
+      coordinates=np.zeros((1, 37, 3), dtype=np.float32),
+      residue_index=np.zeros(n, dtype=np.int32),
+    )
+    with pytest.raises(ValueError, match="serial > 99999"):
+      write_pdb(protein, tmp_path / "out.pdb")
+
+  def test_boundary_values_still_write(self, tmp_path) -> None:
+    protein = _flat_protein(
+      2,
+      residue_index=np.array([-999, 9999], dtype=np.int32),
+      full_coordinates=np.array([[-999.999, 0, 0], [9999.999, 0, 0]], np.float32),
+    )
+    lines = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    assert [int(line[22:26]) for line in lines] == [-999, 9999]
