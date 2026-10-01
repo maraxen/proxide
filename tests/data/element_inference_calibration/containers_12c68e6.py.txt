@@ -1,0 +1,10 @@
+# Calibration fixture: a REAL historical defect, copied verbatim.
+# Source: src/proxide/core/containers.py @ 12c68e6, line 421
+# (Protein.from_rust_dict, Full branch). Removed by debt #2353.
+# It reads "CL" as carbon, "NA" as nitrogen and an empty name as carbon.
+def _from_rust_dict_full_branch(rust_dict):
+    atom_names = rust_dict.get("atom_names")
+    elements = rust_dict.get("elements")
+    if elements is None and atom_names is not None:
+      elements = [name[0].upper() if name else "C" for name in atom_names]
+    return elements

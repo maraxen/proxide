@@ -471,13 +471,57 @@ class TestWritePdbOnRealParsedStructures:
     assert len(lines) == len(src)
     assert {line[21] for line in lines} == {"B"}
 
-  def test_full_format_raises_rather_than_writing_unk_residues(self, tmp_path) -> None:
-    # parse_structure's Full output carries no per-atom residue names (and
-    # from_rust_dict drops chain ids), so the old writer emitted every residue
-    # as "UNK" in chain "A" with per-atom-misindexed residue numbers. Until
-    # that data is plumbed through, refusing is the honest answer.
+  @staticmethod
+  def _atom_key(line: str) -> tuple:
+    # name, residue, chain, number, x, element -- everything write_pdb takes
+    # from the structure (occupancy/B-factor are not carried, see debt).
+    return (
+      line[12:16].strip(), line[17:20], line[21], int(line[22:26]),
+      round(float(line[30:38]), 2), line[76:78].strip(),
+    )
+
+  def test_full_format_round_trips_every_atom(self, tmp_path) -> None:
+    # Backlog #5684: parse_structure's Full output now carries per-atom
+    # elements, residue names and chain ids. It used to carry none, and the
+    # writer emitted every residue as "UNK" in chain "A" (then, after debt
+    # #1928, refused). Every source atom must come back identical.
     from proxide import CoordFormat, OutputSpec, parse_structure
 
     protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
-    with pytest.raises(ValueError, match="res_names"):
-      write_pdb(protein, tmp_path / "out.pdb")
+    written = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    source = [x for x in open(self.PDB) if x.startswith(("ATOM", "HETATM"))]
+    assert sorted(map(self._atom_key, written)) == sorted(map(self._atom_key, source))
+
+  def test_full_format_round_trips_two_chains(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    src = [x for x in open(self.PDB) if x.startswith("ATOM")]
+    b_shifted = [
+      x[:21] + "B" + x[22:30] + f"{float(x[30:38]) + 100.0:8.3f}" + x[38:] for x in src
+    ]
+    two = tmp_path / "two.pdb"
+    two.write_text("".join(b_shifted) + "TER\n" + "".join(src) + "END\n")
+    protein = parse_structure(str(two), OutputSpec(coord_format=CoordFormat.Full))
+    written = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    assert sorted(map(self._atom_key, written)) == sorted(map(self._atom_key, b_shifted + src))
+
+  def test_full_format_elements_come_from_the_parser_not_the_name(self, tmp_path) -> None:
+    # Debt #2353: elements reach Python from the parser. A calcium ion named
+    # "CA" (element column "CA") must stay calcium -- a first-letter rule in
+    # Python would make it carbon.
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    src = [x for x in open(self.PDB) if x.startswith("ATOM")]
+    ca = "HETATM 9999 CA    CA B 900      30.000  30.000  30.000  1.00  0.00          CA\n"
+    path = tmp_path / "with_ion.pdb"
+    path.write_text("".join(src) + "TER\n" + ca + "END\n")
+    protein = parse_structure(
+      str(path), OutputSpec(coord_format=CoordFormat.Full, include_hetatm=True)
+    )
+    assert protein.elements is not None
+    names = list(protein.atom_names)
+    ion = [i for i, (n, r) in enumerate(zip(names, protein.res_names)) if r == "CA"]
+    assert len(ion) == 1, (names[-3:], list(protein.res_names)[-3:])
+    # The PDB reader keeps the element column's case as written ("CA"; see
+    # the element-case debt). What matters here: calcium, not carbon.
+    assert protein.elements[ion[0]].upper() == "CA"

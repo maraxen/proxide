@@ -1,0 +1,9 @@
+# Calibration fixture: REAL historical defects, copied verbatim.
+# Source: src/proxide/io/writing.py @ d4ac812, lines 123 and 149 (write_pdb;
+# write_mmcif repeated both at 194/219). Removed by debt #1928 (67415d8).
+def write_pdb(protein, coords, atom_names, elements):
+  if elements is None:
+    elements = [name[0] for name in atom_names]
+  for i in range(len(coords)):
+      atom_name = atom_names[i]
+      element = elements[i] if i < len(elements) else atom_name[0]

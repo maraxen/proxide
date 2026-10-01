@@ -114,6 +114,9 @@ class Protein:
   atom_names: Any | None = None
   chain_ids: Any | None = None
   res_names: Any | None = None
+  # Per-atom chain ids as read (Full format; backlog #5684). Distinct from
+  # `chain_ids`, which is the per-chain vocabulary that `chain_index` indexes.
+  atom_chain_ids: Any | None = None
   molecule_type: Any | None = None
   atom_types: Any | None = None
   bonds: Any | None = None
@@ -416,9 +419,12 @@ class Protein:
 
     # Flat format (Full)
     atom_names = rust_dict.get("atom_names")
+    # Elements come from the parser (the Full dict carries them since
+    # debt #2353). If a dict lacks them they are unknown: None, never
+    # re-derived here -- the old `name[0].upper() if name else "C"` read
+    # "CL" as carbon, "NA" as nitrogen and an empty name as carbon (ledger
+    # A1/A2/A5).
     elements = rust_dict.get("elements")
-    if elements is None and atom_names is not None:
-      elements = [name[0].upper() if name else "C" for name in atom_names]
 
     # Slice parameters if they are padded (Match Atom37 count but format is Full)
     mask = convert(raw_mask, dtype=bool).flatten()
@@ -443,6 +449,8 @@ class Protein:
       atom_mask=_slice_if_padded(raw_mask, dtype=np.float32),
       elements=elements,
       atom_names=atom_names,
+      res_names=rust_dict.get("res_names"),
+      atom_chain_ids=rust_dict.get("atom_chain_ids"),
       charges=_slice_if_padded(rust_dict.get("charges")),
       radii=_slice_if_padded(
           rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32
