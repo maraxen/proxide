@@ -163,9 +163,10 @@ def load_rust(
         if getattr(obj, "chain_ids", None) is None:
           msg = f"chain_id={chain_id!r} requested, but the parsed structure has no chain ids"
           raise ValueError(msg)
-        missing = sorted(target_chains - set(cast(Sequence[str], obj.chain_ids)))
+        present_chains = list(cast(Sequence[str], obj.chain_ids))
+        missing = sorted(target_chains - set(present_chains))
         if missing:
-          msg = f"chain(s) {missing} not in structure (chains: {list(obj.chain_ids)})"
+          msg = f"chain(s) {missing} not in structure (chains: {present_chains})"
           raise ValueError(msg)
 
         if getattr(obj, "chain_ids", None) is not None:
