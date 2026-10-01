@@ -281,14 +281,32 @@ class Protein:
     raw_coords = rust_dict["coordinates"]
     raw_mask = rust_dict["atom_mask"]
 
+    # A multi-model Atom37 parse stacks models: (n_models, n_res, 37, 3), with
+    # an (n_models, n_res, 37) mask. Per-residue fields (aatype, residue_index,
+    # chain_index) are shared -- Rust checks every model formats to the same
+    # size. This used to be misread as "Full" (debt #2355).
+    n_models = (
+      int(raw_coords.shape[0])
+      if raw_coords.ndim == 4 and raw_coords.shape[1] == num_residues
+      else 1
+    )
+    if n_models > 1 and np.asarray(raw_mask).size * 3 != raw_coords.size:
+      msg = (
+        f"multi-model coordinates {raw_coords.shape} came with an atom_mask of "
+        f"{np.asarray(raw_mask).size} entries; refusing to pair them"
+      )
+      raise ValueError(msg)
+
     is_atom37 = (
       (raw_coords.ndim == 3 and raw_coords.shape[1] == 37)
+      or (raw_coords.ndim == 4 and n_models > 1 and raw_coords.shape[2] == 37)
       or (raw_coords.ndim == 2 and raw_coords.size == num_residues * 37 * 3)
       or (raw_coords.ndim == 1 and raw_coords.size == num_residues * 37 * 3)
     )
 
     is_atom14 = (
       (raw_coords.ndim == 3 and raw_coords.shape[1] == 14)
+      or (raw_coords.ndim == 4 and n_models > 1 and raw_coords.shape[2] == 14)
       or (raw_coords.ndim == 2 and raw_coords.size == num_residues * 14 * 3)
       or (raw_coords.ndim == 1 and raw_coords.size == num_residues * 14 * 3)
     )
@@ -300,14 +318,15 @@ class Protein:
 
     if is_atom37 or is_atom14:
       n_slots = 37 if is_atom37 else 14
-      coordinates = raw_coords.reshape(num_residues, n_slots, 3)
-      atom_mask_2d = raw_mask.reshape(num_residues, n_slots)
+      lead = (n_models,) if n_models > 1 else ()
+      coordinates = raw_coords.reshape(*lead, num_residues, n_slots, 3)
+      atom_mask_2d = np.asarray(raw_mask).reshape(*lead, num_residues, n_slots)
 
       if is_atom37:
-        mask_ca = atom_mask_2d[:, atom_order["CA"]]
+        mask_ca = atom_mask_2d[..., atom_order["CA"]]
       else:
         # For Atom14, CA is also usually at index 1
-        mask_ca = atom_mask_2d[:, 1]
+        mask_ca = atom_mask_2d[..., 1]
 
       return cls(
         coordinates=convert(coordinates, dtype=np.float32),

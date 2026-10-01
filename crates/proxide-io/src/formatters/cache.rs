@@ -61,6 +61,18 @@ pub struct CachedStructure {
     pub atom_names: Option<Vec<String>>,
     /// Optional coordinate shape (for Full format)
     pub coord_shape: Option<(usize, usize, usize)>,
+    /// Per-atom Full-format fields, so a cache hit returns the same dict as
+    /// the first call (it used to drop them).
+    pub full_per_atom: Option<FullPerAtom>,
+}
+
+/// Per-atom arrays the Full format carries (see `FormattedFull`).
+#[derive(Debug, Clone)]
+pub struct FullPerAtom {
+    pub atom_residue_ids: Vec<i32>,
+    pub elements: Vec<String>,
+    pub res_names: Vec<String>,
+    pub atom_chain_ids: Vec<String>,
 }
 
 pub struct CachedStructureArgs {
@@ -72,6 +84,7 @@ pub struct CachedStructureArgs {
     pub num_residues: usize,
     pub atom_names: Option<Vec<String>>,
     pub coord_shape: Option<(usize, usize, usize)>,
+    pub full_per_atom: Option<FullPerAtom>,
 }
 
 impl CachedStructure {
@@ -85,6 +98,7 @@ impl CachedStructure {
             _num_residues: args.num_residues,
             atom_names: args.atom_names,
             coord_shape: args.coord_shape,
+            full_per_atom: args.full_per_atom,
         }
     }
 }
@@ -197,6 +211,7 @@ mod tests {
             _num_residues: 1,
             atom_names: None,
             coord_shape: None,
+            full_per_atom: None,
         };
 
         cache.insert(key1.clone(), value.clone());

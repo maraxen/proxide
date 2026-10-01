@@ -365,15 +365,47 @@ class TestWritePdbOnRealParsedStructures:
 
   PDB = "tests/data/5awl.pdb"  # single model, 10 residues
 
-  def test_multimodel_atom37_request_raises(self, tmp_path) -> None:
-    # 1uao is an 18-model NMR file; an Atom37 request returns format="Full"
-    # with 6660 flattened coordinates and no atom names. The old writer
-    # emitted 6660 "CA"/"UNK" rows; refusing is the honest answer.
+  def test_multimodel_atom37_is_a_consistent_model_stack(self, tmp_path) -> None:
+    # Debt #2355: 1uao is an 18-model NMR file. An Atom37 request used to
+    # return format="Full" with 6660 flattened coordinates next to a
+    # 77-entry mask. It is now a model stack whose mask matches it, the
+    # writer refuses it as batched, and one selected model still writes.
     from proxide import CoordFormat, OutputSpec, parse_structure
 
-    protein = parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Atom37))
-    with pytest.raises(ValueError, match="cannot name the atoms"):
-      write_pdb(protein, tmp_path / "out.pdb")
+    path = "tests/data/1uao.pdb"
+    stack = parse_structure(path, OutputSpec(coord_format=CoordFormat.Atom37))
+    assert stack.format == "Atom37"
+    assert np.shape(stack.coordinates) == (18, 10, 37, 3)
+    assert np.shape(stack.atom_mask) == (18, 10, 37)
+    with pytest.raises(ValueError, match="batched"):
+      write_pdb(stack, tmp_path / "out.pdb")
+
+    one = parse_structure(path, OutputSpec(coord_format=CoordFormat.Atom37, models=[1]))
+    lines = _atom_lines(write_pdb(one, tmp_path / "one.pdb"))
+    assert len(lines) == int(np.asarray(one.atom_mask).sum())
+    # Model 1 of the stack is exactly the single-model parse.
+    np.testing.assert_array_equal(np.asarray(stack.atom_mask)[0], np.asarray(one.atom_mask))
+    np.testing.assert_allclose(np.asarray(stack.coordinates)[0], np.asarray(one.coordinates))
+
+  def test_multimodel_non_atom37_request_warns(self) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    with pytest.warns(UserWarning, match="18 models present"):
+      parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Full))
+    # A second parse (no cache for multi-model results) must warn again.
+    with pytest.warns(UserWarning, match="18 models present"):
+      parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Full))
+
+  def test_full_format_cache_hit_returns_the_same_per_atom_fields(self) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    spec = OutputSpec(coord_format=CoordFormat.Full)
+    first = parse_structure(self.PDB, spec)
+    second = parse_structure(self.PDB, spec)  # served from the format cache
+    for field in ("elements", "res_names", "atom_chain_ids", "atom_res_index"):
+      a, b = getattr(first, field), getattr(second, field)
+      assert a is not None and b is not None, field
+      assert list(np.asarray(a)) == list(np.asarray(b)), field
 
   def test_atom37_round_trips_resolved_atoms(self, tmp_path) -> None:
     from proxide import CoordFormat, OutputSpec, parse_structure

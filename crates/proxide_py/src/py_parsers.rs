@@ -593,6 +593,12 @@ fn process_models(
 
                 let mut all_coords = Vec::with_capacity(n_models * n_res * 37 * 3);
                 all_coords.extend_from_slice(&ref_formatted.coordinates);
+                // Each model's own mask, stacked like the coordinates. This
+                // used to emit only the reference model's mask next to the
+                // stacked coordinates, so the shapes disagreed and
+                // from_rust_dict fell through to "Full" (debt #2355).
+                let mut all_masks = Vec::with_capacity(n_models * n_res * 37);
+                all_masks.extend_from_slice(&ref_formatted.atom_mask);
 
                 for (i, m_raw) in models_to_process.iter().enumerate().skip(1) {
                     // We must process each model to map atoms correctly
@@ -660,6 +666,7 @@ fn process_models(
                         )));
                     }
                     all_coords.extend_from_slice(&m_formatted.coordinates);
+                    all_masks.extend_from_slice(&m_formatted.atom_mask);
                 }
 
                 // Reshape to (N_models, N_res, 37, 3)
@@ -669,9 +676,18 @@ fn process_models(
                 })?;
                 let dict_bound = &dict;
                 dict_bound.set_item("coordinates", shaped)?;
+                let mask_array = PyArray1::from_slice_bound(py, &all_masks);
+                let mask_shaped = mask_array.reshape((n_models, n_res, 37)).map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Mask reshape failed: {}", e))
+                })?;
+                dict_bound.set_item("atom_mask", mask_shaped)?;
+                dict_bound.set_item("n_models", n_models)?;
             }
 
-            let cached = if should_cache {
+            // The cache stores one model only, so a multi-model result is
+            // never cached: a cache hit would otherwise return a different
+            // (single-model) structure than the first call did.
+            let cached = if should_cache && models_to_process.len() == 1 {
                 Some(formatters::CachedStructure {
                     coordinates: ref_formatted.coordinates.clone(),
                     atom_mask: ref_formatted.atom_mask.clone(),
@@ -681,6 +697,7 @@ fn process_models(
                     _num_residues: ref_formatted.aatype.len(),
                     atom_names: None,
                     coord_shape: None,
+                    full_per_atom: None,
                 })
             } else {
                 None
@@ -738,7 +755,9 @@ fn process_models(
                 pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
             })?;
 
-            let cached = if should_cache {
+            // Single-model only: a multi-model call warns below, and a cache
+            // hit must not silently skip that warning.
+            let cached = if should_cache && models_to_process.len() == 1 {
                 Some(formatters::CachedStructure {
                     coordinates: formatted.coordinates.clone(),
                     atom_mask: formatted.atom_mask.clone(),
@@ -748,6 +767,15 @@ fn process_models(
                     _num_residues: formatted.aatype.len(),
                     atom_names: Some(formatted.atom_names.clone()),
                     coord_shape: Some(formatted.coord_shape),
+                    // The cache-hit dict used to lack these, so a second parse
+                    // of the same file returned less than the first
+                    // (backlog #5684 / debt #2353).
+                    full_per_atom: Some(formatters::FullPerAtom {
+                        atom_residue_ids: formatted.atom_residue_ids.clone(),
+                        elements: formatted.elements.clone(),
+                        res_names: formatted.res_names.clone(),
+                        atom_chain_ids: formatted.atom_chain_ids.clone(),
+                    }),
                 })
             } else {
                 None
@@ -756,6 +784,26 @@ fn process_models(
             (formatted.to_py_dict(py)?, cached)
         }
     };
+
+    // Only Atom37 stacks models. Every other format formats the reference
+    // model alone; on a multi-model file that used to happen silently (debt
+    // #2355), so say so and record which model was used.
+    if models_to_process.len() > 1 && spec.coord_format != CoordFormat::Atom37 {
+        let msg = format!(
+            "{} models present; {:?} output contains only the first of them. Select a \
+             model explicitly with OutputSpec(models=[...]) or use CoordFormat.Atom37, \
+             which stacks all models.",
+            models_to_process.len(),
+            spec.coord_format
+        );
+        PyErr::warn_bound(
+            py,
+            &py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
+            &msg,
+            1,
+        )?;
+        dict.set_item("n_models_present", models_to_process.len())?;
+    }
 
     // Insert into cache if needed
     if let (Some(cached), Some(path)) = (cached_structure, cache_path) {
