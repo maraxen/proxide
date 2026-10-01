@@ -182,10 +182,8 @@ pub fn assign_types_with_rules<R: Gaff2RuleMatch>(
 /// # Errors
 /// Propagates any I/O or parse error from loading the bundled DEF file (see
 /// [`crate::rules_loader::get_default_rules`]) as a `String`, matching this
-/// function's `Result` contract -- Python's equivalent has no such failure
-/// mode (`_get_default_rules()` never raises), so this is a Rust-idiomatic
-/// widening of the error surface, not a behavior difference in the success
-/// path.
+/// function's `Result` contract -- Python's `_get_default_rules()` raises
+/// `Gaff2DefMissingError`/`Gaff2DefInvalidError` in the same situations.
 pub fn assign_gaff2_atom_types(mol: &MolGraph) -> Result<Vec<String>, String> {
     let (rules, wildatom_map) = crate::rules_loader::get_default_rules()?;
     Ok(assign_types_with_rules(mol, &rules, &wildatom_map))

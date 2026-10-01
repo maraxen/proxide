@@ -150,3 +150,31 @@ def test_ci_yml_literals_match_pin() -> None:
     sha_match = re.search(r"([0-9a-f]{64})\s+src/proxide/assets/gaff/dat/ATOMTYPE_GFF2\.DEF", ci_text)
     assert sha_match, "could not find the sha256sum -c line in ci.yml"
     assert sha_match.group(1) == pin["sha256"]
+
+
+# Debt #2361: a malformed ATD line used to vanish silently while the rest of
+# the file loaded. Synthetic content only (see module docstring).
+_DEF_HEADER = "Defination begin\n------------------\n"
+
+
+@pytest.mark.parametrize(
+    "bad_line",
+    [
+        "ATD  c3    *   6   4",  # no terminating "&"
+        "ATD  c3    *   &",  # fewer than 3 fields
+        "ATD  c3    &",  # one token, but not the DU catch-all
+        "ATD  bogus *   NOTANUM 4 &",  # atomic number does not parse
+    ],
+)
+def test_malformed_atd_line_is_an_error(tmp_path, bad_line):
+    def_path = tmp_path / "bad.DEF"
+    def_path.write_text(f"{_DEF_HEADER}ATD  c3 * 6 4 &\n{bad_line}\n")
+    with pytest.raises(Gaff2DefInvalidError, match="1 malformed ATD rule line"):
+        gaff2.parse_gaff2_rules(def_path)
+
+
+def test_du_catch_all_is_the_one_deliberate_skip(tmp_path):
+    def_path = tmp_path / "du.DEF"
+    def_path.write_text(f"{_DEF_HEADER}ATD  c3 * 6 4 &\nATD  DU    &\n")
+    rules, _ = gaff2.parse_gaff2_rules(def_path)
+    assert [r.atom_type for r in rules] == ["c3"]

@@ -289,14 +289,21 @@ def parameterize(
       data = {
         "positions": mol.positions,
         "atom_types": mol.atom_types,
-        "charges": mol.charges,
         "elements": mol.elements,
         "bonds": np.array(mol.bonds),
       }
+      # Unknown charges are omitted, never written as zeros (debt #1929).
+      if mol.charges is not None:
+        data["charges"] = mol.charges
 
       np.savez_compressed(output, **data)  # ty: ignore[invalid-argument-type]
 
     console.print(f"[bold green]✓[/bold green] Parameterized and saved to [cyan]{output}[/cyan]")
+    if mol.charges is None:
+      console.print(
+        f"[yellow]Warning: {input} carries no partial charges; 'charges' was NOT written "
+        "to the NPZ. Assign charges (e.g. espaloma) before running MD.[/yellow]"
+      )
 
   except Exception as e:
     console.print(f"[red]Parameterization failed: {e}[/red]")

@@ -40,15 +40,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("running contacts on {} residues...", residues.len());
     let contact_list = cf.contacts(&residues, opts.cd_cut)?;
 
+    // contacts() caches every queried residue (failures propagate) and
+    // computes freedom for each, so an error here is a broken invariant.
+    // Propagate it: `.ok()` used to drop the residue from the output without
+    // a word (debt #1905).
     let crowdedness_list: Vec<(ResidueIndex, f64)> = residues
         .iter()
-        .filter_map(|&ri| cf.crowdedness(ri).ok().map(|c| (ri, c)))
-        .collect();
+        .map(|&ri| cf.crowdedness(ri).map(|c| (ri, c)))
+        .collect::<Result<_, _>>()?;
 
     let freedom_list: Vec<(ResidueIndex, f64)> = residues
         .iter()
-        .filter_map(|&ri| cf.freedom(ri).ok().map(|f| (ri, f)))
-        .collect();
+        .map(|&ri| cf.freedom(ri).map(|f| (ri, f)))
+        .collect::<Result<_, _>>()?;
 
     let interference_list = cf.interference(&residues, opts.in_cut)?;
 

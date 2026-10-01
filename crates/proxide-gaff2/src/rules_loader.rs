@@ -98,12 +98,26 @@ pub fn get_default_rules() -> Result<(Vec<Gaff2Rule>, WildatomMap), String> {
 /// explicit-path branch; `parse` is the injection point tests use to stand
 /// in for `def_parser::parse_gaff2_rules` so this helper is unit-testable
 /// independent of the real DEF grammar.
+///
+/// Zero parsed rules is an error, never `Ok(empty)` (debt #1902): the parser
+/// skips unparseable lines, so an empty result means the file is empty,
+/// truncated, or not a DEF at all -- and an empty ruleset would type every
+/// atom through the per-element fallback without a word. Mirrors Python's
+/// `Gaff2DefInvalidError` in `gaff2.py::load_gaff2_rules`.
 fn read_and_parse(
     path: &Path,
     parse: impl FnOnce(&str) -> Result<(Vec<Gaff2Rule>, WildatomMap), String>,
 ) -> Result<(Vec<Gaff2Rule>, WildatomMap), String> {
     let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    parse(&content)
+    let (rules, wildatom) = parse(&content)?;
+    if rules.is_empty() {
+        return Err(format!(
+            "{} parsed to zero GAFF2 rules; the parser skips unparseable lines, so \
+             the file is empty, truncated, or not a valid ATOMTYPE_GFF2.DEF",
+            path.display()
+        ));
+    }
+    Ok((rules, wildatom))
 }
 
 /// Port of `load_gaff2_rules()` (gaff2.py:575-589).
@@ -292,5 +306,21 @@ mod tests {
         assert_eq!(rules2.len(), 1);
         // Two independent calls -> two independent parses (no cache).
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    /// Debt #1902: an explicit DEF with zero parseable rules used to come
+    /// back `Ok((vec![], ..))`. Exercised through the public entry point and
+    /// the real parser, on a file that exists but is not a DEF.
+    #[test]
+    fn explicit_path_with_zero_parseable_rules_is_an_error() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "this is not an ATOMTYPE_GFF2.DEF file").unwrap();
+        writeln!(tmp, "# nor is this").unwrap();
+        let err = load_gaff2_rules(Some(tmp.path())).unwrap_err();
+        assert!(err.contains("zero GAFF2 rules"), "unexpected error: {err}");
+
+        let empty = tempfile::NamedTempFile::new().unwrap();
+        let err = load_gaff2_rules(Some(empty.path())).unwrap_err();
+        assert!(err.contains("zero GAFF2 rules"), "unexpected error: {err}");
     }
 }

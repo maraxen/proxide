@@ -366,7 +366,9 @@ class Protein:
         else None,
         format="Atom37",
         source=source,
-        chain_ids=rust_dict.get("unique_chain_ids") or (["A"] * len(rust_dict["chain_index"])),
+        # No vocabulary means the chain ids are unknown: None, not ["A", ...]
+        # (debt #2354; writers then emit the PDB blank chain / raise for mmCIF).
+        chain_ids=rust_dict.get("unique_chain_ids") or None,
         full_coordinates=convert(raw_coords, dtype=np.float32).reshape(-1, 3),
         full_atom_mask=convert(raw_mask, dtype=np.float32).flatten(),
         masses=convert(rust_dict["masses"]) if rust_dict.get("masses") is not None else None,

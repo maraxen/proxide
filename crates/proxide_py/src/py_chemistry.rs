@@ -349,11 +349,25 @@ pub fn parameterize_molecule(
     let atom_types: Vec<&str> = params.atom_types.iter().map(|s| s.as_str()).collect();
     dict.set_item("atom_types", atom_types)?;
 
-    // LJ parameters
-    let charges = PyArray1::from_slice_bound(py, &params.charges);
+    // What this call could NOT source (debt #2352): whole parameter classes
+    // (their keys are omitted below rather than filled with placeholders) and
+    // per-atom LJ misses.
+    dict.set_item(
+        "unparameterized_terms",
+        params.unparameterized_terms.clone(),
+    )?;
+    dict.set_item(
+        "unparameterized_atoms",
+        PyArray1::from_slice_bound(py, &params.unparameterized_atoms),
+    )?;
+
+    // LJ parameters. `charges` only when real ones exist -- GAFF has none, so
+    // for this path the key is absent, never an all-zero array.
+    if !params.unparameterized_terms.contains(&"charges") {
+        dict.set_item("charges", PyArray1::from_slice_bound(py, &params.charges))?;
+    }
     let sigmas = PyArray1::from_slice_bound(py, &params.sigmas);
     let epsilons = PyArray1::from_slice_bound(py, &params.epsilons);
-    dict.set_item("charges", charges)?;
     dict.set_item("sigmas", sigmas)?;
     dict.set_item("epsilons", epsilons)?;
 

@@ -72,12 +72,14 @@
 
 ### Ligand Charge Assignment
 
-**Status:** Deferred (parameterize_molecule returns zero charges)
+**Status:** Deferred (parameterize_molecule returns no charges)
 
 **Background:**
 
 GAFF provides LJ parameters and atom types but NOT partial charges.
-`parameterize_molecule()` currently returns zero charges for all atoms.
+`parameterize_molecule()` returns no charges: the vector is empty and
+`"charges"` is listed in `unparameterized_terms` (debt #2352, 2026-10-01;
+it used to return all-zero charges reported as parameterized).
 
 **Options:**
 

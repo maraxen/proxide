@@ -130,7 +130,25 @@ pub struct MDParameters {
     /// See [`ParamOptions::strict`] to turn a non-empty report into a hard
     /// error instead.
     pub unparameterized_atoms: Vec<usize>,
+    /// Whole parameter classes this call could not source at all, by name
+    /// (one of [`UNPARAMETERIZED_TERM_NAMES`]). Each listed class has an
+    /// EMPTY parameter vector -- never a placeholder -- so a consumer that
+    /// ignores this list fails on length instead of integrating fabricated
+    /// values. Empty for force-field parameterization; see
+    /// [`parameterize_molecule`] for the GAFF path, which has no charges or
+    /// bonded tables (debt #2352).
+    pub unparameterized_terms: Vec<&'static str>,
 }
+
+/// Every name [`MDParameters::unparameterized_terms`] may contain.
+pub const UNPARAMETERIZED_TERM_NAMES: [&str; 6] = [
+    "charges",
+    "bond_params",
+    "angle_params",
+    "dihedral_params",
+    "improper_params",
+    "resolved_nonbonded_14_params",
+];
 
 /// Options for parameterization
 #[derive(Debug, Clone)]
@@ -878,6 +896,7 @@ pub fn parameterize_structure(
             Vec::new()
         },
         unparameterized_atoms,
+        unparameterized_terms: Vec::new(),
     })
 }
 
@@ -887,8 +906,15 @@ pub fn parameterize_structure(
 /// It infers topology from coordinates, assigns GAFF atom types, and
 /// looks up LJ parameters from the GAFF parameter set.
 ///
-/// Note: GAFF does not provide partial charges. Use antechamber or AM1-BCC
-/// for accurate charges. This function assigns zero charges by default.
+/// What it does NOT provide, and how that is reported: GAFF supplies no
+/// partial charges, and `GaffParameters`' bond/angle tables are empty, so
+/// there are no real charges, bonded parameters, or charge-dependent 1-4
+/// parameters to return. Those vectors come back EMPTY and are named in
+/// [`MDParameters::unparameterized_terms`]. (They used to be all-zero
+/// charges and one generic value per bond/angle/dihedral -- 0.15 nm/300,
+/// 1.91 rad/100, k=0, k=10 -- reported as fully parameterized; debt #2352.)
+/// Topology (`bonds`, `angles`, `dihedrals`, `impropers`, `pairs_14`) is
+/// inferred from geometry and is real.
 pub fn parameterize_molecule(
     coords: &[[f32; 3]],
     elements: &[String],
@@ -914,8 +940,7 @@ pub fn parameterize_molecule(
     // Assign GAFF atom types
     let gaff_types = assign_gaff_types(elements, &topology, &gaff);
 
-    // Initialize parameter arrays
-    let charges = vec![0.0f32; n_atoms]; // GAFF doesn't provide charges
+    // Initialize parameter arrays. No charges: GAFF has none (see doc above).
     let mut sigmas = vec![0.0f32; n_atoms];
     let mut epsilons = vec![0.0f32; n_atoms];
     let mut atom_types = vec![String::new(); n_atoms];
@@ -956,44 +981,18 @@ pub fn parameterize_molecule(
     let impropers = Topology::generate_improper_dihedrals(&topology.adjacency, elements);
     let impropers_vec: Vec<[usize; 4]> = impropers.iter().map(|d| [d.i, d.j, d.k, d.l]).collect();
 
-    // For bond/angle/dihedral params, use default values since GAFF bond params
-    // require specific type pairs. This is a simplified implementation.
-    // A full implementation would use GAFF bond/angle/dihedral parameter tables.
-    let bond_params: Vec<[f32; 2]> = bonds_vec
-        .iter()
-        .map(|_| [0.15, 300.0]) // Default: 1.5 Å, 300 kJ/mol/nm²
-        .collect();
-
-    let angle_params: Vec<[f32; 2]> = angles_vec
-        .iter()
-        .map(|_| [1.91, 100.0]) // Default: ~109.5°, 100 kJ/mol/rad²
-        .collect();
-
-    let dihedral_params: Vec<[f32; 3]> = dihedrals_vec
-        .iter()
-        .map(|_| [1.0, 0.0, 0.0]) // Default: periodicity 1, phase 0, k 0
-        .collect();
-
-    let improper_params: Vec<[f32; 3]> = impropers_vec
-        .iter()
-        .map(|_| [2.0, std::f32::consts::PI, 10.0]) // Default: periodicity 2, phase π, k 10
-        .collect();
-
-    // 1-4 pairs from dihedrals
+    // No bond/angle/dihedral/improper parameters: GaffParameters' bonds and
+    // angles tables are empty, and there is no dihedral table at all. One
+    // generic value per term would be a fabricated measurement, so these stay
+    // empty and are named in `unparameterized_terms`.
+    //
+    // 1-4 pairs from dihedrals are real topology. Their resolved parameters
+    // depend on charges (chargeProd), which do not exist, so they are not
+    // resolved either.
     let pairs_14: Vec<[usize; 2]> = dihedrals_vec.iter().map(|d| [d[0], d[3]]).collect();
-    let resolved_nonbonded_14_params = resolve_14_params(
-        &pairs_14,
-        &charges,
-        &sigmas,
-        &epsilons,
-        &atom_types,
-        &[],
-        0.5,
-        0.833333,
-    );
 
     Ok(MDParameters {
-        charges,
+        charges: Vec::new(),
         sigmas,
         epsilons,
         radii: None,
@@ -1002,22 +1001,23 @@ pub fn parameterize_molecule(
         num_parameterized,
         num_skipped,
         bonds: bonds_vec,
-        bond_params,
+        bond_params: Vec::new(),
         angles: angles_vec,
-        angle_params,
+        angle_params: Vec::new(),
         dihedrals: dihedrals_vec,
-        dihedral_params,
+        dihedral_params: Vec::new(),
         max_proper_terms: 1,
         impropers: impropers_vec,
-        improper_params,
+        improper_params: Vec::new(),
         max_improper_terms: 1,
-        resolved_nonbonded_14_params,
+        resolved_nonbonded_14_params: Vec::new(),
         pairs_14,
         nonbonded_exceptions: Vec::new(),
         cmap_torsions: Vec::new(),
         cmap_map_indices: Vec::new(),
         cmap_grids: Vec::new(),
         unparameterized_atoms,
+        unparameterized_terms: UNPARAMETERIZED_TERM_NAMES.to_vec(),
     })
 }
 
@@ -1765,6 +1765,44 @@ mod tests {
         let res = parameterize_molecule(&coords, &elements, 1.3);
         assert!(res.is_err());
         assert!(format!("{}", res.unwrap_err()).contains("mismatch"));
+    }
+
+    /// Debt #2352: the GAFF molecule path has no charge or bonded tables. It
+    /// used to return all-zero charges and one generic value per bonded term
+    /// while reporting the molecule as parameterized. Now: real topology,
+    /// empty parameter vectors, and every missing class named.
+    #[test]
+    fn test_parameterize_molecule_reports_missing_terms_instead_of_fabricating() {
+        // Ethanol-like heavy-atom chain C-C-O plus enough geometry for a
+        // dihedral: C-C-C-O, ~1.5 A spacing, zig-zag.
+        let elements: Vec<String> = ["C", "C", "C", "O"].iter().map(|s| s.to_string()).collect();
+        let coords = vec![
+            [0.0, 0.0, 0.0],
+            [1.52, 0.0, 0.0],
+            [2.03, 1.43, 0.0],
+            [3.45, 1.43, 0.3],
+        ];
+        let p = parameterize_molecule(&coords, &elements, 1.3).unwrap();
+
+        assert!(
+            !p.bonds.is_empty(),
+            "topology is real and must still be returned"
+        );
+        assert!(!p.angles.is_empty());
+        assert!(!p.dihedrals.is_empty());
+        assert_eq!(p.pairs_14.len(), p.dihedrals.len());
+
+        assert!(
+            p.charges.is_empty(),
+            "no charges exist; got {:?}",
+            p.charges
+        );
+        assert!(p.bond_params.is_empty());
+        assert!(p.angle_params.is_empty());
+        assert!(p.dihedral_params.is_empty());
+        assert!(p.improper_params.is_empty());
+        assert!(p.resolved_nonbonded_14_params.is_empty());
+        assert_eq!(p.unparameterized_terms, UNPARAMETERIZED_TERM_NAMES.to_vec());
     }
 
     /// One ALA protein residue (atoms 0,1,2; far from the waters) plus two
