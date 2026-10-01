@@ -246,8 +246,43 @@ class TestWritePdbInventsNothing:
     assert {line[17:20] for line in lines[:5]} == {resnames[ala]}
     assert {line[17:20] for line in lines[5:]} == {resnames[gly]}
     assert [int(line[22:26]) for line in lines] == [10] * 5 + [11] * 5
-    # Element unknown to the writer: blank, not atom_name[0].
-    assert {line[76:78] for line in lines} == {"  "}
+    # Elements come from the Atom37 slot table, and one-letter-element names
+    # start in column 14 (" CA "), so external readers don't see calcium.
+    assert [line[76:78] for line in lines[:5]] == [" N", " C", " C", " C", " O"]
+    assert [line[12:16] for line in lines[:5]] == [" N  ", " CA ", " C  ", " CB ", " O  "]
+
+  def test_atom37_element_table_covers_exactly_the_vocabulary(self) -> None:
+    from proxide.chem.residues import atom_types
+    from proxide.io.writing import _ATOM37_ELEMENT
+
+    assert set(_ATOM37_ELEMENT) == set(atom_types)
+    assert set(_ATOM37_ELEMENT.values()) == {"N", "C", "O", "S"}
+
+  @pytest.mark.parametrize("bad_aatype", [-1, 21])
+  def test_atom37_out_of_range_aatype_raises(self, tmp_path, bad_aatype) -> None:
+    mask = np.zeros((1, 37), dtype=np.float32)
+    mask[0, 1] = 1.0
+    protein = Protein(
+      coordinates=np.ones((1, 37, 3), dtype=np.float32),
+      aatype=np.array([bad_aatype], dtype=np.int8),
+      residue_index=np.zeros(1, dtype=np.int32),
+      chain_index=np.zeros(1, dtype=np.int32),
+      chain_ids=["A"],
+      atom_mask=mask,
+    )
+    with pytest.raises(ValueError, match="aatype"):
+      write_pdb(protein, tmp_path / "out.pdb")
+
+  def test_mmcif_rejects_empty_or_spaced_tokens(self, tmp_path) -> None:
+    with pytest.raises(ValueError, match="atom name ''"):
+      write_mmcif(_flat_protein(2, atom_names=["CA", ""]), tmp_path / "out.cif")
+    with pytest.raises(ValueError, match="whitespace"):
+      write_mmcif(_flat_protein(2, res_names=["ALA", "A A"]), tmp_path / "out.cif")
+    assert not (tmp_path / "out.cif").exists()
+
+  def test_mmcif_quotes_special_leading_characters(self, tmp_path) -> None:
+    lines = _atom_lines(write_mmcif(_flat_protein(2, atom_names=["CA", "_X"]), tmp_path / "o.cif"))
+    assert lines[1].split()[3] == "'_X'"
 
   def test_atom37_without_atom_mask_raises(self, tmp_path) -> None:
     protein = Protein(

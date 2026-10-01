@@ -84,6 +84,19 @@ def _resolve_chain_letters(protein: Protein, n_rows: int) -> list[str]:
   return [chain_ids[idx] if 0 <= idx < len(chain_ids) else "A" for idx in row_chain_index]
 
 
+# Element of each Atom37 slot. Definitional data for a closed protein
+# heavy-atom vocabulary, written out per name -- not derived from the name
+# string (ledger A2/A5). Kept in lockstep with residues.atom_types by test.
+_ATOM37_ELEMENT = {
+  "N": "N", "CA": "C", "C": "C", "CB": "C", "O": "O", "CG": "C", "CG1": "C",
+  "CG2": "C", "OG": "O", "OG1": "O", "SG": "S", "CD": "C", "CD1": "C",
+  "CD2": "C", "ND1": "N", "ND2": "N", "OD1": "O", "OD2": "O", "SD": "S",
+  "CE": "C", "CE1": "C", "CE2": "C", "CE3": "C", "NE": "N", "NE1": "N",
+  "NE2": "N", "OE1": "O", "OE2": "O", "CH2": "C", "NH1": "N", "NH2": "N",
+  "OH": "O", "CZ": "C", "CZ2": "C", "CZ3": "C", "NZ": "N", "OXT": "O",
+}  # fmt: skip
+
+
 def _reject_nonfinite(coords: np.ndarray, fn_name: str) -> None:
   """Raise if any coordinate is NaN/inf -- "nan" fits an 8-char PDB column."""
   bad = ~np.isfinite(np.asarray(coords, dtype=np.float64)).all(axis=-1)
@@ -181,13 +194,24 @@ def _atom_rows(
   res_chain = _resolve_chain_letters(protein, coords.shape[0])
 
   res_idx, slot_idx = np.nonzero(atom_mask)
+  # aatype indexes `resnames` (20 = the explicit "UNK" class). Anything outside
+  # that range is a sentinel (e.g. -1 padding), and Python's negative indexing
+  # would silently turn it into a real residue name.
+  bad = sorted({int(aatype[r]) for r in res_idx} - set(range(len(resnames))))
+  if bad:
+    msg = (
+      f"{fn_name}: aatype values {bad} on residues with resolved atoms are outside "
+      f"0..{len(resnames) - 1}; refusing to name those residues"
+    )
+    raise ValueError(msg)
+  names = [atom_types[k] for k in slot_idx]
   return (
     coords[res_idx, slot_idx],
-    [atom_types[k] for k in slot_idx],
+    names,
     [resnames[int(aatype[r])] for r in res_idx],
     residue_index[res_idx],
     [res_chain[r] for r in res_idx],
-    [""] * len(res_idx),
+    [_ATOM37_ELEMENT[n] for n in names],
   )
 
 
@@ -260,8 +284,15 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
     if any(len(c) > 8 for c in xyz):
       raise _overflow(f"coordinate ({', '.join(c.strip() for c in xyz)}) (atom {i})")
 
+    # PDB convention: a name whose element is one letter starts in column 14
+    # (" CA "), so readers that infer elements from columns 13-14 don't read
+    # CA as calcium or NE as neon. Four-letter names and two-letter or
+    # unknown elements start in column 13.
+    name_field = (
+      f" {atom_name:<3}" if len(element) == 1 and len(atom_name) < 4 else f"{atom_name:<4}"
+    )
     lines.append(
-      f"ATOM  {i + 1:>5} {atom_name:<4} {res_name:>3} {chain_id}{res_seq:>4}    "
+      f"ATOM  {i + 1:>5} {name_field} {res_name:>3} {chain_id}{res_seq:>4}    "
       f"{''.join(xyz)}"
       f"  1.00  0.00          {element:>2}\n"
     )
@@ -286,7 +317,9 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
       Path to the written file.
 
   Raises:
-      ValueError: If a field would have to be invented (see `_atom_rows`).
+      ValueError: If a field would have to be invented (see `_atom_rows`),
+          a coordinate is non-finite, or a name/chain value is empty or
+          contains whitespace (see `_cif_token`).
   """
   path = Path(path)
   _reject_if_batched(protein, "write_mmcif")
@@ -296,6 +329,19 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
   )
   _reject_nonfinite(coords, "write_mmcif")
 
+  rows = []
+  for i in range(len(coords)):
+    # Unknown element -> "?", CIF's own unknown marker (left unquoted on purpose).
+    element = _cif_token(elements[i], "element", i) if elements[i] else "?"
+    x, y, z = coords[i]
+    rows.append(
+      f"ATOM {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
+      f"{_cif_token(res_names[i], 'residue name', i)} "
+      f"{_cif_token(chain_letters[i], 'chain id', i)} "
+      f"{int(res_seqs[i])} {x:.3f} {y:.3f} {z:.3f} 1.00 0.00\n"
+    )
+
+  # Validate every row before touching the file.
   with open(path, "w") as f:
     f.write(f"data_{path.stem}\n")
     f.write("#\n")
@@ -313,15 +359,24 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
     f.write("_atom_site.occupancy\n")
     f.write("_atom_site.B_iso_or_equiv\n")
 
-    for i in range(len(coords)):
-      element = elements[i] or "?"  # CIF's own "unknown" marker
-      x, y, z = coords[i]
-
-      f.write(
-        f"ATOM {i + 1} {element} {atom_names[i]} {res_names[i]} {chain_letters[i]} "
-        f"{int(res_seqs[i])} {x:.3f} {y:.3f} {z:.3f} 1.00 0.00\n"
-      )
+    f.writelines(rows)
   return path
+
+
+def _cif_token(value: str, what: str, i: int) -> str:
+  """One whitespace-free CIF loop value, quoted when its first char demands it.
+
+  An empty or whitespace-containing value would shift every later column of
+  the whitespace-tokenised `_atom_site` loop (the mmCIF analogue of debt
+  #1927), so it raises instead.
+  """
+  if not value or any(ch.isspace() for ch in value):
+    raise ValueError(f"write_mmcif: {what} {value!r} (atom {i}) is empty or contains whitespace")
+  if value[0] in "'\"_#$;[]" or value in ("?", "."):
+    if "'" in value:
+      raise ValueError(f"write_mmcif: {what} {value!r} (atom {i}) cannot be CIF-quoted")
+    return f"'{value}'"
+  return value
 
 
 def write_npz(protein: Protein, path: str | Path) -> Path:

@@ -115,6 +115,9 @@ class Molecule:
           continue
 
         if current_section == "MOLECULE":
+          # Comments are not positional records; blank lines are.
+          if line.startswith("#"):
+            continue
           if molecule_line_idx == 0 and line:
             name = line
           elif molecule_line_idx == 3 and line:
