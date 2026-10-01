@@ -17,6 +17,8 @@
 - [260416_phase2-plan](plans/260416_phase2-plan.md)
 
 ## Specs
+- [261001_proxide-config-file](specs/261001_proxide-config-file.md) — One resolver (explicit > PROXIDE_* env > [tool.proxide] > ~/.config/proxide/config.toml > default) for threads, XTC offsets dir, fetch cache/mirrors, tool paths and dev fixtures; science parameters and secrets deliberately excluded
+- [260910_proxide-silent-substitution-observability](specs/260910_proxide-silent-substitution-observability.md) — Canonical diagnostics channel, connected telemetry, provenance/parity attestation, and a chemical-space coverage gate — built by generalising mechanisms proxide already has
 - [260821_rust-port-skill-draft](specs/260821_rust-port-skill-draft.md) — Proposal for a reusable skill covering Python→Rust ports of validated algorithmic code, distilled from the GAFF2 atom-typer port (260821)
 - [260729_proxide-tmalign-phases-2-5](specs/260729_proxide-tmalign-phases-2-5.md) — Remaining seeds, parity harness, orx-parallel, PyO3 bindings, bathos benchmark for the TM-align port
 - [260630_proxide-jaccard](specs/260630_proxide-jaccard.md) — proxide-jaccard crate — pairwise Jaccard distance matrices over scaled-MinHash genome sketches, parallelized with orx-parallel
@@ -39,6 +41,7 @@
 - [260820_gaff2-parity-verdict](audits/260820_gaff2-parity-verdict.md) — Phase 5 graded verdict (PARITY, as of the PR
 
 ## Research
+- [260922_optional-dep-test-preflight](research/260922_optional-dep-test-preflight.md) — Assessment of optional-dependency-gated test execution when rdkit, mdtraj, h5py, and tables are installed at uv.lock versions on Python 3.11
 - [260729_tm-align-phase-2-algorithm-map](research/260729_tm-align-phase-2-algorithm-map.md) — Line-referenced map of USalign's 5 seeding strategies, get_score_fast, DP_iter/NWDP_TM/TMscore8_search, and final multi-TM output
 - [260630_arrow-ipc-prototype](research/260630_arrow-ipc-prototype.md) — proxide-jaccard — Arrow IPC + sorted accession index prototype, measured against the real corpus; planus vs flatbuffers vs Arrow IPC tradeoff analysis
 - [260603_branch-torsion-offset-diagnostic](research/260603_branch-torsion-offset-diagnostic.md) — #869 diagnostic: measure branch atom torsion offsets in MASTER rotlib.bin; hypothesis = failing residues (GLU/PHE/ASP/LEU/VAL/MET) have offset != template constant; pass = confines error source; fail = error from bond angles or CB placement
@@ -47,6 +50,7 @@
 - [260602_rotlib-notebook-plan](research/260602_rotlib-notebook-plan.md) — NotebookLM research notebook plan for rotamer library and confind — sources, prompts, and expected outputs to ground project direction
 
 ## Decisions
+- [260827_alphex-runtime-dependency-d4-superseded](decisions/260827_alphex-runtime-dependency-d4-superseded.md) — alphex promoted from dev-only to runtime dependency in proxide, superseding decision D4 for this repo specifically
 - [260818_gaff2-parity-verdict-policy](decisions/260818_gaff2-parity-verdict-policy.md) — Verdict policy and tolerances for bathos-literature-parity validation of GAFF2 atom typing implementation
 - [260623_coords_to_chi_path](decisions/260623_coords_to_chi_path.md) — ADR: pure-Python coords→χ + chi_to_coords chosen; PyO3/Rust deferred (B4 #2654)
 - [260602_contact-threshold-adr](decisions/260602_contact-threshold-adr.md) — Architecture decision record for CONTACT_THRESHOLD in proxide-confind — const vs. public arg with cited default
