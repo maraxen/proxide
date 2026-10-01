@@ -713,7 +713,8 @@ fn process_models(
             // Emit UserWarning if there are unplaced residues
             if !formatted.unplaced_residues.is_empty() {
                 let count = formatted.unplaced_residues.len();
-                let names: Vec<String> = formatted.unplaced_residues
+                let names: Vec<String> = formatted
+                    .unplaced_residues
                     .iter()
                     .take(10)
                     .map(|(idx, name)| format!("RES#{}{}", idx, name))

@@ -819,17 +819,24 @@ impl CifParseState {
 
         // Check for residue reappearance
         let key = (atom.res_seq, atom.i_code);
-        let tracker = self.residue_trackers
+        let tracker = self
+            .residue_trackers
             .entry((new_model, atom.chain_id.clone()))
             .or_insert_with(ResidueTracker::new);
 
-        if let Err(_) = tracker.check_reappearance(key) {
+        if tracker.check_reappearance(key).is_err() {
+            // The key is the seq id the reader resolved (label_seq_id, or
+            // auth_seq_id where label is inapplicable) plus
+            // pdbx_PDB_ins_code, per model and resolved chain id.
             return Err(Box::new(CifFieldError::new(
                 start_line,
-                "auth_seq_id/pdbx_PDB_model_num+auth_asym_id",
-                "res_seq+i_code",
-                &format!("{}|{}", atom.res_seq, atom.i_code),
-                TokenFieldErrorKind::TokenCount, // Using TokenCount as a stand-in for reappearance
+                "label_seq_id|auth_seq_id + pdbx_PDB_ins_code",
+                "residue key",
+                &format!(
+                    "model {} chain {} seq {} ins '{}'",
+                    new_model, atom.chain_id, atom.res_seq, atom.i_code
+                ),
+                TokenFieldErrorKind::ResidueReappears,
             )));
         }
 
@@ -1566,9 +1573,20 @@ _atom_site.label_seq_id
     #[test]
     fn residue_wraparound_contiguous_is_ok() {
         // Contiguous repeat of the same (chain, seq, icode) should be OK
-        let cols = ["group_PDB", "id", "label_atom_id", "label_comp_id",
-                    "label_asym_id", "label_seq_id", "pdbx_PDB_ins_code",
-                    "Cartn_x", "Cartn_y", "Cartn_z", "occupancy", "B_iso_or_equiv"];
+        let cols = [
+            "group_PDB",
+            "id",
+            "label_atom_id",
+            "label_comp_id",
+            "label_asym_id",
+            "label_seq_id",
+            "pdbx_PDB_ins_code",
+            "Cartn_x",
+            "Cartn_y",
+            "Cartn_z",
+            "occupancy",
+            "B_iso_or_equiv",
+        ];
         let text = format!(
             "{}ATOM 1 N ALA A 1 ? 0.000 0.000 0.000 1.00 10.00\n\
              ATOM 2 CA ALA A 1 . 1.000 1.000 1.000 1.00 10.00\n\
@@ -1582,9 +1600,20 @@ _atom_site.label_seq_id
     #[test]
     fn residue_wraparound_duplicate_is_error() {
         // (chain, seq, icode) reappearing after a different residue should error
-        let cols = ["group_PDB", "id", "label_atom_id", "label_comp_id",
-                    "label_asym_id", "label_seq_id", "pdbx_PDB_ins_code",
-                    "Cartn_x", "Cartn_y", "Cartn_z", "occupancy", "B_iso_or_equiv"];
+        let cols = [
+            "group_PDB",
+            "id",
+            "label_atom_id",
+            "label_comp_id",
+            "label_asym_id",
+            "label_seq_id",
+            "pdbx_PDB_ins_code",
+            "Cartn_x",
+            "Cartn_y",
+            "Cartn_z",
+            "occupancy",
+            "B_iso_or_equiv",
+        ];
         let text = format!(
             "{}ATOM 1 N ALA A 1 ? 0.000 0.000 0.000 1.00 10.00\n\
              ATOM 2 CA ALA A 1 . 1.000 1.000 1.000 1.00 10.00\n\
@@ -1597,6 +1626,6 @@ _atom_site.label_seq_id
         // then A 1 appears again at atom 5 -> error
         let err = expect_cif_err(&text);
         // The error should be about residue reappearance
-        assert_eq!(err.kind, TokenFieldErrorKind::TokenCount);
+        assert_eq!(err.kind, TokenFieldErrorKind::ResidueReappears);
     }
 }

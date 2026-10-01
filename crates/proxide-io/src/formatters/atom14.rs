@@ -11,11 +11,11 @@ use std::collections::HashMap;
 /// Formatted structure in Atom14 representation
 #[derive(Debug)]
 pub struct FormattedAtom14 {
-    pub coordinates: Vec<f32>,   // Flat (N_res * 14 * 3)
-    pub atom_mask: Vec<f32>,     // Flat (N_res * 14)
-    pub aatype: Vec<i8>,         // (N_res,) residue type indices
-    pub residue_index: Vec<i32>, // (N_res,) PDB residue numbers
-    pub chain_index: Vec<i32>,   // (N_res,) chain indices
+    pub coordinates: Vec<f32>,                   // Flat (N_res * 14 * 3)
+    pub atom_mask: Vec<f32>,                     // Flat (N_res * 14)
+    pub aatype: Vec<i8>,                         // (N_res,) residue type indices
+    pub residue_index: Vec<i32>,                 // (N_res,) PDB residue numbers
+    pub chain_index: Vec<i32>,                   // (N_res,) chain indices
     pub unplaced_residues: Vec<(usize, String)>, // (residue_index, res_name) for residues with atoms but no atom14 layout
 }
 

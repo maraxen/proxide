@@ -65,6 +65,9 @@ pub enum TokenFieldErrorKind {
     /// A mmCIF `group_PDB` value was present but was neither `ATOM` nor
     /// `HETATM` (track b, decision l).
     BadGroup,
+    /// A residue key (seq id + insertion code) reappeared in the same model
+    /// and chain after a different residue (debt #1931).
+    ResidueReappears,
     /// An I/O error while reading a line (not a content problem).
     Io,
 }
@@ -87,6 +90,9 @@ impl fmt::Display for TokenFieldErrorKind {
                 "more than one data_ block contains an _atom_site loop"
             }
             TokenFieldErrorKind::BadGroup => "group_PDB is neither ATOM nor HETATM",
+            TokenFieldErrorKind::ResidueReappears => {
+                "residue key reappeared non-contiguously in the same model+chain"
+            }
             TokenFieldErrorKind::Io => "I/O error",
         };
         f.write_str(s)

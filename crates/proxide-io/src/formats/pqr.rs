@@ -336,8 +336,12 @@ impl std::error::Error for PqrResidueReappearanceError {}
 /// chain/seq/icode after a different residue) returns [`PqrResidueReappearanceError`].
 pub fn parse_pqr_file<P: AsRef<Path>>(path: P) -> Result<RawAtomData, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
-    let reader = BufReader::new(file);
+    parse_pqr_reader(BufReader::new(file))
+}
 
+/// [`parse_pqr_file`]'s parser over any reader -- the single implementation
+/// both the file path and the tests use.
+pub fn parse_pqr_reader<R: BufRead>(reader: R) -> Result<RawAtomData, Box<dyn std::error::Error>> {
     let mut raw_data = RawAtomData::new();
     let mut seen_model = false;
     let mut residue_trackers: HashMap<(usize, String), ResidueTracker> = HashMap::new();
@@ -605,60 +609,11 @@ mod tests {
     // A2: Multi-model PQR tracking (debt #1932)
     // -------------------------------------------------------
 
-    fn parse_from_string(
-        s: &str,
-    ) -> Result<RawAtomData, Box<dyn std::error::Error>> {
-        let mut raw_data = RawAtomData::new();
-        let mut seen_model = false;
-        let mut residue_trackers: HashMap<(usize, String), ResidueTracker> = HashMap::new();
-        let current_model: usize = 1;
-
-        for (idx, line) in s.lines().enumerate() {
-            let line_no = idx + 1;
-
-            // Check for MODEL/ENDMDL records
-            let tokens: Vec<&str> = line.split_whitespace().collect();
-            if !tokens.is_empty() {
-                let record_type = tokens[0];
-                if record_type == "MODEL" {
-                    if seen_model {
-                        return Err(Box::new(PqrMultiModelError {
-                            line: line_no,
-                            message: "multi-model PQR is not supported".to_string(),
-                        }));
-                    }
-                    seen_model = true;
-                    continue;
-                } else if record_type == "ENDMDL" {
-                    continue;
-                }
-            }
-
-            if let Some(atom) = parse_pqr_line(&line, line_no)? {
-                // Check for residue reappearance
-                let key = (atom.res_seq, atom.i_code);
-                let tracker = residue_trackers
-                    .entry((current_model, atom.chain_id.clone()))
-                    .or_insert_with(ResidueTracker::new);
-
-                if let Err(_) = tracker.check_reappearance(key) {
-                    return Err(Box::new(PqrResidueReappearanceError {
-                        line: line_no,
-                        chain_id: atom.chain_id.clone(),
-                        res_seq: atom.res_seq,
-                        i_code: atom.i_code,
-                    }));
-                }
-
-                raw_data.add_atom(atom);
-            }
-        }
-
-        if raw_data.num_atoms == 0 {
-            return Err("No atoms found in PQR file".into());
-        }
-
-        Ok(raw_data)
+    // Drives the production parser (parse_pqr_reader), never a copy of it:
+    // a test-local re-implementation could not catch a regression in the
+    // real loop (review finding, task 261001_proxide-debt-sweep-2).
+    fn parse_from_string(s: &str) -> Result<RawAtomData, Box<dyn std::error::Error>> {
+        parse_pqr_reader(std::io::Cursor::new(s))
     }
 
     #[test]
