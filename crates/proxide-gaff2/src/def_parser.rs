@@ -373,9 +373,15 @@ pub fn parse_gaff2_rules(content: &str) -> Result<(Vec<Gaff2Rule>, WildatomMap),
     let wildatom_map = parse_wildatom_defs(&lines);
 
     let mut rules: Vec<Gaff2Rule> = Vec::new();
+    // Malformed ATD lines inside the definition block, as (1-based line
+    // number, raw text). These used to be skipped silently, so a typo'd rule
+    // vanished and its atoms fell through to a less specific rule (debt
+    // #2361); they are now an error, mirroring Python's parse_gaff2_rules.
+    let mut malformed: Vec<(usize, &str)> = Vec::new();
     let mut in_definition = false;
 
-    for raw_line in &lines {
+    for (idx, raw_line) in lines.iter().copied().enumerate() {
+        let lineno = idx + 1;
         let line = raw_line.trim();
 
         // Deliberately matches the DEF file's own "Defination" spelling
@@ -391,6 +397,7 @@ pub fn parse_gaff2_rules(content: &str) -> Result<(Vec<Gaff2Rule>, WildatomMap),
         }
 
         if !line.contains('&') {
+            malformed.push((lineno, raw_line));
             continue;
         }
 
@@ -406,14 +413,42 @@ pub fn parse_gaff2_rules(content: &str) -> Result<(Vec<Gaff2Rule>, WildatomMap),
         // tokens) — bare single-element rules like "ATD f * 9 &" have no
         // further fields. (Previously "< 4", which silently dropped every
         // such rule — see parse_rule_fields' doc comment.)
+        if parts.len() == 1 {
+            // Antechamber's catch-all `ATD DU &` (a type name and nothing
+            // else). proxide does not implement the DU dummy type -- unmatched
+            // atoms go through its own fallback typing (debt #1899) -- so this
+            // one form is a deliberate, documented skip.
+            continue;
+        }
         if parts.len() < 3 {
+            malformed.push((lineno, raw_line));
             continue;
         }
 
-        if let Some(rule) = parse_rule_fields(&parts) {
-            rules.push(rule);
+        match parse_rule_fields(&parts) {
+            Some(rule) => rules.push(rule),
+            // Mirrors Python's `except (ValueError, IndexError)`, which now
+            // records the line instead of skipping it.
+            None => malformed.push((lineno, raw_line)),
         }
-        // else: mirrors Python's `except (ValueError, IndexError): continue`.
+    }
+
+    if !malformed.is_empty() {
+        let shown: Vec<String> = malformed
+            .iter()
+            .take(5)
+            .map(|(n, text)| format!("line {n}: {:?}", text.trim()))
+            .collect();
+        let more = if malformed.len() > 5 {
+            format!(" (+{} more)", malformed.len() - 5)
+        } else {
+            String::new()
+        };
+        return Err(format!(
+            "{} malformed ATD rule line(s) -- {}{more}",
+            malformed.len(),
+            shown.join("; ")
+        ));
     }
 
     Ok((rules, wildatom_map))
@@ -519,12 +554,23 @@ mod tests {
     }
 
     #[test]
-    fn test_two_token_rule_is_dropped() {
-        // Below the 3-token minimum -- must NOT parse (unlike the 3-token
-        // case above).
+    fn test_du_catch_all_is_the_one_deliberate_skip() {
+        // Antechamber's `ATD DU &` catch-all (real DEF line 350) carries a
+        // type name only; proxide does not implement DU, so it is skipped --
+        // explicitly, not as a malformed line.
         let content = wrap_def("ATD  DU    &");
         let (rules, _) = parse_gaff2_rules(&content).unwrap();
         assert!(rules.is_empty());
+    }
+
+    #[test]
+    fn test_two_token_rule_is_an_error() {
+        // Below the 3-token minimum and not the DU catch-all: a truncated
+        // rule (debt #2361 -- used to vanish silently).
+        let content = wrap_def("ATD  c3    *   &");
+        let err = parse_gaff2_rules(&content).unwrap_err();
+        assert!(err.contains("1 malformed ATD rule line"), "{err}");
+        assert!(err.contains("c3"), "{err}");
     }
 
     #[test]
@@ -606,19 +652,28 @@ mod tests {
     }
 
     #[test]
-    fn test_line_without_ampersand_is_skipped() {
+    fn test_line_without_ampersand_is_an_error() {
         let content = wrap_def("ATD  c3    *   6   4");
-        let (rules, _) = parse_gaff2_rules(&content).unwrap();
-        assert!(rules.is_empty());
+        let err = parse_gaff2_rules(&content).unwrap_err();
+        assert!(err.contains("malformed ATD rule"), "{err}");
     }
 
     #[test]
-    fn test_non_numeric_atomic_num_drops_whole_rule() {
-        // Mirrors Python's except-continue: a ValueError anywhere in the
-        // required-field parse aborts the whole rule, not just that field.
-        let content = wrap_def("ATD  bogus * NOTANUM 4 &");
-        let (rules, _) = parse_gaff2_rules(&content).unwrap();
-        assert!(rules.is_empty());
+    fn test_non_numeric_atomic_num_is_an_error() {
+        // Mirrors Python's `except (ValueError, IndexError)`, which now
+        // records the line: one bad rule fails the whole parse, it no longer
+        // silently disappears while the rest of the file loads.
+        let content = wrap_def("ATD  c3 * 6 4 &\nATD  bogus * NOTANUM 4 &");
+        let err = parse_gaff2_rules(&content).unwrap_err();
+        assert!(err.contains("bogus"), "{err}");
+    }
+
+    #[test]
+    fn test_malformed_report_counts_beyond_the_shown_lines() {
+        let body: Vec<String> = (0..7).map(|i| format!("ATD  t{i} * &")).collect();
+        let err = parse_gaff2_rules(&wrap_def(&body.join("\n"))).unwrap_err();
+        assert!(err.starts_with("7 malformed"), "{err}");
+        assert!(err.contains("(+2 more)"), "{err}");
     }
 
     // ------------------------------------------------------------------

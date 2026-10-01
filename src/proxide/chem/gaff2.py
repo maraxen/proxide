@@ -790,6 +790,16 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
 
     Returns:
         Tuple of (list of Gaff2Rule objects, WILDATOM map)
+
+    Raises:
+        Gaff2DefInvalidError: an ATD line inside the definition block is
+            malformed (no terminating "&", fewer than 3 fields, or a field
+            that does not parse). Such lines used to be skipped silently, so a
+            typo'd rule vanished and its atoms fell through to a less specific
+            rule (debt #2361). The one deliberate skip is antechamber's
+            catch-all ``ATD DU &`` (a type name and nothing else): proxide does
+            not implement the DU dummy type -- unmatched atoms go through its
+            own fallback typing instead (debt #1899).
     """
     path = Path(def_path)
     content = path.read_text()
@@ -798,10 +808,11 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
     wildatom_map = parse_wildatom_defs(lines)
 
     rules: list[Gaff2Rule] = []
+    malformed: list[tuple[int, str]] = []
     in_definition = False
 
-    for line in lines:
-        line = line.strip()
+    for lineno, raw_line in enumerate(lines, start=1):
+        line = raw_line.strip()
 
         if "efination begin" in line.lower():
             in_definition = True
@@ -811,6 +822,7 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
             continue
 
         if "&" not in line:
+            malformed.append((lineno, raw_line))
             continue
 
         line = line.removesuffix("&").strip()
@@ -824,7 +836,10 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
         # roughly half the file, mostly halogens/metals/late-periodic-table
         # fallback types -- meaning those elements always fell through to the
         # generic "x" placeholder instead of their real GAFF2 type.)
+        if len(parts) == 1:
+            continue  # the "ATD DU &" catch-all; see Raises above
         if len(parts) < 3:
+            malformed.append((lineno, raw_line))
             continue
 
         try:
@@ -889,7 +904,14 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
             rules.append(rule)
 
         except (ValueError, IndexError):
-            continue
+            malformed.append((lineno, raw_line))
+
+    if malformed:
+        shown = "; ".join(f"line {n}: {text.strip()!r}" for n, text in malformed[:5])
+        more = f" (+{len(malformed) - 5} more)" if len(malformed) > 5 else ""
+        raise Gaff2DefInvalidError(
+            f"{path}: {len(malformed)} malformed ATD rule line(s) -- {shown}{more}"
+        )
 
     return rules, wildatom_map
 
