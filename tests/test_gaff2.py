@@ -156,6 +156,24 @@ def test_dat_loader_reads_amber_parm_dat_format():
     assert len(p["vdw"]) == 97
 
 
+def test_dat_loader_later_torsion_redefinition_replaces_not_appends(caplog):
+    """gaff-2.2.20.dat defines c3-c3-n-c twice (two independent fits, rows
+    12147-12149 and 12150-12152, each ended by a positive PN). The later
+    definition replaces the earlier -- ParmEd's reading; appending summed
+    both fits into six terms (found by the pre-registered parity run
+    9e8d6de2, which failed on exactly this key). The redefinition is logged.
+    """
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="proxide.chem.gaff2"):
+        p = load_gaff2_parameters()
+    assert sorted(p["torsions"][("c3", "c3", "n", "c")]) == [
+        pytest.approx((1, 1.02, 180.0)), pytest.approx((3, 0.17, 0.0)),
+        pytest.approx((4, 0.10, 180.0)),
+    ]
+    assert "c3-c3-n-c" in caplog.text
+
+
 def test_dat_loader_raises_on_a_malformed_row(tmp_path):
     """A row that does not fit its section raises instead of being skipped."""
     from pathlib import Path

@@ -1582,6 +1582,13 @@ def _parse_parm_dat(lines: list[str], params: dict, source: str) -> None:
             raise fail(lineno, line, "ANGLE", e) from e
         params['angles'][(t1, t2, t3)] = (kt, t0)
 
+    # A negative PN means the next row continues the SAME definition; a
+    # positive PN ends it. A later row with an already-defined key after the
+    # terminator is a REdefinition and replaces the earlier one (ParmEd's
+    # reading). gaff-2.2.20.dat does this for c3-c3-n-c (two fits, rows
+    # 12147-12152): appending across the terminator summed both fits.
+    open_key: tuple[str, ...] | None = None
+    redefined: list[str] = []
     for lineno, line in block():  # DIHE
         try:
             key = _dat_types(line, 4)
@@ -1592,7 +1599,21 @@ def _parse_parm_dat(lines: list[str], params: dict, source: str) -> None:
                 raise ValueError("IDIVF is 0")
         except ValueError as e:
             raise fail(lineno, line, "DIHE", e) from e
-        params['torsions'].setdefault(key, []).append((int(abs(round(pn))), pk / idivf, phase))
+        term = (int(abs(round(pn))), pk / idivf, phase)
+        if key == open_key:
+            params['torsions'][key].append(term)
+        else:
+            if key in params['torsions']:
+                redefined.append(f"{'-'.join(key)} (line {lineno})")
+            params['torsions'][key] = [term]
+        open_key = key if pn < 0 else None
+    if redefined:
+        import logging as _logging
+
+        _logging.getLogger(__name__).warning(
+            "%s: %d torsion(s) redefined later in the file; the later definition is used: %s",
+            source, len(redefined), ", ".join(redefined),
+        )
 
     for lineno, line in block():  # IMPROPER
         try:
