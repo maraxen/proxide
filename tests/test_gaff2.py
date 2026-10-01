@@ -123,6 +123,55 @@ def test_parameter_lookups():
         )
 
 
+def test_dat_loader_reads_amber_parm_dat_format():
+    """Debt #2368: load_gaff2_parameters reads gaff-2.2.20.dat as AMBER parm.dat.
+
+    Expected values are the same rows as read by ParmEd 4.3.1's
+    AmberParameterSet on the identical file (the full-table comparison is the
+    bathos-tracked scripts/validation/gaff2_dat_parmed_parity.py). Every
+    assertion here failed on the previous whitespace-splitting loader:
+    padded single-letter types ("c3-c -c3", "X -c -c -X") were misread as
+    bonds and dropped; DIHE's IDIVF column was read as the periodicity, PK was
+    never divided by IDIVF, and every IMPROPER row was dropped.
+    """
+    p = load_gaff2_parameters()
+    # Angles with a padded middle type.
+    assert p["angles"][("c3", "c", "c3")] == pytest.approx((59.15, 116.68))
+    assert p["angles"][("c3", "c", "o")] == pytest.approx((76.45, 122.90))
+    assert p["angles"][("ca", "ca", "nb")] == pytest.approx((68.17, 122.94))
+    # Generic torsion: IDIVF=4, PK=1.2 -> barrier 0.3; periodicity from PN=2.
+    assert p["torsions"][("X", "c", "c", "X")] == [pytest.approx((2, 0.3, 180.0))]
+    # Specific torsion: IDIVF=1, PN=3 -> periodicity 3 (was read as 1).
+    assert p["torsions"][("c3", "c3", "c3", "c3")] == [pytest.approx((3, 0.52, 0.0))]
+    # Multi-term: a negative PN means another term for the same quartet follows.
+    assert p["torsions"][("X", "c", "na", "X")] == [
+        pytest.approx((2, 1.45, 180.0)), pytest.approx((4, 0.35, 180.0)),
+    ]
+    # Impropers (no IDIVF column): used to be dropped entirely.
+    assert p["impropers"][("X", "X", "c", "o")] == pytest.approx((10.5, 180.0))
+    # Table sizes: unique angle and torsion keys equal ParmEd's.
+    assert len(p["angles"]) == 9712
+    assert len(p["torsions"]) == 1341
+    assert len(p["impropers"]) == 38  # 35 in ParmEd's permutation-canonical form
+    assert len(p["vdw"]) == 97
+
+
+def test_dat_loader_raises_on_a_malformed_row(tmp_path):
+    """A row that does not fit its section raises instead of being skipped."""
+    from pathlib import Path
+
+    from proxide.chem import gaff2
+
+    src = Path(gaff2.__file__).parent.parent / "assets" / "gaff" / "dat" / "gaff-2.2.20.dat"
+    lines = src.read_text().split("\n")
+    target = next(i for i, ln in enumerate(lines) if ln.startswith("c3-c -c3"))
+    lines[target] = "c3-c -c3   not-a-number"
+    bad = tmp_path / "bad.dat"
+    bad.write_text("\n".join(lines))
+    with pytest.raises(ValueError, match=r"bad\.dat:\d+: malformed ANGLE record"):
+        load_gaff2_parameters(bad)
+
+
 def test_parameter_values():
     """Parameter values match expected values from the dat file."""
     params = load_gaff2_parameters()
@@ -222,26 +271,33 @@ def test_full_parameterization():
 # Debt #1905: Observability of silent parameter fills
 
 
-def test_missing_params_tracking():
-    """missing_params tracks angles that were filled with 0.0 (debt #1905).
+def test_acetone_central_angle_has_its_dat_parameters():
+    """Acetone's c3-c-c3 angle carries gaff-2.2.20.dat's 59.15 kcal/mol/rad^2,
+    116.68 deg (debt #2368).
 
-    The golden tests rely on missing angle parameters being filled silently,
-    so we record them in missing_params instead of raising an error. This test
-    verifies that the tracking works correctly.
+    The old loader dropped this row ("c3-c -c3": padded single-letter type),
+    so the angle was filled with 0.0 on every call -- this test's previous
+    version asserted exactly that, as if it were correct.
     """
-    # Acetone: C-C(=O)-C should have a missing angle parameter (c3-c-c3)
-    mol = prepare_mol("CC(=O)C")
-    result = parameterize_gaff_with_rdkit(mol)
+    result = parameterize_gaff_with_rdkit(prepare_mol("CC(=O)C"))
+    central = [a for a in result["angles"] if sorted((a["types"][0], a["types"][2])) == ["c3", "c3"]
+               and a["types"][1] == "c"]
+    assert len(central) == 1, [a["types"] for a in result["angles"]]
+    assert central[0]["kt"] == pytest.approx(59.15)
+    assert central[0]["t0"] == pytest.approx(116.68)
 
-    # missing_params should be present (may be empty or have entries)
-    assert "missing_params" in result, "missing missing_params key"
-    assert isinstance(result["missing_params"], list), "missing_params is not a list"
 
-    # Check that (c3, c, c3) is in missing_params (acetone's central angle)
-    missing_angle_types = [p["types"] for p in result["missing_params"] if p["term"] == "angle"]
-    assert ["c3", "c", "c3"] in missing_angle_types or ["c3", "c", "c3"] in missing_angle_types, (
-        f"expected missing angle (c3, c, c3) not in {missing_angle_types}"
-    )
+def test_a_term_missing_from_the_table_raises(monkeypatch):
+    """No term is ever filled with 0.0: a missing one raises, naming it (debt #1905)."""
+    from proxide.chem import gaff2
+
+    real = gaff2.load_gaff2_parameters()
+    for key in [("c3", "c", "c3")]:
+        real["angles"].pop(key, None)
+        real["angles"].pop(key[::-1], None)
+    monkeypatch.setattr(gaff2, "load_gaff2_parameters", lambda *a, **k: real)
+    with pytest.raises(gaff2.Gaff2ParameterMissingError, match="angle c3-c-c3"):
+        gaff2.parameterize_gaff_with_rdkit(prepare_mol("CC(=O)C"))
 
 
 def test_substitutions_tracking():
@@ -278,14 +334,9 @@ def test_substitutions_tracking():
             )
 
 
-def test_observability_keys_always_present():
-    """missing_params and substitutions keys are always present (debt #1905)."""
-    # These keys must always be present for observability, even if empty
+def test_substitutions_key_always_present():
+    """The substitutions record is always present, even when empty (debt #1905)."""
     for smiles in PARAM_TESTS:
-        mol = prepare_mol(smiles)
-        result = parameterize_gaff_with_rdkit(mol)
-
-        for key in ("missing_params", "substitutions"):
-            assert key in result, (
-                f"{smiles}: missing required observability key: {key}"
-            )
+        result = parameterize_gaff_with_rdkit(prepare_mol(smiles))
+        assert isinstance(result.get("substitutions"), list), smiles
+        assert "missing_params" not in result, "missing terms raise; there is no fill to record"

@@ -158,7 +158,16 @@ def test_h_type_by_heavy_amide_n_h_types_as_hn() -> None:
         )
 
         charges = [0.0] * mol.GetNumAtoms()
-        ffxml = build_gaff2_ffxml(mol, resname="LIG", charges=charges)
+        # This test is about H typing, not torsion coverage: GAFF2.2's amide
+        # nt type has no torsion rows (see the test below), so opt in to
+        # omitting those terms -- with the warning that makes it visible.
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            ffxml = build_gaff2_ffxml(
+                mol, resname="LIG", charges=charges, missing_torsions="omit"
+            )
 
         type_name = f"LIG_{h_idx}"
         m = re.search(rf'<Type name="{type_name}" class="([^"]+)"', ffxml)
@@ -167,3 +176,23 @@ def test_h_type_by_heavy_amide_n_h_types_as_hn() -> None:
             f"{smiles}: amide N-H (atom {h_idx}) resolved to class "
             f"{m.group(1)!r}, expected 'hn'"
         )
+
+
+def test_ffxml_torsion_without_parameters_raises_or_warns() -> None:
+    """Debt #2368: a torsion with no GAFF2 parameters is never dropped silently.
+
+    Formamide's hn-nt-c-o has no row in gaff-2.2.20.dat (no nt torsions, no
+    generic X-nt-c-X; AMBER's parmchk2 would supply one). The builder used to
+    skip it without a word. Default: raise. Opt-in: omit, with a warning
+    naming the quartet.
+    """
+    import pytest
+
+    from proxide.chem.gaff2 import Gaff2ParameterMissingError, build_gaff2_ffxml
+
+    mol = Chem.AddHs(Chem.MolFromSmiles("NC=O"))
+    charges = [0.0] * mol.GetNumAtoms()
+    with pytest.raises(Gaff2ParameterMissingError, match="hn-nt-c-o"):
+        build_gaff2_ffxml(mol, resname="LIG", charges=charges)
+    with pytest.warns(UserWarning, match="hn-nt-c-o"):
+        build_gaff2_ffxml(mol, resname="LIG", charges=charges, missing_torsions="omit")
