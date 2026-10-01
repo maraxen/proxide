@@ -692,6 +692,35 @@ fn process_models(
             let formatted = formatters::Atom14Formatter::format(&processed, spec).map_err(|e| {
                 pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
             })?;
+
+            // Emit UserWarning if there are unplaced residues
+            if !formatted.unplaced_residues.is_empty() {
+                let count = formatted.unplaced_residues.len();
+                let names: Vec<String> = formatted.unplaced_residues
+                    .iter()
+                    .take(10)
+                    .map(|(idx, name)| format!("RES#{}{}", idx, name))
+                    .collect();
+                let suffix = if count > 10 {
+                    format!(" (+{} more)", count - 10)
+                } else {
+                    String::new()
+                };
+                let msg = format!(
+                    "{} residues with atoms but no atom14 layout: {}{}",
+                    count,
+                    names.join(", "),
+                    suffix
+                );
+
+                PyErr::warn_bound(
+                    py,
+                    &py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
+                    &msg,
+                    1,
+                )?;
+            }
+
             let dict = formatted.to_py_dict(py)?;
             // No multi-model stacking implemented for Atom14 yet
             (dict, None)

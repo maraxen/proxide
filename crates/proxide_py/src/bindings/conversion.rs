@@ -118,6 +118,7 @@ impl ToPyDict for FormattedAtom14 {
             "chain_index",
             PyArray1::from_slice_bound(py, &self.chain_index),
         )?;
+        dict.set_item("unplaced_residues", &self.unplaced_residues)?;
         Ok(dict)
     }
 }
@@ -162,6 +163,9 @@ impl ToPyDict for FormattedFull {
         )?;
         dict.set_item("atom_names", self.atom_names.clone())?;
         dict.set_item("atom_residue_ids", self.atom_residue_ids.clone())?;
+        dict.set_item("elements", self.elements.clone())?;
+        dict.set_item("res_names", self.res_names.clone())?;
+        dict.set_item("atom_chain_ids", self.atom_chain_ids.clone())?;
         dict.set_item("coord_shape", self.coord_shape)?;
         Ok(dict)
     }
