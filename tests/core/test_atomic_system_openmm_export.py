@@ -115,6 +115,16 @@ def test_openmm_exclusions_and_scaling():
     assert pytest.approx(eps._value, rel=1e-4) == expected_eps
 
 
+def test_openmm_projector_registry_points_at_project_to_openmm_system():
+    """1b4e87e inserted helpers between @register_projector("openmm") and
+    project_to_openmm_system, so the registry held _require_elements -- any
+    generic project(system, spec) to OpenMM called the wrong function. Found
+    only via CI's ty check (the undecorated function's signature changed)."""
+    from proxide.core import projector
+
+    assert projector._PROJECTORS["openmm"] is projector.project_to_openmm_system
+
+
 @pytest.mark.skipif(not OPENMM_AVAILABLE, reason="OpenMM not installed")
 def test_protein_openmm_masses_follow_its_elements_not_carbon():
     """Review #8: Protein.to_openmm_system built an EMPTY topology, so the

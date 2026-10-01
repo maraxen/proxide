@@ -157,7 +157,6 @@ class OpenMMSpec:
   lj14scale: float = 1.0
 
 
-@register_projector("openmm")
 def _require_elements(system: AtomicSystem, n_atoms: int, fn_name: str) -> list[str]:
   """One element symbol per projected atom, or a ValueError -- never carbon."""
   elements = system.topology.elements
@@ -180,6 +179,7 @@ def _omm_element(symbol: str, index: int) -> Any:
     raise ValueError(f"atom {index}: unknown element symbol {symbol!r}") from e
 
 
+@register_projector("openmm")
 def project_to_openmm_system(
     system: AtomicSystem, spec: OpenMMSpec | None = None, **kwargs: Any
 ) -> Any:

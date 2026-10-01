@@ -376,7 +376,7 @@ pub fn parse_pqr_reader<R: BufRead>(reader: R) -> Result<RawAtomData, Box<dyn st
                 .entry((current_model, atom.chain_id.clone()))
                 .or_insert_with(ResidueTracker::new);
 
-            if let Err(_) = tracker.check_reappearance(key) {
+            if tracker.check_reappearance(key).is_err() {
                 return Err(Box::new(PqrResidueReappearanceError {
                     line: line_no,
                     chain_id: atom.chain_id.clone(),
