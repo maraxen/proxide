@@ -106,7 +106,12 @@ def _tokenize_prop_list(raw: str) -> tuple[str, list[str]]:
 
 
 def parse_atomic_prop(raw: str) -> AtomicPropExpr | None:
-    """Parse an f8 bracket body (without the surrounding `[...]`) into an AST."""
+    """Parse an f8 bracket body (without the surrounding `[...]`) into an AST.
+
+    Raises:
+        ValueError: if a token does not match the property token regex (debt #2363),
+            or if raw_tokens contains any text that cannot be parsed.
+    """
     raw = raw.strip()
     if not raw or raw == "*":
         return None
@@ -116,7 +121,7 @@ def parse_atomic_prop(raw: str) -> AtomicPropExpr | None:
     for raw_tok in raw_tokens:
         m = _PROP_TOKEN_RE.match(raw_tok)
         if not m:
-            continue
+            raise ValueError(f"f8 token does not match property pattern: {raw_tok!r}")
         count_str, word = m.group(1), m.group(2)
         tokens.append(PropToken(word=word, count=int(count_str) if count_str else None))
     return AtomicPropExpr(op=op, tokens=tokens) if tokens else None
@@ -177,7 +182,12 @@ class _TokenStream:
 
 
 def parse_chem_env(raw: str) -> ChemEnvExpr | None:
-    """Parse an f9 pattern (including its outer parens) into an AST."""
+    """Parse an f9 pattern (including its outer parens) into an AST.
+
+    Raises:
+        ValueError: if f9 starts with "(" but is unbalanced (debt #2363),
+            or if there is trailing non-whitespace text after the closing "()".
+    """
     raw = raw.strip()
     if not raw or raw == "*":
         return None
@@ -186,6 +196,13 @@ def parse_chem_env(raw: str) -> ChemEnvExpr | None:
 
     stream = _TokenStream(raw)
     expr = _parse_paren_group(stream)
+
+    # Check for trailing non-whitespace text after closing paren (debt #2363)
+    if not stream.eof():
+        remaining = stream.raw[stream.pos:].strip()
+        if remaining:
+            raise ValueError(f"f9 has trailing text after closing paren: {remaining!r}")
+
     return expr
 
 
@@ -197,6 +214,7 @@ def _parse_paren_group(stream: _TokenStream) -> ChemEnvExpr | None:
     neighbors: list[NeighborSpec | None] = []
     current = []
     depth = 0
+    found_closing_paren = False
     while not stream.eof():
         ch = stream.peek()
         if ch == "(" or ch == "[":
@@ -208,10 +226,14 @@ def _parse_paren_group(stream: _TokenStream) -> ChemEnvExpr | None:
                     current.append(stream.advance())
                 if not stream.eof():
                     current.append(stream.advance())
+                else:
+                    # Hit EOF with unclosed "[" inside f9 (debt #2363)
+                    raise ValueError("f9 bracket opened but never closed")
             continue
         if ch == ")":
             if depth == 0:
                 stream.advance()  # consume closing ")"
+                found_closing_paren = True
                 break
             depth -= 1
             current.append(stream.advance())
@@ -222,6 +244,14 @@ def _parse_paren_group(stream: _TokenStream) -> ChemEnvExpr | None:
             stream.advance()
             continue
         current.append(stream.advance())
+
+    # Check for unmatched opening parens (debt #2363)
+    if depth > 0:
+        raise ValueError("f9 has unmatched opening paren")
+
+    # Check for missing top-level closing paren (debt #2363)
+    if not found_closing_paren:
+        raise ValueError("f9 has unmatched opening paren")
 
     if current:
         neighbors.append(_parse_neighbor_spec("".join(current)))
@@ -875,21 +905,28 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
                     remaining = remaining[f7_match.end():].strip()
 
             # f8: bracketed atomic-property expression, "[...]" or "*" or absent.
+            # Unclosed "[" is a malformed line (debt #2363), not a silent skip.
             atomic_prop: AtomicPropExpr | None = None
             if remaining.startswith("["):
                 close = remaining.find("]")
-                if close != -1:
-                    atomic_prop = parse_atomic_prop(remaining[1:close])
-                    remaining = remaining[close + 1:].strip()
+                if close == -1:
+                    raise ValueError(f"f8 bracket opened at position {idx} but never closed")
+                atomic_prop = parse_atomic_prop(remaining[1:close])
+                remaining = remaining[close + 1:].strip()
             elif remaining.startswith("*"):
                 remaining = remaining[1:].strip()
 
             # f9: parenthesized chemical-environment neighbor pattern, "(...)" or
             # "*" or absent (end of line before "&"). There is no true f10 --
-            # anything left after this is a malformed line, not a further field.
+            # anything left after this is a malformed line, not a further field (debt #2363).
             chem_env: ChemEnvExpr | None = None
             if remaining.startswith("("):
                 chem_env = parse_chem_env(remaining)
+                # parse_chem_env will raise ValueError if f9 is malformed
+                remaining = ""  # f9 consumes the rest of the line
+            elif remaining:
+                # Non-empty text that doesn't start with "(" is malformed (debt #2363)
+                raise ValueError(f"Unexpected text after f8 (no f9 pattern): {remaining!r}")
 
             rule = Gaff2Rule(
                 atom_type=atom_type,
@@ -1979,6 +2016,10 @@ def parameterize_gaff_with_rdkit(
         - bonds: dict of (type1, type2) -> (kb, r0)
         - angles: dict of (type1, type2, type3) -> (kt, t0)
         - torsions: list of torsion parameters
+        - missing_params: list of {"term": "bond"|"angle", "types": [...]}
+          for parameter types that were missing and filled with 0.0 (debt #1905)
+        - substitutions: list of {"term": "torsion", "from": [...], "to": [...]}
+          for torsion type substitutions applied (cx->c3, etc.) (debt #1905)
     """
     if Chem is None:
         raise ImportError("RDKit is required. Install with: pip install rdkit")
@@ -2049,6 +2090,9 @@ def parameterize_gaff_with_rdkit(
     used_types = set(atom_types)
     masses = {at: params['masses'].get(at, 0.0) for at in used_types}
 
+    # Track missing parameters for observability (debt #1905)
+    missing_params: list[dict] = []
+
     # Look up bond parameters
     for b in bonds:
         t1, t2 = b['gaff_type_i'], b['gaff_type_j']
@@ -2060,6 +2104,7 @@ def parameterize_gaff_with_rdkit(
         else:
             b['kb'] = 0.0
             b['r0'] = 0.0
+            missing_params.append({"term": "bond", "types": list(key)})
 
     # Look up angle parameters
     for a in angles:
@@ -2072,9 +2117,13 @@ def parameterize_gaff_with_rdkit(
         else:
             a['kt'] = 0.0
             a['t0'] = 0.0
+            missing_params.append({"term": "angle", "types": list(key)})
 
     # Build torsion list (1-2-3-4 connections)
     torsions = []
+
+    # Track torsion substitutions for observability (debt #1905)
+    substitutions: list[dict] = []
 
     # Substitutions for atom type looking (cx->c3, etc.)
     type_substitutions = {
@@ -2112,10 +2161,18 @@ def parameterize_gaff_with_rdkit(
 
                     # Try exact match first, then with substitutions
                     torsion_params = params['torsions'].get(key, [])
+                    substituted = False
                     if not torsion_params:
                         # Try with substitutions (cx->c3, etc.)
                         key_sub = tuple(_substitute_type(x) for x in key)
-                        torsion_params = params['torsions'].get(key_sub, [])
+                        if key != key_sub and params['torsions'].get(key_sub, []):
+                            torsion_params = params['torsions'][key_sub]
+                            substituted = True
+                            substitutions.append({
+                                "term": "torsion",
+                                "from": list(key),
+                                "to": list(key_sub),
+                            })
 
                     torsions.append({
                         'i': i, 'j': j, 'k': k, 'l': l_idx,
@@ -2131,4 +2188,6 @@ def parameterize_gaff_with_rdkit(
         'bonds': bonds,
         'angles': angles,
         'torsions': torsions,
+        'missing_params': missing_params,
+        'substitutions': substitutions,
     }

@@ -178,3 +178,54 @@ def test_du_catch_all_is_the_one_deliberate_skip(tmp_path):
     def_path.write_text(f"{_DEF_HEADER}ATD  c3 * 6 4 &\nATD  DU    &\n")
     rules, _ = gaff2.parse_gaff2_rules(def_path)
     assert [r.atom_type for r in rules] == ["c3"]
+
+
+# Debt #2363: malformed f8/f9 used to be silently dropped. Now they raise.
+
+
+@pytest.mark.parametrize(
+    "bad_f8",
+    [
+        "[unclosed",  # f8 with unclosed "["
+        "[invalid-token]",  # f8 with non-matching token (invalid-token doesn't match pattern)
+        "[2]",  # f8 with bare count (count without word)
+    ],
+)
+def test_malformed_f8_bracket_is_an_error(tmp_path, bad_f8):
+    """Test that malformed f8 bracket bodies raise Gaff2DefInvalidError (debt #2363)."""
+    def_path = tmp_path / "bad_f8.DEF"
+    # Insert f8 before f9 (simulated by putting it as 5th+ field): "ATD c3 * 6 4 * bad_f8"
+    def_path.write_text(f"{_DEF_HEADER}ATD  c3 * 6 4 * {bad_f8} &\n")
+    with pytest.raises(Gaff2DefInvalidError, match="1 malformed ATD rule line"):
+        gaff2.parse_gaff2_rules(def_path)
+
+
+@pytest.mark.parametrize(
+    "bad_f9",
+    [
+        "(unclosed",  # f9 with unmatched opening "("
+        "(N3)extra",  # f9 with trailing text after closing ")"
+        "(N3(N3))",  # properly balanced nested pattern (should parse)
+    ],
+)
+def test_malformed_f9_pattern_is_an_error(tmp_path, bad_f9):
+    """Test that malformed f9 patterns raise Gaff2DefInvalidError (debt #2363)."""
+    def_path = tmp_path / "bad_f9.DEF"
+    # Insert f9 after f8: "ATD c3 * 6 4 * * bad_f9"
+    def_path.write_text(f"{_DEF_HEADER}ATD  c3 * 6 4 * * {bad_f9} &\n")
+    if bad_f9 == "(N3(N3))":
+        # This one should actually parse fine
+        rules, _ = gaff2.parse_gaff2_rules(def_path)
+        assert len(rules) == 1
+    else:
+        with pytest.raises(Gaff2DefInvalidError, match="1 malformed ATD rule line"):
+            gaff2.parse_gaff2_rules(def_path)
+
+
+def test_text_after_f9_is_malformed(tmp_path):
+    """Test that non-parenthesized text after f8 is flagged as malformed (debt #2363)."""
+    def_path = tmp_path / "bad_text.DEF"
+    # "JUNK" is not a valid f9 pattern (doesn't start with "(" or "*")
+    def_path.write_text(f"{_DEF_HEADER}ATD  c3 * 6 4 * * JUNK &\n")
+    with pytest.raises(Gaff2DefInvalidError, match="1 malformed ATD rule line"):
+        gaff2.parse_gaff2_rules(def_path)
