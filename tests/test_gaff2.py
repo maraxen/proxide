@@ -217,3 +217,75 @@ def test_full_parameterization():
             f"{smiles}: atom_types length mismatch: "
             f"{len(result['atom_types'])} < {heavy_atoms}"
         )
+
+
+# Debt #1905: Observability of silent parameter fills
+
+
+def test_missing_params_tracking():
+    """missing_params tracks angles that were filled with 0.0 (debt #1905).
+
+    The golden tests rely on missing angle parameters being filled silently,
+    so we record them in missing_params instead of raising an error. This test
+    verifies that the tracking works correctly.
+    """
+    # Acetone: C-C(=O)-C should have a missing angle parameter (c3-c-c3)
+    mol = prepare_mol("CC(=O)C")
+    result = parameterize_gaff_with_rdkit(mol)
+
+    # missing_params should be present (may be empty or have entries)
+    assert "missing_params" in result, "missing missing_params key"
+    assert isinstance(result["missing_params"], list), "missing_params is not a list"
+
+    # Check that (c3, c, c3) is in missing_params (acetone's central angle)
+    missing_angle_types = [p["types"] for p in result["missing_params"] if p["term"] == "angle"]
+    assert ["c3", "c", "c3"] in missing_angle_types or ["c3", "c", "c3"] in missing_angle_types, (
+        f"expected missing angle (c3, c, c3) not in {missing_angle_types}"
+    )
+
+
+def test_substitutions_tracking():
+    """substitutions tracks torsion type substitutions applied (debt #1905)."""
+    # Any molecule where a torsion substitution actually applies
+    # In the golden tests, no substitutions happen (all types are available)
+    # But we can verify the key exists and is a list
+    for smiles in PARAM_TESTS:
+        mol = prepare_mol(smiles)
+        result = parameterize_gaff_with_rdkit(mol)
+
+        # substitutions should be present
+        assert "substitutions" in result, f"{smiles}: missing substitutions key"
+        assert isinstance(result["substitutions"], list), (
+            f"{smiles}: substitutions is not a list"
+        )
+
+        # Each entry should have term="torsion", "from", and "to" keys
+        for subst in result["substitutions"]:
+            assert subst.get("term") == "torsion", (
+                f"{smiles}: substitution term is not 'torsion': {subst}"
+            )
+            assert "from" in subst and isinstance(subst["from"], list), (
+                f"{smiles}: substitution missing 'from' key: {subst}"
+            )
+            assert "to" in subst and isinstance(subst["to"], list), (
+                f"{smiles}: substitution missing 'to' key: {subst}"
+            )
+            assert len(subst["from"]) == 4, (
+                f"{smiles}: substitution 'from' should be 4-element torsion: {subst}"
+            )
+            assert len(subst["to"]) == 4, (
+                f"{smiles}: substitution 'to' should be 4-element torsion: {subst}"
+            )
+
+
+def test_observability_keys_always_present():
+    """missing_params and substitutions keys are always present (debt #1905)."""
+    # These keys must always be present for observability, even if empty
+    for smiles in PARAM_TESTS:
+        mol = prepare_mol(smiles)
+        result = parameterize_gaff_with_rdkit(mol)
+
+        for key in ("missing_params", "substitutions"):
+            assert key in result, (
+                f"{smiles}: missing required observability key: {key}"
+            )
