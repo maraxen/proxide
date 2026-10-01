@@ -84,6 +84,17 @@ def _resolve_chain_letters(protein: Protein, n_rows: int) -> list[str]:
   return [chain_ids[idx] if 0 <= idx < len(chain_ids) else "A" for idx in row_chain_index]
 
 
+def _reject_nonfinite(coords: np.ndarray, fn_name: str) -> None:
+  """Raise if any coordinate is NaN/inf -- "nan" fits an 8-char PDB column."""
+  bad = ~np.isfinite(np.asarray(coords, dtype=np.float64)).all(axis=-1)
+  if bad.any():
+    msg = (
+      f"{fn_name}: {int(bad.sum())} atom(s) have non-finite coordinates "
+      f"(first at row {int(np.argmax(bad))}); refusing to write them"
+    )
+    raise ValueError(msg)
+
+
 def _atom_rows(
   protein: Protein,
   fn_name: str,
@@ -204,6 +215,7 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
   coords, atom_names, res_names, res_seqs, chain_letters, elements = _atom_rows(
     protein, "write_pdb"
   )
+  _reject_nonfinite(coords, "write_pdb")
 
   def _overflow(what: str) -> ValueError:
     return ValueError(f"write_pdb: {what} does not fit the fixed-width PDB format; use write_mmcif")
@@ -282,6 +294,7 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
   coords, atom_names, res_names, res_seqs, chain_letters, elements = _atom_rows(
     protein, "write_mmcif"
   )
+  _reject_nonfinite(coords, "write_mmcif")
 
   with open(path, "w") as f:
     f.write(f"data_{path.stem}\n")

@@ -320,6 +320,18 @@ class TestWritePdbRejectsColumnOverflow:
     with pytest.raises(ValueError, match="serial > 99999"):
       write_pdb(protein, tmp_path / "out.pdb")
 
+  @pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+  def test_nonfinite_coordinates_raise_in_both_writers(self, tmp_path, bad) -> None:
+    # "     nan" is exactly 8 chars, so the width check alone would let it through.
+    coords = np.array([[0, 0, 0], [bad, 0, 0]], np.float32)
+    protein = _flat_protein(2, full_coordinates=coords)
+    with pytest.raises(ValueError, match="non-finite"):
+      write_pdb(protein, tmp_path / "out.pdb")
+    with pytest.raises(ValueError, match="non-finite"):
+      write_mmcif(protein, tmp_path / "out.cif")
+    assert not (tmp_path / "out.pdb").exists()
+    assert not (tmp_path / "out.cif").exists()
+
   def test_boundary_values_still_write(self, tmp_path) -> None:
     protein = _flat_protein(
       2,
@@ -328,3 +340,51 @@ class TestWritePdbRejectsColumnOverflow:
     )
     lines = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
     assert [int(line[22:26]) for line in lines] == [-999, 9999]
+
+
+class TestWritePdbOnRealParsedStructures:
+  """The writer against Proteins as proxide's own parser produces them, not
+  hand-built fixtures (review finding on task 260930_proxide-debt-sweep).
+  """
+
+  PDB = "tests/data/5awl.pdb"  # single model, 10 residues
+
+  def test_multimodel_atom37_request_raises(self, tmp_path) -> None:
+    # 1uao is an 18-model NMR file; an Atom37 request returns format="Full"
+    # with 6660 flattened coordinates and no atom names. The old writer
+    # emitted 6660 "CA"/"UNK" rows; refusing is the honest answer.
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    protein = parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Atom37))
+    with pytest.raises(ValueError, match="cannot name the atoms"):
+      write_pdb(protein, tmp_path / "out.pdb")
+
+  def test_atom37_round_trips_resolved_atoms(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Atom37))
+    lines = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    assert len(lines) == int(np.asarray(protein.atom_mask).sum())
+    reparsed = parse_structure(
+      str(tmp_path / "out.pdb"), OutputSpec(coord_format=CoordFormat.Atom37)
+    )
+    np.testing.assert_array_equal(np.asarray(reparsed.aatype), np.asarray(protein.aatype))
+    np.testing.assert_array_equal(
+      np.asarray(reparsed.residue_index), np.asarray(protein.residue_index)
+    )
+    np.testing.assert_allclose(
+      np.asarray(reparsed.coordinates)[np.asarray(protein.atom_mask).astype(bool)],
+      np.asarray(protein.coordinates)[np.asarray(protein.atom_mask).astype(bool)],
+      atol=1e-3,
+    )
+
+  def test_full_format_raises_rather_than_writing_unk_residues(self, tmp_path) -> None:
+    # parse_structure's Full output carries no per-atom residue names (and
+    # from_rust_dict drops chain ids), so the old writer emitted every residue
+    # as "UNK" in chain "A" with per-atom-misindexed residue numbers. Until
+    # that data is plumbed through, refusing is the honest answer.
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
+    with pytest.raises(ValueError, match="res_names"):
+      write_pdb(protein, tmp_path / "out.pdb")

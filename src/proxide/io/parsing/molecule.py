@@ -97,7 +97,9 @@ class Molecule:
     bond_orders: list[int] = []
     bond_aromatic: list[bool] = []
     residue_name = "LIG"
-    # MOLECULE section, non-empty lines: name, counts, mol_type, charge_type.
+    # MOLECULE section lines are positional (name, counts, mol_type,
+    # charge_type, ...), and the name line may legitimately be blank -- so
+    # count raw lines, blank ones included.
     molecule_line_idx = 0
     charge_type: str | None = None
 
@@ -112,16 +114,15 @@ class Molecule:
           current_section = line[9:]  # e.g., "MOLECULE", "ATOM", "BOND"
           continue
 
-        if not line or line.startswith("#"):
-          continue
-
         if current_section == "MOLECULE":
-          # First non-empty line after @<TRIPOS>MOLECULE is the name
-          if molecule_line_idx == 0 and (not name or name == path.stem):
+          if molecule_line_idx == 0 and line:
             name = line
-          elif molecule_line_idx == 3:
+          elif molecule_line_idx == 3 and line:
             charge_type = line.split()[0].upper()
           molecule_line_idx += 1
+          continue
+
+        if not line or line.startswith("#"):
           continue
 
         if current_section == "ATOM":

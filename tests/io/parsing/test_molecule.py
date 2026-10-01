@@ -367,6 +367,16 @@ class TestMoleculeChargesUnknownIsNotZero:
         mol = Molecule.from_mol2(self._write(tmp_path, text))
         assert mol.charges is None
 
+    def test_blank_name_line_does_not_shift_charge_type(self, tmp_path):
+        # The name line may be blank; positional MOLECULE lines must be
+        # counted raw, or NO_CHARGES is missed and its 0.0 column is trusted.
+        text = BENZENE_MOL2.replace("benzene\n", "\n", 1).replace(
+            "SMALL\nbcc\n", "SMALL\nNO_CHARGES\n"
+        ).replace("-0.115000", " 0.000000")
+        mol = Molecule.from_mol2(self._write(tmp_path, text))
+        assert mol.charges is None
+        assert mol.name == "mol"  # file stem; the blank name is not replaced by the counts line
+
     def test_missing_charge_column_yields_none(self, tmp_path):
         text = BENZENE_MOL2.replace("        1 LIG     -0.115000", "")
         assert "-0.115" not in text
