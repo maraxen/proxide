@@ -836,8 +836,8 @@ def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, 
         # roughly half the file, mostly halogens/metals/late-periodic-table
         # fallback types -- meaning those elements always fell through to the
         # generic "x" placeholder instead of their real GAFF2 type.)
-        if len(parts) == 1:
-            continue  # the "ATD DU &" catch-all; see Raises above
+        if parts == ["DU"]:
+            continue  # the "ATD DU &" catch-all, and only it; see Raises above
         if len(parts) < 3:
             malformed.append((lineno, raw_line))
             continue
@@ -1367,9 +1367,9 @@ def _get_default_rules() -> tuple[list[Gaff2Rule], dict[str, list[str]]]:
         if not rules:
             raise Gaff2DefInvalidError(
                 f"ATOMTYPE_GFF2.DEF at {rules_path} matched its pinned digest but "
-                "parsed to zero rules. parse_gaff2_rules() silently skips "
-                "unparseable lines, so a zero-rule result here means the file's ATD "
-                "grammar diverged from the parser without the digest changing, which "
+                "parsed to zero rules. parse_gaff2_rules() raises on malformed ATD "
+                "lines, so a zero-rule result here means the file has no ATD rules "
+                "the parser recognizes at all without the digest changing, which "
                 "should be impossible -- treat this as a parser bug, not a missing "
                 "file."
             )
@@ -1418,9 +1418,8 @@ def load_gaff2_rules(
     rules, wildatom = parse_gaff2_rules(path)
     if not rules:
         raise Gaff2DefInvalidError(
-            f"{path} parsed to zero GAFF2 rules. parse_gaff2_rules() silently skips "
-            "unparseable lines, so an empty result means the file is empty, "
-            "truncated, or not a valid ATOMTYPE_GFF2.DEF grammar."
+            f"{path} parsed to zero GAFF2 rules: the file is empty, has no "
+            "definition block, or is not a valid ATOMTYPE_GFF2.DEF grammar."
         )
     return rules, wildatom
 

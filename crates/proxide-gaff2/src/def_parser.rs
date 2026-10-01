@@ -246,9 +246,9 @@ pub fn parse_wildatom_defs(lines: &[&str]) -> WildatomMap {
 /// post `&`-suffix-strip, whitespace-split) into a `Gaff2Rule`.
 ///
 /// Returns `None` on any field parse failure, mirroring Python's
-/// `except (ValueError, IndexError): continue` (gaff2.py lines 796-858):
-/// a malformed rule is silently dropped, not surfaced as an error, and
-/// *no partial rule* is ever emitted.
+/// `except (ValueError, IndexError)` in gaff2.py: *no partial rule* is ever
+/// emitted, and the caller records the line as malformed and fails the parse
+/// (debt #2361; it used to be dropped silently).
 ///
 /// `parts.len() >= 3` must already be checked by the caller (mirrors
 /// gaff2.py lines 793-794 — the minimum valid row is `<atom_type> <residue>
@@ -349,15 +349,12 @@ fn parse_rule_fields(parts: &[&str]) -> Option<Gaff2Rule> {
 /// version, this takes already-loaded DEF *content* rather than a path —
 /// file IO / embedding is `rules_loader`'s job, this module is pure parsing.
 ///
-/// Returns `Result` (always `Ok` today) rather than the bare tuple: given
-/// content, this function can't actually fail — every per-line failure is
-/// caught and the line is silently skipped (see `parse_rule_fields`'s doc
-/// comment), exactly like Python, which never raises to its caller either.
-/// The `Result` wrapper exists purely to match `rules_loader`'s
-/// `impl FnOnce(&str) -> Result<(Vec<Gaff2Rule>, WildatomMap), String>`
-/// injection point (its `read_and_parse`/`get_default_rules_with` helpers,
-/// which this function is wired into directly) — an infallible signature
-/// here would not compose with that already-established caller contract.
+/// Returns `Err` listing every malformed ATD line inside the definition
+/// block (no terminating `&`, fewer than 3 fields, or a field that does not
+/// parse) -- exactly like Python's `Gaff2DefInvalidError`. The single
+/// deliberate skip is antechamber's `ATD DU &` catch-all (see below). These
+/// lines used to be skipped silently (debt #2361). The signature also matches
+/// `rules_loader`'s `impl FnOnce(&str) -> Result<..>` injection point.
 ///
 /// # CRITICAL: declaration order is load-bearing
 ///
@@ -413,11 +410,12 @@ pub fn parse_gaff2_rules(content: &str) -> Result<(Vec<Gaff2Rule>, WildatomMap),
         // tokens) — bare single-element rules like "ATD f * 9 &" have no
         // further fields. (Previously "< 4", which silently dropped every
         // such rule — see parse_rule_fields' doc comment.)
-        if parts.len() == 1 {
-            // Antechamber's catch-all `ATD DU &` (a type name and nothing
-            // else). proxide does not implement the DU dummy type -- unmatched
-            // atoms go through its own fallback typing (debt #1899) -- so this
-            // one form is a deliberate, documented skip.
+        if parts == ["DU"] {
+            // Antechamber's catch-all `ATD DU &`, and only that exact row.
+            // proxide does not implement the DU dummy type -- unmatched atoms
+            // go through its own fallback typing (debt #1899) -- so this one
+            // form is a deliberate, documented skip. Any other one-token row
+            // (e.g. a truncated `ATD c3 &`) is malformed.
             continue;
         }
         if parts.len() < 3 {
@@ -649,6 +647,13 @@ mod tests {
         let content = "DEFINATION BEGIN\nATD  c3 * 6 4 &\n";
         let (rules, _) = parse_gaff2_rules(content).unwrap();
         assert_eq!(rules.len(), 1);
+    }
+
+    #[test]
+    fn test_one_token_rule_other_than_du_is_an_error() {
+        // The DU skip is exact: a truncated one-token row is malformed.
+        let err = parse_gaff2_rules(&wrap_def("ATD  c3    &")).unwrap_err();
+        assert!(err.contains("1 malformed ATD rule line"), "{err}");
     }
 
     #[test]

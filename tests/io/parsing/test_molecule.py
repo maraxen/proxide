@@ -425,8 +425,9 @@ class TestMoleculeChargesUnknownIsNotZero:
         mol = Molecule.from_mol2(self._write(tmp_path, BENZENE_MOL2))
 
         def fake_parameterize_molecule(positions, elements, bond_tolerance=1.3):
-            # Mirrors md_params.rs::parameterize_molecule, whose charges are a
-            # hard-coded all-zero placeholder.
+            # Mirrors the backend as it was before debt #2352: an all-zero
+            # charges placeholder. parameterize() must never copy such an
+            # array into parsed charges, whatever the backend returns.
             n = len(elements)
             return {
                 "atom_types": ["ca"] * n,

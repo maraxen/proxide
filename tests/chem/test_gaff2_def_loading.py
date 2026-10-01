@@ -162,6 +162,7 @@ _DEF_HEADER = "Defination begin\n------------------\n"
     [
         "ATD  c3    *   6   4",  # no terminating "&"
         "ATD  c3    *   &",  # fewer than 3 fields
+        "ATD  c3    &",  # one token, but not the DU catch-all
         "ATD  bogus *   NOTANUM 4 &",  # atomic number does not parse
     ],
 )
