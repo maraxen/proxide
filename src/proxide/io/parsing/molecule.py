@@ -22,7 +22,11 @@ class Molecule:
       atom_types: GAFF atom types if available (e.g., ["ca", "ca", "ha"]).
       elements: Element symbols (e.g., ["C", "C", "H"]).
       positions: Atomic coordinates in Angstroms, shape (n_atoms, 3).
-      charges: Partial charges in elementary charge units.
+      charges: Partial charges in elementary charge units, or ``None`` when
+          the source carried no partial charges (a MOL2 without a charge
+          column or declaring ``NO_CHARGES``, any SDF, any SMILES). ``None``
+          means *unknown*; it is never replaced by a zero fill, because a
+          zero is a measurement (CLAUDE.md ledger A1/A4, debt #1929).
       bonds: List of (atom_idx1, atom_idx2) tuples.
       bond_orders: Bond orders corresponding to bonds list (1=single, 2=double, etc.).
           TRIPOS aromatic ("ar") bonds are recorded here as 1, matching the
@@ -42,7 +46,7 @@ class Molecule:
   atom_types: list[str]
   elements: list[str]
   positions: np.ndarray
-  charges: np.ndarray
+  charges: np.ndarray | None
   bonds: list[tuple[int, int]]
   bond_orders: list[int] = field(default_factory=list)
   bond_aromatic: list[bool] = field(default_factory=list)
@@ -67,8 +71,18 @@ class Molecule:
     Args:
         path: Path to the MOL2 file.
 
+    Charges are read from the ATOM records' charge column only when every
+    atom carries one and the MOLECULE section's charge type is not
+    ``NO_CHARGES`` (TRIPOS writers emit a ``0.0000`` column under
+    ``NO_CHARGES``, which is a placeholder, not a measurement). Otherwise
+    ``charges`` is ``None``.
+
     Returns:
         Molecule object with parsed data.
+
+    Raises:
+        ValueError: If some ATOM records carry a charge column and others
+            do not -- there is no honest way to fill the gaps.
 
     """
     path = Path(path)
@@ -78,11 +92,14 @@ class Molecule:
     atom_types: list[str] = []
     elements: list[str] = []
     positions: list[list[float]] = []
-    charges: list[float] = []
+    charges: list[float | None] = []
     bonds: list[tuple[int, int]] = []
     bond_orders: list[int] = []
     bond_aromatic: list[bool] = []
     residue_name = "LIG"
+    # MOLECULE section, non-empty lines: name, counts, mol_type, charge_type.
+    molecule_line_idx = 0
+    charge_type: str | None = None
 
     current_section = None
 
@@ -100,8 +117,11 @@ class Molecule:
 
         if current_section == "MOLECULE":
           # First non-empty line after @<TRIPOS>MOLECULE is the name
-          if not name or name == path.stem:
+          if molecule_line_idx == 0 and (not name or name == path.stem):
             name = line
+          elif molecule_line_idx == 3:
+            charge_type = line.split()[0].upper()
+          molecule_line_idx += 1
           continue
 
         if current_section == "ATOM":
@@ -116,8 +136,8 @@ class Molecule:
             # Extract element from atom type or name
             element = _extract_element(atom_type, atom_name)
 
-            # Charge is optional (column 9)
-            charge = float(parts[8]) if len(parts) >= 9 else 0.0
+            # Charge is optional (column 9); absent is unknown, not zero.
+            charge = float(parts[8]) if len(parts) >= 9 else None
 
             # Residue name (column 8)
             if len(parts) >= 8:
@@ -143,13 +163,25 @@ class Molecule:
             bond_aromatic.append(bond_type.lower() == "ar")
           continue
 
+    n_with_charge = sum(c is not None for c in charges)
+    if 0 < n_with_charge < len(charges):
+      raise ValueError(
+        f"{path}: {n_with_charge} of {len(charges)} MOL2 ATOM records carry a "
+        "charge column and the rest do not; refusing to fill the missing charges"
+      )
+    charge_array = (
+      np.array(charges, dtype=np.float32)
+      if charges and n_with_charge == len(charges) and charge_type != "NO_CHARGES"
+      else None
+    )
+
     return cls(
       name=name,
       atom_names=atom_names,
       atom_types=atom_types,
       elements=elements,
       positions=np.array(positions, dtype=np.float32),
-      charges=np.array(charges, dtype=np.float32),
+      charges=charge_array,
       bonds=bonds,
       bond_orders=bond_orders,
       bond_aromatic=bond_aromatic,
@@ -206,7 +238,6 @@ class Molecule:
     atom_types: list[str] = []
     elements: list[str] = []
     positions: list[list[float]] = []
-    charges: list[float] = []
     bonds: list[tuple[int, int]] = []
     bond_orders: list[int] = []
 
@@ -227,7 +258,6 @@ class Molecule:
       atom_types.append("")  # SDF doesn't have GAFF types
       elements.append(element)
       positions.append([x, y, z])
-      charges.append(0.0)  # SDF charges are in properties, not atom line
 
     # Bond block (lines 5+n_atoms to 5+n_atoms+n_bonds-1)
     bond_start = 4 + n_atoms
@@ -250,7 +280,7 @@ class Molecule:
       atom_types=atom_types,
       elements=elements,
       positions=np.array(positions, dtype=np.float32),
-      charges=np.array(charges, dtype=np.float32),
+      charges=None,  # SDF/SMILES carry no partial charges; unknown, not zero
       bonds=bonds,
       bond_orders=bond_orders,
     )
@@ -297,7 +327,6 @@ class Molecule:
     atom_types: list[str] = []
     elements: list[str] = []
     positions: list[list[float]] = []
-    charges: list[float] = []
 
     element_counts: dict[str, int] = {}
 
@@ -312,7 +341,6 @@ class Molecule:
       atom_types.append("")  # Need separate GAFF type assignment
       elements.append(elem)
       positions.append([pos.x, pos.y, pos.z])
-      charges.append(0.0)  # Need OpenFF for charges
 
     bonds: list[tuple[int, int]] = []
     bond_orders: list[int] = []
@@ -327,7 +355,7 @@ class Molecule:
       atom_types=atom_types,
       elements=elements,
       positions=np.array(positions, dtype=np.float32),
-      charges=np.array(charges, dtype=np.float32),
+      charges=None,  # SDF/SMILES carry no partial charges; unknown, not zero
       bonds=bonds,
       bond_orders=bond_orders,
     )
@@ -335,8 +363,12 @@ class Molecule:
   def parameterize(self, bond_tolerance: float = 1.3) -> None:
     """Assign MD parameters using the Rust backend.
 
-    This will assign GAFF atom types and LJ parameters.
-    Charges currently default to zero unless set manually.
+    This will assign GAFF atom types and LJ parameters. ``charges`` is left
+    untouched: the backend's ``charges`` output is a hard-coded all-zero
+    placeholder (GAFF provides no partial charges), so copying it would
+    overwrite real parsed charges -- e.g. antechamber AM1-BCC charges from a
+    MOL2 -- with zeros. Assign charges explicitly (e.g. espaloma via
+    ``proxide.chem.partial_charges``) when ``charges`` is ``None``.
     """
     from proxide import _proxider
 
@@ -346,9 +378,8 @@ class Molecule:
       bond_tolerance=bond_tolerance,
     )
 
-    # Update our attributes
+    # Update our attributes. Deliberately NOT params["charges"] -- see above.
     self.atom_types = params["atom_types"]
-    self.charges = params["charges"]
 
     # Optionally update topology if missing
     if not self.bonds:

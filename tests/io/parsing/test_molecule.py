@@ -330,9 +330,84 @@ class TestMoleculeFromSmiles:
     def test_smiles_to_molecule(self):
         """Test SMILES -> Molecule conversion with RDKit."""
         mol = Molecule.from_smiles("C")  # Methane
-        
+
         assert mol.n_atoms == 5  # C + 4 H
         assert mol.n_bonds == 4
         assert "C" in mol.elements
         assert "H" in mol.elements
+        # SMILES carries no partial charges: unknown, not zero (debt #1929).
+        assert mol.charges is None
+
+
+class TestMoleculeChargesUnknownIsNotZero:
+    """Debt #1929: absent partial charges are ``None`` (unknown), never 0.0.
+
+    Every assertion here failed before the fix: the MOL2 reader filled a
+    missing charge column with 0.0, ignored a ``NO_CHARGES`` header, SDF and
+    SMILES filled 0.0 unconditionally, and ``parameterize()`` overwrote real
+    parsed charges with the Rust backend's all-zero placeholder.
+    """
+
+    @staticmethod
+    def _write(tmp_path: Path, text: str) -> Path:
+        path = tmp_path / "mol.mol2"
+        path.write_text(text)
+        return path
+
+    def test_charged_mol2_keeps_real_charges(self, tmp_path):
+        mol = Molecule.from_mol2(self._write(tmp_path, BENZENE_MOL2))
+        assert mol.charges is not None
+        np.testing.assert_allclose(mol.charges, -0.115, rtol=1e-3)
+
+    def test_no_charges_header_yields_none_despite_zero_column(self, tmp_path):
+        text = BENZENE_MOL2.replace("SMALL\nbcc\n", "SMALL\nNO_CHARGES\n").replace(
+            "-0.115000", " 0.000000"
+        )
+        assert "NO_CHARGES" in text
+        mol = Molecule.from_mol2(self._write(tmp_path, text))
+        assert mol.charges is None
+
+    def test_missing_charge_column_yields_none(self, tmp_path):
+        text = BENZENE_MOL2.replace("        1 LIG     -0.115000", "")
+        assert "-0.115" not in text
+        mol = Molecule.from_mol2(self._write(tmp_path, text))
+        assert mol.charges is None
+        assert mol.n_atoms == 6
+
+    def test_partially_missing_charge_column_raises(self, tmp_path):
+        text = BENZENE_MOL2.replace(
+            "0.0000    1.4000    0.0000 ca        1 LIG     -0.115000",
+            "0.0000    1.4000    0.0000 ca",
+        )
+        with pytest.raises(ValueError, match="5 of 6"):
+            Molecule.from_mol2(self._write(tmp_path, text))
+
+    def test_sdf_charges_are_none(self, tmp_path):
+        path = tmp_path / "methane.sdf"
+        path.write_text(METHANE_SDF)
+        assert Molecule.from_sdf(path).charges is None
+
+    def test_parameterize_does_not_clobber_parsed_charges(self, tmp_path, monkeypatch):
+        import proxide
+
+        mol = Molecule.from_mol2(self._write(tmp_path, BENZENE_MOL2))
+
+        def fake_parameterize_molecule(positions, elements, bond_tolerance=1.3):
+            # Mirrors md_params.rs::parameterize_molecule, whose charges are a
+            # hard-coded all-zero placeholder.
+            n = len(elements)
+            return {
+                "atom_types": ["ca"] * n,
+                "charges": np.zeros(n, np.float32),
+                "bonds": [],
+            }
+
+        fake = type(
+            "FakeProxider",
+            (),
+            {"parameterize_molecule": staticmethod(fake_parameterize_molecule)},
+        )
+        monkeypatch.setattr(proxide, "_proxider", fake, raising=False)
+        mol.parameterize()
+        np.testing.assert_allclose(mol.charges, -0.115, rtol=1e-3)
 

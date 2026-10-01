@@ -113,7 +113,8 @@ def test_atom_ordering_invariance_aspirin(backend):
   p_types = [mol_orig.atom_types[i] for i in perm]
   p_elements = [mol_orig.elements[i] for i in perm]
   p_pos = mol_orig.positions[perm]
-  p_charges = mol_orig.charges[perm]
+  # from_smiles carries no partial charges (None = unknown, debt #1929).
+  p_charges = None if mol_orig.charges is None else mol_orig.charges[perm]
 
   old_to_new = {old: new for new, old in enumerate(perm)}
   p_bonds = [(old_to_new[b[0]], old_to_new[b[1]]) for b in mol_orig.bonds]
