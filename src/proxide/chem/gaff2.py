@@ -1610,7 +1610,7 @@ def _parse_parm_dat(lines: list[str], params: dict, source: str) -> None:
     if redefined:
         import logging as _logging
 
-        _logging.getLogger(__name__).warning(
+        _logging.getLogger(__name__).info(
             "%s: %d torsion(s) redefined later in the file; the later definition is used: %s",
             source, len(redefined), ", ".join(redefined),
         )
@@ -1626,6 +1626,9 @@ def _parse_parm_dat(lines: list[str], params: dict, source: str) -> None:
 
     while i < len(lines) and not lines[i].startswith('MOD4'):  # HBOND, equivalencing
         i += 1
+    if i >= len(lines):
+        # A truncated file used to load with an empty vdW table.
+        raise ValueError(f"{source}: no 'MOD4 RE' van der Waals section (truncated .dat?)")
     i += 1
     while i < len(lines) and lines[i].strip() != 'END':  # MOD4 RE
         parts = lines[i].split()
@@ -1635,6 +1638,8 @@ def _parse_parm_dat(lines: list[str], params: dict, source: str) -> None:
             except (ValueError, IndexError) as e:
                 raise fail(i + 1, lines[i], "MOD4 RE", e) from e
         i += 1
+    if i >= len(lines):
+        raise ValueError(f"{source}: 'MOD4 RE' section has no terminating END (truncated .dat?)")
 
 
 # ---------------------------------------------------------------------------
@@ -1650,18 +1655,6 @@ _TORSION_K_CONV = _KCAL_TO_KJ                       # kcal/mol → kJ/mol
 _TORSION_P_CONV = _math.pi / 180.0                  # deg → rad
 _LJ_SIGMA_CONV = 2.0 * (2.0 ** (-1.0 / 6.0)) * 0.1  # Rmin/2 (Å) → σ (nm)
 _LJ_EPS_CONV = _KCAL_TO_KJ                          # kcal/mol → kJ/mol
-
-_ELEM_MASS_DEFAULT = {
-    "C": 12.011, "O": 15.999, "H": 1.008, "N": 14.007,
-    "S": 32.06, "P": 30.974, "F": 18.998, "Cl": 35.453,
-    "Br": 79.904, "I": 126.904,
-}
-
-_VDW_ELEM_DEFAULT = {
-    "C": (1.9080, 0.0860), "O": (1.6612, 0.2100),
-    "H": (1.4593, 0.0208), "N": (1.8240, 0.1700),
-    "S": (2.0000, 0.2500), "P": (2.1000, 0.2000),
-}
 
 _BOND_TYPE_SUB = {
     "cx": "c3", "cy": "c3", "c5": "c3", "c6": "c3",
@@ -1816,10 +1809,12 @@ def build_gaff2_ffxml(
         gaff_type = idx_to_type[idx]
         elem = atom.GetSymbol()
         # DAT mass for the type, else the element's real mass; never a default.
-        mass = params['masses'].get(gaff_type, _ELEM_MASS_DEFAULT.get(elem))
+        # The type's own MASS entry; a type absent from the table is unknown,
+        # not "its element's mass" (review #5).
+        mass = params['masses'].get(gaff_type)
         if mass is None:
             raise Gaff2ParameterMissingError(
-                f"no mass for GAFF2 type {gaff_type!r} / element {elem!r}"
+                f"no mass for GAFF2 type {gaff_type!r} (element {elem!r})"
             )
         lines.append(
             f'    <Type name="{resname}_{idx}" class="{gaff_type}"'
@@ -1959,10 +1954,13 @@ def build_gaff2_ffxml(
         gaff_type = idx_to_type[idx]
         elem = atom.GetSymbol()
         q = charges[idx]
-        if gaff_type in params['vdw']:
-            rmin_half, epsilon = params['vdw'][gaff_type]
-        else:
-            rmin_half, epsilon = _VDW_ELEM_DEFAULT.get(elem, (1.9080, 0.0860))
+        if gaff_type not in params['vdw']:
+            # This used to fall back to an element default and finally to
+            # carbon's c3 LJ (1.9080, 0.0860) for anything else (review #5).
+            raise Gaff2ParameterMissingError(
+                f"no GAFF2 van der Waals parameters for type {gaff_type!r} (element {elem!r})"
+            )
+        rmin_half, epsilon = params['vdw'][gaff_type]
         sigma_nm = rmin_half * _LJ_SIGMA_CONV
         eps_kj = epsilon * _LJ_EPS_CONV
         lines.append(
@@ -2095,8 +2093,14 @@ def parameterize_gaff_with_rdkit(
     mol: Chem.Mol,
     gaff_version: str = "gaff-2.2.20",
     charge_method: str = "espaloma",
+    missing_torsions: Literal["raise", "omit"] = "raise",
 ) -> dict:
     """Assign GAFF2 parameters to an RDKit molecule.
+
+    ``missing_torsions`` works as in :func:`build_gaff2_ffxml`: a torsion
+    with no GAFF2 parameters raises by default; ``"omit"`` leaves it out of
+    ``torsions`` with one UserWarning naming every omitted quartet (e.g.
+    thioacetone's hc-c3-cs-s, which gaff-2.2.20.dat does not define).
 
     This function assigns GAFF2 atom types and looks up force field parameters
     without requiring AmberTools.
@@ -2139,15 +2143,17 @@ def parameterize_gaff_with_rdkit(
 
     # Extract molecule topology
     n_atoms = mol.GetNumAtoms()
+    if len(atom_types) != n_atoms:
+        # Atoms beyond the type list used to be typed "x" (and their torsions
+        # looked up as "hc") -- placeholder types, not assignments.
+        raise ValueError(f"{len(atom_types)} GAFF2 atom types for {n_atoms} atoms")
 
     # Build bond list
     bonds = []
     for bond in mol.GetBonds():
         i = bond.GetBeginAtomIdx()
         j = bond.GetOtherAtomIdx(i)
-        # Get atom types
-        t_i = atom_types[i] if i < len(atom_types) else "x"
-        t_j = atom_types[j] if j < len(atom_types) else "x"
+        t_i, t_j = atom_types[i], atom_types[j]
 
         # Get bond order
         bo = bond.GetBondTypeAsDouble()
@@ -2169,24 +2175,21 @@ def parameterize_gaff_with_rdkit(
             'gaff_type_j': t_j,
         })
 
-    # Build angle list (1-2-3 connections)
+    # Build angle list: every pair of neighbours of every centre atom. This
+    # used to require i < j < k, so any angle whose centre was not the middle
+    # index was never generated (acetone: O-C-C missing), and the
+    # missing-parameter check below only ever saw that subset.
+    neighbors = [
+        sorted(nb.GetIdx() for nb in mol.GetAtomWithIdx(a).GetNeighbors()) for a in range(n_atoms)
+    ]
     angles = []
-    for i in range(n_atoms):
-        atom_i = mol.GetAtomWithIdx(i)
-        for bond in atom_i.GetBonds():
-            j = bond.GetOtherAtomIdx(i)
-            if j <= i:
-                continue
-            for bond2 in mol.GetAtomWithIdx(j).GetBonds():
-                k = bond2.GetOtherAtomIdx(j)
-                if k <= j or k == i:
-                    continue
-                t_i = atom_types[i] if i < len(atom_types) else "x"
-                t_j = atom_types[j] if j < len(atom_types) else "x"
-                t_k = atom_types[k] if k < len(atom_types) else "x"
+    for j in range(n_atoms):
+        nbs = neighbors[j]
+        for x, i in enumerate(nbs):
+            for k in nbs[x + 1:]:
                 angles.append({
                     'i': i, 'j': j, 'k': k,
-                    'types': (t_i, t_j, t_k),
+                    'types': (atom_types[i], atom_types[j], atom_types[k]),
                 })
 
     charges = _assign_gaff2_charges(mol, charge_method)
@@ -2226,6 +2229,9 @@ def parameterize_gaff_with_rdkit(
 
     # Track torsion substitutions for observability (debt #1905)
     substitutions: list[dict] = []
+    if missing_torsions not in ("raise", "omit"):
+        raise ValueError(f"missing_torsions must be 'raise' or 'omit', got {missing_torsions!r}")
+    omitted_torsions: list[str] = []
 
     # Substitutions for atom type looking (cx->c3, etc.)
     type_substitutions = {
@@ -2235,56 +2241,65 @@ def parameterize_gaff_with_rdkit(
     }
 
     def _substitute_type(t: str) -> str:
-        if t == 'x':
-            return 'hc'  # default H type
+        # The untyped placeholder "x" used to be looked up as "hc" (a
+        # hydrogen's parameters for an atom nobody typed); it now has no
+        # substitute, so its terms are reported missing.
         return type_substitutions.get(t, t)
 
-    for i in range(n_atoms):
-        atom_i = mol.GetAtomWithIdx(i)
-        for bond1 in atom_i.GetBonds():
-            j = bond1.GetOtherAtomIdx(i)
-            if j <= i:
+    # Every i-j-k-l across every bond j-k (each bond once). This used to
+    # require i < j < k < l, which skipped most real torsions (ethane: all
+    # nine H-C-C-H).
+    for bond in mol.GetBonds():
+        j, k = sorted((bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()))
+        for i in neighbors[j]:
+            if i == k:
                 continue
-            for bond2 in mol.GetAtomWithIdx(j).GetBonds():
-                k = bond2.GetOtherAtomIdx(j)
-                if k <= j or k == i:
+            for l_idx in neighbors[k]:
+                if l_idx == j or l_idx == i:
                     continue
-                for bond3 in mol.GetAtomWithIdx(k).GetBonds():
-                    neighbor_idx = bond3.GetOtherAtomIdx(k)
-                    if neighbor_idx <= k or neighbor_idx == j:
-                        continue
-                    l_idx = neighbor_idx
-                    t_i = atom_types[i] if i < len(atom_types) else "x"
-                    t_j = atom_types[j] if j < len(atom_types) else "x"
-                    t_k = atom_types[k] if k < len(atom_types) else "x"
-                    t_l = atom_types[neighbor_idx] if neighbor_idx < len(atom_types) else "x"
+                t_i, t_j, t_k, t_l = (atom_types[a] for a in (i, j, k, l_idx))
 
-                    key = (t_i, t_j, t_k, t_l)
+                key = (t_i, t_j, t_k, t_l)
 
-                    # Specific / generic rows first (either direction), then
-                    # with substitutions (cx->c3, etc.), recorded.
-                    torsion_params = _lookup_torsion_terms(t_i, t_j, t_k, t_l, params)
-                    if not torsion_params:
-                        key_sub = (
-                            _substitute_type(t_i), _substitute_type(t_j),
-                            _substitute_type(t_k), _substitute_type(t_l),
-                        )
-                        sub_terms = _lookup_torsion_terms(*key_sub, params)
-                        if key != key_sub and sub_terms:
-                            torsion_params = sub_terms
-                            substitutions.append({
-                                "term": "torsion",
-                                "from": list(key),
-                                "to": list(key_sub),
-                            })
-                    if not torsion_params:
+                # Specific / generic rows first (either direction), then
+                # with substitutions (cx->c3, etc.), recorded.
+                torsion_params = _lookup_torsion_terms(t_i, t_j, t_k, t_l, params)
+                if not torsion_params:
+                    key_sub = (
+                        _substitute_type(t_i), _substitute_type(t_j),
+                        _substitute_type(t_k), _substitute_type(t_l),
+                    )
+                    sub_terms = _lookup_torsion_terms(*key_sub, params)
+                    if key != key_sub and sub_terms:
+                        torsion_params = sub_terms
+                        substitutions.append({
+                            "term": "torsion",
+                            "from": list(key),
+                            "to": list(key_sub),
+                        })
+                if not torsion_params:
+                    if missing_torsions == "raise":
                         missing.append("torsion " + "-".join(key))
+                    else:
+                        omitted_torsions.append("-".join(key))
+                    continue
 
-                    torsions.append({
-                        'i': i, 'j': j, 'k': k, 'l': l_idx,
-                        'types': key,
-                        'params': torsion_params,
-                    })
+                torsions.append({
+                    'i': i, 'j': j, 'k': k, 'l': l_idx,
+                    'types': key,
+                    'params': torsion_params,
+                })
+
+    if omitted_torsions:
+        import warnings
+
+        unique = sorted(set(omitted_torsions))
+        warnings.warn(
+            f"parameterize_gaff_with_rdkit: omitted {len(omitted_torsions)} torsion term(s) "
+            f"with no GAFF2 parameters ({len(unique)} type quartet(s)): {', '.join(unique)}",
+            UserWarning,
+            stacklevel=2,
+        )
 
     if missing:
         raise Gaff2ParameterMissingError(

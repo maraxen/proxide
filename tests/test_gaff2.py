@@ -32,6 +32,7 @@ Chem = pytest.importorskip("rdkit.Chem")
 from rdkit.Chem import AllChem
 
 from proxide.chem.gaff2 import (
+    Gaff2ParameterMissingError,
     parameterize_gaff_with_rdkit,
     load_gaff2_parameters,
 )
@@ -165,7 +166,7 @@ def test_dat_loader_later_torsion_redefinition_replaces_not_appends(caplog):
     """
     import logging
 
-    with caplog.at_level(logging.WARNING, logger="proxide.chem.gaff2"):
+    with caplog.at_level(logging.INFO, logger="proxide.chem.gaff2"):
         p = load_gaff2_parameters()
     assert sorted(p["torsions"][("c3", "c3", "n", "c")]) == [
         pytest.approx((1, 1.02, 180.0)), pytest.approx((3, 0.17, 0.0)),
@@ -303,6 +304,37 @@ def test_acetone_central_angle_has_its_dat_parameters():
     assert len(central) == 1, [a["types"] for a in result["angles"]]
     assert central[0]["kt"] == pytest.approx(59.15)
     assert central[0]["t0"] == pytest.approx(116.68)
+
+
+def test_every_angle_and_torsion_is_enumerated():
+    """Review #6: angles and torsions used to be generated only along
+    index-increasing paths (i<j<k, i<j<k<l), so most were never produced --
+    and never checked for missing parameters. Counts are the graph's own.
+    """
+    acetone = parameterize_gaff_with_rdkit(prepare_mol("CC(=O)C"))
+    # 2 methyl C (6 H-C-H/H-C-C each... 4 neighbours -> 6 angles) + the
+    # carbonyl C (3 neighbours -> 3 angles, incl. both O-C-C) = 15.
+    assert len(acetone["angles"]) == 15
+    occ = [a for a in acetone["angles"] if a["types"][1] == "c" and "o" in (a["types"][0], a["types"][2])]
+    assert len(occ) == 2, [a["types"] for a in acetone["angles"]]
+
+    ethane = parameterize_gaff_with_rdkit(prepare_mol("CC"))
+    hcch = [t for t in ethane["torsions"] if t["types"][0].startswith("h") and t["types"][3].startswith("h")]
+    assert len(hcch) == 9  # 3 x 3 across the one C-C bond; there were 0
+    benzene = parameterize_gaff_with_rdkit(prepare_mol("c1ccccc1"))
+    assert len(benzene["angles"]) == 18 and len(benzene["torsions"]) == 24
+
+
+def test_torsion_without_parameters_raises_or_warns():
+    """Thioacetone's hc-c3-cs-s has no gaff-2.2.20.dat row (specific or
+    generic). It was never even generated before review #6; now it raises by
+    default, or is omitted with a warning naming it."""
+    mol = prepare_mol("CC(=S)C")
+    with pytest.raises(Gaff2ParameterMissingError, match="hc-c3-cs-s"):
+        parameterize_gaff_with_rdkit(mol)
+    with pytest.warns(UserWarning, match="hc-c3-cs-s"):
+        result = parameterize_gaff_with_rdkit(mol, missing_torsions="omit")
+    assert all(t["params"] for t in result["torsions"])
 
 
 def test_a_term_missing_from_the_table_raises(monkeypatch):

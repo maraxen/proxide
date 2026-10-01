@@ -260,7 +260,15 @@ def test_atom_type_golden_reference(smiles: str, expected_types: list[str]) -> N
     mol = Chem.AddHs(mol)
     AllChem.SanitizeMol(mol)
 
-    result = parameterize_gaff_with_rdkit(mol)
+    # Atom types are the subject here, not torsion coverage: some molecules
+    # (thioacetone's hc-c3-cs-s) have torsions gaff-2.2.20.dat does not
+    # define, so opt in to omitting them; that path warns (tested in
+    # tests/test_gaff2.py).
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        result = parameterize_gaff_with_rdkit(mol, missing_torsions="omit")
     heavy_types = [
         t for atom, t in zip(mol.GetAtoms(), result["atom_types"], strict=True)
         if atom.GetAtomicNum() != 1
