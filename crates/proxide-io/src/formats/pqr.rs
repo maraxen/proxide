@@ -285,18 +285,59 @@ fn parse_field_f32(
         .map_err(|kind| PqrFieldError::new(line_no, token_index, field, raw_line, kind))
 }
 
+/// Errors specific to PQR parsing that are not field-level parse errors.
+#[derive(Debug, Clone)]
+pub struct PqrMultiModelError {
+    pub line: usize,
+    pub message: String,
+}
+
+impl fmt::Display for PqrMultiModelError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[{}] line {}: {}",
+            IO_MALFORMED_RECORD_CODE, self.line, self.message
+        )
+    }
+}
+
+impl std::error::Error for PqrMultiModelError {}
+
 /// Parse PQR file and return raw atom data with charges and radii. The first
 /// malformed ATOM/HETATM line anywhere in the file aborts the whole parse
 /// with a [`PqrFieldError`] -- there is no partial result and no silent drop.
+/// Multi-model PQR files are not supported and return a [`PqrMultiModelError`]
+/// on the second MODEL record.
 pub fn parse_pqr_file<P: AsRef<Path>>(path: P) -> Result<RawAtomData, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
     let mut raw_data = RawAtomData::new();
+    let mut seen_model = false;
 
     for (idx, line) in reader.lines().enumerate() {
         let line = line?;
         let line_no = idx + 1;
+
+        // Check for MODEL/ENDMDL records
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        if !tokens.is_empty() {
+            let record_type = tokens[0];
+            if record_type == "MODEL" {
+                if seen_model {
+                    return Err(Box::new(PqrMultiModelError {
+                        line: line_no,
+                        message: "multi-model PQR is not supported".to_string(),
+                    }));
+                }
+                seen_model = true;
+                continue; // Skip MODEL record, don't parse as atom
+            } else if record_type == "ENDMDL" {
+                continue; // Skip ENDMDL record
+            }
+        }
+
         if let Some(atom) = parse_pqr_line(&line, line_no)? {
             raw_data.add_atom(atom);
         }
@@ -516,5 +557,89 @@ mod tests {
     fn empty_line_is_ok_none() {
         assert!(parse_one("").unwrap().is_none());
         assert!(parse_one("   ").unwrap().is_none());
+    }
+
+    // -------------------------------------------------------
+    // A2: Multi-model PQR tracking (debt #1932)
+    // -------------------------------------------------------
+
+    fn parse_from_string(
+        s: &str,
+    ) -> Result<RawAtomData, Box<dyn std::error::Error>> {
+        let mut raw_data = RawAtomData::new();
+        let mut seen_model = false;
+
+        for (idx, line) in s.lines().enumerate() {
+            let line_no = idx + 1;
+
+            // Check for MODEL/ENDMDL records
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            if !tokens.is_empty() {
+                let record_type = tokens[0];
+                if record_type == "MODEL" {
+                    if seen_model {
+                        return Err(Box::new(PqrMultiModelError {
+                            line: line_no,
+                            message: "multi-model PQR is not supported".to_string(),
+                        }));
+                    }
+                    seen_model = true;
+                    continue;
+                } else if record_type == "ENDMDL" {
+                    continue;
+                }
+            }
+
+            if let Some(atom) = parse_pqr_line(&line, line_no)? {
+                raw_data.add_atom(atom);
+            }
+        }
+
+        if raw_data.num_atoms == 0 {
+            return Err("No atoms found in PQR file".into());
+        }
+
+        Ok(raw_data)
+    }
+
+    #[test]
+    fn single_model_with_wrappers_parses() {
+        // Single model with MODEL 1 / ENDMDL wrappers should parse successfully
+        let pqr = "MODEL        1\n\
+                   ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ATOM      2  CA  MET A   1      21.154  30.699   6.276  -0.1234  1.7000\n\
+                   ENDMDL\n";
+        let result = parse_from_string(pqr);
+        assert!(result.is_ok());
+        let raw_data = result.unwrap();
+        assert_eq!(raw_data.num_atoms, 2);
+    }
+
+    #[test]
+    fn unwrapped_single_model_parses() {
+        // Single model without MODEL/ENDMDL wrappers should also parse
+        let pqr = "ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ATOM      2  CA  MET A   1      21.154  30.699   6.276  -0.1234  1.7000\n";
+        let result = parse_from_string(pqr);
+        assert!(result.is_ok());
+        let raw_data = result.unwrap();
+        assert_eq!(raw_data.num_atoms, 2);
+    }
+
+    #[test]
+    fn second_model_is_error() {
+        // Two models should error on the second MODEL record
+        let pqr = "MODEL        1\n\
+                   ATOM      1  N   MET A   1      20.154  29.699   5.276  -0.4157  1.8240\n\
+                   ENDMDL\n\
+                   MODEL        2\n\
+                   ATOM      2  N   MET A   1      22.154  31.699   7.276  -0.4157  1.8240\n\
+                   ENDMDL\n";
+        let result = parse_from_string(pqr);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_str = err.to_string();
+        assert!(err_str.contains("multi-model"));
+        assert!(err_str.contains("line 4")); // Second MODEL is on line 4
     }
 }
