@@ -368,11 +368,12 @@ class Molecule:
     """Assign MD parameters using the Rust backend.
 
     This will assign GAFF atom types and LJ parameters. ``charges`` is left
-    untouched: the backend's ``charges`` output is a hard-coded all-zero
-    placeholder (GAFF provides no partial charges), so copying it would
-    overwrite real parsed charges -- e.g. antechamber AM1-BCC charges from a
-    MOL2 -- with zeros. Assign charges explicitly (e.g. espaloma via
-    ``proxide.chem.partial_charges``) when ``charges`` is ``None``.
+    untouched: GAFF provides no partial charges, so the backend returns none
+    (``"charges"`` is listed in its ``unparameterized_terms``; it used to be
+    an all-zero placeholder that overwrote real parsed charges -- e.g.
+    antechamber AM1-BCC charges from a MOL2). Assign charges explicitly (e.g.
+    espaloma via ``proxide.chem.partial_charges``) when ``charges`` is
+    ``None``.
     """
     from proxide import _proxider
 

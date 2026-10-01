@@ -405,6 +405,20 @@ class TestMoleculeChargesUnknownIsNotZero:
         path.write_text(METHANE_SDF)
         assert Molecule.from_sdf(path).charges is None
 
+    def test_backend_reports_missing_terms_instead_of_zeros(self):
+        # Debt #2352, through the real compiled binding: no all-zero charges
+        # and no generic bonded parameters -- the keys are absent and named.
+        import proxide
+
+        coords = np.array(
+            [[0, 0, 0], [1.52, 0, 0], [2.03, 1.43, 0], [3.45, 1.43, 0.3]], np.float32
+        )
+        out = proxide.parameterize_molecule(coords, ["C", "C", "C", "O"])
+        for key in ("charges", "bond_params", "angle_params", "dihedral_params"):
+            assert key not in out, key
+            assert key in out["unparameterized_terms"], key
+        assert len(out["bonds"]) > 0  # topology is still real and returned
+
     def test_parameterize_does_not_clobber_parsed_charges(self, tmp_path, monkeypatch):
         import proxide
 
