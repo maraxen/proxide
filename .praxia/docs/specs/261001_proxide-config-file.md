@@ -31,7 +31,7 @@ is in effect. Inventory on `main` (`d4ac812`, 2026-10-01):
 
 | knob | today | site |
 |---|---|---|
-| thread count | proxide parallelises **only with orx-parallel** (no rayon dependency). On native builds all ~15 `into_par()` sites use orx's `NumThreads::Auto` = `min(input len, std::thread::available_parallelism())`, capped by `ORX_PARALLEL_MAX_NUM_THREADS`. `proxide-parallel-rt` (`static NUM_THREADS = 1`) is applied **only under `cfg(wasm32)`** (confind.rs:103/164, fasta.rs:69, xtc.rs:666), so the 1-thread default is wasm-only. Python cannot set the count. Whether `available_parallelism()` honours a SLURM allocation depends on the cluster's CPU affinity/cgroup setup — **unverified** (probe pending, §7 Q1) | `proxide-parallel-rt/src/lib.rs:3`, `proxide-io/src/formats/xtc.rs:634` |
+| thread count | proxide parallelises **only with orx-parallel** (no rayon dependency). On native builds all ~15 `into_par()` sites use orx's `NumThreads::Auto` = `min(input len, std::thread::available_parallelism())`, capped by `ORX_PARALLEL_MAX_NUM_THREADS`. `proxide-parallel-rt` (`static NUM_THREADS = 1`) is applied **only under `cfg(wasm32)`** (confind.rs:103/164, fasta.rs:69, xtc.rs:666), so the 1-thread default is wasm-only. Python cannot set the count. `available_parallelism()` honours SLURM core pinning on Engaging (**verified**, §7 Q1) | `proxide-parallel-rt/src/lib.rs:3`, `proxide-io/src/formats/xtc.rs:634` |
 | download location | `output_dir="."` default; repeats re-download | `src/proxide/io/fetching.py:6-47` |
 | endpoints | RCSB / AFDB / mdCATH / foldcomp base URLs are constants; AFDB `version=4` default | `proxide-io/src/io/fetching.rs:13-16, 227` |
 | retry policy | `max_retries = 3`, 1 s initial backoff | `fetching.rs:178-179` |
@@ -61,7 +61,7 @@ is in effect. Inventory on `main` (`d4ac812`, 2026-10-01):
 
 | section.key | type | default | replaces | priority |
 |---|---|---|---|---|
-| `parallel.num_threads` | int ≥ 1, or `auto` | `auto` = orx's `Auto` (today's native behaviour); if Q1's probe shows `available_parallelism()` ignores the SLURM allocation, `auto` also clamps to `$SLURM_CPUS_PER_TASK` | a single knob applied as `.num_threads(n)` at every `into_par()` site via one `proxide-parallel-rt` helper (native **and** wasm), so the count is settable instead of implicit; `ORX_PARALLEL_MAX_NUM_THREADS` stays honoured as orx's own global cap | **P1** |
+| `parallel.num_threads` | int ≥ 1, or `auto` | `auto` = orx's `Auto` (today's native behaviour; honours SLURM core pinning, Q1) | a single knob applied as `.num_threads(n)` at every `into_par()` site via one `proxide-parallel-rt` helper (native **and** wasm), so the count is settable instead of implicit; `ORX_PARALLEL_MAX_NUM_THREADS` stays honoured as orx's own global cap | **P1** |
 | `xtc.offsets_dir` | path or unset | unset = next to the XTC (today) | always-adjacent sidecar | **P1** (blocks isochore spec `260930_parallel-xtc-read-via-proxide` T1/O1) |
 | `xtc.import_mdanalysis_offsets` | bool | `true` (today) | — | P1 |
 | `fetch.cache_dir` | path or unset | unset = today's `output_dir="."` | cwd downloads | P2 |
@@ -112,24 +112,23 @@ temp files (`TMPDIR` already governs them), and every scientific parameter (Prin
 ## 6. Rollout
 
 1. **T1** `proxide-config` crate + precedence/expansion/error tests (§5.1–5.3).
-2. **T2** threads (§5.4) — one settable knob for every parallel site; adds a SLURM clamp only if Q1 shows `Auto` ignores the allocation.
+2. **T2** threads (§5.4) — one settable knob for every parallel site (no SLURM clamp needed, Q1).
 3. **T3** `xtc.offsets_dir` (+ import flag) (§5.5) — unblocks isochore's parallel-reader spec.
 4. **T4** `fetch.*` (§5.6).
 5. **T5** `tools.*`.
 6. **T6** `dev.fixtures.*` and removal of hard-coded user paths (§5.7).
 7. **T7** `proxide config show` + Python `config.show()`, README section with an example `config.toml`.
 
-Each task lands with today's behaviour as the default, so nothing changes until a config value is set
-(T2 changes the default only if Q1 shows `Auto` oversubscribes under SLURM).
+Each task lands with today's behaviour as the default, so nothing changes until a config value is set.
 
 ## 7. Open questions
 
-- **Q1** Does `std::thread::available_parallelism()` (orx `Auto`) honour a SLURM allocation on Engaging?
-  It checks CPU affinity, then the cgroup quota; if SLURM pins tasks to their cores it already does, and
-  `auto` needs no SLURM clamp. Probe: a 2-CPU job printing `nproc` (same affinity call), `nproc --all`,
-  `Cpus_allowed_list` and `cpu.max` (`~/venv_migrate/affinity_probe.sh` on Engaging; first attempt
-  2026-10-01 failed — Slurm controller unreachable). With the answer, T2 either only adds the knob
-  (default unchanged) or also adds the clamp.
+- **Q1 — RESOLVED 2026-10-01: yes, `Auto` honours the SLURM allocation; no clamp needed.** A 2-CPU job
+  (`--cpus-per-task=2`, node1624, 384 logical CPUs) saw `nproc` = 4, `Cpus_allowed_list` = `189-190,381-382`:
+  Engaging allocates whole cores (`SelectTypeParameters = CR_CORE_MEMORY`, so 2 cores = 4 SMT threads) and
+  pins tasks to them (`TaskPlugin = task/cgroup,task/affinity`). `available_parallelism()` reads that affinity
+  first, so orx `Auto` uses the 4 allotted hardware threads, not the node's 384. T2 therefore only adds the
+  settable knob; the default is unchanged.
 - **Q2** Should `xtc.offsets_dir` default to a subdirectory of the `traj_cache` root when that is
   configured, or stay independent? (Recommendation: independent; set it explicitly to point inside the
   traj_cache root. No cross-project coupling.)
