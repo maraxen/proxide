@@ -75,6 +75,9 @@ impl ToPyDict for CachedStructure {
         if let Some(shape) = self.coord_shape {
             dict.set_item("coord_shape", shape)?;
         }
+        if let Some(ref ids) = self.unique_chain_ids {
+            dict.set_item("unique_chain_ids", ids.clone())?;
+        }
         if let Some(ref per_atom) = self.full_per_atom {
             dict.set_item("atom_residue_ids", per_atom.atom_residue_ids.clone())?;
             dict.set_item("elements", per_atom.elements.clone())?;

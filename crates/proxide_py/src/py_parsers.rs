@@ -338,8 +338,12 @@ pub fn parse_structure(
 ) -> PyResult<PyObject> {
     let spec = spec.map(|s| s.borrow().inner.clone()).unwrap_or_default();
 
-    // Check cache (only if features are simple)
+    // Check cache (only if features are simple). The cache key has no model
+    // selection in it, so a parse that selects models is never cached or
+    // served from cache: models=[2] would otherwise answer a later
+    // all-models request with model 2 alone.
     let should_cache = spec.enable_caching
+        && spec.models.is_none()
         && !spec.compute_rbf
         && !spec.compute_electrostatics
         && !spec.compute_vdw
@@ -401,6 +405,7 @@ fn process_models(
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
     let should_cache = cache_path.is_some()
         && spec.enable_caching
+        && spec.models.is_none()
         && !spec.compute_rbf
         && !spec.compute_electrostatics
         && !spec.compute_vdw
@@ -698,6 +703,7 @@ fn process_models(
                     atom_names: None,
                     coord_shape: None,
                     full_per_atom: None,
+                    unique_chain_ids: None,
                 })
             } else {
                 None
@@ -771,6 +777,7 @@ fn process_models(
                     // The cache-hit dict used to lack these, so a second parse
                     // of the same file returned less than the first
                     // (backlog #5684 / debt #2353).
+                    unique_chain_ids: None,
                     full_per_atom: Some(formatters::FullPerAtom {
                         atom_residue_ids: formatted.atom_residue_ids.clone(),
                         elements: formatted.elements.clone(),
@@ -806,17 +813,6 @@ fn process_models(
         dict.set_item("n_models_present", models_to_process.len())?;
     }
 
-    // Insert into cache if needed
-    if let (Some(cached), Some(path)) = (cached_structure, cache_path) {
-        let key = formatters::CacheKey::new(
-            path,
-            spec.coord_format,
-            spec.remove_solvent,
-            spec.include_hetatm,
-        );
-        formatters::insert_cached(key, cached);
-    }
-
     // Downcast to PyDict to add more fields
     let dict_bound = &dict;
 
@@ -849,6 +845,20 @@ fn process_models(
 
     let unique_chains_list: Vec<&str> = unique_chains.iter().map(|s| s.as_str()).collect();
     dict_bound.set_item("unique_chain_ids", unique_chains_list)?;
+
+    // Insert into cache if needed -- after the chain vocabulary exists, so a
+    // cache hit returns it too (it used to return chain_ids=None, and the
+    // writer then emitted blank chain columns).
+    if let (Some(mut cached), Some(path)) = (cached_structure, cache_path) {
+        cached.unique_chain_ids = Some(unique_chains.clone());
+        let key = formatters::CacheKey::new(
+            path,
+            spec.coord_format,
+            spec.remove_solvent,
+            spec.include_hetatm,
+        );
+        formatters::insert_cached(key, cached);
+    }
 
     // Also provide per-atom chain_ids (list of str) for completeness if needed?
     // Or "chain_ids" key usually means unique or per-atom?

@@ -1,5 +1,7 @@
 """Tests for proxide.io.writing."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -396,16 +398,62 @@ class TestWritePdbOnRealParsedStructures:
     with pytest.warns(UserWarning, match="18 models present"):
       parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Full))
 
-  def test_full_format_cache_hit_returns_the_same_per_atom_fields(self) -> None:
+  @staticmethod
+  def _cache_probe(tmp_path, name: str) -> tuple[Path, str]:
+    """A private copy of the fixture, plus the same file with x shifted.
+
+    The format cache is keyed by path alone, so after overwriting the file a
+    cache HIT still returns the old coordinates and a miss the new ones --
+    which is how these tests know the second parse came from the cache.
+    """
+    src = Path(TestWritePdbOnRealParsedStructures.PDB).read_text()
+    shifted = "".join(
+      (x[:30] + f"{float(x[30:38]) + 50.0:8.3f}" + x[38:]) if x.startswith("ATOM") else x
+      for x in src.splitlines(keepends=True)
+    )
+    path = tmp_path / name
+    path.write_text(src)
+    return path, shifted
+
+  def test_full_format_cache_hit_returns_the_same_per_atom_fields(self, tmp_path) -> None:
     from proxide import CoordFormat, OutputSpec, parse_structure
 
-    spec = OutputSpec(coord_format=CoordFormat.Full)
-    first = parse_structure(self.PDB, spec)
-    second = parse_structure(self.PDB, spec)  # served from the format cache
+    path, shifted = self._cache_probe(tmp_path, "full_cache.pdb")
+    spec = OutputSpec(coord_format=CoordFormat.Full, enable_caching=True)
+    first = parse_structure(str(path), spec)
+    path.write_text(shifted)
+    second = parse_structure(str(path), spec)
+    # Proof of a cache hit: the old coordinates came back.
+    np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
     for field in ("elements", "res_names", "atom_chain_ids", "atom_res_index"):
       a, b = getattr(first, field), getattr(second, field)
       assert a is not None and b is not None, field
       assert list(np.asarray(a)) == list(np.asarray(b)), field
+
+  def test_atom37_cache_hit_keeps_the_chain_vocabulary(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    path, shifted = self._cache_probe(tmp_path, "a37_cache.pdb")
+    spec = OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True)
+    first = parse_structure(str(path), spec)
+    path.write_text(shifted)
+    second = parse_structure(str(path), spec)
+    np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
+    assert second.chain_ids == first.chain_ids == ["A"]
+
+  def test_model_selected_parse_is_not_cached(self, tmp_path) -> None:
+    # The cache key has no model selection: models=[2] must not be served to
+    # (or from) an all-models request.
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    path = tmp_path / "nmr.pdb"
+    path.write_text(Path("tests/data/1uao.pdb").read_text())
+    one = parse_structure(
+      str(path), OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True, models=[2])
+    )
+    assert np.shape(one.coordinates) == (10, 37, 3)
+    every = parse_structure(str(path), OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True))
+    assert np.shape(every.coordinates) == (18, 10, 37, 3)
 
   def test_atom37_round_trips_resolved_atoms(self, tmp_path) -> None:
     from proxide import CoordFormat, OutputSpec, parse_structure

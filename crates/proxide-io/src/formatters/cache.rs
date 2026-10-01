@@ -64,6 +64,9 @@ pub struct CachedStructure {
     /// Per-atom Full-format fields, so a cache hit returns the same dict as
     /// the first call (it used to drop them).
     pub full_per_atom: Option<FullPerAtom>,
+    /// The chain vocabulary `chain_index` indexes, so a cache hit returns the
+    /// same `unique_chain_ids` as the first call.
+    pub unique_chain_ids: Option<Vec<String>>,
 }
 
 /// Per-atom arrays the Full format carries (see `FormattedFull`).
@@ -85,6 +88,7 @@ pub struct CachedStructureArgs {
     pub atom_names: Option<Vec<String>>,
     pub coord_shape: Option<(usize, usize, usize)>,
     pub full_per_atom: Option<FullPerAtom>,
+    pub unique_chain_ids: Option<Vec<String>>,
 }
 
 impl CachedStructure {
@@ -99,6 +103,7 @@ impl CachedStructure {
             atom_names: args.atom_names,
             coord_shape: args.coord_shape,
             full_per_atom: args.full_per_atom,
+            unique_chain_ids: args.unique_chain_ids,
         }
     }
 }
@@ -212,6 +217,7 @@ mod tests {
             atom_names: None,
             coord_shape: None,
             full_per_atom: None,
+            unique_chain_ids: None,
         };
 
         cache.insert(key1.clone(), value.clone());
