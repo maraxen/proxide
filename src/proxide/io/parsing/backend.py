@@ -978,7 +978,7 @@ def parse_mdtraj_h5_metadata(file_path: str | Path) -> MdtrajH5Data:
       MdtrajH5Data with trajectory metadata
 
   Raises:
-      ImportError: If mdcath feature not available
+      ImportError: If the hdf5 feature was not compiled in
       ValueError: If parsing fails
 
   """
@@ -1013,7 +1013,7 @@ def parse_mdtraj_h5_frame(file_path: str | Path, frame_idx: int = 0) -> RawAtomD
       RawAtomData with frame coordinates and metadata
 
   Raises:
-      ImportError: If mdcath feature not available
+      ImportError: If the hdf5 feature was not compiled in
       ValueError: If parsing fails
 
   """
@@ -1046,7 +1046,7 @@ def parse_mdcath_metadata(file_path: str | Path) -> MdcathData:
       MdcathData with domain metadata
 
   Raises:
-      ImportError: If mdcath feature not available
+      ImportError: If the hdf5 feature was not compiled in
       ValueError: If parsing fails
 
   """
@@ -1103,7 +1103,7 @@ def parse_mdcath_frame(
       Dictionary with 'temperature', 'replica', 'frame_idx', 'coords'
 
   Raises:
-      ImportError: If mdcath feature not available
+      ImportError: If the hdf5 feature was not compiled in
       ValueError: If parsing fails
 
   """
@@ -1114,7 +1114,7 @@ def is_hdf5_support_available() -> bool:
   """Check if HDF5 parsing support is available.
 
   Returns:
-      True if mdcath feature was compiled, False otherwise.
+      True if the hdf5 feature was compiled, False otherwise.
 
   """
   # Check if the function exists

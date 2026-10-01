@@ -21,17 +21,15 @@ jobs:
       - name: Create virtual environment
         run: uv venv
 
-      - name: Install dependencies
+      # Builds and installs the Rust extension as proxide._proxider (crate
+      # default features = "full"). Rebuild locally from the REPO ROOT only:
+      # `maturin develop --release`. Running maturin from crates/proxide_py
+      # builds a top-level `_proxider` decoy that `import proxide` never loads
+      # (#15); tests/test_extension_build_location.py fails if one exists.
+      - name: Install dependencies and build Rust extension
         run: |
           source .venv/bin/activate
           uv pip install -e ".[dev,trajectories]"
-
-      - name: Build Rust extension
-        run: |
-          source .venv/bin/activate
-          cd crates/proxide_py
-          # Build with new pure-Rust features enabled
-          maturin develop --release --features full
 
       - name: Fetch test data
         run: |
