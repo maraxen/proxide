@@ -351,14 +351,27 @@ pub fn parse_structure(
         && !spec.infer_bonds
         && !spec.add_hydrogens;
 
-    if should_cache {
-        let key = formatters::CacheKey::new(
+    // Fingerprint the file before it is parsed, so the entry stored after the
+    // parse is keyed on the bytes that were parsed. A file that cannot be read
+    // here is not cached (the parse below reports the error).
+    let cache_key = if should_cache {
+        match formatters::CacheKey::for_file(
             &path,
             spec.coord_format,
             spec.remove_solvent,
             spec.include_hetatm,
-        );
-        if let Some(cached) = formatters::get_cached(&key) {
+        ) {
+            Ok(key) => Some(key),
+            Err(e) => {
+                log::debug!("Not caching {}: cannot fingerprint it ({})", path, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if let Some(key) = &cache_key {
+        if let Some(cached) = formatters::get_cached(key) {
             log::debug!("Cache hit for {}", path);
             return cached.to_py_dict(py).map(|d| d.into_py(py));
         }
@@ -383,27 +396,28 @@ pub fn parse_structure(
         &model_ids,
         &spec,
         ResidueClassificationConfig::default(),
-        Some(&path),
+        cache_key,
     )
 }
 
 /// Everything after file parsing -- model selection, residue processing, H addition,
 /// MD parameterization, formatting, multi-model stacking and feature computation --
 /// shared by [`parse_structure`] (PDB/mmCIF) and [`parse_amber_trajectory`] (AMBER
-/// topology + trajectory frames). `cache_path` enables the parse cache and is only
-/// given for file-backed inputs whose content the path identifies.
+/// topology + trajectory frames). `cache_key` enables the parse cache: it is the
+/// fingerprint of the file the parse read, taken before parsing, and is only given
+/// for file-backed inputs.
 fn process_models(
     py: Python,
     raw_data_all: &RawAtomData,
     model_ids: &[usize],
     spec: &spec::OutputSpec,
     classification: ResidueClassificationConfig,
-    cache_path: Option<&str>,
+    cache_key: Option<formatters::CacheKey>,
 ) -> PyResult<PyObject> {
     let conv = spec.unit_system.conversion_spec();
     let target = spec::OutputFormatTarget::from_str(&spec.output_format_target)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
-    let should_cache = cache_path.is_some()
+    let should_cache = cache_key.is_some()
         && spec.enable_caching
         && spec.models.is_none()
         && !spec.compute_rbf
@@ -849,14 +863,8 @@ fn process_models(
     // Insert into cache if needed -- after the chain vocabulary exists, so a
     // cache hit returns it too (it used to return chain_ids=None, and the
     // writer then emitted blank chain columns).
-    if let (Some(mut cached), Some(path)) = (cached_structure, cache_path) {
+    if let (Some(mut cached), Some(key)) = (cached_structure, cache_key) {
         cached.unique_chain_ids = Some(unique_chains.clone());
-        let key = formatters::CacheKey::new(
-            path,
-            spec.coord_format,
-            spec.remove_solvent,
-            spec.include_hetatm,
-        );
         formatters::insert_cached(key, cached);
     }
 

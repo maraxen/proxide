@@ -1,5 +1,6 @@
 """Tests for proxide.io.writing."""
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -428,45 +429,41 @@ class TestWritePdbOnRealParsedStructures:
       parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Full))
 
   @staticmethod
-  def _cache_probe(tmp_path, name: str) -> tuple[Path, str]:
-    """A private copy of the fixture, plus the same file with x shifted.
+  def _cache_probe(tmp_path, name: str) -> Path:
+    """A private copy of the fixture, for parsing twice with caching on.
 
-    The format cache is keyed by path alone, so after overwriting the file a
-    cache HIT still returns the old coordinates and a miss the new ones --
-    which is how these tests know the second parse came from the cache.
+    The format cache is keyed on the file's content, so the second parse of this
+    unchanged copy is a cache HIT (proved by the "Cache hit" debug record). Content
+    changes are covered by tests/io/test_format_cache_content.py.
     """
-    src = Path(TestWritePdbOnRealParsedStructures.PDB).read_text()
-    shifted = "".join(
-      (x[:30] + f"{float(x[30:38]) + 50.0:8.3f}" + x[38:]) if x.startswith("ATOM") else x
-      for x in src.splitlines(keepends=True)
-    )
     path = tmp_path / name
-    path.write_text(src)
-    return path, shifted
+    path.write_text(Path(TestWritePdbOnRealParsedStructures.PDB).read_text())
+    return path
 
-  def test_full_format_cache_hit_returns_the_same_per_atom_fields(self, tmp_path) -> None:
+  def test_full_format_cache_hit_returns_the_same_per_atom_fields(self, tmp_path, caplog) -> None:
     from proxide import CoordFormat, OutputSpec, parse_structure
 
-    path, shifted = self._cache_probe(tmp_path, "full_cache.pdb")
+    path = self._cache_probe(tmp_path, "full_cache.pdb")
     spec = OutputSpec(coord_format=CoordFormat.Full, enable_caching=True)
     first = parse_structure(str(path), spec)
-    path.write_text(shifted)
-    second = parse_structure(str(path), spec)
-    # Proof of a cache hit: the old coordinates came back.
+    with caplog.at_level(logging.DEBUG):
+      second = parse_structure(str(path), spec)
+    assert "Cache hit for" in caplog.text
     np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
     for field in ("elements", "res_names", "atom_chain_ids", "atom_res_index"):
       a, b = getattr(first, field), getattr(second, field)
       assert a is not None and b is not None, field
       assert list(np.asarray(a)) == list(np.asarray(b)), field
 
-  def test_atom37_cache_hit_keeps_the_chain_vocabulary(self, tmp_path) -> None:
+  def test_atom37_cache_hit_keeps_the_chain_vocabulary(self, tmp_path, caplog) -> None:
     from proxide import CoordFormat, OutputSpec, parse_structure
 
-    path, shifted = self._cache_probe(tmp_path, "a37_cache.pdb")
+    path = self._cache_probe(tmp_path, "a37_cache.pdb")
     spec = OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True)
     first = parse_structure(str(path), spec)
-    path.write_text(shifted)
-    second = parse_structure(str(path), spec)
+    with caplog.at_level(logging.DEBUG):
+      second = parse_structure(str(path), spec)
+    assert "Cache hit for" in caplog.text
     np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
     assert second.chain_ids == first.chain_ids == ["A"]
 
