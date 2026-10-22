@@ -71,6 +71,7 @@ from proxide.io.fetching import (
   fetch_foldcomp_database,
   fetch_rcsb,
 )
+from proxide.io.writing import write_mmcif, write_npz, write_pdb
 
 __all__ = [
   "io",
@@ -131,6 +132,10 @@ __all__ = [
   "fetch_rcsb",
   "fetch_afdb",
   "fetch_foldcomp_database",
+  "write_pdb",
+  "write_mmcif",
+  "write_npz",
+  "Protein",
 ]
 
 # Stable surface at 0.1.0 is core IO only (see README "Stability"). Everything else in
@@ -168,6 +173,10 @@ _STABLE = frozenset(
     "MissingResidueMode",
     "HydrogenSource",
     "UnitSystem",
+    "Protein",
+    "write_pdb",
+    "write_mmcif",
+    "write_npz",
   }
 )
 __experimental__ = tuple(name for name in __all__ if name not in _STABLE)
@@ -200,4 +209,9 @@ def __getattr__(name: str) -> Any:
       "parse_amber_trajectory": parse_amber_trajectory,
       "write_dcd": write_dcd,
     }[name]
+  if name == "Protein":
+    # Lazy: containers imports JAX.
+    from proxide.core.containers import Protein
+
+    return Protein
   raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

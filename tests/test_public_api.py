@@ -41,6 +41,10 @@ STABLE = {
   "MissingResidueMode",
   "HydrogenSource",
   "UnitSystem",
+  "Protein",
+  "write_pdb",
+  "write_mmcif",
+  "write_npz",
 }
 
 EXPERIMENTAL = {
@@ -83,6 +87,15 @@ def test_experimental_names_are_documented_as_experimental() -> None:
     name for name in proxide.__experimental__ if "Experimental" not in (getattr(proxide, name).__doc__ or "")
   ]
   assert undocumented == []
+
+
+def test_private_stable_set_matches_literal() -> None:
+  assert set(proxide._STABLE) == STABLE
+
+
+def test_stable_names_are_not_marked_experimental() -> None:
+  marked = [name for name in STABLE if "Experimental" in (getattr(proxide, name).__doc__ or "")]
+  assert marked == []
 
 
 def test_every_all_name_resolves() -> None:

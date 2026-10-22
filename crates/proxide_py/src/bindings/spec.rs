@@ -307,6 +307,7 @@ impl PyOutputSpec {
         self.inner.include_hetatm = val;
     }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     #[getter]
     fn get_compute_rbf(&self) -> bool {
         self.inner.compute_rbf
@@ -316,6 +317,7 @@ impl PyOutputSpec {
         self.inner.compute_rbf = val;
     }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     #[getter]
     fn get_rbf_num_neighbors(&self) -> usize {
         self.inner.rbf_num_neighbors
@@ -325,6 +327,7 @@ impl PyOutputSpec {
         self.inner.rbf_num_neighbors = val;
     }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     #[getter]
     fn get_compute_electrostatics(&self) -> bool {
         self.inner.compute_electrostatics
@@ -334,6 +337,7 @@ impl PyOutputSpec {
         self.inner.compute_electrostatics = val;
     }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     #[getter]
     fn get_compute_vdw(&self) -> bool {
         self.inner.compute_vdw
@@ -343,6 +347,7 @@ impl PyOutputSpec {
         self.inner.compute_vdw = val;
     }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     #[getter]
     fn get_parameterize_md(&self) -> bool {
         self.inner.parameterize_md
@@ -379,6 +384,7 @@ impl PyOutputSpec {
         self.inner.add_hydrogens = val;
     }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     #[getter]
     fn get_relax_hydrogens(&self) -> bool {
         self.inner.relax_hydrogens
@@ -397,6 +403,7 @@ impl PyOutputSpec {
         self.inner.auto_terminal_caps = val;
     }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     #[getter]
     fn get_unit_system(&self) -> PyUnitSystem {
         self.inner.unit_system.into()
@@ -406,6 +413,7 @@ impl PyOutputSpec {
         self.inner.unit_system = value.into();
     }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     #[getter]
     fn get_water_model(&self) -> String {
         self.inner.water_model.clone()
@@ -415,6 +423,7 @@ impl PyOutputSpec {
         self.inner.water_model = val;
     }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     #[getter]
     fn get_strict_parameterization(&self) -> bool {
         self.inner.strict_parameterization

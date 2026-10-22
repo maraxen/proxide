@@ -17,8 +17,12 @@ from proxide.io.fixtures import (
   save_tensor_bundle,
   unflatten_tensor_dict,
 )
+from proxide.io.writing import write_mmcif, write_npz, write_pdb
 
 __all__ = [
+  "write_pdb",
+  "write_mmcif",
+  "write_npz",
   "fetch_afdb",
   "fetch_md_cath",
   "fetch_rcsb",
