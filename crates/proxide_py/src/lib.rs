@@ -31,12 +31,15 @@ use bindings::spec::{
     PyCoordFormat, PyErrorMode, PyHydrogenSource, PyMissingResidueMode, PyOutputSpec, PyUnitSystem,
 };
 
+/// Fetch wrappers release the GIL while they block on the network: the HTTP
+/// client runs on its own runtime thread, which may log through pyo3-log and
+/// needs the GIL to do so. Holding it across the download deadlocks.
 /// Wrapper for proxide_rs::io::fetching::fetch_rcsb
 #[cfg(feature = "fetching")]
 #[pyfunction]
 #[pyo3(signature = (id, output_dir = ".cache", format_type = "cif"))]
-fn fetch_rcsb(id: &str, output_dir: &str, format_type: &str) -> PyResult<String> {
-    proxide_rs::io::fetching::fetch_rcsb(id, output_dir, format_type)
+fn fetch_rcsb(py: Python<'_>, id: &str, output_dir: &str, format_type: &str) -> PyResult<String> {
+    py.allow_threads(|| proxide_rs::io::fetching::fetch_rcsb(id, output_dir, format_type))
         .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
 }
 
@@ -44,8 +47,8 @@ fn fetch_rcsb(id: &str, output_dir: &str, format_type: &str) -> PyResult<String>
 #[cfg(feature = "fetching")]
 #[pyfunction]
 #[pyo3(signature = (id, output_dir = ".cache"))]
-fn fetch_md_cath(id: &str, output_dir: &str) -> PyResult<String> {
-    proxide_rs::io::fetching::fetch_md_cath(id, output_dir)
+fn fetch_md_cath(py: Python<'_>, id: &str, output_dir: &str) -> PyResult<String> {
+    py.allow_threads(|| proxide_rs::io::fetching::fetch_md_cath(id, output_dir))
         .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
 }
 
@@ -53,8 +56,8 @@ fn fetch_md_cath(id: &str, output_dir: &str) -> PyResult<String> {
 #[cfg(feature = "fetching")]
 #[pyfunction]
 #[pyo3(signature = (id, output_dir = ".cache", version = 4))]
-fn fetch_afdb(id: &str, output_dir: &str, version: u32) -> PyResult<String> {
-    proxide_rs::io::fetching::fetch_afdb(id, output_dir, version)
+fn fetch_afdb(py: Python<'_>, id: &str, output_dir: &str, version: u32) -> PyResult<String> {
+    py.allow_threads(|| proxide_rs::io::fetching::fetch_afdb(id, output_dir, version))
         .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
 }
 
@@ -63,12 +66,15 @@ fn fetch_afdb(id: &str, output_dir: &str, version: u32) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (db_name, output_dir = ".cache", download_chunks = 1))]
 fn fetch_foldcomp_database(
+    py: Python<'_>,
     db_name: &str,
     output_dir: &str,
     download_chunks: usize,
 ) -> PyResult<String> {
-    proxide_rs::io::fetching::fetch_foldcomp_database(db_name, output_dir, download_chunks)
-        .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
+    py.allow_threads(|| {
+        proxide_rs::io::fetching::fetch_foldcomp_database(db_name, output_dir, download_chunks)
+    })
+    .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
 }
 
 /// Python module
