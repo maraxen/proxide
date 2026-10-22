@@ -51,6 +51,10 @@ impl CacheKey {
 /// Cached formatted structure data
 #[derive(Debug, Clone)]
 pub struct CachedStructure {
+    /// Source B-factor and occupancy in the same layout as the formatter's
+    /// output (Atom37/Atom14 slots, Full atoms); `None` only when unavailable.
+    pub b_factors: Option<Vec<f32>>,
+    pub occupancies: Option<Vec<f32>>,
     pub coordinates: Vec<f32>,
     pub atom_mask: Vec<f32>,
     pub aatype: Vec<i8>,
@@ -89,6 +93,8 @@ pub struct CachedStructureArgs {
     pub coord_shape: Option<(usize, usize, usize)>,
     pub full_per_atom: Option<FullPerAtom>,
     pub unique_chain_ids: Option<Vec<String>>,
+    pub b_factors: Option<Vec<f32>>,
+    pub occupancies: Option<Vec<f32>>,
 }
 
 impl CachedStructure {
@@ -104,6 +110,8 @@ impl CachedStructure {
             coord_shape: args.coord_shape,
             full_per_atom: args.full_per_atom,
             unique_chain_ids: args.unique_chain_ids,
+            b_factors: args.b_factors,
+            occupancies: args.occupancies,
         }
     }
 }
@@ -218,6 +226,8 @@ mod tests {
             coord_shape: None,
             full_per_atom: None,
             unique_chain_ids: None,
+            b_factors: None,
+            occupancies: None,
         };
 
         cache.insert(key1.clone(), value.clone());

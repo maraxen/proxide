@@ -634,3 +634,110 @@ class TestWritePdbOnRealParsedStructures:
     # The PDB reader keeps the element column's case as written ("CA"; see
     # the element-case debt). What matters here: calcium, not carbon.
     assert protein.elements[ion[0]].upper() == "CA"
+
+
+def _source_occ_b(path: str) -> list[tuple[float, float]]:
+  """(occupancy, B-factor) of every ATOM/HETATM record, read from the PDB columns 55-66."""
+  rows = []
+  for line in open(path):
+    if line.startswith(("ATOM", "HETATM")):
+      rows.append((float(line[54:60]), float(line[60:66])))
+  return rows
+
+
+class TestWriteOccupancyAndBFactorAreSourceValues:
+  """Debt #2367: writers emitted occupancy 1.00 / B-factor 0.00 for every atom.
+
+  5awl's source B-factor 8.64 was written as 0.00 -- a fabricated measurement.
+  Writers now emit the values the Protein carries, and blank / '?' when it
+  carries none.
+  """
+
+  PDB = "tests/data/5awl.pdb"
+
+  def test_full_parse_carries_source_b_factors_and_occupancies(self) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
+    source = _source_occ_b(self.PDB)
+    assert protein.b_factors is not None and protein.occupancies is not None
+    assert len(protein.b_factors) == len(source) == len(protein.atom_names)
+    np.testing.assert_allclose(np.asarray(protein.b_factors), [b for _, b in source], atol=1e-3)
+    np.testing.assert_allclose(
+      np.asarray(protein.occupancies), [o for o, _ in source], atol=1e-3
+    )
+
+  def test_pdb_round_trip_writes_source_occupancy_and_b_factor(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
+    written = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    assert _source_occ_b(str(tmp_path / "out.pdb")) == pytest.approx(
+      _source_occ_b(self.PDB), abs=1e-3
+    )
+    assert len(written) == len(_source_occ_b(self.PDB))
+    # The real case: 5awl's B-factor of 8.64 must not come out as 0.00.
+    assert any(abs(b - 8.64) < 1e-3 for _, b in _source_occ_b(str(tmp_path / "out.pdb")))
+
+  def test_mmcif_round_trip_writes_source_occupancy_and_b_factor(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
+    out = write_mmcif(protein, tmp_path / "out.cif")
+    back = parse_structure(str(out), OutputSpec(coord_format=CoordFormat.Full))
+    np.testing.assert_allclose(
+      np.asarray(back.b_factors), np.asarray(protein.b_factors), atol=1e-2
+    )
+    np.testing.assert_allclose(
+      np.asarray(back.occupancies), np.asarray(protein.occupancies), atol=1e-2
+    )
+
+  def test_parse_write_parse_preserves_values(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    first = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
+    out = write_pdb(first, tmp_path / "rt.pdb")
+    second = parse_structure(str(out), OutputSpec(coord_format=CoordFormat.Full))
+    np.testing.assert_allclose(np.asarray(second.b_factors), np.asarray(first.b_factors), atol=1e-3)
+    np.testing.assert_allclose(
+      np.asarray(second.occupancies), np.asarray(first.occupancies), atol=1e-3
+    )
+
+  def test_atom37_parse_writes_source_values_for_resolved_atoms(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Atom37))
+    assert protein.b_factors is not None and np.shape(protein.b_factors) == (10, 37)
+    # Atom37 writes slot order, not serial order, so compare as multisets.
+    written = np.array(sorted(_source_occ_b(str(write_pdb(protein, tmp_path / "a37.pdb")))))
+    # Atom37 keeps polymer ATOM records; 5awl's 12 HETATM records are not written.
+    atom_only = [
+      (float(x[54:60]), float(x[60:66])) for x in open(self.PDB) if x.startswith("ATOM")
+    ]
+    source = np.array(sorted(atom_only))
+    assert written.shape == source.shape
+    np.testing.assert_allclose(written, source, atol=1e-3)
+
+  def test_protein_without_fields_writes_blank_pdb_columns(self, tmp_path) -> None:
+    protein = _flat_protein(3)
+    lines = _atom_lines(write_pdb(protein, tmp_path / "blank.pdb"))
+    assert len(lines) == 3
+    for line in lines:
+      assert line[54:66] == " " * 12, repr(line)
+      assert "1.00" not in line[54:66] and "0.00" not in line[54:66]
+
+  def test_protein_without_fields_writes_question_marks_mmcif(self, tmp_path) -> None:
+    protein = _flat_protein(3)
+    text = write_mmcif(protein, tmp_path / "blank.cif").read_text()
+    rows = [r for r in text.splitlines() if r.startswith("ATOM ")]
+    assert len(rows) == 3
+    for row in rows:
+      assert row.split()[-2:] == ["?", "?"], row
+
+  def test_blank_pdb_round_trip_reads_documented_defaults(self, tmp_path) -> None:
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    out = write_pdb(_flat_protein(3), tmp_path / "blank.pdb")
+    back = parse_structure(str(out), OutputSpec(coord_format=CoordFormat.Full))
+    np.testing.assert_allclose(np.asarray(back.occupancies), 1.0)
+    np.testing.assert_allclose(np.asarray(back.b_factors), 0.0)

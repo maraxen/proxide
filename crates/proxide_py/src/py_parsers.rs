@@ -604,6 +604,11 @@ fn process_models(
                 // from_rust_dict fell through to "Full" (debt #2355).
                 let mut all_masks = Vec::with_capacity(n_models * n_res * 37);
                 all_masks.extend_from_slice(&ref_formatted.atom_mask);
+                // Per-model B-factors and occupancies stack like the mask.
+                let mut all_b = Vec::with_capacity(n_models * n_res * 37);
+                all_b.extend_from_slice(&ref_formatted.b_factors);
+                let mut all_occ = Vec::with_capacity(n_models * n_res * 37);
+                all_occ.extend_from_slice(&ref_formatted.occupancies);
 
                 for (i, m_raw) in models_to_process.iter().enumerate().skip(1) {
                     // We must process each model to map atoms correctly
@@ -672,6 +677,8 @@ fn process_models(
                     }
                     all_coords.extend_from_slice(&m_formatted.coordinates);
                     all_masks.extend_from_slice(&m_formatted.atom_mask);
+                    all_b.extend_from_slice(&m_formatted.b_factors);
+                    all_occ.extend_from_slice(&m_formatted.occupancies);
                 }
 
                 // Reshape to (N_models, N_res, 37, 3)
@@ -686,6 +693,16 @@ fn process_models(
                     pyo3::exceptions::PyValueError::new_err(format!("Mask reshape failed: {}", e))
                 })?;
                 dict_bound.set_item("atom_mask", mask_shaped)?;
+                for (key, values) in [("b_factors", &all_b), ("occupancies", &all_occ)] {
+                    let shaped = PyArray1::from_slice_bound(py, values)
+                        .reshape((n_models, n_res, 37))
+                        .map_err(|e| {
+                            pyo3::exceptions::PyValueError::new_err(format!(
+                                "{key} reshape failed: {e}"
+                            ))
+                        })?;
+                    dict_bound.set_item(key, shaped)?;
+                }
                 dict_bound.set_item("n_models", n_models)?;
             }
 
@@ -695,6 +712,8 @@ fn process_models(
             let cached = if should_cache && models_to_process.len() == 1 {
                 Some(formatters::CachedStructure {
                     coordinates: ref_formatted.coordinates.clone(),
+                    b_factors: Some(ref_formatted.b_factors.clone()),
+                    occupancies: Some(ref_formatted.occupancies.clone()),
                     atom_mask: ref_formatted.atom_mask.clone(),
                     aatype: ref_formatted.aatype.clone(),
                     residue_index: ref_formatted.residue_index.clone(),
@@ -767,6 +786,8 @@ fn process_models(
             let cached = if should_cache && models_to_process.len() == 1 {
                 Some(formatters::CachedStructure {
                     coordinates: formatted.coordinates.clone(),
+                    b_factors: Some(formatted.b_factors.clone()),
+                    occupancies: Some(formatted.occupancies.clone()),
                     atom_mask: formatted.atom_mask.clone(),
                     aatype: formatted.aatype.clone(),
                     residue_index: formatted.residue_index.clone(),
