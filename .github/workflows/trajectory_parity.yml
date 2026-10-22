@@ -40,4 +40,11 @@ jobs:
         run: |
           source .venv/bin/activate
           # Use -k to select specific trajectory tests if needed, or run all validation
-          pytest tests/validation/test_trajectory_parity.py -v
+          pytest -rs -v tests/validation/test_trajectory_parity.py \
+            tests/validation/test_xtc_reader_parity.py \
+            tests/validation/test_xtc_distogram_parity.py \
+            tests/io/parsing/test_hdf5_integration.py \
+            tests/io/parsing/test_mdtraj.py \
+            tests/io/parsing/test_dispatch.py \
+            tests/io/streaming/test_mdcath.py \
+            tests/io/streaming/test_mdcath_extended.py
