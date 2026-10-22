@@ -87,6 +87,8 @@ pub struct CachedStructure {
     /// output (Atom37/Atom14 slots, Full atoms); `None` only when unavailable.
     pub b_factors: Option<Vec<f32>>,
     pub occupancies: Option<Vec<f32>>,
+    /// As-read residue names per residue (Atom14/Atom37), so writers keep MSE as MSE.
+    pub residue_names: Option<Vec<String>>,
     pub coordinates: Vec<f32>,
     pub atom_mask: Vec<f32>,
     pub aatype: Vec<i8>,
@@ -127,6 +129,7 @@ pub struct CachedStructureArgs {
     pub unique_chain_ids: Option<Vec<String>>,
     pub b_factors: Option<Vec<f32>>,
     pub occupancies: Option<Vec<f32>>,
+    pub residue_names: Option<Vec<String>>,
 }
 
 impl CachedStructure {
@@ -144,6 +147,7 @@ impl CachedStructure {
             unique_chain_ids: args.unique_chain_ids,
             b_factors: args.b_factors,
             occupancies: args.occupancies,
+            residue_names: args.residue_names,
         }
     }
 }
@@ -298,6 +302,7 @@ mod tests {
             unique_chain_ids: None,
             b_factors: None,
             occupancies: None,
+            residue_names: None,
         })
     }
 

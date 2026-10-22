@@ -3,6 +3,7 @@
 //! Converts ProcessedStructure into standardized (N_res, 37, 3) coordinate arrays
 //! compatible with AlphaFold and ProteinTuple conventions.
 
+use super::residue_policy::{lookup_alias, rename_layout_atom, AliasPolicy, ATOM37_ALIASES};
 use proxide_core::chem::{build_atom_order, build_standard_atom_mask};
 use proxide_core::processing::ProcessedStructure;
 use proxide_core::spec::OutputSpec;
@@ -20,16 +21,28 @@ pub struct FormattedAtom37 {
     pub aatype: Vec<i8>,       // (N_res,) residue type indices (0-20)
     pub residue_index: Vec<i32>, // (N_res,) PDB residue numbers
     pub chain_index: Vec<i32>, // (N_res,) chain indices
+    pub residue_names: Vec<String>, // (N_res,) as-read residue names
 }
 
 /// Atom37 formatter - converts to standardized (N_res, 37, 3) representation
 pub struct Atom37Formatter;
 
 impl Atom37Formatter {
-    /// Format a ProcessedStructure into Atom37 representation
+    /// Format a ProcessedStructure into Atom37 representation with this format's
+    /// alias policy.
     pub fn format(
         processed: &ProcessedStructure,
+        spec: &OutputSpec,
+    ) -> Result<FormattedAtom37, String> {
+        Self::format_with_policy(processed, spec, ATOM37_ALIASES)
+    }
+
+    /// Format a ProcessedStructure into Atom37 representation, applying the
+    /// `policy` aliases (layout residue and atom renames) to the residues it names.
+    pub fn format_with_policy(
+        processed: &ProcessedStructure,
         _spec: &OutputSpec,
+        policy: AliasPolicy,
     ) -> Result<FormattedAtom37, String> {
         let num_residues = processed.num_residues;
         let atom_order = build_atom_order();
@@ -43,6 +56,7 @@ impl Atom37Formatter {
         let mut aatype = vec![0i8; num_residues];
         let mut residue_index = vec![0i32; num_residues];
         let mut chain_index = vec![0i32; num_residues];
+        let mut residue_names: Vec<String> = Vec::with_capacity(num_residues);
         let mut b_factors = vec![0.0f32; num_residues * 37];
         let mut occupancies = vec![0.0f32; num_residues * 37];
 
@@ -50,6 +64,7 @@ impl Atom37Formatter {
         for (res_idx, res_info) in processed.residue_info.iter().enumerate() {
             // Set residue metadata
             aatype[res_idx] = res_info.res_type as i8;
+            residue_names.push(res_info.res_name.clone());
             residue_index[res_idx] = res_info.res_id;
 
             // Map chain to index
@@ -59,14 +74,17 @@ impl Atom37Formatter {
                 .unwrap_or(&0) as i32;
 
             // Build atom name -> local index mapping for this residue
+            let atom_renames: &[(&str, &str)] =
+                lookup_alias(policy, &res_info.res_name).map_or(&[], |alias| alias.renames);
             let mut residue_atoms: HashMap<String, usize> = HashMap::new();
             let start = res_info.start_atom;
             let end = start + res_info.num_atoms;
 
             for local_idx in 0..(end - start) {
                 let global_idx = start + local_idx;
-                let atom_name = &processed.raw_atoms.atom_names[global_idx];
-                residue_atoms.insert(atom_name.clone(), global_idx);
+                let atom_name =
+                    rename_layout_atom(&processed.raw_atoms.atom_names[global_idx], atom_renames);
+                residue_atoms.insert(atom_name, global_idx);
             }
 
             // Fill in atom37 positions
@@ -112,6 +130,7 @@ impl Atom37Formatter {
             aatype,
             residue_index,
             chain_index,
+            residue_names,
             b_factors,
             occupancies,
         })
@@ -334,5 +353,51 @@ mod tests {
         let atom_order = build_atom_order();
         let ca_idx = atom_order["CA"];
         assert_eq!(formatted.atom_mask[ca_idx], 1.0);
+    }
+
+    #[test]
+    fn test_atom37_mse_typed_met_with_se_in_sd() {
+        use proxide_core::chem::{build_atom_order, build_resname_to_idx};
+        use proxide_core::structure::{AtomRecord, RawAtomData};
+        let atoms: [(&str, &str, f32, f32, f32); 8] = [
+            ("N", "N", 0.0, 0.0, 0.0),
+            ("CA", "C", 1.0, 0.0, 0.0),
+            ("C", "C", 2.0, 0.0, 0.0),
+            ("O", "O", 3.0, 0.0, 0.0),
+            ("CB", "C", 1.0, 1.0, 0.0),
+            ("CG", "C", 1.0, 2.0, 0.0),
+            ("SE", "Se", 1.0, 3.0, 0.0),
+            ("CE", "C", 2.0, 3.0, 0.0),
+        ];
+        let mut raw = RawAtomData::with_capacity(atoms.len());
+        for (i, (name, element, x, y, z)) in atoms.iter().enumerate() {
+            raw.add_atom(AtomRecord {
+                serial: i as i32 + 1,
+                atom_name: name.to_string(),
+                alt_loc: ' ',
+                res_name: "MSE".to_string(),
+                chain_id: "A".to_string(),
+                res_seq: 1,
+                i_code: ' ',
+                x: *x,
+                y: *y,
+                z: *z,
+                occupancy: 1.0,
+                temp_factor: 20.0,
+                element: element.to_string(),
+                charge: None,
+                radius: None,
+                is_hetatm: false,
+            });
+        }
+        let processed = proxide_core::processing::ProcessedStructure::from_raw(raw).unwrap();
+        let formatted = Atom37Formatter::format(&processed, &OutputSpec::default()).unwrap();
+
+        assert_eq!(formatted.aatype[0], build_resname_to_idx()["MET"] as i8);
+        let sd = build_atom_order()["SD"];
+        assert_eq!(formatted.atom_mask[sd], 1.0);
+        assert_eq!(&formatted.coordinates[sd * 3..sd * 3 + 3], &[1.0, 3.0, 0.0]);
+        let mask_sum: f32 = formatted.atom_mask.iter().sum();
+        assert_eq!(mask_sum, 8.0);
     }
 }

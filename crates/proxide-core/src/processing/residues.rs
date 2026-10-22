@@ -39,6 +39,17 @@ pub struct ResidueInfo {
     pub num_atoms: usize,  // Number of atoms in this residue
 }
 
+/// Residue type used for the model-facing arrays (`aatype`, one-hot) when a
+/// residue's as-read name is a chemically equivalent standard residue. MSE
+/// (selenomethionine) is typed MET; the residue keeps `res_name` "MSE" for
+/// provenance and for writers.
+fn model_residue_type_name(res_name: &str) -> Option<&'static str> {
+    match res_name {
+        "MSE" => Some("MET"),
+        _ => None,
+    }
+}
+
 /// Information about a ligand
 #[derive(Debug, Clone)]
 pub struct LigandInfo {
@@ -176,7 +187,8 @@ impl ProcessedStructure {
             // residue -- this preserves today's exact behavior for ordinary
             // ATOM records and un-recognized HETATM records alike.
             let type_lookup_name = alias_resolved
-                .or_else(|| (!is_hetatm || ccd_is_protein).then_some(res_name.as_str()));
+                .or_else(|| (!is_hetatm || ccd_is_protein).then_some(res_name.as_str()))
+                .map(|name| model_residue_type_name(name).unwrap_or(name));
 
             if let Some(type_lookup_name) = type_lookup_name {
                 // Protein residue.
@@ -925,6 +937,10 @@ mod tests {
         assert_eq!(processed.num_residues, 1);
         assert!(processed.ligand_groups.is_empty());
         assert_eq!(processed.residue_info[0].res_name, "MSE");
+        assert_eq!(
+            processed.residue_info[0].res_type,
+            build_resname_to_idx()["MET"]
+        );
         assert_eq!(processed.molecule_type[0], 0);
     }
 }

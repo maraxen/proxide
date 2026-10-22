@@ -96,6 +96,8 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_parsers::parse_foldcomp, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_structure, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::_format_cache_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parsers::_layout_aliases, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parsers::_hetatm_residues, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::project_to_mpnn_batch, m)?)?;
 
     // Sequence + tree parsing (from py_parsers) and MinHash distances (from py_jaccard)

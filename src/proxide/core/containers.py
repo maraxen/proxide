@@ -114,6 +114,8 @@ class Protein:
   atom_names: Any | None = None
   chain_ids: Any | None = None
   res_names: Any | None = None
+  # As-read residue name per residue (Atom14/Atom37); writers use it to keep MSE as MSE.
+  residue_names: Any | None = None
   # Per-atom chain ids as read (Full format; backlog #5684). Distinct from
   # `chain_ids`, which is the per-chain vocabulary that `chain_index` indexes.
   atom_chain_ids: Any | None = None
@@ -375,6 +377,7 @@ class Protein:
         coordinates=convert(coordinates, dtype=np.float32),
         aatype=convert(rust_dict["aatype"], dtype=np.int8),
         one_hot_sequence=convert(np.eye(21)[rust_dict["aatype"]]),
+        residue_names=rust_dict.get("residue_names"),
         mask=convert(mask_ca, dtype=np.float32),
         residue_index=convert(rust_dict["residue_index"], dtype=np.int32),
         chain_index=convert(rust_dict["chain_index"], dtype=np.int32),
