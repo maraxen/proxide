@@ -7,6 +7,7 @@ proxide is not installed.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -68,3 +69,13 @@ def apply_jit(request):
         return fn
 
     return _wrapper
+
+
+def pytest_collection_modifyitems(config, items):
+  """Skip `network` tests unless PROXIDE_NETWORK_TESTS=1 is set."""
+  if os.environ.get("PROXIDE_NETWORK_TESTS") == "1":
+    return
+  skip = pytest.mark.skip(reason="network test: set PROXIDE_NETWORK_TESTS=1 to run")
+  for item in items:
+    if "network" in item.keywords:
+      item.add_marker(skip)
