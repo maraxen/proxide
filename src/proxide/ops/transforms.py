@@ -255,11 +255,11 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[Protein]) -> Protein:
   chain_ids = np.concatenate(remapped_chain_ids, axis=0)
   # residue_names are per-residue strings: concatenate them directly, since tree_map would
   # keep only the first name at each position. Missing on any input means missing overall.
-  names_parts = [p.residue_names for p in proteins]
+  present_names = [p.residue_names for p in proteins if p.residue_names is not None]
   all_names = (
     None
-    if any(n is None for n in names_parts)
-    else [str(r) for names in names_parts for r in names]
+    if len(present_names) != len(proteins)
+    else [str(r) for names in present_names for r in names]
   )
   concatenated = jax.tree_util.tree_map(
     lambda *x: np.concatenate(x, axis=0), *[p.replace(residue_names=None) for p in proteins]
