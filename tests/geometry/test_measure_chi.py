@@ -20,7 +20,7 @@ import biotite.database.rcsb as rcsb
 import biotite.structure as bs
 import biotite.structure.io.pdb as pdb_io
 
-from proxide import parse_structure
+from proxide import CoordFormat, OutputSpec, parse_structure
 from proxide.chem.residues import atom_order, restype_order
 from proxide.geometry.measure_chi import dihedral, measure_chi
 
@@ -257,3 +257,30 @@ class TestMeasureChiDtype:
         assert isinstance(result, float)
         # float() wraps a Python double → confirms f64 precision
         assert np.float64(result).dtype == np.float64
+
+
+class TestMissingAtomsFromAtomMask:
+  """Unplaced slots are missing because atom_mask says so, not because of their values."""
+
+  @staticmethod
+  def _parsed_leu():
+    return parse_structure(
+      "tests/data/leu_missing_cd1.pdb", OutputSpec(coord_format=CoordFormat.Atom37)
+    )
+
+  def test_unplaced_chi_atom_is_missing_whatever_its_coordinates(self):
+    frame = self._parsed_leu()
+    positions = np.array(frame.coordinates[0], dtype=np.float64)
+    mask = np.asarray(frame.atom_mask[0]).astype(bool)
+    cd1 = atom_order["CD1"]
+    assert not mask[cd1]
+    positions[cd1] = (9.0, 9.0, 9.0)  # finite, non-zero junk in an unplaced slot
+    result = measure_chi(positions, "LEU", atom_mask=mask)
+    assert result["chi2"] is None
+    assert result["chi1"] is not None
+
+  def test_zero_filled_unplaced_slot_is_missing_without_a_mask(self):
+    frame = self._parsed_leu()
+    positions = np.array(frame.coordinates[0], dtype=np.float64)
+    result = measure_chi(positions, "LEU")
+    assert result["chi2"] is None

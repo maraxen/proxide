@@ -2,6 +2,9 @@
 //!
 //! Converts ProcessedStructure into standardized (N_res, 37, 3) coordinate arrays
 //! compatible with AlphaFold and ProteinTuple conventions.
+//!
+//! Unplaced slots are zero-filled: coordinates where `atom_mask == 0` are 0.0 and
+//! carry no meaning. Use `atom_mask`, never NaN tests, to find missing atoms.
 
 use proxide_core::chem::{build_atom_order, build_standard_atom_mask};
 use proxide_core::processing::ProcessedStructure;

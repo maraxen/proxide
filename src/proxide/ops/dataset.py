@@ -29,6 +29,11 @@ def _is_frame_valid(frame: Protein) -> tuple[bool, str]:
   if frame.coordinates.shape[0] != len(frame.aatype):
     return False, "Shape mismatch between coordinates and aatype"
   coords = np.asarray(frame.coordinates)
+  # atom_mask is the source of truth for placed atoms; unplaced slots are zero-filled
+  # and their values carry no meaning, so only placed atoms can carry a bad value.
+  placed = None if frame.atom_mask is None else np.asarray(frame.atom_mask).astype(bool)
+  if placed is not None and placed.shape == coords.shape[:-1]:
+    coords = coords[placed]
   if np.any(np.isnan(coords)):
     return False, "NaN values in coordinates"
   return True, ""

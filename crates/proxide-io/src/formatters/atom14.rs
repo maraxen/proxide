@@ -2,6 +2,9 @@
 //!
 //! Converts ProcessedStructure into reduced (N_res, 14, 3) coordinate arrays.
 //! Uses residue-specific atom ordering from restype_name_to_atom14_names.
+//!
+//! Unplaced slots are zero-filled: coordinates where `atom_mask == 0` are 0.0 and
+//! carry no meaning. Use `atom_mask`, never NaN tests, to find missing atoms.
 
 use proxide_core::chem::{build_restype_atom14_names, RESTYPE_1TO3};
 use proxide_core::processing::ProcessedStructure;

@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from proxide import CoordFormat, OutputSpec, parse_structure
+from proxide.chem.residues import atom_order
 from proxide.core.containers import Protein
 from proxide.io.writing import _resolve_chain_letters, write_mmcif, write_pdb
 
@@ -927,3 +929,16 @@ def test_parsed_cl_hetatm_round_trips_to_upper_case_element(tmp_path) -> None:
   cl_lines = [line for line in out_lines if line[17:20].strip() == "CL"]
   assert len(cl_lines) == 1
   assert cl_lines[0][76:78] == "CL"
+
+
+def test_write_pdb_never_writes_an_unplaced_slot_even_if_it_holds_nan(tmp_path: Path) -> None:
+  """Pin: the writer selects rows by atom_mask, so a value in an unplaced slot is inert."""
+  frame = parse_structure(
+    "tests/data/leu_missing_cd1.pdb", OutputSpec(coord_format=CoordFormat.Atom37)
+  )
+  coords = np.array(frame.coordinates)
+  coords[0, atom_order["CD1"]] = np.nan
+  out = write_pdb(frame.replace(coordinates=coords), tmp_path / "leu.pdb")
+  names = [line[12:16].strip() for line in out.read_text().splitlines() if line.startswith("ATOM")]
+  assert len(names) == 7
+  assert "CD1" not in names
