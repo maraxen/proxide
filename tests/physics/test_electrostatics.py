@@ -69,12 +69,8 @@ def test_pairwise_displacements_known_distance(jit_compile):
     # Distance should be 5.0 (3-4-5 triangle)
     chex.assert_trees_all_close(distances[0, 0], 5.0)
 
-    # Displacement: jax_md returns displacement from first to second arg
-    # So displacement_fn(pos_i, pos_j) = pos_i - pos_j (based on implementation)
-    # We call it with (pos_i, pos_j) so we get pos_i - pos_j
-    chex.assert_trees_all_close(
-        jnp.abs(displacements[0, 0]), jnp.array([3.0, 4.0, 0.0]),
-    )
+    # Free-space displacement is positions2[j] - positions1[i]: [3, 4, 0] - [0, 0, 0].
+    chex.assert_trees_all_close(displacements[0, 0], jnp.array([3.0, 4.0, 0.0]))
 
 
 @pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])
@@ -350,3 +346,14 @@ def test_pairwise_displacements_gradient_matches_reference_at_zero_distance(jit_
 
     chex.assert_tree_all_finite(grads)
     chex.assert_trees_all_close(grads, ref_grads, rtol=1e-5, atol=1e-6)
+
+
+def test_pairwise_displacements_rejects_non_2d_or_mismatched_inputs():
+    """Inputs must be 2-D (N, D) with matching last dim; anything else raises."""
+    good = jnp.zeros((2, 3))
+    with pytest.raises(ValueError):
+        compute_pairwise_displacements(jnp.zeros((3,)), good)  # 1-D
+    with pytest.raises(ValueError):
+        compute_pairwise_displacements(good, jnp.zeros((2, 4)))  # last-dim mismatch
+    with pytest.raises(ValueError):
+        compute_pairwise_displacements(jnp.zeros((4, 2, 3)), good)  # batched (B, N, 3)

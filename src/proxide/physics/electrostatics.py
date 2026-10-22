@@ -35,6 +35,9 @@ def compute_pairwise_displacements(
       - displacements: (n, m, 3) - vector from positions1[i] to positions2[j]
       - distances: (n, m) - Euclidean distance
 
+  Raises:
+      ValueError: If either input is not 2-D (N, D) or the last dimensions differ.
+
   Example:
       >>> pos1 = jnp.array([[0., 0., 0.], [5., 0., 0.]])
       >>> pos2 = jnp.array([[0., 0., 0.], [3., 4., 0.]])
@@ -43,9 +46,15 @@ def compute_pairwise_displacements(
       5.0
 
   """
-  # Free-space displacement: displacements[i, j] = positions2[j] - positions1[i].
   p1 = jnp.asarray(positions1)
   p2 = jnp.asarray(positions2)
+  if p1.ndim != 2 or p2.ndim != 2 or p1.shape[-1] != p2.shape[-1]:
+    msg = (
+      "compute_pairwise_displacements expects 2-D positions (N, D) and (M, D) "
+      f"with matching last dim; got shapes {p1.shape} and {p2.shape}."
+    )
+    raise ValueError(msg)
+  # Free-space displacement: displacements[i, j] = positions2[j] - positions1[i].
   displacements = p2[None, :, :] - p1[:, None, :]
   # Distance with a guarded sqrt: exactly 0 at zero separation, so gradients stay finite.
   squared = jnp.sum(displacements**2, axis=-1)

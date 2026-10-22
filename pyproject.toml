@@ -16,12 +16,12 @@ classifiers = [
     "Development Status :: 4 - Beta",
 ]
 dependencies = [
-    # Known limit for 0.1.0, caused by flax: jax>=0.11 relocated
-    # jax._src.core.mutable_array/MutableArray and dropped the experimental
-    # hijax.MutableHiType that flax.nnx expects. Every published flax release
-    # (through 0.12.8, as of 260818) breaks against jax 0.11.x, and Protein is a
-    # flax.struct dataclass, so flax stays and the cap stays until flax catches up.
-    # Verified: jax 0.10.0-0.10.2 work with flax 0.12.1 and 0.12.8.
+    # Cap kept for 0.1.0 because jax 0.10.x with flax 0.12.1-0.12.9 is the tested
+    # range. flax 0.12.8 and 0.12.9 fail under jax 0.11.2 (jax.experimental.hijax
+    # has no HiPrimitive). flax 0.12.10 (PyPI 2026-09-24, requires jax>=0.11.1)
+    # imports flax.nnx and runs under jax 0.11.2, but proxide is not yet tested
+    # against it, so the cap stays. Protein is a flax.struct dataclass, so flax
+    # is a hard dependency and this cap is a known limit for 0.1.0.
     "jax<0.11",
     "numpy",
     "hydride",
@@ -30,7 +30,9 @@ dependencies = [
     "msgpack-numpy",
     "equinox",
     # Protein (proxide.core.containers) is a flax.struct dataclass; flax was only
-    # reaching the lock through jax-md, so it is declared directly.
+    # reaching the lock through jax-md, so it is declared directly. Floor 0.12.1:
+    # flax 0.10.7, 0.11.2 and 0.12.0 fail `import flax.nnx` under jax 0.10 with
+    # `cannot import name 'mutable_array'`.
     "flax>=0.12.1",
     "jaxtyping",
     "array_record",
