@@ -33,7 +33,7 @@ is in effect. Inventory on `main` (`d4ac812`, 2026-10-01):
 |---|---|---|
 | thread count | proxide parallelises **only with orx-parallel** (no rayon dependency). On native builds all ~15 `into_par()` sites use orx's `NumThreads::Auto` = `min(input len, std::thread::available_parallelism())`, capped by `ORX_PARALLEL_MAX_NUM_THREADS`. `proxide-parallel-rt` (`static NUM_THREADS = 1`) is applied **only under `cfg(wasm32)`** (confind.rs:103/164, fasta.rs:69, xtc.rs:666), so the 1-thread default is wasm-only. Python cannot set the count. `available_parallelism()` honours SLURM core pinning on Engaging (**verified**, §7 Q1) | `proxide-parallel-rt/src/lib.rs:3`, `proxide-io/src/formats/xtc.rs:634` |
 | download location | `output_dir="."` default; repeats re-download | `src/proxide/io/fetching.py:6-47` |
-| endpoints | RCSB / AFDB / mdCATH / foldcomp base URLs are constants; AFDB `version=4` default | `proxide-io/src/io/fetching.rs:13-16, 227` |
+| endpoints | RCSB / AFDB / mdCATH / foldcomp base URLs are constants; AFDB `version=4` default (**2026-10-21 note:** the default is now 6 because v4 is no longer served; the Python API and CLI share `AFDB_DEFAULT_VERSION`) | `proxide-io/src/io/fetching.rs:13-16, 227` |
 | retry policy | `max_retries = 3`, 1 s initial backoff | `fetching.rs:178-179` |
 | XTC offsets sidecar | always `<xtc>.offsets` next to the trajectory | `proxide-io/src/formats/xtc.rs:115-290` |
 
@@ -68,7 +68,7 @@ is in effect. Inventory on `main` (`d4ac812`, 2026-10-01):
 | `fetch.skip_existing` | bool | `true` when `cache_dir` is set | re-downloads | P2 |
 | `fetch.rcsb_url`, `fetch.afdb_url`, `fetch.mdcath_url`, `fetch.foldcomp_url` | URL | today's constants | constants | P3 |
 | `fetch.retries`, `fetch.backoff_s`, `fetch.timeout_s` | int / float | 3, 1.0, (none today → 60) | constants | P3 |
-| `fetch.afdb_version` | int | 4 | kwarg default | P3 |
+| `fetch.afdb_version` | int | 4 (**2026-10-21 note:** now 6, since v4 is no longer served) | kwarg default | P3 |
 | `tools.pdbfixer` | path | unset → `PDBFIXER_EXEC` → `PATH` | `PDBFIXER_EXEC` (kept as env layer) | P3 |
 | `tools.modeller_key_env` | env var name | `"MODELLER_KEY"` | — (value never in config) | P3 |
 | `dev.fixtures.<name>` | path | unset → test **skips** | test env vars + `/home/marielle/...` fallbacks | P4 |

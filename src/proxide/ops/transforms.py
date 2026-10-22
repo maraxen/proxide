@@ -185,6 +185,9 @@ def truncate_protein(
     angles=slice_array(protein.angles),
     angle_params=slice_array(protein.angle_params),
     exclusion_mask=slice_array(protein.exclusion_mask),
+    b_factors=slice_array(protein.b_factors),
+    occupancies=slice_array(protein.occupancies),
+    residue_names=None if protein.residue_names is None else list(protein.residue_names)[start:end],
   )
 
 
@@ -250,8 +253,20 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[Protein]) -> Protein:
     chain_offset = int(np.max(remapped_chains)) + 1
 
   chain_ids = np.concatenate(remapped_chain_ids, axis=0)
-  concatenated = jax.tree_util.tree_map(lambda *x: np.concatenate(x, axis=0), *proteins)
-  concatenated = concatenated.replace(chain_index=chain_ids, mapping=structure_mapping)
+  # residue_names are per-residue strings: concatenate them directly, since tree_map would
+  # keep only the first name at each position. Missing on any input means missing overall.
+  names_parts = [p.residue_names for p in proteins]
+  all_names = (
+    None
+    if any(n is None for n in names_parts)
+    else [str(r) for names in names_parts for r in names]
+  )
+  concatenated = jax.tree_util.tree_map(
+    lambda *x: np.concatenate(x, axis=0), *[p.replace(residue_names=None) for p in proteins]
+  )
+  concatenated = concatenated.replace(
+    chain_index=chain_ids, mapping=structure_mapping, residue_names=all_names
+  )
   return jax.tree_util.tree_map(lambda x: x[None, ...], concatenated)
 
 
@@ -446,6 +461,16 @@ def _pad_protein(  # noqa: C901
   padded_electrostatic_features = pad_residue_array(protein.electrostatic_features)
   padded_neighbor_indices = pad_residue_array(protein.neighbor_indices)
   padded_backbone_indices = pad_residue_array(protein.backbone_indices)
+  # B-factor and occupancy follow the coordinates' layout (residue-leading for
+  # Atom37/Atom14, atom-leading for Full), so they take the same padding helper.
+  padded_b_factors = pad_residue_array(protein.b_factors)
+  padded_occupancies = pad_residue_array(protein.occupancies)
+  # Per-residue names pad with empty names, one per padded residue.
+  padded_residue_names = (
+    None
+    if protein.residue_names is None
+    else [str(r) for r in protein.residue_names] + [""] * pad_len
+  )
 
   # Atomic-level fields (shape[0] == n_atoms, for full atomic representation)
   padded_full_coordinates = pad_atomic_array(protein.full_coordinates)
@@ -458,6 +483,9 @@ def _pad_protein(  # noqa: C901
   # Create the base padded protein
   padded_protein = protein.replace(
     coordinates=padded_coordinates,
+    b_factors=padded_b_factors,
+    occupancies=padded_occupancies,
+    residue_names=padded_residue_names,
     aatype=padded_aatype,
     mask=padded_mask,
     one_hot_sequence=padded_one_hot,
@@ -569,9 +597,48 @@ def _stack_padded_proteins(
   chain_ids_per_row = [
     list(p.chain_ids) if p.chain_ids is not None else None for p in padded_proteins
   ]
-  proteins_without_chain_ids = [p.replace(chain_ids=None) for p in padded_proteins]
+  # residue_names (per-residue strings) is ragged-by-row like chain_ids and must not reach
+  # tree_map either, which would keep only the first row's name at every position.
+  residue_names_per_row = [
+    [str(r) for r in p.residue_names] if p.residue_names is not None else None
+    for p in padded_proteins
+  ]
+  proteins_without_chain_ids = [
+    p.replace(chain_ids=None, residue_names=None) for p in padded_proteins
+  ]
+  # B-factor and occupancy need a source in every row. A batch where only some rows
+  # carry a field (e.g. FoldComp or array_record rows beside parsed ones) warns once
+  # and stacks with that field None, rather than refusing the batch (debt #2367).
+  dropped = [
+    name
+    for name in ("b_factors", "occupancies")
+    if any(getattr(p, name) is not None for p in padded_proteins)
+    and not all(getattr(p, name) is not None for p in padded_proteins)
+  ]
+  if dropped:
+    details = "; ".join(
+      f"{name} is missing on "
+      f"{sum(getattr(p, name) is None for p in padded_proteins)} of "
+      f"{len(padded_proteins)} proteins"
+      for name in dropped
+    )
+    warnings.warn(
+      f"_stack_padded_proteins: {details}; those fields are None in the batch",
+      UserWarning,
+      stacklevel=2,
+    )
+    proteins_without_chain_ids = [
+      p.replace(**{name: None for name in dropped}) for p in proteins_without_chain_ids
+    ]
   batched = jax.tree_util.tree_map(stack_fn, *proteins_without_chain_ids)
-  return batched.replace(chain_ids=chain_ids_per_row)
+  # A genuine shape mismatch (every row carries the field, the stack cannot form) is an error.
+  for name in ("b_factors", "occupancies"):
+    if name in dropped or not padded_proteins:
+      continue
+    if getattr(padded_proteins[0], name) is not None and getattr(batched, name) is None:
+      msg = f"_stack_padded_proteins: {name} could not be stacked (per-row shapes differ)"
+      raise ValueError(msg)
+  return batched.replace(chain_ids=chain_ids_per_row, residue_names=residue_names_per_row)
 
 
 def pad_and_collate_proteins(

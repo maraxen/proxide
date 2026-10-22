@@ -328,39 +328,51 @@ fn read_trajectory_frames(
     ))
 }
 
-/// Emit the UserWarning for residues with atoms but no layout in `format_name`.
-fn warn_unplaced_residues(
-    py: Python<'_>,
-    format_name: &str,
-    unplaced: &[(usize, String)],
-) -> PyResult<()> {
-    if unplaced.is_empty() {
-        return Ok(());
+/// One format's policy: `{res_name: (layout_residue, {structure_atom: layout_atom})}`.
+type FormatPolicy = std::collections::BTreeMap<
+    &'static str,
+    (
+        &'static str,
+        std::collections::BTreeMap<&'static str, &'static str>,
+    ),
+>;
+
+/// Per-format residue alias policies, `{format: {res_name: (layout_residue, {structure_atom: layout_atom})}}`.
+/// Private: the writers build their reverse maps from it, so they cannot drift from the formatters.
+#[pyfunction]
+pub fn _layout_aliases() -> std::collections::BTreeMap<&'static str, FormatPolicy> {
+    let mut out = std::collections::BTreeMap::new();
+    for (format, policy) in [
+        ("Atom14", formatters::residue_policy::ATOM14_ALIASES),
+        ("Atom37", formatters::residue_policy::ATOM37_ALIASES),
+    ] {
+        let table = policy
+            .iter()
+            .map(|alias| {
+                (
+                    alias.res_name,
+                    (
+                        alias.layout_residue,
+                        alias.renames.iter().copied().collect(),
+                    ),
+                )
+            })
+            .collect();
+        out.insert(format, table);
     }
-    let count = unplaced.len();
-    let names: Vec<String> = unplaced
-        .iter()
-        .take(10)
-        .map(|(idx, name)| format!("RES#{}{}", idx, name))
-        .collect();
-    let suffix = if count > 10 {
-        format!(" (+{} more)", count - 10)
-    } else {
-        String::new()
-    };
-    let msg = format!(
-        "{} residues with atoms but no {} layout: {}{}",
-        count,
-        format_name,
-        names.join(", "),
-        suffix
-    );
-    PyErr::warn_bound(
-        py,
-        &py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
-        &msg,
-        1,
-    )
+    out
+}
+
+/// Residues the writers emit as HETATM. Private, see `_layout_aliases`.
+#[pyfunction]
+pub fn _hetatm_residues() -> Vec<&'static str> {
+    formatters::residue_policy::HETATM_RESIDUES.to_vec()
+}
+
+/// Format-cache counters (hits, misses, entries) for tests. Private: not in `__all__`.
+#[pyfunction]
+pub fn _format_cache_stats() -> (u64, u64, usize) {
+    formatters::cache::cache_stats()
 }
 
 /// Parse a structure file (PDB/mmCIF) into a format suitable for the Protein class.
@@ -386,27 +398,60 @@ pub fn parse_structure(
         && !spec.infer_bonds
         && !spec.add_hydrogens;
 
-    if should_cache {
-        let key = formatters::CacheKey::new(
+    // With caching on, read the file once: the cache key and the parse both use these
+    // bytes, so the stored entry always describes what was parsed even if the file
+    // changes on disk. With caching off the parser streams the file as before.
+    let is_cif = path.ends_with(".cif") || path.ends_with(".mmcif");
+    let bytes: Option<Vec<u8>> = if should_cache {
+        Some(py.allow_threads(|| std::fs::read(&path)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Structure parsing failed: {}", e))
+        })?)
+    } else {
+        None
+    };
+
+    let cache_key = match &bytes {
+        Some(buf) => match formatters::CacheKey::from_bytes(
             &path,
-            spec.coord_format,
-            spec.remove_solvent,
-            spec.include_hetatm,
-        );
-        if let Some(cached) = formatters::get_cached(&key) {
+            buf,
+            &formatters::cache::options_key(&spec),
+        ) {
+            Ok(key) => Some(key),
+            Err(e) => {
+                log::debug!("Not caching {}: cannot fingerprint it ({})", path, e);
+                None
+            }
+        },
+        None => None,
+    };
+    if let Some(key) = &cache_key {
+        if let Some(cached) = formatters::get_cached(key) {
             log::debug!("Cache hit for {}", path);
             return cached.to_py_dict(py).map(|d| d.into_py(py));
         }
     }
 
-    // 1. Parse PDB or mmCIF
+    // 1. Parse PDB or mmCIF: from the buffer when caching, else from the file
     let (raw_data_all, model_ids) = py
         .allow_threads(|| {
-            if path.ends_with(".cif") || path.ends_with(".mmcif") {
-                formats::mmcif::parse_mmcif_file(&path).map_err(|e| e.to_string())
-            } else {
-                formats::pdb::parse_pdb_file(&path).map_err(|e| e.to_string())
-            }
+            let parsed = match &bytes {
+                Some(buf) => {
+                    let reader = std::io::Cursor::new(&buf[..]);
+                    if is_cif {
+                        formats::mmcif::parse_mmcif_from_reader(reader)
+                    } else {
+                        formats::pdb::parse_pdb_from_reader(reader)
+                    }
+                }
+                None => {
+                    if is_cif {
+                        formats::mmcif::parse_mmcif_file(&path)
+                    } else {
+                        formats::pdb::parse_pdb_file(&path)
+                    }
+                }
+            };
+            parsed.map_err(|e| e.to_string())
         })
         .map_err(|e: String| {
             pyo3::exceptions::PyValueError::new_err(format!("Structure parsing failed: {}", e))
@@ -418,27 +463,28 @@ pub fn parse_structure(
         &model_ids,
         &spec,
         ResidueClassificationConfig::default(),
-        Some(&path),
+        cache_key,
     )
 }
 
 /// Everything after file parsing -- model selection, residue processing, H addition,
 /// MD parameterization, formatting, multi-model stacking and feature computation --
 /// shared by [`parse_structure`] (PDB/mmCIF) and [`parse_amber_trajectory`] (AMBER
-/// topology + trajectory frames). `cache_path` enables the parse cache and is only
-/// given for file-backed inputs whose content the path identifies.
+/// topology + trajectory frames). `cache_key` enables the parse cache: it is the
+/// fingerprint of the file the parse read, taken before parsing, and is only given
+/// for file-backed inputs.
 fn process_models(
     py: Python,
     raw_data_all: &RawAtomData,
     model_ids: &[usize],
     spec: &spec::OutputSpec,
     classification: ResidueClassificationConfig,
-    cache_path: Option<&str>,
+    cache_key: Option<formatters::CacheKey>,
 ) -> PyResult<PyObject> {
     let conv = spec.unit_system.conversion_spec();
     let target = spec::OutputFormatTarget::from_str(&spec.output_format_target)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
-    let should_cache = cache_path.is_some()
+    let should_cache = cache_key.is_some()
         && spec.enable_caching
         && spec.models.is_none()
         && !spec.compute_rbf
@@ -624,7 +670,6 @@ fn process_models(
                     pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
                 })?;
 
-            warn_unplaced_residues(py, "atom37", &ref_formatted.unplaced_residues)?;
             let dict = ref_formatted.to_py_dict(py)?;
 
             // --- Multi-Model Stacking for Atom37 ---
@@ -640,6 +685,11 @@ fn process_models(
                 // from_rust_dict fell through to "Full" (debt #2355).
                 let mut all_masks = Vec::with_capacity(n_models * n_res * 37);
                 all_masks.extend_from_slice(&ref_formatted.atom_mask);
+                // Per-model B-factors and occupancies stack like the mask.
+                let mut all_b = Vec::with_capacity(n_models * n_res * 37);
+                all_b.extend_from_slice(&ref_formatted.b_factors);
+                let mut all_occ = Vec::with_capacity(n_models * n_res * 37);
+                all_occ.extend_from_slice(&ref_formatted.occupancies);
 
                 for (i, m_raw) in models_to_process.iter().enumerate().skip(1) {
                     // We must process each model to map atoms correctly
@@ -708,6 +758,8 @@ fn process_models(
                     }
                     all_coords.extend_from_slice(&m_formatted.coordinates);
                     all_masks.extend_from_slice(&m_formatted.atom_mask);
+                    all_b.extend_from_slice(&m_formatted.b_factors);
+                    all_occ.extend_from_slice(&m_formatted.occupancies);
                 }
 
                 // Reshape to (N_models, N_res, 37, 3)
@@ -722,6 +774,16 @@ fn process_models(
                     pyo3::exceptions::PyValueError::new_err(format!("Mask reshape failed: {}", e))
                 })?;
                 dict_bound.set_item("atom_mask", mask_shaped)?;
+                for (key, values) in [("b_factors", &all_b), ("occupancies", &all_occ)] {
+                    let shaped = PyArray1::from_slice_bound(py, values)
+                        .reshape((n_models, n_res, 37))
+                        .map_err(|e| {
+                            pyo3::exceptions::PyValueError::new_err(format!(
+                                "{key} reshape failed: {e}"
+                            ))
+                        })?;
+                    dict_bound.set_item(key, shaped)?;
+                }
                 dict_bound.set_item("n_models", n_models)?;
             }
 
@@ -731,6 +793,8 @@ fn process_models(
             let cached = if should_cache && models_to_process.len() == 1 {
                 Some(formatters::CachedStructure {
                     coordinates: ref_formatted.coordinates.clone(),
+                    b_factors: Some(ref_formatted.b_factors.clone()),
+                    occupancies: Some(ref_formatted.occupancies.clone()),
                     atom_mask: ref_formatted.atom_mask.clone(),
                     aatype: ref_formatted.aatype.clone(),
                     residue_names: Some(ref_formatted.residue_names.clone()),
@@ -804,6 +868,8 @@ fn process_models(
             let cached = if should_cache && models_to_process.len() == 1 {
                 Some(formatters::CachedStructure {
                     coordinates: formatted.coordinates.clone(),
+                    b_factors: Some(formatted.b_factors.clone()),
+                    occupancies: Some(formatted.occupancies.clone()),
                     atom_mask: formatted.atom_mask.clone(),
                     aatype: formatted.aatype.clone(),
                     residue_names: None,
@@ -887,14 +953,8 @@ fn process_models(
     // Insert into cache if needed -- after the chain vocabulary exists, so a
     // cache hit returns it too (it used to return chain_ids=None, and the
     // writer then emitted blank chain columns).
-    if let (Some(mut cached), Some(path)) = (cached_structure, cache_path) {
+    if let (Some(mut cached), Some(key)) = (cached_structure, cache_key) {
         cached.unique_chain_ids = Some(unique_chains.clone());
-        let key = formatters::CacheKey::new(
-            path,
-            spec.coord_format,
-            spec.remove_solvent,
-            spec.include_hetatm,
-        );
         formatters::insert_cached(key, cached);
     }
 

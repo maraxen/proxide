@@ -2,9 +2,23 @@
 
 from proxide import _proxider
 
+# AlphaFold DB model version used when none is given. v4 is no longer served (404).
+# The pyo3 default in crates/proxide_py/src/lib.rs must match this value.
+AFDB_DEFAULT_VERSION = 6
+
 
 def fetch_rcsb(pdb_id: str, output_dir: str = ".", format_type: str = "mmcif") -> str:
   """Fetch structure content from the RCSB data bank.
+
+  A cached file is reused only if it is complete. A truncated or empty copy is
+  downloaded again. If the requested format returns 404, the other format is tried.
+  Any other HTTP error is raised unchanged.
+
+  Environment variables:
+      PROXIDE_HTTP_CONNECT_TIMEOUT_SECS: connect timeout in seconds (default 30).
+      PROXIDE_HTTP_TIMEOUT_SECS: per-read timeout in seconds, covering the wait for
+          headers and each body read (default 120). Invalid values raise RuntimeError.
+      PROXIDE_RCSB_BASE_URL: download host, for tests (a trailing slash is added).
 
   Args:
       pdb_id: The PDB ID to fetch.
@@ -13,6 +27,9 @@ def fetch_rcsb(pdb_id: str, output_dir: str = ".", format_type: str = "mmcif") -
 
   Returns:
       Path to the downloaded file.
+
+  Raises:
+      RuntimeError: on invalid ID, HTTP error, timeout, or a bad timeout setting.
   """
   return _proxider.fetch_rcsb(pdb_id, output_dir, format_type)
 
@@ -30,13 +47,13 @@ def fetch_md_cath(md_cath_id: str, output_dir: str = ".") -> str:
   return _proxider.fetch_md_cath(md_cath_id, output_dir)
 
 
-def fetch_afdb(uniprot_id: str, output_dir: str = ".", version: int = 4) -> str:
+def fetch_afdb(uniprot_id: str, output_dir: str = ".", version: int = AFDB_DEFAULT_VERSION) -> str:
   """Fetch structure from AlphaFold Structure Database.
 
   Args:
       uniprot_id: The UniProt ID to fetch.
       output_dir: Directory to save the file.
-      version: AlphaFold database version (default: 4).
+      version: AlphaFold database model version (default: 6; v4 is no longer served).
 
   Returns:
       Path to the downloaded file.

@@ -503,7 +503,7 @@ fn write_topology_to_pdb(topology: &Topology, path: &Path) -> Result<(), Solvati
                 let z = atom.coords[2].clamp(-999.999, 9999.999);
 
                 let line = format!(
-                    "{:6}{:5} {:4}{:1}{:3} {:1}{:4}{:1}   {:8.3}{:8.3}{:8.3}{:6.2}{:6.2}          {:2}  ",
+                    "{:6}{:5} {:4}{:1}{:3} {:1}{:4}{:1}   {:8.3}{:8.3}{:8.3}{:6.2}{:6.2}          {:>2}  ",
                     record_type,
                     serial,
                     format!("{:1$}", atom.name, 4), // Left-justify to 4 chars
@@ -517,7 +517,7 @@ fn write_topology_to_pdb(topology: &Topology, path: &Path) -> Result<(), Solvati
                     z,
                     atom.occupancy,
                     atom.b_factor,
-                    atom.element // element symbol
+                    atom.element.to_ascii_uppercase() // element symbol
                 );
 
                 lines.push(line);

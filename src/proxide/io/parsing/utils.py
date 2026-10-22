@@ -335,6 +335,8 @@ def processed_structure_to_protein_tuples(
     )
     atom_mask_2d = static_features.static_atom_mask_37.astype(np.float32)
 
+    # Built from topology/static features, which carry no B-factor or occupancy:
+    # both stay None (debt #2367).
     return Protein(
       coordinates=jnp.array(coords_37, dtype=jnp.float32),
       aatype=jnp.array(static_features.aatype, dtype=jnp.int8),

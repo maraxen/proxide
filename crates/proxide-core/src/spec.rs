@@ -79,7 +79,10 @@ pub enum HydrogenSource {
     ForceFieldOnly,
 }
 
-/// Output specification for structure formatting
+/// Output specification for structure formatting.
+///
+/// Debug is used as a cache key: keep fields deterministic (no unordered collections,
+/// pointers or Arc).
 #[derive(Debug, Clone)]
 pub struct OutputSpec {
     // Format

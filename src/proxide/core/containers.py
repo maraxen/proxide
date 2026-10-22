@@ -119,6 +119,12 @@ class Protein:
   # Per-atom chain ids as read (Full format; backlog #5684). Distinct from
   # `chain_ids`, which is the per-chain vocabulary that `chain_index` indexes.
   atom_chain_ids: Any | None = None
+  # Per-atom B-factor and occupancy as the source file gave them (debt #2367).
+  # Layout follows the coordinates: Atom37 (..., N_res, 37), Atom14 (..., N_res, 14),
+  # Full (N_atoms,). None when the source had none. Slots the source did not place
+  # hold 0.0, the same zero-fill as unplaced coordinates; atom_mask says which are placed.
+  b_factors: Any | None = None
+  occupancies: Any | None = None
   molecule_type: Any | None = None
   atom_types: Any | None = None
   bonds: Any | None = None
@@ -355,6 +361,12 @@ class Protein:
       coordinates = raw_coords.reshape(*lead, num_residues, n_slots, 3)
       atom_mask_2d = np.asarray(raw_mask).reshape(*lead, num_residues, n_slots)
 
+      def _per_slot(values: Any) -> Any:
+        # Same layout as atom_mask_2d; a size mismatch raises here.
+        if values is None:
+          return None
+        return convert(values, dtype=np.float32).reshape(*lead, num_residues, n_slots)
+
       if is_atom37:
         mask_ca = atom_mask_2d[..., atom_order["CA"]]
       else:
@@ -370,6 +382,8 @@ class Protein:
         residue_index=convert(rust_dict["residue_index"], dtype=np.int32),
         chain_index=convert(rust_dict["chain_index"], dtype=np.int32),
         atom_mask=convert(atom_mask_2d, dtype=np.float32),
+        b_factors=_per_slot(rust_dict.get("b_factors")),
+        occupancies=_per_slot(rust_dict.get("occupancies")),
         # Optional fields
         charges=convert(rust_dict["charges"]) if rust_dict.get("charges") is not None else None,
         radii=convert(rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32)
@@ -504,6 +518,8 @@ class Protein:
       atom_names=atom_names,
       res_names=rust_dict.get("res_names"),
       atom_chain_ids=rust_dict.get("atom_chain_ids"),
+      b_factors=_slice_if_padded(rust_dict.get("b_factors"), dtype=np.float32),
+      occupancies=_slice_if_padded(rust_dict.get("occupancies"), dtype=np.float32),
       charges=_slice_if_padded(rust_dict.get("charges")),
       radii=_slice_if_padded(
           rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32

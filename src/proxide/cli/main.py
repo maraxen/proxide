@@ -18,6 +18,7 @@ from proxide import (
   fetch_rcsb,
   parse_structure,
 )
+from proxide.io.fetching import AFDB_DEFAULT_VERSION
 
 app = typer.Typer(
   name="proxide",
@@ -56,7 +57,12 @@ def fetch_rcsb_cmd(
 def fetch_afdb_cmd(
   id: str = typer.Argument(..., help="UniProt ID (e.g., P12345)"),
   output: str = typer.Option(".", "--output", "-o", help="Output directory"),
-  version: int = typer.Option(4, "--version", "-v", help="AlphaFold version"),
+  version: int = typer.Option(
+    AFDB_DEFAULT_VERSION,
+    "--version",
+    "-v",
+    help=f"AlphaFold DB model version (default {AFDB_DEFAULT_VERSION}; v4 is no longer served)",
+  ),
 ):
   """Fetch structure from the AlphaFold Structure Database (AFDB)."""
   try:

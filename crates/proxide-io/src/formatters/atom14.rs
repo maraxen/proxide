@@ -12,6 +12,10 @@ use std::collections::HashMap;
 /// Formatted structure in Atom14 representation
 #[derive(Debug)]
 pub struct FormattedAtom14 {
+    /// Source B-factor per slot: flat (N_res * 14); 0.0 where the slot is unplaced (see atom_mask).
+    pub b_factors: Vec<f32>,
+    /// Source occupancy per slot: flat (N_res * 14); 0.0 where the slot is unplaced.
+    pub occupancies: Vec<f32>,
     pub coordinates: Vec<f32>,                   // Flat (N_res * 14 * 3)
     pub atom_mask: Vec<f32>,                     // Flat (N_res * 14)
     pub aatype: Vec<i8>,                         // (N_res,) residue type indices
@@ -52,6 +56,8 @@ impl Atom14Formatter {
         let mut aatype = vec![0i8; num_residues];
         let mut residue_index = vec![0i32; num_residues];
         let mut chain_index = vec![0i32; num_residues];
+        let mut b_factors = vec![0.0f32; num_residues * 14];
+        let mut occupancies = vec![0.0f32; num_residues * 14];
         let mut unplaced_residues: Vec<(usize, String)> = Vec::new();
         let mut residue_names: Vec<String> = Vec::with_capacity(num_residues);
 
@@ -118,6 +124,8 @@ impl Atom14Formatter {
                     coordinates[coord_base + 1] = processed.raw_atoms.coords[global_idx * 3 + 1];
                     coordinates[coord_base + 2] = processed.raw_atoms.coords[global_idx * 3 + 2];
                     atom_mask[mask_idx] = 1.0;
+                    b_factors[mask_idx] = processed.raw_atoms.b_factors[global_idx];
+                    occupancies[mask_idx] = processed.raw_atoms.occupancy[global_idx];
                 }
                 // Missing atoms stay as zeros
             }
@@ -152,6 +160,8 @@ impl Atom14Formatter {
             chain_index,
             unplaced_residues,
             residue_names,
+            b_factors,
+            occupancies,
         })
     }
 }

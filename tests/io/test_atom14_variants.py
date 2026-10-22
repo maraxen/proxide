@@ -3,8 +3,8 @@
 MSE (selenomethionine) is typed as MET in the model-facing arrays (aatype 12).
 Each array format's alias policy places its SE in the SD slot. Writers keep the
 selenium: an MSE residue is written as HETATM MSE with an SE atom. A residue
-with atoms but no layout (unknown names, ligands) is reported with a
-UserWarning in every array format.
+with atoms but no layout (unknown names, ligands) is reported with a UserWarning by
+Atom14. Atom37 places atoms by name and reports nothing.
 """
 
 from __future__ import annotations
@@ -15,9 +15,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from proxide import CoordFormat, OutputSpec, parse_structure
+from proxide import CoordFormat, OutputSpec, _proxider, parse_structure
 from proxide.chem.residues import atom_types, resnames
-from proxide.io.writing import write_mmcif, write_pdb
+from proxide.io.writing import (
+  _HETATM_RESIDUES,
+  _LAYOUT_ALIASES,
+  write_mmcif,
+  write_npz,
+  write_pdb,
+)
+from proxide.ops.transforms import _pad_protein, _stack_padded_proteins, truncate_protein
 
 _DATA = Path(__file__).resolve().parent.parent / "data"
 _PROBE = _DATA / "mse_altloc.pdb"  # ALA, MSE with altlocs A/B on SE, GLY
@@ -111,7 +118,7 @@ def test_full_format_keeps_real_se_atom():
   assert "SD" not in names
 
 
-@pytest.mark.parametrize("fmt", _FORMATS, ids=["atom14", "atom37"])
+@pytest.mark.parametrize("fmt", [CoordFormat.Atom14], ids=["atom14"])
 def test_unknown_residue_still_warns(fmt, tmp_path):
   # Negative control: a residue name with no alias and no layout keeps the warning.
   path = _write_residue_pdb(tmp_path, "XYZ", "ATOM", _XYZ_ATOMS)
@@ -140,3 +147,74 @@ def test_alias_variant_is_placed_like_its_parent(tmp_path):
   np.testing.assert_array_equal(np.asarray(hsd.aatype), np.asarray(his.aatype))
   his_idx = int(np.flatnonzero(np.asarray(his.residue_index) == 68)[0])
   assert float(np.asarray(hsd.atom_mask)[his_idx].sum()) == 10.0  # His heavy atoms
+
+
+_MET = resnames.index("MET")
+
+
+def _mse_protein(fmt: CoordFormat):
+  return _parse(fmt, _PROBE)
+
+
+def _mse_rows(text: str) -> list[str]:
+  return [x for x in text.splitlines() if x[17:20] == "MSE"]
+
+
+def test_writer_tables_equal_the_rust_policy():
+  rust = _proxider._layout_aliases()
+  assert set(_LAYOUT_ALIASES) == set(rust) == {"Atom14", "Atom37"}
+  for fmt, table in rust.items():
+    expected = {res: (layout, dict(renames)) for res, (layout, renames) in table.items()}
+    assert _LAYOUT_ALIASES[fmt] == expected
+  assert _HETATM_RESIDUES == frozenset(_proxider._hetatm_residues())
+  assert _LAYOUT_ALIASES["Atom14"]["MSE"] == ("MET", {"SE": "SD"})
+  assert _LAYOUT_ALIASES["Atom37"]["MSE"] == ("MET", {"SE": "SD"})
+
+
+@pytest.mark.parametrize("fmt", _FORMATS, ids=["atom14", "atom37"])
+def test_crop_then_write_keeps_mse_as_hetatm_se(fmt, tmp_path):
+  protein = truncate_protein(_mse_protein(fmt), 2, "center_crop")  # ALA, MSE
+  assert protein.residue_names == ["ALA", "MSE"]
+  out = write_pdb(protein, tmp_path / "crop.pdb")
+  rows = _mse_rows(out.read_text())
+  assert len(rows) == 8
+  assert all(x.startswith("HETATM") for x in rows)
+  assert sum(x[12:16].strip() == "SE" for x in rows) == 1
+
+
+@pytest.mark.parametrize("fmt", _FORMATS, ids=["atom14", "atom37"])
+def test_pad_then_write_keeps_mse_as_hetatm_se(fmt, tmp_path):
+  protein = _pad_protein(_mse_protein(fmt), 5)
+  assert protein.residue_names == ["ALA", "MSE", "GLY", "", ""]
+  out = write_pdb(protein, tmp_path / "pad.pdb")
+  rows = _mse_rows(out.read_text())
+  assert len(rows) == 8
+  assert sum(x[12:16].strip() == "SE" for x in rows) == 1
+
+
+def test_stack_keeps_each_rows_residue_names():
+  full = _pad_protein(_mse_protein(CoordFormat.Atom14), 3)
+  cropped = _pad_protein(truncate_protein(_mse_protein(CoordFormat.Atom14), 2, "center_crop"), 3)
+  batched = _stack_padded_proteins([full, cropped])
+  assert batched.residue_names == [["ALA", "MSE", "GLY"], ["ALA", "MSE", ""]]
+
+
+def test_npz_round_trip_keeps_mse_residue_name(tmp_path):
+  path = write_npz(_mse_protein(CoordFormat.Atom14), tmp_path / "mse.npz")
+  with np.load(path) as data:
+    names = [str(x) for x in data["residue_names"]]
+    aatype = np.asarray(data["aatype"])
+  assert names == ["ALA", "MSE", "GLY"]
+  assert int(aatype[1]) == _MET
+
+
+def test_met_sd_without_residue_names_warns_selenium_unrestorable(tmp_path):
+  protein = _mse_protein(CoordFormat.Atom37).replace(residue_names=None)
+  with pytest.warns(UserWarning, match="selenium"):
+    write_pdb(protein, tmp_path / "no_names.pdb")
+
+
+def test_residue_names_present_writes_without_warning(tmp_path):
+  with warnings.catch_warnings():
+    warnings.simplefilter("error", UserWarning)
+    write_pdb(_mse_protein(CoordFormat.Atom37), tmp_path / "with_names.pdb")

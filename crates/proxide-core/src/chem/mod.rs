@@ -2,6 +2,7 @@
 
 pub mod bonds;
 pub mod ccd;
+pub mod elements;
 pub mod inference;
 pub mod masses;
 mod pb;

@@ -110,7 +110,7 @@ def _resolve_inputs(  # noqa: C901
             # Version?
             # parts[-1] is model_v4
             # version extraction:
-            version = 4  # Default
+            version = 6  # Default (AlphaFold DB no longer serves v4)
             try:
               v_str = parts[-1].split("_v")[1]
               version = int(v_str)

@@ -81,6 +81,12 @@ impl ToPyDict for CachedStructure {
         if let Some(ref names) = self.residue_names {
             dict.set_item("residue_names", names.clone())?;
         }
+        if let Some(ref b) = self.b_factors {
+            dict.set_item("b_factors", PyArray1::from_slice_bound(py, b))?;
+        }
+        if let Some(ref occ) = self.occupancies {
+            dict.set_item("occupancies", PyArray1::from_slice_bound(py, occ))?;
+        }
         if let Some(ref per_atom) = self.full_per_atom {
             dict.set_item("atom_residue_ids", per_atom.atom_residue_ids.clone())?;
             dict.set_item("elements", per_atom.elements.clone())?;
@@ -95,7 +101,6 @@ impl ToPyDict for CachedStructure {
 impl ToPyDict for FormattedAtom37 {
     fn to_py_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new_bound(py);
-        dict.set_item("unplaced_residues", &self.unplaced_residues)?;
         dict.set_item("residue_names", &self.residue_names)?;
         dict.set_item(
             "coordinates",
@@ -110,6 +115,11 @@ impl ToPyDict for FormattedAtom37 {
         dict.set_item(
             "chain_index",
             PyArray1::from_slice_bound(py, &self.chain_index),
+        )?;
+        dict.set_item("b_factors", PyArray1::from_slice_bound(py, &self.b_factors))?;
+        dict.set_item(
+            "occupancies",
+            PyArray1::from_slice_bound(py, &self.occupancies),
         )?;
         Ok(dict)
     }
@@ -134,6 +144,12 @@ impl ToPyDict for FormattedAtom14 {
         )?;
         dict.set_item("unplaced_residues", &self.unplaced_residues)?;
         dict.set_item("residue_names", &self.residue_names)?;
+        dict.set_item("b_factors", PyArray1::from_slice_bound(py, &self.b_factors))?;
+        dict.set_item(
+            "occupancies",
+            PyArray1::from_slice_bound(py, &self.occupancies),
+        )?;
+
         Ok(dict)
     }
 }
@@ -182,6 +198,11 @@ impl ToPyDict for FormattedFull {
         dict.set_item("res_names", self.res_names.clone())?;
         dict.set_item("atom_chain_ids", self.atom_chain_ids.clone())?;
         dict.set_item("coord_shape", self.coord_shape)?;
+        dict.set_item("b_factors", PyArray1::from_slice_bound(py, &self.b_factors))?;
+        dict.set_item(
+            "occupancies",
+            PyArray1::from_slice_bound(py, &self.occupancies),
+        )?;
         Ok(dict)
     }
 }

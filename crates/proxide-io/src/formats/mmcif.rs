@@ -23,7 +23,7 @@
 use crate::formats::field_parse::{
     self, truncate_raw_str, TokenFieldErrorKind, IO_MALFORMED_RECORD_CODE,
 };
-use crate::formats::pdb_fields::ResidueTracker;
+use crate::formats::pdb_fields::{normalize_element_symbol, ResidueTracker};
 use proxide_core::chem::masses::infer_element;
 use proxide_core::structure::{AtomRecord, RawAtomData};
 use std::collections::HashMap;
@@ -620,6 +620,15 @@ fn read_optional_str(
     }
 }
 
+/// Strip a trailing charge suffix matching `\d*[+-]$` (`Fe2+`, `O2-`, `Na+`),
+/// so small-molecule style type symbols validate (debt #2366 review).
+fn strip_charge_suffix(symbol: &str) -> &str {
+    let Some(rest) = symbol.strip_suffix(|c: char| c == '+' || c == '-') else {
+        return symbol;
+    };
+    rest.trim_end_matches(|c: char| c.is_ascii_digit())
+}
+
 fn extract_row(
     tokens: &[(String, bool)],
     column_map: &HashMap<String, usize>,
@@ -692,10 +701,20 @@ fn extract_row(
     // Fall back to the same two-letter-aware `infer_element` used by
     // `pdb.rs`/`pqr.rs` (backlog #5052) rather than leaving `element` empty.
     let type_symbol = read_optional_str(tokens, column_map, "type_symbol");
+    // Debt #2366: a filled type_symbol is normalised to the same canonical
+    // title-case symbol as the blank-column fallback; an unknown one is an error.
     let element = if type_symbol.is_empty() {
         infer_element(&atom_name).to_string()
     } else {
-        type_symbol
+        normalize_element_symbol(strip_charge_suffix(&type_symbol)).ok_or_else(|| {
+            CifFieldError::new(
+                row_start_line,
+                "type_symbol",
+                "element",
+                &type_symbol,
+                TokenFieldErrorKind::UnknownElement,
+            )
+        })?
     };
 
     Ok((
@@ -1178,6 +1197,47 @@ _atom_site.label_seq_id
         let raw = expect_ok(&text);
         assert_eq!(raw.atom_names[0], "CL");
         assert_eq!(raw.elements[0], "Cl");
+    }
+
+    #[test]
+    fn type_symbol_is_normalised_and_unknown_is_an_error() {
+        // Debt #2366: a filled type_symbol goes through the same normaliser as
+        // the PDB element column; an unknown symbol is a loud error.
+        let cols: Vec<&str> = FULL_COLS
+            .iter()
+            .copied()
+            .chain(std::iter::once("type_symbol"))
+            .collect();
+        let header = atom_site_header(&cols);
+        let (raw, _) =
+            parse_mmcif_from_reader(format!("{header}{VALID_ROW} CL\n").as_bytes()).unwrap();
+        assert_eq!(raw.elements[0], "Cl");
+        let (raw, _) =
+            parse_mmcif_from_reader(format!("{header}{VALID_ROW} zn\n").as_bytes()).unwrap();
+        assert_eq!(raw.elements[0], "Zn");
+        let boxed =
+            parse_mmcif_from_reader(format!("{header}{VALID_ROW} XX\n").as_bytes()).unwrap_err();
+        let err = boxed
+            .downcast_ref::<CifFieldError>()
+            .expect("CifFieldError");
+        assert_eq!(err.kind, TokenFieldErrorKind::UnknownElement);
+        assert_eq!(err.column, "type_symbol");
+    }
+
+    #[test]
+    fn type_symbol_charge_suffix_is_stripped_before_validation() {
+        // Debt #2366 review: small-molecule style symbols carry a charge.
+        let cols: Vec<&str> = FULL_COLS
+            .iter()
+            .copied()
+            .chain(std::iter::once("type_symbol"))
+            .collect();
+        let header = atom_site_header(&cols);
+        for (raw, want) in [("Fe2+", "Fe"), ("O2-", "O"), ("Na+", "Na")] {
+            let (parsed, _) =
+                parse_mmcif_from_reader(format!("{header}{VALID_ROW} {raw}\n").as_bytes()).unwrap();
+            assert_eq!(parsed.elements[0], want, "type_symbol {raw}");
+        }
     }
 
     #[test]

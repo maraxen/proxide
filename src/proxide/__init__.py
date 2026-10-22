@@ -7,9 +7,13 @@ and seamless integration with JAX MD.
 
 from __future__ import annotations
 
+import importlib.metadata
 from typing import Any
 
-__version__ = "0.1.0"
+try:
+  __version__ = importlib.metadata.version("proxide")
+except importlib.metadata.PackageNotFoundError:
+  __version__ = "0+unknown"
 
 # Re-export Rust extension functions for unified API (no JAX required).
 # Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.

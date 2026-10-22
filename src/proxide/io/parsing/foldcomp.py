@@ -116,6 +116,7 @@ def get_protein_structures(
         num_res = len(sequence)
         atom_mask = np.ones((coordinates.shape[0], 37), dtype=np.float32)
 
+        # FoldComp records carry no B-factor or occupancy: both stay None (debt #2367).
         yield Protein(
           coordinates=jnp.array(coordinates, dtype=jnp.float32),
           aatype=jnp.array(sequence, dtype=jnp.int32),

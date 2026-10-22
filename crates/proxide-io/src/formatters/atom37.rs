@@ -4,7 +4,7 @@
 //! compatible with AlphaFold and ProteinTuple conventions.
 
 use super::residue_policy::{lookup_alias, rename_layout_atom, AliasPolicy, ATOM37_ALIASES};
-use proxide_core::chem::{build_atom_order, build_standard_atom_mask, UNK_RESTYPE_INDEX};
+use proxide_core::chem::{build_atom_order, build_standard_atom_mask};
 use proxide_core::processing::ProcessedStructure;
 use proxide_core::spec::OutputSpec;
 use std::collections::HashMap;
@@ -12,13 +12,16 @@ use std::collections::HashMap;
 /// Formatted structure in Atom37 representation
 #[derive(Debug)]
 pub struct FormattedAtom37 {
-    pub coordinates: Vec<f32>,   // Flat (N_res * 37 * 3) - reshaped in Python
-    pub atom_mask: Vec<f32>,     // Flat (N_res * 37)
-    pub aatype: Vec<i8>,         // (N_res,) residue type indices (0-20)
+    /// Source B-factor per slot: flat (N_res * 37); 0.0 where the slot is unplaced (see atom_mask).
+    pub b_factors: Vec<f32>,
+    /// Source occupancy per slot: flat (N_res * 37); 0.0 where the slot is unplaced.
+    pub occupancies: Vec<f32>,
+    pub coordinates: Vec<f32>, // Flat (N_res * 37 * 3) - reshaped in Python
+    pub atom_mask: Vec<f32>,   // Flat (N_res * 37)
+    pub aatype: Vec<i8>,       // (N_res,) residue type indices (0-20)
     pub residue_index: Vec<i32>, // (N_res,) PDB residue numbers
-    pub chain_index: Vec<i32>,   // (N_res,) chain indices
-    pub unplaced_residues: Vec<(usize, String)>, // (residue_index, res_name) with atoms but no residue type
-    pub residue_names: Vec<String>,              // (N_res,) as-read residue names
+    pub chain_index: Vec<i32>, // (N_res,) chain indices
+    pub residue_names: Vec<String>, // (N_res,) as-read residue names
 }
 
 /// Atom37 formatter - converts to standardized (N_res, 37, 3) representation
@@ -54,16 +57,14 @@ impl Atom37Formatter {
         let mut residue_index = vec![0i32; num_residues];
         let mut chain_index = vec![0i32; num_residues];
         let mut residue_names: Vec<String> = Vec::with_capacity(num_residues);
-        let mut unplaced_residues: Vec<(usize, String)> = Vec::new();
+        let mut b_factors = vec![0.0f32; num_residues * 37];
+        let mut occupancies = vec![0.0f32; num_residues * 37];
 
         // Process each residue
         for (res_idx, res_info) in processed.residue_info.iter().enumerate() {
             // Set residue metadata
             aatype[res_idx] = res_info.res_type as i8;
             residue_names.push(res_info.res_name.clone());
-            if res_info.num_atoms > 0 && res_info.res_type == UNK_RESTYPE_INDEX {
-                unplaced_residues.push((res_idx, res_info.res_name.clone()));
-            }
             residue_index[res_idx] = res_info.res_id;
 
             // Map chain to index
@@ -104,6 +105,8 @@ impl Atom37Formatter {
                     coordinates[coord_base + 1] = processed.raw_atoms.coords[global_idx * 3 + 1];
                     coordinates[coord_base + 2] = processed.raw_atoms.coords[global_idx * 3 + 2];
                     atom_mask[mask_idx] = 1.0;
+                    b_factors[mask_idx] = processed.raw_atoms.b_factors[global_idx];
+                    occupancies[mask_idx] = processed.raw_atoms.occupancy[global_idx];
                 } else if is_expected {
                     // Expected atom is missing - log warning
                     log::warn!(
@@ -127,8 +130,9 @@ impl Atom37Formatter {
             aatype,
             residue_index,
             chain_index,
-            unplaced_residues,
             residue_names,
+            b_factors,
+            occupancies,
         })
     }
 }
@@ -395,34 +399,5 @@ mod tests {
         assert_eq!(&formatted.coordinates[sd * 3..sd * 3 + 3], &[1.0, 3.0, 0.0]);
         let mask_sum: f32 = formatted.atom_mask.iter().sum();
         assert_eq!(mask_sum, 8.0);
-    }
-
-    #[test]
-    fn test_atom37_unknown_residue_reported_unplaced() {
-        use proxide_core::structure::{AtomRecord, RawAtomData};
-        let mut raw = RawAtomData::with_capacity(1);
-        raw.add_atom(AtomRecord {
-            serial: 1,
-            atom_name: "CA".to_string(),
-            alt_loc: ' ',
-            res_name: "XYZ".to_string(),
-            chain_id: "A".to_string(),
-            res_seq: 1,
-            i_code: ' ',
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-            occupancy: 1.0,
-            temp_factor: 20.0,
-            element: "C".to_string(),
-            charge: None,
-            radius: None,
-            is_hetatm: false,
-        });
-        let processed = proxide_core::processing::ProcessedStructure::from_raw(raw).unwrap();
-        let formatted = Atom37Formatter::format(&processed, &OutputSpec::default()).unwrap();
-
-        assert_eq!(formatted.unplaced_residues.len(), 1);
-        assert_eq!(formatted.unplaced_residues[0].1, "XYZ");
     }
 }
