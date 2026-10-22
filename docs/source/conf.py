@@ -1,5 +1,6 @@
 """Sphinx configuration file for Proxide documentation."""
 
+import importlib.metadata
 import sys
 from pathlib import Path
 
@@ -30,7 +31,11 @@ ForwardRef._evaluate = _do_not_evaluate_in_jax  # type: ignore[attr-access]   # 
 project = "Proxide"
 copyright = "2025, Proxide Team"  # noqa: A001
 author = "Proxide Team"
-release = "0.1.0"
+try:
+  release = importlib.metadata.version("proxide")
+except importlib.metadata.PackageNotFoundError:
+  release = "0+unknown"
+version = release
 
 # Extensions
 extensions = [

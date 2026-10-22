@@ -77,6 +77,10 @@ jobs:
         run: |
           source .venv/bin/activate
           python -c "from proxide.chem.gaff2 import load_gaff2_rules; r, _ = load_gaff2_rules(); assert r, 'no GAFF2 rules loaded'"
+      - name: Check version strings agree
+        run: |
+          source .venv/bin/activate
+          python scripts/check_versions.py
       - name: Run Smoke Tests
         run: |
           source .venv/bin/activate
