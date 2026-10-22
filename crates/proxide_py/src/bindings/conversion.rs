@@ -39,6 +39,14 @@ impl ToPyDict for RawAtomData {
         dict.set_item("occupancies", self.occupancy.clone())?;
         dict.set_item("is_hetatm", self.is_hetatm.clone())?;
         dict.set_item("hetero", self.is_hetatm.clone())?;
+        dict.set_item("serial_numbers", self.serial_numbers.clone())?;
+        dict.set_item(
+            "insertion_codes",
+            self.insertion_codes
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<String>>(),
+        )?;
 
         if let Some(ref charges) = self.charges {
             dict.set_item("charges", charges.clone())?;

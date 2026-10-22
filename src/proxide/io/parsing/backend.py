@@ -310,6 +310,41 @@ class RawAtomData:
   elements: list[str]
   occupancies: np.ndarray
   b_factors: np.ndarray
+  # Optional per-atom identity fields. Altloc resolution needs them to tell apart
+  # residues that share (chain, res_id) (e.g. 17 and 17A, or two models).
+  # ``None`` when the producing parser does not supply them.
+  insertion_codes: list[str] | None = None
+  model_ids: list[int] | None = None
+  serial_numbers: list[int] | None = None
+  is_hetatm: list[bool] | None = None
+
+
+def _raw_atom_data_from_dict(d: dict) -> "RawAtomData":
+  """Build RawAtomData from a low-level ``_proxider.parse_pdb``/``parse_mmcif`` dict."""
+  return RawAtomData(
+    num_atoms=d["num_atoms"],
+    atom_names=d["atom_names"],
+    res_names=d["res_names"],
+    res_ids=d["res_ids"],
+    chain_ids=d["chain_ids"],
+    coords=np.asarray(d["coords"]).reshape(-1, 3),
+    elements=d["elements"],
+    occupancies=d["occupancy"],
+    b_factors=d["b_factors"],
+    insertion_codes=d.get("insertion_codes"),
+    model_ids=d.get("model_ids"),
+    serial_numbers=d.get("serial_numbers"),
+    is_hetatm=d.get("is_hetatm"),
+  )
+
+
+def _pick(seq, idx: list[int]):
+  """Subset a per-atom list or array by atom index (``None`` passes through)."""
+  if seq is None:
+    return None
+  if isinstance(seq, np.ndarray):
+    return seq[np.asarray(idx, dtype=np.intp)]
+  return [seq[i] for i in idx]
 
 
 def _resolve_altlocs(raw: "RawAtomData", mode: str = "occupancy") -> "RawAtomData":
@@ -319,11 +354,11 @@ def _resolve_altlocs(raw: "RawAtomData", mode: str = "occupancy") -> "RawAtomDat
   when they have alternate conformations (altlocs). This function deduplicates
   them deterministically.
 
-  The key is (chain_id, res_id, atom_name). Insertion codes are not tracked in
-  RawAtomData, so atoms are assumed to differ only in occupancy/B-factor within
-  the same (chain, res_id, atom_name) tuple. This is correct for standard PDB
-  altloc usage; structures with both altlocs AND insertion codes on the same
-  residue are assumed-away (rare, and the Rust atom37 assembly handles those).
+  The key is ``(model, chain_id, res_id, insertion_code, atom_name)``. Insertion
+  codes and model ids are part of the key when the parser supplies them, so
+  residues such as 17 and 17A, or the same residue in two models, are never
+  merged. Residue names are not part of the key, so microheterogeneous altloc
+  conformers (e.g. SER/CYS at one position) still collapse to one.
 
   Args:
       raw: Input RawAtomData (possibly containing altloc duplicates).
@@ -333,9 +368,9 @@ def _resolve_altlocs(raw: "RawAtomData", mode: str = "occupancy") -> "RawAtomDat
           - ``"all"``: Return ``raw`` unchanged (back-compat; preserves duplicates).
 
   Returns:
-      A new RawAtomData with duplicate (chain_id, res_id, atom_name) rows
-      removed according to ``mode``.  When ``mode="all"`` the same object is
-      returned.
+      A new RawAtomData with duplicate keys removed according to ``mode``, in
+      order of each key's first appearance. When ``mode="all"`` or nothing is
+      duplicated the same object is returned.
 
   """
   if mode == "all":
@@ -343,96 +378,120 @@ def _resolve_altlocs(raw: "RawAtomData", mode: str = "occupancy") -> "RawAtomDat
 
   from collections import defaultdict
 
-  keys = list(zip(raw.chain_ids, raw.res_ids, raw.atom_names, strict=False))
-  key_to_indices: dict = defaultdict(list)
-  for i, k in enumerate(keys):
-    key_to_indices[k].append(i)
+  n = raw.num_atoms
+  models = raw.model_ids if raw.model_ids is not None else [0] * n
+  icodes = raw.insertion_codes if raw.insertion_codes is not None else [" "] * n
+  groups: dict = defaultdict(list)
+  for i in range(n):
+    key = (int(models[i]), raw.chain_ids[i], int(raw.res_ids[i]), icodes[i], raw.atom_names[i])
+    groups[key].append(i)
 
-  keep: list[int] = []
-  for _k in keys:
-    # Only add the representative for this key once (use a sentinel)
-    pass
-  # Build ordered list of kept indices (preserve original order of first winner)
-  seen: set = set()
-  keep = []
-  for _i, k in enumerate(keys):
-    if k not in seen:
-      idxs = key_to_indices[k]
-      if len(idxs) == 1:
-        best = idxs[0]
-      else:
-        # max occupancy, tiebreak lower b_factor, then lower index (stable)
-        best = max(
-          idxs,
-          key=lambda j: (raw.occupancies[j], -raw.b_factors[j], -j),
-        )
-      keep.append(best)
-      seen.add(k)
-
-  if len(keep) == raw.num_atoms:
-    # Nothing to deduplicate
+  if all(len(idxs) == 1 for idxs in groups.values()):
     return raw
 
-  coords_arr = np.asarray(raw.coords)
-  occ_arr = np.asarray(raw.occupancies)
-  bfac_arr = np.asarray(raw.b_factors)
-  np.asarray(raw.res_ids)
+  occ = np.asarray(raw.occupancies)
+  bfac = np.asarray(raw.b_factors)
+  # One winner per key, groups in order of first appearance.
+  keep: list[int] = [
+    max(idxs, key=lambda j: (occ[j], -bfac[j], -j)) if len(idxs) > 1 else idxs[0]
+    for idxs in groups.values()
+  ]
 
   return RawAtomData(
     num_atoms=len(keep),
-    atom_names=[raw.atom_names[i] for i in keep],
-    res_names=[raw.res_names[i] for i in keep],
-    res_ids=[raw.res_ids[i] for i in keep],  # ty: ignore[invalid-argument-type]
-    chain_ids=[raw.chain_ids[i] for i in keep],
-    coords=coords_arr[keep],
-    elements=[raw.elements[i] for i in keep],
-    occupancies=occ_arr[keep],
-    b_factors=bfac_arr[keep],
+    atom_names=_pick(raw.atom_names, keep),
+    res_names=_pick(raw.res_names, keep),
+    res_ids=_pick(raw.res_ids, keep),
+    chain_ids=_pick(raw.chain_ids, keep),
+    coords=np.asarray(raw.coords)[keep],
+    elements=_pick(raw.elements, keep),
+    occupancies=occ[keep],
+    b_factors=bfac[keep],
+    insertion_codes=_pick(raw.insertion_codes, keep),
+    model_ids=_pick(raw.model_ids, keep),
+    serial_numbers=_pick(raw.serial_numbers, keep),
+    is_hetatm=_pick(raw.is_hetatm, keep),
   )
 
 
-def _raw_atom_data_to_pdb(raw: "RawAtomData") -> str:
-  """Write a RawAtomData as minimal PDB ATOM/HETATM records.
+def _cif_token(text: str) -> str:
+  """Quote one mmCIF token for the temporary altloc-resolved file."""
+  if text == "":
+    return "?"
+  if text in (".", "?") or any(c.isspace() for c in text) or text[0] in "'\"_#$;[]":
+    if "'" not in text:
+      return f"'{text}'"
+    if '"' not in text:
+      return f'"{text}"'
+    raise ValueError(f"cannot write token {text!r} as mmCIF")
+  return text
 
-  Used internally to produce a deduplicated PDB for re-parsing by the Rust
-  ``parse_structure`` backend after altloc resolution.
 
-  All atoms are written as ``ATOM`` records (HETATM info is not carried in
-  RawAtomData).  Occupancy and B-factor are preserved.  No TER/END records
-  are written beyond a trailing ``END``.
+def _raw_atom_data_to_mmcif(raw: "RawAtomData", numbering: str) -> str:
+  """Write a RawAtomData as a minimal mmCIF ``_atom_site`` loop.
+
+  Used to hand an altloc-resolved structure back to the Rust ``parse_structure``
+  backend. Unlike a PDB round trip this is lossless: serial numbers above 99 999
+  are kept, HETATM records stay HETATM, insertion codes and model numbers are
+  written, and no column is truncated.
+
+  Chain and residue numbers are written only in the ``numbering`` columns
+  (``auth_*`` or ``label_*``), so the Rust reader resolves exactly the numbering
+  the raw atoms were read with.
 
   Args:
       raw: Atom data to serialise.
+      numbering: ``"auth"`` or ``"label"``.
 
   Returns:
-      Multi-line string in PDB ATOM record format.
+      Full mmCIF text for one data block.
 
   """
-  lines: list[str] = []
-  coords_arr = np.asarray(raw.coords)
+  cols = [
+    "group_PDB",
+    "id",
+    "type_symbol",
+    "label_atom_id",
+    "label_alt_id",
+    "label_comp_id",
+    f"{numbering}_asym_id",
+    f"{numbering}_seq_id",
+    "pdbx_PDB_ins_code",
+    "Cartn_x",
+    "Cartn_y",
+    "Cartn_z",
+    "occupancy",
+    "B_iso_or_equiv",
+    "pdbx_PDB_model_num",
+  ]
+  lines = ["data_ALTLOC_RESOLVED", "loop_"]
+  lines.extend(f"_atom_site.{c}" for c in cols)
+  coords = np.asarray(raw.coords).reshape(-1, 3)
   for i in range(raw.num_atoms):
-    aname = raw.atom_names[i]
-    resname = raw.res_names[i]
-    chain = raw.chain_ids[i]
-    resseq = int(raw.res_ids[i])
-    x, y, z = float(coords_arr[i, 0]), float(coords_arr[i, 1]), float(coords_arr[i, 2])
-    occ = float(raw.occupancies[i])
-    bfac = float(raw.b_factors[i])
-    elem = raw.elements[i] if raw.elements[i] else " "
-
-    # PDB fixed-width: columns 13-16 = atom name (left-pad 1-char names starting at col 14)
-    if len(aname) < 4:
-      atom_field = f" {aname:<3s}"
-    else:
-      atom_field = f"{aname:<4s}"
-
-    line = (
-      f"ATOM  {i + 1:5d} {atom_field} {resname:<3s} {chain}{resseq:4d}    "
-      f"{x:8.3f}{y:8.3f}{z:8.3f}{occ:6.2f}{bfac:6.2f}          {elem:>2s}  "
-    )
-    lines.append(line)
-  lines.append("END")
-  return "\n".join(lines)
+    hetatm = raw.is_hetatm is not None and bool(raw.is_hetatm[i])
+    serial = int(raw.serial_numbers[i]) if raw.serial_numbers is not None else i + 1
+    icode = raw.insertion_codes[i] if raw.insertion_codes is not None else " "
+    model = int(raw.model_ids[i]) if raw.model_ids is not None else 1
+    x, y, z = (repr(float(v)) for v in coords[i])
+    row = [
+      "HETATM" if hetatm else "ATOM",
+      str(serial),
+      _cif_token(raw.elements[i] or "?"),
+      _cif_token(raw.atom_names[i]),
+      ".",
+      _cif_token(raw.res_names[i]),
+      _cif_token(raw.chain_ids[i]),
+      str(int(raw.res_ids[i])),
+      _cif_token(icode.strip()),
+      x,
+      y,
+      z,
+      repr(float(raw.occupancies[i])),
+      repr(float(raw.b_factors[i])),
+      str(model),
+    ]
+    lines.append(" ".join(row))
+  return "\n".join(lines) + "\n"
 
 
 @dataclass
@@ -581,13 +640,10 @@ def parse_pdb_to_protein(
       A `Protein` dataclass containing the parsed structure.
 
   Note:
-      When altloc duplicates are present, a temporary PDB file is written after
-      deduplication and then re-parsed by the Rust ``parse_structure`` backend.
-      This round-trip is lossy for structures with more than 99 999 atoms or
-      multi-character chain IDs, because the PDB format cannot represent them.
-      For typical protein crystal structures these limits are never hit.  A future
-      improvement could write the temporary file in mmCIF format to avoid this
-      limitation.
+      When altloc duplicates are present, the deduplicated atoms are written to a
+      temporary mmCIF file and re-parsed by the Rust ``parse_structure`` backend.
+      mmCIF carries serial numbers above 99 999, HETATM records, insertion codes
+      and model numbers, so the round trip is lossless.
 
   """
   if spec is None:
@@ -608,17 +664,7 @@ def parse_pdb_to_protein(
   else:
     raw_dict = _proxider.parse_pdb(str(file_path))
 
-  raw = RawAtomData(
-    num_atoms=raw_dict["num_atoms"],
-    atom_names=raw_dict["atom_names"],
-    res_names=raw_dict["res_names"],
-    res_ids=raw_dict["res_ids"],
-    chain_ids=raw_dict["chain_ids"],
-    coords=np.asarray(raw_dict["coords"]).reshape(-1, 3),
-    elements=raw_dict["elements"],
-    occupancies=raw_dict["occupancy"],
-    b_factors=raw_dict["b_factors"],
-  )
+  raw = _raw_atom_data_from_dict(raw_dict)
   resolved = _resolve_altlocs(raw, altloc)
 
   if resolved is raw:
@@ -626,14 +672,13 @@ def parse_pdb_to_protein(
     result = _proxider.parse_structure(str(file_path), spec, numbering)
     return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
 
-  # Duplicates found: write a deduplicated temp PDB and re-parse.
-  # NOTE: temp-PDB write is lossy for >99 999 atoms or multi-char chain IDs
-  # (PDB format constraint).  See docstring for details.
-  pdb_text = _raw_atom_data_to_pdb(resolved)
+  # Duplicates found: write the deduplicated structure as a temporary mmCIF file
+  # (lossless: serials, HETATM, insertion codes and models survive) and re-parse it.
+  cif_text = _raw_atom_data_to_mmcif(resolved, numbering)
   tmp_path: str | None = None
   try:
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".pdb", delete=False) as tmp:
-      tmp.write(pdb_text)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".cif", delete=False) as tmp:
+      tmp.write(cif_text)
       tmp_path = tmp.name
     result = _proxider.parse_structure(tmp_path, spec, numbering)
     return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
@@ -846,17 +891,7 @@ def parse_pdb_raw_rust(file_path: str | Path, altloc: str = "occupancy") -> RawA
   """
   result = _proxider.parse_pdb(str(file_path))
 
-  raw = RawAtomData(
-    num_atoms=result["num_atoms"],
-    atom_names=result["atom_names"],
-    res_names=result["res_names"],
-    res_ids=result["res_ids"],
-    chain_ids=result["chain_ids"],
-    coords=result["coords"].reshape(-1, 3),
-    elements=result["elements"],
-    occupancies=result["occupancy"],
-    b_factors=result["b_factors"],
-  )
+  raw = _raw_atom_data_from_dict(result)
   return _resolve_altlocs(raw, altloc)
 
 
@@ -883,17 +918,7 @@ def parse_mmcif_rust(
   """
   result = _proxider.parse_mmcif(str(file_path), numbering)
 
-  raw = RawAtomData(
-    num_atoms=result["num_atoms"],
-    atom_names=result["atom_names"],
-    res_names=result["res_names"],
-    res_ids=result["res_ids"],
-    chain_ids=result["chain_ids"],
-    coords=result["coords"].reshape(-1, 3),
-    elements=result["elements"],
-    occupancies=result["occupancy"],
-    b_factors=result["b_factors"],
-  )
+  raw = _raw_atom_data_from_dict(result)
   return _resolve_altlocs(raw, altloc)
 
 

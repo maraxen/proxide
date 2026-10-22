@@ -79,7 +79,7 @@ fn parse_numbering(numbering: &str) -> PyResult<formats::mmcif::MmcifNumbering> 
 #[pyo3(signature = (path, numbering="auth"))]
 pub fn parse_mmcif(py: Python<'_>, path: String, numbering: &str) -> PyResult<PyObject> {
     let numbering = parse_numbering(numbering)?;
-    let (raw_data, _model_ids) = py
+    let (raw_data, model_ids) = py
         .allow_threads(|| {
             formats::mmcif::parse_mmcif_file_with(&path, numbering).map_err(|e| e.to_string())
         })
@@ -87,7 +87,11 @@ pub fn parse_mmcif(py: Python<'_>, path: String, numbering: &str) -> PyResult<Py
             pyo3::exceptions::PyValueError::new_err(format!("mmCIF parsing failed: {}", e))
         })?;
 
-    raw_data.to_py_dict(py).map(|dict| dict.into_py(py))
+    // One model id per atom (pdbx_PDB_model_num), so altloc resolution can keep
+    // models apart.
+    let dict = raw_data.to_py_dict(py)?;
+    dict.set_item("model_ids", model_ids)?;
+    Ok(dict.into_py(py))
 }
 
 /// Parse a PQR file and return raw atom data with charges and radii
@@ -1475,7 +1479,7 @@ fn process_models(
 /// Returns a dict with keys: aatype, residue_index, chain_index, mask,
 /// rbf_features, neighbor_indices, physics_features (optional)
 #[pyfunction]
-#[pyo3(signature = (path, num_neighbors=30, noise_std=None, noise_seed=0, compute_physics=false))]
+#[pyo3(signature = (path, num_neighbors=30, noise_std=None, noise_seed=0, compute_physics=false, numbering="auth"))]
 pub fn project_to_mpnn_batch(
     py: Python,
     path: String,
@@ -1483,12 +1487,14 @@ pub fn project_to_mpnn_batch(
     noise_std: Option<f32>,
     noise_seed: u64,
     compute_physics: bool,
+    numbering: &str,
 ) -> PyResult<PyObject> {
     use numpy::PyArray1;
     use numpy::PyArrayMethods;
+    let numbering = parse_numbering(numbering)?;
     // 1. Parse the structure
     let (raw_data_all, model_ids) = if path.ends_with(".cif") || path.ends_with(".mmcif") {
-        formats::mmcif::parse_mmcif_file(&path).map_err(|e| {
+        formats::mmcif::parse_mmcif_file_with(&path, numbering).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("mmCIF parsing failed: {}", e))
         })?
     } else if path.ends_with(".fcz") {

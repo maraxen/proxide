@@ -83,3 +83,10 @@ def test_numbering_is_part_of_the_format_cache_key(cif_path: Path) -> None:
   assert (hits3 - hits2, misses3 - misses2) == (2, 0)
   assert np.asarray(auth_again.residue_index).tolist() == np.asarray(auth.residue_index).tolist()
   assert np.asarray(label_again.residue_index).tolist() == np.asarray(label.residue_index).tolist()
+
+
+def test_numbering_label_pins_1ubq_chains() -> None:
+  # Real fixture: HOH waters are label chain B and auth chain A.
+  path = "crates/proxide-io/tests/data/1UBQ.cif"
+  assert set(parse_mmcif(path, numbering="label")["chain_ids"]) == {"A", "B"}
+  assert set(parse_mmcif(path)["chain_ids"]) == {"A"}
