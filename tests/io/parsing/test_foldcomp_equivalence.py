@@ -1,16 +1,22 @@
 """Equivalence test: Compare Rust FoldComp reader vs original PDB file."""
 from pathlib import Path
 
+import importlib.util
+
 import numpy as np
 import pytest
 
 # Test data paths
 # NOTE: These files are currently missing in the monorepo structure.
 # P3.2 goal will involve restoring/regenerating them.
-TEST_DIR = Path(__file__).parent.parent.parent.parent / "proxide" / "_proxider" / "foldcomp" / "test"
+TEST_DIR = Path(__file__).parents[3] / "crates" / "proxide_rs" / "foldcomp" / "test"
 FCZ_PATH = TEST_DIR / "test_af.fcz"
 PDB_PATH = TEST_DIR / "test_af.pdb"
 EXAMPLE_DB = TEST_DIR / "example_db"
+# test_af.fcz is a 0-byte tracked blob (e69de29) since 22ddbc4, and the repo has no
+# FoldComp encoder to regenerate it, so the fcz-backed tests skip with that reason.
+FCZ_READY = FCZ_PATH.exists() and FCZ_PATH.stat().st_size > 0
+FCZ_SKIP_REASON = "test_af.fcz is empty (0-byte tracked blob since 22ddbc4); regenerate it with a FoldComp encoder"
 
 
 @pytest.fixture
@@ -36,7 +42,7 @@ def reference_coords():
     return np.array(coords, dtype=np.float32)
 
 
-@pytest.mark.skipif(not FCZ_PATH.exists() or not PDB_PATH.exists(), reason="foldcomp test files not found")
+@pytest.mark.skipif(not FCZ_READY or not PDB_PATH.exists(), reason=FCZ_SKIP_REASON)
 def test_foldcomp_equivalence(rust_system, reference_coords):
     """Test that Rust FoldComp reader produces coordinates close to original PDB."""
     rust_coords = np.array(rust_system.coordinates, dtype=np.float32)
@@ -56,7 +62,7 @@ def test_foldcomp_equivalence(rust_system, reference_coords):
     assert rmsd < 0.5, f"RMSD too high: {rmsd:.4f} Å"
 
 
-@pytest.mark.skipif(not FCZ_PATH.exists(), reason="foldcomp test fcz not found")
+@pytest.mark.skipif(not FCZ_READY, reason=FCZ_SKIP_REASON)
 def test_foldcomp_atom_count(rust_system):
     """Test that atom count matches expected backbone atoms."""
     # test_af has some number of residues, should have 3*N_res backbone atoms
@@ -94,7 +100,8 @@ def test_foldcomp_database_get():
         print(f"Retrieved d1asha_ with {len(system.coordinates)//3} atoms")
 
 
-@pytest.mark.skipif(not FCZ_PATH.exists(), reason="foldcomp test fcz not found")
+@pytest.mark.skipif(not FCZ_READY, reason=FCZ_SKIP_REASON)
+@pytest.mark.skipif(importlib.util.find_spec("pytest_benchmark") is None, reason="pytest-benchmark not installed (not in dev extras)")
 def test_benchmark_rust_foldcomp(rust_system, benchmark):
     """Benchmark Rust FoldComp parsing speed."""
     import proxide._proxider as _proxider

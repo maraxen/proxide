@@ -233,21 +233,16 @@ bcc
             Path(mol2_path).unlink()
 
     def test_real_mol2_file(self):
-        """Test parsing a real MOL2 file if available."""
-        # Check if imatinib.mol2 exists
-        imatinib_path = Path(__file__).parents[4] / "../../openmmforcefields/amber/files/imatinib.mol2"
-        if not imatinib_path.exists():
-            pytest.skip("imatinib.mol2 not found")
-        
-        mol = Molecule.from_mol2(imatinib_path)
-        
-        # Imatinib has 68 atoms
-        assert mol.n_atoms == 68
-        assert mol.n_bonds == 72
-        
-        # Should have various GAFF types
-        assert "ca" in mol.atom_types  # Aromatic carbon
-        assert "n" in mol.atom_types or "nh" in mol.atom_types or "n3" in mol.atom_types  # Nitrogen
+        """Parse the tracked benzene.mol2 fixture (replaces an external imatinib path).
+
+        Imatinib's counts and nitrogen types do not apply to benzene, so the
+        assertions are benzene's: 6 aromatic carbons, 6 aromatic bonds.
+        """
+        mol = Molecule.from_mol2(Path(__file__).parent / "benzene.mol2")
+
+        assert mol.n_atoms == 6
+        assert mol.n_bonds == 6
+        assert set(mol.atom_types) == {"ca"}  # Aromatic carbons only
 
 
 class TestMoleculeFromSdf:

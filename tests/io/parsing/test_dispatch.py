@@ -118,29 +118,27 @@ class TestParseInput:
         assert isinstance(protein_list[0], Protein)
         assert protein_list[0].aatype.shape == (1,)
 
-    def test_parse_with_chain_id(self, pdb_file):
-        """Test parsing with a specific chain ID.
-        
-        Note: The Rust parser currently ignores chain_id filter and 
-        parses all chains. Chain filtering happens post-parse in Python if needed.
+    def test_parse_with_chain_id(self):
+        """A chain filter on a single-model structure keeps that chain.
+
+        Stale expectation fixed: failed chain filters now raise (3d14407,
+        CHANGELOG "failed chain filters raise"). The shared pdb_file fixture is a
+        4-model stack, which must select a model first, so this uses the
+        single-model string.
         """
-        protein_stream = parse_input(pdb_file, chain_id="A")
-        protein_list = list(protein_stream)
-        # New behavior: returns 1 batched Protein  
+        protein_list = list(parse_input(StringIO(PDB_STRING), chain_id="A"))
         assert len(protein_list) == 1
-        # All parsed chains have same chain_index since file only has chain A
         assert protein_list[0].chain_index is not None
 
-    def test_parse_with_invalid_chain_id(self, pdb_file):
-        """Test parsing with an invalid chain ID.
-        
-        Note: The Rust parser currently ignores chain_id filter and parses
-        all chains regardless. No error is raised for unknown chain IDs.
-        """
-        # Rust parser doesn't filter by chain, so it returns data regardless
-        protein_list = list(parse_input(pdb_file, chain_id="Z"))
-        # It will still return results (chain filtering not implemented in Rust)
-        assert len(protein_list) >= 1
+    def test_parse_with_invalid_chain_id(self):
+        """A chain filter naming a chain absent from the file raises (3d14407)."""
+        with pytest.raises(ParsingError, match="not in structure"):
+            list(parse_input(StringIO(PDB_STRING), chain_id="Z"))
+
+    def test_parse_chain_id_on_model_stack_refuses(self, pdb_file):
+        """A chain filter on a multi-model stack refuses until a model is selected."""
+        with pytest.raises(ParsingError, match="OutputSpec"):
+            list(parse_input(pdb_file, chain_id="A"))
 
     def test_parse_empty_file(self):
         """Test parsing an empty file."""
