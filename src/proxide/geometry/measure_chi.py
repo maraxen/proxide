@@ -82,6 +82,7 @@ def measure_chi(
     residue_positions: np.ndarray,
     restype3: str,
     atom_name_to_index: dict[str, int] | None = None,
+    atom_mask: np.ndarray | None = None,
 ) -> dict[str, float | None]:
     """Measure all χ angles for a single residue.
 
@@ -90,16 +91,22 @@ def measure_chi(
     residue_positions:
         Atom coordinates for this residue, shape (37, 3), in **atom37** order
         (the slot ordering defined by ``proxide.chem.residues.atom_order``).
-        Atoms absent from the structure should have coordinates set to zeros
-        *and* be absent from the atom mask — but this function checks for NaN
-        or all-zero coordinates as a secondary guard.  Pass ``atom_mask`` via
-        ``missing_atom_slots`` if you have it (preferred).
+        Slots the structure did not place hold zeros (atom37 zero-fill) and
+        carry no meaning.  Pass ``atom_mask`` (preferred) to say which slots are
+        placed; then a slot is missing exactly when its mask entry is 0, whatever
+        its coordinates.  Without a mask, an all-zero slot is taken as missing,
+        which misfires on a real placed atom sitting exactly at the origin: pass
+        the mask whenever you have it.
     restype3:
         Three-letter residue name, e.g. ``"LEU"``.
     atom_name_to_index:
         Mapping from atom name to slot index.  Defaults to the global
         ``proxide.chem.residues.atom_order`` (atom37 ordering).  Override
         for atom14 or custom layouts.
+    atom_mask:
+        Optional mask over the slots of ``residue_positions``, ``1`` = placed.
+        When given, it alone decides whether an atom is missing; a placed atom
+        with non-finite coordinates still yields ``None``.
 
     Returns
     -------
@@ -127,9 +134,12 @@ def measure_chi(
             if slot is None:
                 missing = True
                 break
+            if atom_mask is not None and not atom_mask[slot]:
+                missing = True
+                break
             coord = positions[slot]
-            # Treat all-zero coordinate as absent (atom37 fill value)
-            if np.all(coord == 0.0) or np.any(np.isnan(coord)):
+            # Without a mask, treat an all-zero slot as absent (atom37 fill value).
+            if np.any(np.isnan(coord)) or (atom_mask is None and np.all(coord == 0.0)):
                 missing = True
                 break
             pts.append(coord)
@@ -184,11 +194,8 @@ def measure_chi_vectorized(
         # Build per-residue mask-aware coordinate accessor
         if atom_mask is not None:
             res_mask = np.asarray(atom_mask[i], dtype=bool)
-            # Zero out absent atoms so measure_chi all-zero check fires
-            masked_positions = res_positions.copy()
-            masked_positions[~res_mask] = 0.0
             results.append(
-                measure_chi(masked_positions, restypes[i], atom_name_to_index)
+                measure_chi(res_positions, restypes[i], atom_name_to_index, atom_mask=res_mask)
             )
         else:
             results.append(

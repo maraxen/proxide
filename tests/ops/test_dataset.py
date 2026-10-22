@@ -4,6 +4,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from proxide import CoordFormat, OutputSpec, parse_structure
+from proxide.chem.residues import atom_order
 from proxide.core.containers import Protein
 from proxide.ops.dataset import _is_frame_valid
 
@@ -49,4 +51,32 @@ def test_is_frame_valid_rejects_shape_mismatch() -> None:
   assert _is_frame_valid(frame) == (
     False,
     "Shape mismatch between coordinates and aatype",
+  )
+
+
+def _parsed_leu_frame() -> Protein:
+  """A real parsed residue with no CD1 (unplaced slot: zero-filled, atom_mask 0)."""
+  return parse_structure(
+    "tests/data/leu_missing_cd1.pdb", OutputSpec(coord_format=CoordFormat.Atom37)
+  )
+
+
+def test_is_frame_valid_ignores_nan_in_unplaced_slot_of_parsed_structure() -> None:
+  frame = _parsed_leu_frame()
+  cd1 = atom_order["CD1"]
+  assert not bool(frame.atom_mask[0, cd1])
+  coords = np.array(frame.coordinates)
+  coords[0, cd1] = np.nan
+  assert _is_frame_valid(frame.replace(coordinates=coords)) == (True, "")
+
+
+def test_is_frame_valid_rejects_nan_in_placed_atom_of_parsed_structure() -> None:
+  frame = _parsed_leu_frame()
+  ca = atom_order["CA"]
+  assert bool(frame.atom_mask[0, ca])
+  coords = np.array(frame.coordinates)
+  coords[0, ca] = np.nan
+  assert _is_frame_valid(frame.replace(coordinates=coords)) == (
+    False,
+    "NaN values in coordinates",
   )

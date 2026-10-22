@@ -70,13 +70,16 @@ class Protein:
   for derived features like physics parameters and geometric graphs.
 
   Attributes:
-    coordinates: Atom positions in Atom37 format. Shape (N_res, 37, 3).
+    coordinates: Atom positions in Atom37 format. Shape (N_res, 37, 3). Where
+      atom_mask == 0 the value is 0.0 and carries no meaning. Use atom_mask, never
+      NaN tests, to find missing atoms.
     aatype: Amino acid type per residue (0-20). Shape (N_res,).
     residue_index: PDB residue numbering. Shape (N_res,).
     chain_index: Chain identifier per residue (integer encoded). Shape (N_res,).
     one_hot_sequence: One-hot encoded sequence. Shape (N_res, 21).
     mask: Alpha carbon presence mask (1.0 for valid, 0.0 for padding). Shape (N_res,).
-    atom_mask: Per-atom validity mask. Shape (N_res, 37).
+    atom_mask: Per-atom validity mask. Shape (N_res, 37). The source of truth for
+      which atoms are placed; coordinates in unplaced slots are zero-fill.
     dihedrals: Backbone dihedral angles (phi, psi, omega). Shape (N_res, 3).
     rbf_features: Pre-computed Radial Basis Function features. Shape (N_res, K, F).
     physics_features: Pre-computed physics/chemistry features. Shape (N_res, F).

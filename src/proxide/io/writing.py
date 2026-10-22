@@ -101,7 +101,12 @@ _ATOM37_ELEMENT = {
 
 
 def _reject_nonfinite(coords: np.ndarray, fn_name: str) -> None:
-  """Raise if any coordinate is NaN/inf -- "nan" fits an 8-char PDB column."""
+  """Raise if any written coordinate is NaN/inf -- "nan" fits an 8-char PDB column.
+
+  Callers pass only the rows to be written: for Atom37/Atom14 that is the
+  atom_mask-selected rows (see `_atom_rows`), so an unplaced zero-filled slot is
+  never checked here. Use atom_mask, not NaN, to find missing atoms.
+  """
   bad = ~np.isfinite(np.asarray(coords, dtype=np.float64)).all(axis=-1)
   if bad.any():
     msg = (
