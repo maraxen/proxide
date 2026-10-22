@@ -128,7 +128,7 @@ jobs:
       - name: Cache cargo registry and build artifacts
         uses: Swatinem/rust-cache@v2
       - name: Install protoc (required by proxide-rotlib prost-build)
-        run: sudo apt-get install -y protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Install cargo-hack
         uses: taiki-e/install-action@v2
         with:

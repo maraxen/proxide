@@ -6,6 +6,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 /// Load a force field from an OpenMM-style XML file
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn load_forcefield(path: String) -> PyResult<PyObject> {
     Python::with_gil(|py| {

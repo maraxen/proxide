@@ -785,6 +785,8 @@ class TrajectoryStream:
 def iterload(file_path: str | Path, chunk_size: int = 100):
   """Stream a trajectory file in chunks (Legacy alias).
 
+  Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+
   .. warning::
       This function is an alias for :class:`TrajectoryStream`. Use the class
       for type hinting and a cleaner API.
