@@ -1,4 +1,4 @@
-"""Van der Waals (Lennard-Jones) interactions using jax_md."""
+"""Van der Waals (Lennard-Jones) interactions."""
 
 from __future__ import annotations
 

@@ -11,6 +11,8 @@ use pyo3::types::PyDict;
 /// `coordinates` may be a list of [x, y, z] points or an (N, 3) numpy array.
 /// Used as an MD trajectory frame-quality signal: elevated Rg relative to
 /// the native/crystal reference indicates an unfolded/extended conformation.
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn radius_of_gyration(py: Python<'_>, coordinates: PyObject) -> PyResult<f32> {
     let coords = extract_coords(py, &coordinates)?;
@@ -20,6 +22,8 @@ pub fn radius_of_gyration(py: Python<'_>, coordinates: PyObject) -> PyResult<f32
 /// Compute the mass-weighted radius of gyration of a set of coordinates.
 ///
 /// `weights` must be the same length as `coordinates` (e.g. atomic masses).
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn weighted_radius_of_gyration(
     py: Python<'_>,
@@ -54,6 +58,8 @@ pub fn weighted_radius_of_gyration(
 /// search. Used as an MD trajectory frame-quality signal alongside
 /// `radius_of_gyration`: elevated RMSD to the native/crystal reference
 /// indicates a conformation that has drifted from the reference state.
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn kabsch_rmsd(py: Python<'_>, coords_a: PyObject, coords_b: PyObject) -> PyResult<PyObject> {
     let a = extract_coords(py, &coords_a)?;
@@ -98,6 +104,8 @@ pub fn kabsch_rmsd(py: Python<'_>, coords_a: PyObject, coords_b: PyObject) -> Py
 /// input rather than raising, and that is preserved here per-candidate -- an
 /// `inf` entry means that frame's superposition was degenerate, not that the
 /// batch failed.
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn kabsch_rmsd_batch(
     py: Python<'_>,

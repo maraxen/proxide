@@ -47,13 +47,18 @@ jobs:
           ty check
 
   tests:
+    name: tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -84,11 +89,11 @@ jobs:
       - name: Run Smoke Tests
         run: |
           source .venv/bin/activate
-          pytest -m smoke
+          pytest -rs -m smoke
       - name: Run All Tests
         run: |
           source .venv/bin/activate
-          pytest
+          pytest -rs
 
   rust-checks:
     runs-on: ubuntu-latest
@@ -123,7 +128,7 @@ jobs:
       - name: Cache cargo registry and build artifacts
         uses: Swatinem/rust-cache@v2
       - name: Install protoc (required by proxide-rotlib prost-build)
-        run: sudo apt-get install -y protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Install cargo-hack
         uses: taiki-e/install-action@v2
         with:

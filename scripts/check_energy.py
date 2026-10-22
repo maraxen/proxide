@@ -9,7 +9,6 @@ import dataclasses
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax_md import space
 from prolix.batched_energy import (
     _angle_energy_masked,
     _bond_energy_masked,
@@ -60,7 +59,9 @@ print(f"Real atoms: {n_atoms}, bucket: {bucket}")
 padded = pad_protein(protein, bucket)
 print(f"Padded size: {padded.positions.shape[0]}")
 
-displacement_fn, _ = space.free()
+def displacement_fn(Ra, Rb, **_unused):
+    # Free-space displacement (replaces jax_md.space.free()).
+    return Ra - Rb
 
 # Total energy
 e_total = single_padded_energy(padded, displacement_fn, soft_core_lambda=jnp.float32(1.0))

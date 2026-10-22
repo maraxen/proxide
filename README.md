@@ -1,6 +1,6 @@
 # Proxide
 
-> **Pre-release toward 0.1.0.** The stable surface at 0.1.0 will be core IO: structure parsing, formatting (Atom37/Atom14/Full), writing (PDB/mmCIF) and XTC trajectory reading. GAFF2, confind, rotlib and CCD/fixer are experimental and may change without deprecation. Anything not listed as stable is provisional. The PyPI wheel is MIT-licensed and excludes the GPL-2.0-or-later GAFF2 engine (`--features gaff2-engine`).
+> **Pre-release toward 0.1.0.** The [Stability](#stability) section is the single source for what is stable and what may change in a minor release.
 
 **Proxide** is a high-performance library for Protein I/O and Physics bridging in JAX. It combines a flexible Python/JAX frontend with a highly optimized Rust backend (`_proxider`) to provide fast structure parsing, force field parameterization, and seamless integration with JAX MD.
 
@@ -162,6 +162,24 @@ If you are migrating from older versions of Proxide:
 3. **JAX by Default**: Most I/O functions now return JAX arrays by default. Use `use_jax=False` if you specifically need NumPy arrays.
 
 ---
+
+## Stability
+
+Only core IO is stable at 0.1.0:
+
+- structure parsers and writers: `parse_pdb`, `parse_mmcif`, `parse_pqr`, `parse_structure`, `parse_parm7`, `parse_amber_trajectory`, `write_pdb`, `write_mmcif`, `write_npz`, `write_dcd`;
+- the `Protein` result type returned by the parsers;
+- parse options: `OutputSpec` and its enums (`CoordFormat`, `ErrorMode`, `HydrogenSource`), which `parse_structure` takes;
+- trajectory readers: `parse_xtc`, `parse_dcd`, `parse_trr`, `read_xtc_lazy`, `read_xtc_parallel`, `read_xtc_ca_distogram`, `frame_count`, `n_atoms`, `TrajectoryStream`, and the MDTraj and mdCATH HDF5 readers;
+- structure fetching: `fetch_rcsb`, `fetch_afdb`, `fetch_foldcomp_database`, and the `proxide.io` submodule, except the tensor-bundle helpers below.
+
+`OutputSpec` is stable, but options that enable experimental features are experimental: `parameterize_md`, `force_field`, `water_model`, `strict_parameterization`, `compute_electrostatics`, `electrostatics_noise`, `compute_vdw`, `compute_rbf`, `rbf_num_neighbors`, `relax_hydrogens`, `relax_max_iterations`, `auto_terminal_caps`, `missing_residue_mode` and `unit_system`. The types `UnitSystem` and `MissingResidueMode` are experimental too. `hydrogen_source` is accepted, but no code path reads it yet.
+
+Everything else exported from `proxide` is experimental and may change in a minor release. That covers GAFF2 typing (`assign_gaff_atom_types`), force field loading (`load_forcefield`, `parameterize_molecule`), atomic masses, GB radii and OBC2 scaling, water models, CMAP parameters, geometry helpers, the Jaccard and TM-align modules, the `iterload` function (top level only; the `io` submodule does not export it), and `proxide.AtomicSystem`. `proxide.__experimental__` lists them.
+
+The tensor-bundle helpers in `proxide.io` (`save_tensor_bundle`, `load_tensor_bundle`, `flatten_tensor_dict`, `unflatten_tensor_dict`, `assert_bundle_keys`) are experimental.
+
+confind, rotlib and CCD/fixer are experimental too; they have no top-level Python exports at this version.
 
 ## 🔧 Development
 

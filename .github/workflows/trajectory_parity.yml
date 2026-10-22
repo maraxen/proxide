@@ -4,14 +4,19 @@ on: [push, pull_request]
 
 jobs:
   trajectory-parity:
+    name: trajectory-parity (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
       
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
 
       - name: Install uv
         run: |
@@ -40,4 +45,11 @@ jobs:
         run: |
           source .venv/bin/activate
           # Use -k to select specific trajectory tests if needed, or run all validation
-          pytest tests/validation/test_trajectory_parity.py -v
+          pytest -rs -v tests/validation/test_trajectory_parity.py \
+            tests/validation/test_xtc_reader_parity.py \
+            tests/validation/test_xtc_distogram_parity.py \
+            tests/io/parsing/test_hdf5_integration.py \
+            tests/io/parsing/test_mdtraj.py \
+            tests/io/parsing/test_dispatch.py \
+            tests/io/streaming/test_mdcath.py \
+            tests/io/streaming/test_mdcath_extended.py

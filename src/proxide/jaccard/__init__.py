@@ -1,5 +1,7 @@
 """MinHash Jaccard/containment distance matrices over sourmash-style sketch parquets.
 
+Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+
 Thin re-export of the Rust `_proxider.jaccard_distance_matrix` binding
 (`proxide-jaccard` crate). See that function's docstring for the parquet schema,
 the `metric` options, and the returned dict shape.
