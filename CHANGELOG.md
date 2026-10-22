@@ -18,13 +18,13 @@ they exist only in source builds that opt in.
 ### Changed
 - **Changed (behaviour)**: Full-format output carries per-atom elements, residue names and chains; Python no longer infers elements.
 - **Changed (behaviour)**: the Atom14 formatter looks up its layout by residue type (`res_type`). Alias residues (HSD, HSE, HSP, ASH, GLH, LYN, CYX, CYM) are placed instead of emitted empty; residues with no Atom14 layout (for example MSE) raise a `UserWarning` naming them (`unplaced_residues`).
-- **Changed (behaviour)**: `write_pdb` and `write_mmcif` write no invented values, raise on column overflow and reject non-finite coordinates.
+- **Changed (behaviour)**: `write_pdb` and `write_mmcif` write no invented values and reject non-finite coordinates. `write_pdb` also raises on column overflow; `write_mmcif` rejects values that cannot be written as CIF tokens.
 - **Changed (behaviour)**: MOL2 `MOLECULE` lines are counted raw, so a blank name line no longer shifts the charge-type line.
 - **Changed (behaviour)**: chain IDs are resolved or reported unknown, never defaulted to `"A"`; failed chain filters raise.
 - **Changed (behaviour)**: the PQR parser rejects multi-model files. Multi-model Atom37 parses return a model-stacked `Protein`; other formats keep model 1 and warn with the model count.
 - **Changed (behaviour)**: the PQR and mmCIF readers raise when a residue reappears after its chain has moved on.
 - **Changed (behaviour)**: unknown molecule partial charges are `None`, never a zero fill.
-- **Changed (behaviour)**: `parameterize_molecule` returns empty charge, bond, angle, dihedral and improper arrays and lists `unparameterized_terms` and `unparameterized_atoms`; it used to return fabricated per-term values and zero charges.
+- **Changed (behaviour)**: `parameterize_molecule` omits the `charges` key when no charges exist, omits each bonded key whose term list is empty, and returns `unparameterized_terms` and `unparameterized_atoms`. It used to return fabricated per-term values and an all-zero `charges` array.
 - **Changed (behaviour)**: `project_to_openmm_system` and `to_openmm_system` raise `ValueError` when atoms carry no element symbols, instead of treating every atom as carbon. Atom37 and Atom14 Proteins carry no per-atom elements, so these projections raise for them.
 - **Changed (behaviour)**: `parameterize_gaff_with_rdkit` and `build_gaff2_ffxml` raise `Gaff2ParameterMissingError` for a missing bond, angle, mass, van der Waals or torsion term. `missing_torsions="omit"` opts out of the torsion case, with a warning. (experimental)
 - **Changed (behaviour)**: GAFF2 enumerates every angle and torsion; van der Waals, mass and type stand-ins are removed. (experimental)
@@ -35,7 +35,7 @@ they exist only in source builds that opt in.
 ### Fixed
 - The parse cache no longer serves a model-selected parse, and cache hits return chain IDs instead of `None`.
 - Chains not in sorted file order were written with the other chain's letter.
-- `load_rust(chain_id=...)` keeps the original `chain_index` and no longer writes chain `"A"` by default.
+- `load_rust(chain_id=...)` remaps `chain_index` onto the filtered chain vocabulary (kept in file order), so a single-chain parse no longer writes chain `"A"`.
 - Model-stack consumers count one structure or refuse, instead of miscounting.
 - The confind CLI propagates crowdedness and freedom errors instead of dropping residues. (experimental)
 
@@ -50,7 +50,7 @@ they exist only in source builds that opt in.
 
 ### Changed
 - **Changed (behaviour)**: the PDB reader is fail-loud. Malformed records raise instead of being dropped, including non-ASCII lines, too-short ATOM or HETATM records, non-decimal serial or residue numbers, non-finite occupancy or B-factor, and residue reappearance. Blank occupancy and B-factor take documented defaults.
-- **Changed (behaviour)**: the mmCIF reader is fail-loud. A second `data_` block, a non-loop `_atom_site` and an unterminated quote raise. Unquoted `?` and `.` are unknown and inapplicable placeholders; a quoted `?` or `.` is a literal value. The misread of the `_atom_sites` and `_atom_site_anisotrop` prefixes is fixed.
+- **Changed (behaviour)**: the mmCIF reader is fail-loud. A non-loop `_atom_site`, an unterminated quote, and an `_atom_site` loop repeated in a second `data_` block raise. Unquoted `?` and `.` are unknown and inapplicable placeholders; a quoted `?` or `.` is a literal value. The misread of the `_atom_sites` and `_atom_site_anisotrop` prefixes is fixed.
 - **Changed (behaviour)**: the PQR reader is fail-loud; malformed records raise instead of being dropped.
 - **Changed (behaviour)**: `infer_element` strips a leading digit from atom names before inference, and the PDB, mmCIF and PQR readers infer two-letter elements (Cl, Na) instead of truncating to the first letter.
 - **Changed (behaviour)**: solvent atoms are parameterized instead of silently zeroed.
