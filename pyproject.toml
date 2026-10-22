@@ -16,24 +16,24 @@ classifiers = [
     "Development Status :: 4 - Beta",
 ]
 dependencies = [
-    # Cap kept for 0.1.0 because jax 0.10.x with flax 0.12.1-0.12.9 is the tested
-    # range. flax 0.12.8 and 0.12.9 fail under jax 0.11.2 (jax.experimental.hijax
-    # has no HiPrimitive). flax 0.12.10 (PyPI 2026-09-24, requires jax>=0.11.1)
-    # imports flax.nnx and runs under jax 0.11.2, but proxide is not yet tested
-    # against it, so the cap stays. Protein is a flax.struct dataclass, so flax
-    # is a hard dependency and this cap is a known limit for 0.1.0.
-    "jax<0.11",
+    # jax and flax are split by Python version (debt #2912). Python 3.11 stays on
+    # the jax 0.10 line: flax 0.12.8/0.12.9 fail under jax 0.11.2 (no
+    # jax.experimental.hijax.HiPrimitive), and flax 0.10.7/0.11.2/0.12.0 fail
+    # `import flax.nnx` under jax 0.10, so the flax floor is 0.12.1. Python 3.12+
+    # takes jax 0.11 with flax 0.12.10, the first flax requiring jax>=0.11.1 and
+    # Python>=3.12; the full suite matched the jax 0.10 baseline on 3.12.
+    "jax<0.11; python_version < '3.12'",
+    "jax>=0.11.1,<0.12; python_version >= '3.12'",
     "numpy",
     "hydride",
     "grain",
     "msgpack",
     "msgpack-numpy",
     "equinox",
-    # Protein (proxide.core.containers) is a flax.struct dataclass; flax was only
-    # reaching the lock through jax-md, so it is declared directly. Floor 0.12.1:
-    # flax 0.10.7, 0.11.2 and 0.12.0 fail `import flax.nnx` under jax 0.10 with
-    # `cannot import name 'mutable_array'`.
-    "flax>=0.12.1",
+    # Protein (proxide.core.containers) is a flax.struct dataclass, so flax is a
+    # direct dependency.
+    "flax>=0.12.1,<0.12.10; python_version < '3.12'",
+    "flax>=0.12.10; python_version >= '3.12'",
     "jaxtyping",
     "array_record",
     "typer>=0.12.0",
