@@ -279,6 +279,16 @@ class TestMissingAtomsFromAtomMask:
     assert result["chi2"] is None
     assert result["chi1"] is not None
 
+  def test_placed_atom_at_origin_is_not_missing_when_mask_says_placed(self):
+    frame = self._parsed_leu()
+    positions = np.array(frame.coordinates[0], dtype=np.float64)
+    mask = np.asarray(frame.atom_mask[0]).astype(bool)
+    cd1 = atom_order["CD1"]
+    mask[cd1] = True
+    positions[cd1] = (0.0, 0.0, 0.0)
+    result = measure_chi(positions, "LEU", atom_mask=mask)
+    assert result["chi2"] is not None
+
   def test_zero_filled_unplaced_slot_is_missing_without_a_mask(self):
     frame = self._parsed_leu()
     positions = np.array(frame.coordinates[0], dtype=np.float64)

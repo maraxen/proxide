@@ -647,6 +647,9 @@ def parse_structure(
 ) -> Protein:
   """Parse a protein structure using the Rust extension.
 
+  Coordinates where ``atom_mask == 0`` are 0.0 and meaningless; use ``atom_mask``
+  to find missing atoms, never NaN tests.
+
   This is the main high-level API for loading structures in Proxide. It automatically
   detects the file format (PDB/mmCIF) and uses the `_proxider` backend.
 

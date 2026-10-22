@@ -94,7 +94,9 @@ def measure_chi(
         Slots the structure did not place hold zeros (atom37 zero-fill) and
         carry no meaning.  Pass ``atom_mask`` (preferred) to say which slots are
         placed; then a slot is missing exactly when its mask entry is 0, whatever
-        its coordinates.  Without a mask, an all-zero slot is taken as missing.
+        its coordinates.  Without a mask, an all-zero slot is taken as missing,
+        which misfires on a real placed atom sitting exactly at the origin: pass
+        the mask whenever you have it.
     restype3:
         Three-letter residue name, e.g. ``"LEU"``.
     atom_name_to_index:
