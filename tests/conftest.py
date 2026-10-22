@@ -1,20 +1,27 @@
-"""Shared test fixtures."""
+"""Shared test fixtures.
+
+jax and proxide are imported inside the fixtures, not at module import, so test
+files that need neither (e.g. tests/test_check_versions.py) still run when
+proxide is not installed.
+"""
+
+from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-import jax
-import jax.numpy as jnp
 import pytest
-from jax import random
 
-from proxide.core.atomic_system import AtomicSystem
-from proxide.core.containers import Protein
-from proxide.io.parsing.dispatch import load_structure as parse_input
+if TYPE_CHECKING:
+    from proxide.core.atomic_system import AtomicSystem
+    from proxide.core.containers import Protein
 
 
 @pytest.fixture(scope="session")
 def protein_structure() -> Protein:
     """Load a sample protein structure from a PDB file."""
+    from proxide.io.parsing.dispatch import load_structure as parse_input
+
     pdb_path = Path(__file__).parent / "data" / "1ubq.pdb"
     return next(parse_input(str(pdb_path)))
 
@@ -22,9 +29,10 @@ def protein_structure() -> Protein:
 @pytest.fixture(scope="session")
 def pqr_protein() -> AtomicSystem:
     """Load a sample protein structure from a PQR file."""
+    from proxide.io.parsing.dispatch import load_structure as parse_input
+
     pqr_path = Path(__file__).parent / "data" / "1a00.pqr"
     return next(parse_input(str(pqr_path)))
-
 
 
 @pytest.fixture(scope="session")
@@ -40,9 +48,12 @@ def model_inputs(protein_structure: Protein) -> dict:
 
 
 @pytest.fixture
-def rng_key() -> random.PRNGKey:
+def rng_key() -> Any:
     """Create a new random key for testing."""
+    from jax import random
+
     return random.PRNGKey(0)
+
 
 @pytest.fixture(params=[False, True], ids=["eager", "jit"])
 def apply_jit(request):
@@ -51,6 +62,8 @@ def apply_jit(request):
 
     def _wrapper(fn, **kwargs):
         if should_jit:
+            import jax
+
             return jax.jit(fn, **kwargs)
         return fn
 
