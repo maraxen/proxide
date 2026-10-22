@@ -48,6 +48,7 @@ they exist only in source builds that opt in.
 - **Changed (behaviour)**: altloc resolution keys atoms on model, chain, residue number, insertion code and atom name, so insertion-coded residues (`17` and `17A`) are no longer merged in mmCIF or PDB input.
 - **Changed (behaviour)**: `compute_pairwise_displacements` raises `ValueError` for inputs that are not 2-D (N, D) with matching D. (experimental)
 - The jax-md dependency is removed; free-space displacement and distance are plain `jax.numpy` with identical values and gradients. flax is declared directly.
+- `alphex` requires 0.1.0 or later, its first stable release.
 - Python 3.12+ installs get jax 0.11 with flax 0.12.10 or later; Python 3.11 stays on jax 0.10.
 
 ### Fixed
