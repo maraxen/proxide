@@ -328,6 +328,41 @@ fn read_trajectory_frames(
     ))
 }
 
+/// Emit the UserWarning for residues with atoms but no layout in `format_name`.
+fn warn_unplaced_residues(
+    py: Python<'_>,
+    format_name: &str,
+    unplaced: &[(usize, String)],
+) -> PyResult<()> {
+    if unplaced.is_empty() {
+        return Ok(());
+    }
+    let count = unplaced.len();
+    let names: Vec<String> = unplaced
+        .iter()
+        .take(10)
+        .map(|(idx, name)| format!("RES#{}{}", idx, name))
+        .collect();
+    let suffix = if count > 10 {
+        format!(" (+{} more)", count - 10)
+    } else {
+        String::new()
+    };
+    let msg = format!(
+        "{} residues with atoms but no {} layout: {}{}",
+        count,
+        format_name,
+        names.join(", "),
+        suffix
+    );
+    PyErr::warn_bound(
+        py,
+        &py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
+        &msg,
+        1,
+    )
+}
+
 /// Parse a structure file (PDB/mmCIF) into a format suitable for the Protein class.
 #[pyfunction]
 #[pyo3(signature = (path, spec=None))]
@@ -589,6 +624,7 @@ fn process_models(
                     pyo3::exceptions::PyValueError::new_err(format!("Formatting failed: {}", e))
                 })?;
 
+            warn_unplaced_residues(py, "atom37", &ref_formatted.unplaced_residues)?;
             let dict = ref_formatted.to_py_dict(py)?;
 
             // --- Multi-Model Stacking for Atom37 ---
@@ -697,6 +733,7 @@ fn process_models(
                     coordinates: ref_formatted.coordinates.clone(),
                     atom_mask: ref_formatted.atom_mask.clone(),
                     aatype: ref_formatted.aatype.clone(),
+                    residue_names: Some(ref_formatted.residue_names.clone()),
                     residue_index: ref_formatted.residue_index.clone(),
                     chain_index: ref_formatted.chain_index.clone(),
                     _num_residues: ref_formatted.aatype.len(),
@@ -769,6 +806,7 @@ fn process_models(
                     coordinates: formatted.coordinates.clone(),
                     atom_mask: formatted.atom_mask.clone(),
                     aatype: formatted.aatype.clone(),
+                    residue_names: None,
                     residue_index: formatted.residue_index.clone(),
                     chain_index: formatted.chain_index.clone(),
                     _num_residues: formatted.aatype.len(),

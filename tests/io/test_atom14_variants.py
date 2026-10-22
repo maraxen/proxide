@@ -1,11 +1,10 @@
-"""Atom14 formatting of variant / unknown residue names (debt #2362).
+"""Atom14/Atom37 formatting of MSE and unknown residue names (debt #2362).
 
-The Atom14 formatter used to pick each residue's atom layout by its as-read
-name, so alias variants (HSD/HID/HIE -> HIS, CYX -> CYS, ...) and unknown
-residues (MSE, ligands) fell to the empty UNK layout: the residue silently
-vanished from the output. It now looks the layout up by residue type, and a
-residue that still has no layout but does have atoms is reported with a
-UserWarning naming it.
+MSE (selenomethionine) is typed as MET in the model-facing arrays (aatype 12).
+Each array format's alias policy places its SE in the SD slot. Writers keep the
+selenium: an MSE residue is written as HETATM MSE with an SE atom. A residue
+with atoms but no layout (unknown names, ligands) is reported with a
+UserWarning in every array format.
 """
 
 from __future__ import annotations
@@ -17,6 +16,28 @@ import numpy as np
 import pytest
 
 from proxide import CoordFormat, OutputSpec, parse_structure
+from proxide.chem.residues import atom_types, resnames
+from proxide.io.writing import write_mmcif, write_pdb
+
+_DATA = Path(__file__).resolve().parent.parent / "data"
+_PROBE = _DATA / "mse_altloc.pdb"  # ALA, MSE with altlocs A/B on SE, GLY
+_MET = resnames.index("MET")
+_SD_ATOM37 = atom_types.index("SD")
+_SD_ATOM14 = 6  # MET atom14 layout: N CA C O CB CG SD CE
+_SE_A = [13.2, 16.1, 12.9]  # altloc A (occupancy 0.60) wins over B (0.40)
+_FORMATS = [CoordFormat.Atom14, CoordFormat.Atom37]
+
+
+def _parse(fmt: CoordFormat, path: Path):
+  return parse_structure(str(path), OutputSpec(coord_format=fmt))
+
+
+def _mse_index(protein) -> int:
+  return int(np.flatnonzero(np.asarray(protein.residue_index) == 2)[0])
+
+
+def _se_slot(fmt: CoordFormat) -> int:
+  return _SD_ATOM14 if fmt == CoordFormat.Atom14 else _SD_ATOM37
 
 
 def _write_residue_pdb(tmp_path: Path, res_name: str, record: str, atoms) -> Path:
@@ -31,39 +52,71 @@ def _write_residue_pdb(tmp_path: Path, res_name: str, record: str, atoms) -> Pat
   return path
 
 
-# MSE with SE (selenium). MET layout is N CA C O CB CG SD CE, so SE belongs in SD.
-_MSE_ATOMS = [
+_XYZ_ATOMS = [
   ("N", "N", 0.0, 0.0, 0.0),
   ("CA", "C", 1.0, 0.0, 0.0),
   ("C", "C", 2.0, 0.0, 0.0),
-  ("O", "O", 3.0, 0.0, 0.0),
-  ("CB", "C", 1.0, 1.0, 0.0),
-  ("CG", "C", 1.0, 2.0, 0.0),
-  ("SE", "SE", 1.0, 3.0, 0.0),
-  ("CE", "C", 2.0, 3.0, 0.0),
 ]
 
 
-def test_mse_is_placed_via_met_layout_with_se_in_sd(tmp_path):
-  path = _write_residue_pdb(tmp_path, "MSE", "HETATM", _MSE_ATOMS)
-  spec = OutputSpec(coord_format=CoordFormat.Atom14)
+@pytest.mark.parametrize("fmt", _FORMATS, ids=["atom14", "atom37"])
+def test_mse_is_typed_met_with_se_in_sd(fmt):
   with warnings.catch_warnings():
     warnings.simplefilter("error", UserWarning)  # MSE must not be "unplaced"
-    protein = parse_structure(str(path), spec)
-  mask = np.asarray(protein.atom_mask)[0]
-  assert float(mask.sum()) == float(len(_MSE_ATOMS))  # all 8 present atoms placed
-  np.testing.assert_array_equal(mask[:8], np.ones(8, dtype=mask.dtype))
-  assert float(mask[8:].sum()) == 0.0
-  coords = np.asarray(protein.coordinates)[0]
-  np.testing.assert_allclose(coords[6], [1.0, 3.0, 0.0])  # SD slot holds SE
+    protein = _parse(fmt, _PROBE)
+  idx = _mse_index(protein)
+  assert int(np.asarray(protein.aatype)[idx]) == _MET
+  mask = np.asarray(protein.atom_mask)[idx]
+  assert float(mask.sum()) == 8.0  # N CA C O CB CG SE CE
+  coords = np.asarray(protein.coordinates)[idx]
+  np.testing.assert_allclose(coords[_se_slot(fmt)], _SE_A, atol=1e-3)
 
 
-def test_unknown_residue_is_reported_not_silently_dropped(tmp_path):
+@pytest.mark.parametrize("fmt", _FORMATS, ids=["atom14", "atom37"])
+def test_mse_round_trips_through_pdb_as_hetatm_se(fmt, tmp_path):
+  protein = _parse(fmt, _PROBE)
+  out = write_pdb(protein, tmp_path / "out.pdb")
+  mse_lines = [x for x in out.read_text().splitlines() if x[17:20] == "MSE"]
+  assert len(mse_lines) == 8
+  assert all(x.startswith("HETATM") for x in mse_lines)
+  se_lines = [x for x in mse_lines if x[12:16].strip() == "SE"]
+  assert len(se_lines) == 1
+  assert se_lines[0][76:78].strip().upper() == "SE"
+  assert not any(x[12:16].strip() == "SD" for x in mse_lines)
+  reparsed = _parse(fmt, out)
+  np.testing.assert_allclose(
+    np.asarray(reparsed.coordinates)[_mse_index(reparsed)][_se_slot(fmt)], _SE_A, atol=1e-3
+  )
+
+
+@pytest.mark.parametrize("fmt", _FORMATS, ids=["atom14", "atom37"])
+def test_mse_round_trips_through_mmcif_as_hetatm_se(fmt, tmp_path):
+  protein = _parse(fmt, _PROBE)
+  out = write_mmcif(protein, tmp_path / "out.cif")
+  mse_rows = [x.split() for x in out.read_text().splitlines() if " MSE " in x]
+  assert len(mse_rows) == 8
+  assert all(row[0] == "HETATM" for row in mse_rows)
+  se_rows = [row for row in mse_rows if row[2] == "SE" and row[3] == "SE"]  # type, label atom
+  assert len(se_rows) == 1
+  reparsed = _parse(fmt, out)
+  np.testing.assert_allclose(
+    np.asarray(reparsed.coordinates)[_mse_index(reparsed)][_se_slot(fmt)], _SE_A, atol=1e-3
+  )
+
+
+def test_full_format_keeps_real_se_atom():
+  protein = _parse(CoordFormat.Full, _PROBE)
+  names = [str(n) for n in protein.atom_names]
+  assert "SE" in names
+  assert "SD" not in names
+
+
+@pytest.mark.parametrize("fmt", _FORMATS, ids=["atom14", "atom37"])
+def test_unknown_residue_still_warns(fmt, tmp_path):
   # Negative control: a residue name with no alias and no layout keeps the warning.
-  path = _write_residue_pdb(tmp_path, "XYZ", "ATOM", _MSE_ATOMS[:3])
+  path = _write_residue_pdb(tmp_path, "XYZ", "ATOM", _XYZ_ATOMS)
   with pytest.warns(UserWarning, match="XYZ"):
-    protein = parse_structure(str(path), OutputSpec(coord_format=CoordFormat.Atom14))
-  assert float(np.asarray(protein.atom_mask)[0].sum()) == 0.0
+    _parse(fmt, path)
 
 
 _UBQ = Path(__file__).resolve().parents[2] / "crates" / "proxide-io" / "tests" / "data" / "1UBQ.cif"

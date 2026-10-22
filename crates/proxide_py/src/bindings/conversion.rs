@@ -78,6 +78,9 @@ impl ToPyDict for CachedStructure {
         if let Some(ref ids) = self.unique_chain_ids {
             dict.set_item("unique_chain_ids", ids.clone())?;
         }
+        if let Some(ref names) = self.residue_names {
+            dict.set_item("residue_names", names.clone())?;
+        }
         if let Some(ref per_atom) = self.full_per_atom {
             dict.set_item("atom_residue_ids", per_atom.atom_residue_ids.clone())?;
             dict.set_item("elements", per_atom.elements.clone())?;
@@ -92,6 +95,8 @@ impl ToPyDict for CachedStructure {
 impl ToPyDict for FormattedAtom37 {
     fn to_py_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new_bound(py);
+        dict.set_item("unplaced_residues", &self.unplaced_residues)?;
+        dict.set_item("residue_names", &self.residue_names)?;
         dict.set_item(
             "coordinates",
             PyArray1::from_slice_bound(py, &self.coordinates),
@@ -128,6 +133,7 @@ impl ToPyDict for FormattedAtom14 {
             PyArray1::from_slice_bound(py, &self.chain_index),
         )?;
         dict.set_item("unplaced_residues", &self.unplaced_residues)?;
+        dict.set_item("residue_names", &self.residue_names)?;
         Ok(dict)
     }
 }

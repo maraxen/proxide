@@ -67,6 +67,9 @@ pub struct CachedStructure {
     /// The chain vocabulary `chain_index` indexes, so a cache hit returns the
     /// same `unique_chain_ids` as the first call.
     pub unique_chain_ids: Option<Vec<String>>,
+    /// As-read residue names per residue (Atom14/Atom37), so writers can keep
+    /// MSE as MSE on a cache hit.
+    pub residue_names: Option<Vec<String>>,
 }
 
 /// Per-atom arrays the Full format carries (see `FormattedFull`).
@@ -89,6 +92,7 @@ pub struct CachedStructureArgs {
     pub coord_shape: Option<(usize, usize, usize)>,
     pub full_per_atom: Option<FullPerAtom>,
     pub unique_chain_ids: Option<Vec<String>>,
+    pub residue_names: Option<Vec<String>>,
 }
 
 impl CachedStructure {
@@ -104,6 +108,7 @@ impl CachedStructure {
             coord_shape: args.coord_shape,
             full_per_atom: args.full_per_atom,
             unique_chain_ids: args.unique_chain_ids,
+            residue_names: args.residue_names,
         }
     }
 }
@@ -218,6 +223,7 @@ mod tests {
             coord_shape: None,
             full_per_atom: None,
             unique_chain_ids: None,
+            residue_names: None,
         };
 
         cache.insert(key1.clone(), value.clone());

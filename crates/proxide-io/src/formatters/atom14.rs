@@ -3,6 +3,7 @@
 //! Converts ProcessedStructure into reduced (N_res, 14, 3) coordinate arrays.
 //! Uses residue-specific atom ordering from restype_name_to_atom14_names.
 
+use super::residue_policy::{lookup_alias, rename_layout_atom, AliasPolicy, ATOM14_ALIASES};
 use proxide_core::chem::{build_restype_atom14_names, RESTYPE_1TO3};
 use proxide_core::processing::ProcessedStructure;
 use proxide_core::spec::OutputSpec;
@@ -17,37 +18,28 @@ pub struct FormattedAtom14 {
     pub residue_index: Vec<i32>,                 // (N_res,) PDB residue numbers
     pub chain_index: Vec<i32>,                   // (N_res,) chain indices
     pub unplaced_residues: Vec<(usize, String)>, // (residue_index, res_name) for residues with atoms but no atom14 layout
-}
-
-/// Atom14 layouts for residues whose residue type is UNK but which map onto a
-/// standard layout: `(parent layout, atom renames applied before lookup)`.
-/// Atom14-only: the residue's aatype and the Atom37 output are unchanged.
-fn atom14_layout_alias(
-    res_name: &str,
-) -> Option<(&'static str, &'static [(&'static str, &'static str)])> {
-    match res_name {
-        // Selenomethionine: SE takes the MET SD slot (AlphaFold convention).
-        "MSE" => Some(("MET", &[("SE", "SD")])),
-        _ => None,
-    }
-}
-
-/// Apply atom14-alias renames to one atom name.
-fn layout_atom_name(name: &str, renames: &[(&str, &str)]) -> String {
-    renames
-        .iter()
-        .find(|(from, _)| *from == name)
-        .map_or_else(|| name.to_string(), |(_, to)| to.to_string())
+    pub residue_names: Vec<String>,              // (N_res,) as-read residue names
 }
 
 /// Atom14 formatter - converts to reduced (N_res, 14, 3) representation
 pub struct Atom14Formatter;
 
 impl Atom14Formatter {
-    /// Format a ProcessedStructure into Atom14 representation
+    /// Format a ProcessedStructure into Atom14 representation with this format's
+    /// alias policy.
     pub fn format(
         processed: &ProcessedStructure,
+        spec: &OutputSpec,
+    ) -> Result<FormattedAtom14, String> {
+        Self::format_with_policy(processed, spec, ATOM14_ALIASES)
+    }
+
+    /// Format a ProcessedStructure into Atom14 representation, laying out
+    /// residues named by `policy` with that alias's layout residue and renames.
+    pub fn format_with_policy(
+        processed: &ProcessedStructure,
         _spec: &OutputSpec,
+        policy: AliasPolicy,
     ) -> Result<FormattedAtom14, String> {
         let num_residues = processed.num_residues;
         let atom14_names = build_restype_atom14_names();
@@ -61,11 +53,13 @@ impl Atom14Formatter {
         let mut residue_index = vec![0i32; num_residues];
         let mut chain_index = vec![0i32; num_residues];
         let mut unplaced_residues: Vec<(usize, String)> = Vec::new();
+        let mut residue_names: Vec<String> = Vec::with_capacity(num_residues);
 
         // Process each residue
         for (res_idx, res_info) in processed.residue_info.iter().enumerate() {
             // Set residue metadata
             aatype[res_idx] = res_info.res_type as i8;
+            residue_names.push(res_info.res_name.clone());
             residue_index[res_idx] = res_info.res_id;
 
             // Map chain to index
@@ -74,20 +68,18 @@ impl Atom14Formatter {
                 .get(&res_info.chain_id)
                 .unwrap_or(&0) as i32;
 
-            // Get the canonical 3-letter residue name from res_type. A UNK residue
-            // may still have a layout through the atom14-only alias table.
+            // Layout residue: this format's alias policy if it names this residue,
+            // else the residue type's own 3-letter name.
             let type_name = if res_info.res_type < RESTYPE_1TO3.len() {
                 RESTYPE_1TO3[res_info.res_type].1
             } else {
                 "UNK"
             };
-            let (canonical_res_name, atom_renames): (&str, &[(&str, &str)]) = match type_name {
-                "UNK" => match atom14_layout_alias(&res_info.res_name) {
-                    Some((parent, renames)) => (parent, renames),
-                    None => ("UNK", &[]),
-                },
-                _ => (type_name, &[]),
-            };
+            let (canonical_res_name, atom_renames): (&str, &[(&str, &str)]) =
+                match lookup_alias(policy, &res_info.res_name) {
+                    Some(alias) => (alias.layout_residue, alias.renames),
+                    None => (type_name, &[]),
+                };
 
             // Get atom14 names for this residue type
             let atom14_list = atom14_names
@@ -102,7 +94,7 @@ impl Atom14Formatter {
             for local_idx in 0..(end - start) {
                 let global_idx = start + local_idx;
                 let atom_name =
-                    layout_atom_name(&processed.raw_atoms.atom_names[global_idx], atom_renames);
+                    rename_layout_atom(&processed.raw_atoms.atom_names[global_idx], atom_renames);
                 residue_atoms.insert(atom_name, global_idx);
             }
 
@@ -159,6 +151,7 @@ impl Atom14Formatter {
             residue_index,
             chain_index,
             unplaced_residues,
+            residue_names,
         })
     }
 }
@@ -166,6 +159,7 @@ impl Atom14Formatter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proxide_core::chem::build_resname_to_idx;
     use proxide_core::spec::OutputSpec;
     use proxide_core::structure::{AtomRecord, RawAtomData};
 
@@ -314,34 +308,49 @@ mod tests {
         ProcessedStructure::from_raw(raw).unwrap()
     }
 
+    fn mse_atoms() -> Vec<(&'static str, &'static str, f32, f32, f32)> {
+        vec![
+            ("N", "N", 0.0, 0.0, 0.0),
+            ("CA", "C", 1.0, 0.0, 0.0),
+            ("C", "C", 2.0, 0.0, 0.0),
+            ("O", "O", 3.0, 0.0, 0.0),
+            ("CB", "C", 1.0, 1.0, 0.0),
+            ("CG", "C", 1.0, 2.0, 0.0),
+            ("SE", "Se", 1.0, 3.0, 0.0),
+            ("CE", "C", 2.0, 3.0, 0.0),
+        ]
+    }
+
     #[test]
-    fn test_atom14_mse_placed_via_met_with_se_in_sd() {
-        // MSE (selenomethionine) is placed in the MET layout (N CA C O CB CG SD CE),
-        // with the selenium SE coordinates landing in the SD slot (AlphaFold convention).
-        let processed = single_residue(
-            "MSE",
-            &[
-                ("N", "N", 0.0, 0.0, 0.0),
-                ("CA", "C", 1.0, 0.0, 0.0),
-                ("C", "C", 2.0, 0.0, 0.0),
-                ("O", "O", 3.0, 0.0, 0.0),
-                ("CB", "C", 1.0, 1.0, 0.0),
-                ("CG", "C", 1.0, 2.0, 0.0),
-                ("SE", "Se", 1.0, 3.0, 0.0),
-                ("CE", "C", 2.0, 3.0, 0.0),
-            ],
-        );
+    fn test_atom14_mse_typed_met_with_se_in_sd() {
+        let processed = single_residue("MSE", &mse_atoms());
         let formatted = Atom14Formatter::format(&processed, &OutputSpec::default()).unwrap();
 
+        assert_eq!(formatted.aatype[0], build_resname_to_idx()["MET"] as i8);
+        assert_eq!(formatted.residue_names, vec!["MSE".to_string()]);
         let mask_sum: f32 = formatted.atom_mask.iter().sum();
         assert_eq!(mask_sum, 8.0, "all 8 present MSE atoms must be placed");
         assert!(formatted.unplaced_residues.is_empty());
-
-        // MET slot 6 is SD; SE must sit there with its own coordinates.
+        // MET slot 6 is SD: it holds SE with its own coordinates.
         assert_eq!(formatted.atom_mask[6], 1.0);
-        assert_eq!(&formatted.coordinates[6 * 3..6 * 3 + 3], &[1.0, 3.0, 0.0]);
-        // MET slot 7 is CE.
-        assert_eq!(formatted.atom_mask[7], 1.0);
+        assert_eq!(&formatted.coordinates[18..21], &[1.0, 3.0, 0.0]);
+        assert_eq!(formatted.atom_mask[7], 1.0); // CE
+    }
+
+    #[test]
+    fn test_atom14_empty_policy_does_not_place_se() {
+        // The format's alias policy drives the SE -> SD rename: with no policy
+        // the residue still gets the MET layout (its type), but SE has no slot.
+        let processed = single_residue("MSE", &mse_atoms());
+        let formatted =
+            Atom14Formatter::format_with_policy(&processed, &OutputSpec::default(), &[]).unwrap();
+
+        assert_eq!(
+            formatted.atom_mask[6], 0.0,
+            "SD slot must stay empty without the policy"
+        );
+        let mask_sum: f32 = formatted.atom_mask.iter().sum();
+        assert_eq!(mask_sum, 7.0);
     }
 
     #[test]
@@ -357,6 +366,10 @@ mod tests {
         );
         let formatted = Atom14Formatter::format(&processed, &OutputSpec::default()).unwrap();
 
+        assert_eq!(
+            formatted.aatype[0],
+            proxide_core::chem::UNK_RESTYPE_INDEX as i8
+        );
         let mask_sum: f32 = formatted.atom_mask.iter().sum();
         assert_eq!(mask_sum, 0.0);
         assert_eq!(formatted.unplaced_residues.len(), 1);
