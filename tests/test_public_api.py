@@ -38,7 +38,6 @@ STABLE = {
   "OutputSpec",
   "CoordFormat",
   "ErrorMode",
-  "MissingResidueMode",
   "HydrogenSource",
   "Protein",
   "write_pdb",
@@ -67,6 +66,7 @@ EXPERIMENTAL = {
   "AtomicSystem",
   "iterload",
   "UnitSystem",
+  "MissingResidueMode",
 }
 
 

@@ -170,7 +170,6 @@ _STABLE = frozenset(
     "OutputSpec",
     "CoordFormat",
     "ErrorMode",
-    "MissingResidueMode",
     "HydrogenSource",
     "Protein",
     "write_pdb",

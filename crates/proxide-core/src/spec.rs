@@ -100,30 +100,32 @@ pub struct OutputSpec {
     // Processing
     pub add_hydrogens: bool,
     pub hydrogen_source: HydrogenSource,
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub relax_hydrogens: bool,
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub relax_max_iterations: Option<usize>,
     pub infer_bonds: bool,
 
     // Geometry Features
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub compute_rbf: bool,
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub rbf_num_neighbors: usize,
 
     // Physics Features
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub compute_electrostatics: bool,
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub electrostatics_noise: Option<f32>,
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub compute_vdw: bool,
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub parameterize_md: bool,
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub force_field: Option<String>,
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub auto_terminal_caps: bool,
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub missing_residue_mode: MissingResidueMode,
     /// Water model used to parameterize solvent atoms during
     /// `parameterize_md` (HOH/WAT/TIP3/SOL/DOD are excluded from
@@ -131,14 +133,14 @@ pub struct OutputSpec {
     /// charge=sigma=epsilon=0.0 -- see
     /// `proxide_physics::physics::water::get_water_model` for supported
     /// names). Default `"TIP3P"`.
-///
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    ///
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub water_model: String,
     /// If true, `parameterize_md` returns an error instead of a structure
     /// with zeroed parameters when any atom could not be confidently
     /// parameterized (see `unparameterized_atoms` in the output).
-///
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    ///
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub strict_parameterization: bool,
 
     // Environment
@@ -155,7 +157,7 @@ pub struct OutputSpec {
     pub enable_caching: bool,
 
     // Unit system
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+    /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub unit_system: UnitSystem,
 }
 

@@ -169,11 +169,11 @@ Only core IO is stable at 0.1.0:
 
 - structure parsers and writers: `parse_pdb`, `parse_mmcif`, `parse_pqr`, `parse_structure`, `parse_parm7`, `parse_amber_trajectory`, `write_pdb`, `write_mmcif`, `write_npz`, `write_dcd`;
 - the `Protein` result type returned by the parsers;
-- parse options: `OutputSpec` and its enums (`CoordFormat`, `ErrorMode`, `MissingResidueMode`, `HydrogenSource`), which `parse_structure` takes;
+- parse options: `OutputSpec` and its enums (`CoordFormat`, `ErrorMode`, `HydrogenSource`), which `parse_structure` takes;
 - trajectory readers: `parse_xtc`, `parse_dcd`, `parse_trr`, `read_xtc_lazy`, `read_xtc_parallel`, `read_xtc_ca_distogram`, `frame_count`, `n_atoms`, `TrajectoryStream`, and the MDTraj and mdCATH HDF5 readers;
 - structure fetching: `fetch_rcsb`, `fetch_afdb`, `fetch_foldcomp_database`, and the `proxide.io` submodule, except the tensor-bundle helpers below.
 
-`OutputSpec` is stable, but options that enable experimental features are experimental: `parameterize_md`, `force_field`, `water_model`, `strict_parameterization`, `compute_electrostatics`, `electrostatics_noise`, `compute_vdw`, `compute_rbf`, `rbf_num_neighbors`, `relax_hydrogens`, `relax_max_iterations` and `unit_system`. The type of `unit_system`, `UnitSystem`, is experimental too.
+`OutputSpec` is stable, but options that enable experimental features are experimental: `parameterize_md`, `force_field`, `water_model`, `strict_parameterization`, `compute_electrostatics`, `electrostatics_noise`, `compute_vdw`, `compute_rbf`, `rbf_num_neighbors`, `relax_hydrogens`, `relax_max_iterations`, `auto_terminal_caps`, `missing_residue_mode` and `unit_system`. The types `UnitSystem` and `MissingResidueMode` are experimental too. `hydrogen_source` is accepted, but no code path reads it yet.
 
 Everything else exported from `proxide` is experimental and may change in a minor release. That covers GAFF2 typing (`assign_gaff_atom_types`), force field loading (`load_forcefield`, `parameterize_molecule`), atomic masses, GB radii and OBC2 scaling, water models, CMAP parameters, geometry helpers, the Jaccard and TM-align modules, the `iterload` function (top level only; the `io` submodule does not export it), and `proxide.AtomicSystem`. `proxide.__experimental__` lists them.
 
