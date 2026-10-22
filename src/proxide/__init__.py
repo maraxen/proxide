@@ -27,6 +27,7 @@ from proxide._proxider import (  # ty: ignore[unresolved-import]
   MissingResidueMode,
   # Types/Classes
   OutputSpec,
+  UnitSystem,
   assign_gaff_atom_types,
   # Chemistry
   assign_masses,
@@ -123,6 +124,7 @@ __all__ = [
   "MissingResidueMode",
   "HydrogenSource",
   "AtomicSystem",
+  "UnitSystem",
   "iterload",
   "write_dcd",
   # Fetching
@@ -165,6 +167,7 @@ _STABLE = frozenset(
     "ErrorMode",
     "MissingResidueMode",
     "HydrogenSource",
+    "UnitSystem",
   }
 )
 __experimental__ = tuple(name for name in __all__ if name not in _STABLE)

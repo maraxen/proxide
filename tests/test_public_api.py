@@ -40,6 +40,7 @@ STABLE = {
   "ErrorMode",
   "MissingResidueMode",
   "HydrogenSource",
+  "UnitSystem",
 }
 
 EXPERIMENTAL = {

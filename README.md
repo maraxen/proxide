@@ -168,7 +168,7 @@ If you are migrating from older versions of Proxide:
 Only core IO is stable at 0.1.0:
 
 - structure parsers and writers (`parse_pdb`, `parse_mmcif`, `parse_pqr`, `parse_structure`, `parse_parm7`, `parse_amber_trajectory`, `write_dcd`);
-- parse options: `OutputSpec` and its enums (`CoordFormat`, `ErrorMode`, `MissingResidueMode`, `HydrogenSource`), which `parse_structure` takes;
+- parse options: `OutputSpec` and its enums (`CoordFormat`, `ErrorMode`, `MissingResidueMode`, `HydrogenSource`) and `UnitSystem`, which `parse_structure` takes;
 - trajectory readers (`parse_xtc`, `parse_dcd`, `parse_trr`, `read_xtc_lazy`, `read_xtc_parallel`, `read_xtc_ca_distogram`, `frame_count`, `n_atoms`, `TrajectoryStream`, and the MDTraj and mdCATH HDF5 readers);
 - structure fetching (`fetch_rcsb`, `fetch_afdb`, `fetch_foldcomp_database`) and the `proxide.io` submodule.
 
