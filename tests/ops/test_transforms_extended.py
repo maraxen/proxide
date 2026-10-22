@@ -293,11 +293,17 @@ class TestBFactorOccupancyThroughPadAndStack:
     assert np.shape(batch.coordinates) == (1, 12, 37, 3)
     assert np.shape(batch.b_factors) == (1, 12, 37)
 
-  def test_mixed_presence_across_a_batch_raises(self) -> None:
+  def test_mixed_presence_across_a_batch_warns_once_and_drops_the_field(self) -> None:
     protein = self._atom37()
     bare = protein.replace(b_factors=None, occupancies=None)
-    with pytest.raises(ValueError, match="set on 1 of 2 proteins"):
-      transforms.pad_and_collate_proteins([protein, bare])
+    with pytest.warns(UserWarning, match=r"b_factors is missing on 1 of 2 proteins") as record:
+      batch = transforms.pad_and_collate_proteins([protein, bare], max_length=12)
+    # One warning per stack call, naming both fields.
+    assert len([w for w in record if issubclass(w.category, UserWarning)]) == 1
+    assert "occupancies is missing on 1 of 2 proteins" in str(record[0].message)
+    assert batch.b_factors is None and batch.occupancies is None
+    # The rest of the batch still stacks.
+    assert np.shape(batch.coordinates) == (2, 12, 37, 3)
 
   def test_absent_everywhere_stays_none(self) -> None:
     protein = self._atom37().replace(b_factors=None, occupancies=None)

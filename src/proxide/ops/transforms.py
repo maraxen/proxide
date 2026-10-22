@@ -578,24 +578,38 @@ def _stack_padded_proteins(
     list(p.chain_ids) if p.chain_ids is not None else None for p in padded_proteins
   ]
   proteins_without_chain_ids = [p.replace(chain_ids=None) for p in padded_proteins]
-  # B-factor and occupancy are all-or-nothing across a batch: a row without them
-  # cannot be stacked with rows that have them, and the stack must not silently
-  # return None for them (debt #2367).
-  for name in ("b_factors", "occupancies"):
-    present = [getattr(p, name) is not None for p in padded_proteins]
-    if any(present) and not all(present):
-      msg = (
-        f"_stack_padded_proteins: {name} is set on {sum(present)} of {len(present)} "
-        "proteins; a batch cannot carry it for some rows only. Set it on every "
-        "protein or on none."
-      )
-      raise ValueError(msg)
+  # B-factor and occupancy need a source in every row. A batch where only some rows
+  # carry a field (e.g. FoldComp or array_record rows beside parsed ones) warns once
+  # and stacks with that field None, rather than refusing the batch (debt #2367).
+  dropped = [
+    name
+    for name in ("b_factors", "occupancies")
+    if any(getattr(p, name) is not None for p in padded_proteins)
+    and not all(getattr(p, name) is not None for p in padded_proteins)
+  ]
+  if dropped:
+    details = "; ".join(
+      f"{name} is missing on "
+      f"{sum(getattr(p, name) is None for p in padded_proteins)} of "
+      f"{len(padded_proteins)} proteins"
+      for name in dropped
+    )
+    warnings.warn(
+      f"_stack_padded_proteins: {details}; those fields are None in the batch",
+      UserWarning,
+      stacklevel=2,
+    )
+    proteins_without_chain_ids = [
+      p.replace(**{name: None for name in dropped}) for p in proteins_without_chain_ids
+    ]
   batched = jax.tree_util.tree_map(stack_fn, *proteins_without_chain_ids)
+  # A genuine shape mismatch (every row carries the field, the stack cannot form) is an error.
   for name in ("b_factors", "occupancies"):
-    if padded_proteins and getattr(padded_proteins[0], name) is not None:
-      if getattr(batched, name) is None:
-        msg = f"_stack_padded_proteins: {name} could not be stacked (per-row shapes differ)"
-        raise ValueError(msg)
+    if name in dropped or not padded_proteins:
+      continue
+    if getattr(padded_proteins[0], name) is not None and getattr(batched, name) is None:
+      msg = f"_stack_padded_proteins: {name} could not be stacked (per-row shapes differ)"
+      raise ValueError(msg)
   return batched.replace(chain_ids=chain_ids_per_row)
 
 
