@@ -15,6 +15,8 @@ pub fn assign_masses(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
 
 /// Assign GAFF atom types to a structure (exposed to Python).
 ///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+///
 /// **Two structurally different implementations, selected at build time by
 /// the `gaff2-engine` Cargo feature** (off by default -- see this crate's
 /// Cargo.toml). This is not a stopgap; it is the deliberate outcome of the
@@ -89,6 +91,8 @@ fn bond_order_from_u8(order: u8) -> Result<proxide_gaff2::mol::BondOrder, String
 ///   happen before this call, not inside it).
 /// - `formal_charges` / `rings`: optional; see
 ///   `proxide-gaff2::mol::MolGraph::new`'s doc for the omission contract.
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 ///
 /// Returns one GAFF2 atom type per atom (including H), `"x"` (not `None`)
 /// for any atom no DEF rule matched -- this is a deliberate signature change

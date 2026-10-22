@@ -163,6 +163,19 @@ If you are migrating from older versions of Proxide:
 
 ---
 
+## Stability
+
+Core IO is the stable surface: structure parsing (`parse_pdb`, `parse_mmcif`, `parse_pqr`,
+`parse_structure`, `parse_parm7`, `parse_amber_trajectory`), formatting (Atom37, Atom14, Full),
+writing (PDB, mmCIF, `write_dcd`) and trajectory reading (`parse_xtc`, `read_xtc_lazy`,
+`read_xtc_parallel`, `iterload`, `TrajectoryStream`).
+
+Experimental, and may change in a minor release: GAFF2 (`assign_gaff_atom_types`), confind,
+rotlib and CCD/fixer. The first three have no top-level Python exports at this version; CCD
+is used internally. Names in `proxide.__experimental__` are the top-level experimental set.
+
+Everything else in `proxide.__all__` is provisional until it is classified.
+
 ## 🔧 Development
 
 ### Running Tests

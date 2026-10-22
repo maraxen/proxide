@@ -3,6 +3,8 @@
 This module implements GAFF2 (General Amber Force Field 2) atom type assignment
 without requiring AmberTools. It parses the ATOMTYPE_GFF2.DEF rules and applies them
 to RDKit molecules.
+
+Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 """
 
 from __future__ import annotations

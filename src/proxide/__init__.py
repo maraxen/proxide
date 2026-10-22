@@ -131,6 +131,10 @@ __all__ = [
   "fetch_foldcomp_database",
 ]
 
+# Names outside proxide's stability guarantee (see README "Stability"). Each is also in
+# __all__; nothing is removed or moved by this classification.
+__experimental__ = ("assign_gaff_atom_types",)
+
 
 def __getattr__(name: str) -> Any:
   # Lazy: parsing.backend imports jax.numpy.
