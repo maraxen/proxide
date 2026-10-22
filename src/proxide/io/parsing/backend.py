@@ -839,6 +839,7 @@ class TrajectoryStream:
     """Yield chunks containing 'coordinates' and tracking metadata."""
     yield from self._iterator
 
+
 def iterload(file_path: str | Path, chunk_size: int = 100):
   """Stream a trajectory file in chunks (Legacy alias).
 
