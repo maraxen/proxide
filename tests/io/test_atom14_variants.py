@@ -208,13 +208,12 @@ def test_npz_round_trip_keeps_mse_residue_name(tmp_path):
   assert int(aatype[1]) == _MET
 
 
-def test_met_sd_without_residue_names_warns_selenium_unrestorable(tmp_path):
-  protein = _mse_protein(CoordFormat.Atom37).replace(residue_names=None)
-  with pytest.warns(UserWarning, match="selenium"):
-    write_pdb(protein, tmp_path / "no_names.pdb")
-
-
-def test_residue_names_present_writes_without_warning(tmp_path):
+def test_residue_names_present_writes_mse_back_as_hetatm_se(tmp_path):
+  protein = _mse_protein(CoordFormat.Atom37)
+  assert protein.residue_names is not None
   with warnings.catch_warnings():
     warnings.simplefilter("error", UserWarning)
-    write_pdb(_mse_protein(CoordFormat.Atom37), tmp_path / "with_names.pdb")
+    out = write_pdb(protein, tmp_path / "with_names.pdb")
+  se_rows = [x for x in _mse_rows(out.read_text()) if x[12:16].strip() == "SE"]
+  assert len(se_rows) == 1
+  assert se_rows[0].startswith("HETATM")

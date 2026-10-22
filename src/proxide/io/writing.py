@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -317,15 +316,6 @@ def _atom_rows(
     getattr(protein, "occupancies", None), atom_mask.shape, "occupancies", fn_name
   )
 
-  if residue_names is None and any(
-    rn == "MET" and name == "SD" for rn, name in zip(written_res, names, strict=True)
-  ):
-    warnings.warn(
-      f"{fn_name}: the protein has no residue_names, so a MET residue's SD atom may be a "
-      "selenium (MSE) whose identity cannot be restored; it is written as SD",
-      UserWarning,
-      stacklevel=3,
-    )
   return (
     coords[res_idx, slot_idx],
     names,
@@ -396,6 +386,10 @@ def _cif_occupancy_or_b_factor(value, what: str, i: int) -> str:
 
 def write_pdb(protein: Protein, path: str | Path) -> Path:
   """Write a Protein structure to a PDB file.
+
+  MSE is restored as HETATM MSE/SE only when the Protein carries residue_names
+  (set by the parser); proteins without them are written with model residue
+  names (MET/SD).
 
   Args:
       protein: The Protein instance to write.
@@ -494,6 +488,10 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
 
 def write_mmcif(protein: Protein, path: str | Path) -> Path:
   """Write a Protein structure to an mmCIF file.
+
+  MSE is restored as HETATM MSE/SE only when the Protein carries residue_names
+  (set by the parser); proteins without them are written with model residue
+  names (MET/SD).
 
   Args:
       protein: The Protein instance to write.
