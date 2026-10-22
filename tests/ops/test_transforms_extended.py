@@ -251,3 +251,55 @@ class TestTransformsExtended(parameterized.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBFactorOccupancyThroughPadAndStack:
+  """Debt #2367 review: B-factor and occupancy follow truncate, pad and stack."""
+
+  PDB = "tests/data/5awl.pdb"
+
+  def _atom37(self):
+    from proxide import CoordFormat, OutputSpec, parse_structure
+
+    return parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Atom37))
+
+  def test_truncate_crops_b_factor_and_occupancy_with_coordinates(self) -> None:
+    protein = self._atom37()
+    cropped = transforms.truncate_protein(protein, 5, "center_crop")
+    assert np.shape(cropped.b_factors) == (5, 37)
+    assert np.shape(cropped.occupancies) == (5, 37)
+    np.testing.assert_array_equal(
+      np.asarray(cropped.b_factors), np.asarray(protein.b_factors)[2:7]
+    )
+
+  def test_pad_and_collate_pads_b_factor_and_occupancy_like_coordinates(self) -> None:
+    protein = self._atom37()
+    short = transforms.truncate_protein(protein, 5, "center_crop")
+    batch = transforms.pad_and_collate_proteins([protein, short], max_length=12)
+    assert np.shape(batch.coordinates) == (2, 12, 37, 3)
+    assert np.shape(batch.b_factors) == (2, 12, 37)
+    assert np.shape(batch.occupancies) == (2, 12, 37)
+    np.testing.assert_array_equal(
+      np.asarray(batch.b_factors)[0, :10], np.asarray(protein.b_factors)
+    )
+    np.testing.assert_array_equal(
+      np.asarray(batch.b_factors)[1, :5], np.asarray(short.b_factors)
+    )
+    assert np.all(np.asarray(batch.b_factors)[1, 5:] == 0.0)
+
+  def test_single_protein_stack_has_matching_b_factor_shape(self) -> None:
+    protein = self._atom37()
+    batch = transforms.pad_and_collate_proteins([protein], max_length=12)
+    assert np.shape(batch.coordinates) == (1, 12, 37, 3)
+    assert np.shape(batch.b_factors) == (1, 12, 37)
+
+  def test_mixed_presence_across_a_batch_raises(self) -> None:
+    protein = self._atom37()
+    bare = protein.replace(b_factors=None, occupancies=None)
+    with pytest.raises(ValueError, match="set on 1 of 2 proteins"):
+      transforms.pad_and_collate_proteins([protein, bare])
+
+  def test_absent_everywhere_stays_none(self) -> None:
+    protein = self._atom37().replace(b_factors=None, occupancies=None)
+    batch = transforms.pad_and_collate_proteins([protein, protein])
+    assert batch.b_factors is None and batch.occupancies is None

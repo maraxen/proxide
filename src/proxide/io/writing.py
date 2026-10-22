@@ -539,6 +539,11 @@ def write_npz(protein: Protein, path: str | Path) -> Path:
     data["sigmas"] = np.asarray(protein.sigmas)
   if protein.epsilons is not None:
     data["epsilons"] = np.asarray(protein.epsilons)
+  # Source B-factor and occupancy (debt #2367), present only when the Protein has them.
+  if protein.b_factors is not None:
+    data["b_factors"] = np.asarray(protein.b_factors)
+  if protein.occupancies is not None:
+    data["occupancies"] = np.asarray(protein.occupancies)
 
   # Filter out None values
   data = {k: v for k, v in data.items() if v is not None}

@@ -346,6 +346,8 @@ class ArrayRecordDataSource(grain.RandomAccessDataSource):
       elif self.features is None:  # Legacy behavior: default to zeros
         physics_features = default_physics
 
+    # Records written by the streaming pipeline do not store B-factor or occupancy:
+    # both stay None (debt #2367).
     return Protein(
       coordinates=coordinates,
       aatype=aatype,
