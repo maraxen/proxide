@@ -328,6 +328,47 @@ fn read_trajectory_frames(
     ))
 }
 
+/// One format's policy: `{res_name: (layout_residue, {structure_atom: layout_atom})}`.
+type FormatPolicy = std::collections::BTreeMap<
+    &'static str,
+    (
+        &'static str,
+        std::collections::BTreeMap<&'static str, &'static str>,
+    ),
+>;
+
+/// Per-format residue alias policies, `{format: {res_name: (layout_residue, {structure_atom: layout_atom})}}`.
+/// Private: the writers build their reverse maps from it, so they cannot drift from the formatters.
+#[pyfunction]
+pub fn _layout_aliases() -> std::collections::BTreeMap<&'static str, FormatPolicy> {
+    let mut out = std::collections::BTreeMap::new();
+    for (format, policy) in [
+        ("Atom14", formatters::residue_policy::ATOM14_ALIASES),
+        ("Atom37", formatters::residue_policy::ATOM37_ALIASES),
+    ] {
+        let table = policy
+            .iter()
+            .map(|alias| {
+                (
+                    alias.res_name,
+                    (
+                        alias.layout_residue,
+                        alias.renames.iter().copied().collect(),
+                    ),
+                )
+            })
+            .collect();
+        out.insert(format, table);
+    }
+    out
+}
+
+/// Residues the writers emit as HETATM. Private, see `_layout_aliases`.
+#[pyfunction]
+pub fn _hetatm_residues() -> Vec<&'static str> {
+    formatters::residue_policy::HETATM_RESIDUES.to_vec()
+}
+
 /// Format-cache counters (hits, misses, entries) for tests. Private: not in `__all__`.
 #[pyfunction]
 pub fn _format_cache_stats() -> (u64, u64, usize) {
@@ -756,6 +797,7 @@ fn process_models(
                     occupancies: Some(ref_formatted.occupancies.clone()),
                     atom_mask: ref_formatted.atom_mask.clone(),
                     aatype: ref_formatted.aatype.clone(),
+                    residue_names: Some(ref_formatted.residue_names.clone()),
                     residue_index: ref_formatted.residue_index.clone(),
                     chain_index: ref_formatted.chain_index.clone(),
                     _num_residues: ref_formatted.aatype.len(),
@@ -830,6 +872,7 @@ fn process_models(
                     occupancies: Some(formatted.occupancies.clone()),
                     atom_mask: formatted.atom_mask.clone(),
                     aatype: formatted.aatype.clone(),
+                    residue_names: None,
                     residue_index: formatted.residue_index.clone(),
                     chain_index: formatted.chain_index.clone(),
                     _num_residues: formatted.aatype.len(),

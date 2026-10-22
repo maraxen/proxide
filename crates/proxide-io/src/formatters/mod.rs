@@ -9,6 +9,7 @@ pub mod backbone;
 pub mod cache;
 pub mod custom;
 pub mod full;
+pub mod residue_policy;
 
 pub use atom14::Atom14Formatter;
 pub use atom37::Atom37Formatter;

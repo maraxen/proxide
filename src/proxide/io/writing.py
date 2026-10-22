@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from proxide import _proxider
+
 if TYPE_CHECKING:
   from proxide.core.containers import Protein
 
@@ -112,6 +114,43 @@ def _reject_nonfinite(coords: np.ndarray, fn_name: str) -> None:
       f"(first at row {int(np.argmax(bad))}); refusing to write them"
     )
     raise ValueError(msg)
+
+
+# The Rust formatters' residue alias policies and HETATM residues, read from the extension
+# (crates/proxide-io/src/formatters/residue_policy.rs is the single source). Per array format:
+# as-read residue name -> (layout residue, {structure atom: layout atom}).
+_LAYOUT_ALIASES = {
+  fmt: {res: (layout_res, dict(renames)) for res, (layout_res, renames) in table.items()}
+  for fmt, table in _proxider._layout_aliases().items()
+}
+_HETATM_RESIDUES = frozenset(_proxider._hetatm_residues())
+
+
+def _layout_alias(layout: str, res_name: str):
+  return _LAYOUT_ALIASES.get(layout, {}).get(res_name)
+
+
+def _written_atom_name(layout: str, res_name: str, layout_atom: str) -> str:
+  """The structure atom name for a layout atom, undoing the format's alias renames."""
+  alias = _layout_alias(layout, res_name)
+  if alias is None:
+    return layout_atom
+  back = {layout_name: name for name, layout_name in alias[1].items()}
+  return back.get(layout_atom, layout_atom)
+
+
+def _per_residue_names(protein: Protein, n_res: int, fn_name: str) -> list[str] | None:
+  residue_names = getattr(protein, "residue_names", None)
+  if residue_names is None:
+    return None
+  names = [str(r) for r in residue_names]
+  if len(names) != n_res:
+    msg = (
+      f"{fn_name}: {len(names)} residue_names for {n_res} residues; refusing to pad or "
+      "truncate a per-residue field"
+    )
+    raise ValueError(msg)
+  return names
 
 
 def _atom_rows(
@@ -231,6 +270,7 @@ def _atom_rows(
   residue_index = np.asarray(protein.residue_index)
   aatype = np.asarray(protein.aatype)
   res_chain = _resolve_chain_letters(protein, coords.shape[0], fn_name)
+  residue_names = _per_residue_names(protein, coords.shape[0], fn_name)
 
   res_idx, slot_idx = np.nonzero(atom_mask)
   # aatype indexes `resnames` (20 = the explicit "UNK" class). Anything outside
@@ -244,16 +284,18 @@ def _atom_rows(
     )
     raise ValueError(msg)
   if layout == "Atom37":
-    names = [atom_types[k] for k in slot_idx]
+    layout_names = [atom_types[k] for k in slot_idx]
   else:
     # Atom14 slots are per-residue-type: slot k of an ALA is not slot k of a
     # TRP. The table gives "" for slots that residue type does not have, so a
     # masked "" slot is inconsistent data, not something to name.
-    names = [
+    layout_names = [
       restype_name_to_atom14_names[resnames[int(aatype[r])]][k]
       for r, k in zip(res_idx, slot_idx, strict=True)
     ]
-    empty = [(int(r), int(k)) for r, k, n in zip(res_idx, slot_idx, names, strict=True) if not n]
+    empty = [
+      (int(r), int(k)) for r, k, n in zip(res_idx, slot_idx, layout_names, strict=True) if not n
+    ]
     if empty:
       msg = (
         f"{fn_name}: {len(empty)} Atom14 slot(s) are flagged in atom_mask but have no "
@@ -261,19 +303,31 @@ def _atom_rows(
         "refusing to name them"
       )
       raise ValueError(msg)
+  # The residue name is the as-read one for an aliased residue (MSE), so it is
+  # written as MSE with SE, not as its MET model type.
+  written_res = [
+    residue_names[r]
+    if residue_names is not None and _layout_alias(layout, residue_names[r]) is not None
+    else resnames[int(aatype[r])]
+    for r in res_idx
+  ]
+  names = [
+    _written_atom_name(layout, rn, ln) for rn, ln in zip(written_res, layout_names, strict=True)
+  ]
   b_slots = _per_row_values(
     getattr(protein, "b_factors", None), atom_mask.shape, "b_factors", fn_name
   )
   occ_slots = _per_row_values(
     getattr(protein, "occupancies", None), atom_mask.shape, "occupancies", fn_name
   )
+
   return (
     coords[res_idx, slot_idx],
     names,
-    [resnames[int(aatype[r])] for r in res_idx],
+    written_res,
     residue_index[res_idx],
     [res_chain[r] for r in res_idx],
-    [_ATOM37_ELEMENT[n] for n in names],
+    ["SE" if n == "SE" else _ATOM37_ELEMENT[n] for n in names],
     None if b_slots is None else b_slots[res_idx, slot_idx],
     None if occ_slots is None else occ_slots[res_idx, slot_idx],
   )
@@ -338,6 +392,10 @@ def _cif_occupancy_or_b_factor(value, what: str, i: int) -> str:
 def write_pdb(protein: Protein, path: str | Path) -> Path:
   """Write a Protein structure to a PDB file.
 
+  MSE is restored as HETATM MSE/SE only when the Protein carries residue_names
+  (set by the parser); proteins without them are written with model residue
+  names (MET/SD).
+
   Args:
       protein: The Protein instance to write.
       path: Target file path.
@@ -385,6 +443,7 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
     # 61-66 Temperature factor
     # 77-78 Element symbol
     atom_name, res_name, element = atom_names[i], res_names[i], elements[i]
+    record = "HETATM" if res_name in _HETATM_RESIDUES else "ATOM"
     res_seq = int(res_seqs[i])
     chain_id = chain_letters[i]
     if len(atom_name) > 4:
@@ -418,7 +477,7 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
       f" {atom_name:<3}" if len(element) == 1 and len(atom_name) < 4 else f"{atom_name:<4}"
     )
     lines.append(
-      f"ATOM  {i + 1:>5} {name_field} {res_name:>3} {chain_id}{res_seq:>4}    "
+      f"{record:<6}{i + 1:>5} {name_field} {res_name:>3} {chain_id}{res_seq:>4}    "
       f"{''.join(xyz)}"
       f"{occ_field}{b_field}          {element.upper():>2}\n"
     )
@@ -434,6 +493,10 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
 
 def write_mmcif(protein: Protein, path: str | Path) -> Path:
   """Write a Protein structure to an mmCIF file.
+
+  MSE is restored as HETATM MSE/SE only when the Protein carries residue_names
+  (set by the parser); proteins without them are written with model residue
+  names (MET/SD).
 
   Args:
       protein: The Protein instance to write.
@@ -466,13 +529,15 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
   for i in range(len(coords)):
     # Unknown element -> "?", CIF's own unknown marker (left unquoted on purpose).
     element = _cif_token(elements[i].upper(), "element", i) if elements[i] else "?"
+    record = "HETATM" if res_names[i] in _HETATM_RESIDUES else "ATOM"
+
     x, y, z = coords[i]
     occ_text = _cif_occupancy_or_b_factor(
       None if occupancies is None else occupancies[i], "occupancy", i
     )
     b_text = _cif_occupancy_or_b_factor(None if b_factors is None else b_factors[i], "B-factor", i)
     rows.append(
-      f"ATOM {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
+      f"{record} {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
       f"{_cif_token(res_names[i], 'residue name', i)} "
       f"{_cif_token(chain_letters[i], 'chain id', i)} "
       f"{int(res_seqs[i])} {x:.3f} {y:.3f} {z:.3f} {occ_text} {b_text}\n"
@@ -549,6 +614,9 @@ def write_npz(protein: Protein, path: str | Path) -> Path:
     data["b_factors"] = np.asarray(protein.b_factors)
   if protein.occupancies is not None:
     data["occupancies"] = np.asarray(protein.occupancies)
+
+  if protein.residue_names is not None:
+    data["residue_names"] = np.asarray([str(r) for r in protein.residue_names], dtype=str)
 
   # Filter out None values
   data = {k: v for k, v in data.items() if v is not None}
