@@ -30,6 +30,8 @@ pub fn get_mass(element: &str) -> f32 {
         "Se" => 78.971,
         // IUPAC 2021 conventional standard atomic weight.
         "Si" => 28.085,
+        // Deuterium (2H), IUPAC: 2.014 amu.
+        "D" => 2.014,
         _ => DEFAULT_MASS,
     }
 }
@@ -218,5 +220,13 @@ mod tests {
         // the same "unknown -> C" default as an empty name (unchanged
         // behaviour, just reached via a different path now).
         assert_eq!(infer_element("1"), "C");
+    }
+
+    #[test]
+    fn get_mass_deuterium_and_title_case_symbols() {
+        assert!((get_mass("Zn") - 65.38).abs() < 1e-3);
+        assert!((get_mass("Cl") - 35.45).abs() < 1e-3);
+        // Deuterium: 2.014 amu, not the carbon fallback.
+        assert!((get_mass("D") - 2.014).abs() < 1e-3);
     }
 }

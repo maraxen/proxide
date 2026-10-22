@@ -333,7 +333,7 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
     lines.append(
       f"ATOM  {i + 1:>5} {name_field} {res_name:>3} {chain_id}{res_seq:>4}    "
       f"{''.join(xyz)}"
-      f"  1.00  0.00          {element:>2}\n"
+      f"  1.00  0.00          {element.upper():>2}\n"
     )
 
   # Validate everything before touching the file, so a rejected structure
@@ -378,7 +378,7 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
   rows = []
   for i in range(len(coords)):
     # Unknown element -> "?", CIF's own unknown marker (left unquoted on purpose).
-    element = _cif_token(elements[i], "element", i) if elements[i] else "?"
+    element = _cif_token(elements[i].upper(), "element", i) if elements[i] else "?"
     x, y, z = coords[i]
     rows.append(
       f"ATOM {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
