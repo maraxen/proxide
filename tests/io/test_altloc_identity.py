@@ -2,15 +2,16 @@
 
 Regression tests for debt #1930 review: under auth numbering, residues 17 and 17A
 share (chain, res_id). Before the fix their altloc CA atoms were merged and the
-structure lost residues. Also covers the temp-file round trip (serials above 99 999)
-and models that share residue numbers.
+structure lost residues. Also covers the temp-file round trip (serial numbers above
+99 999 and HETATM records) and models that share residue numbers.
 """
 
+import shutil
 from pathlib import Path
 
 import numpy as np
-import pytest
 from proxide import OutputSpec, parse_structure
+from proxide.io.parsing import backend
 
 HEADER = """data_ALTLOC
 loop_
@@ -45,6 +46,23 @@ ATOM 7 C CA B GLY A 18 A 4.1 0.0 0.0 0.40 10.0 17 A 1
 ATOM 8 C C . GLY A 18 A 5.0 0.0 0.0 1.00 10.0 17 A 1
 """
 
+# One ALA residue (no altloc) plus a water with two altloc positions as HETATM.
+# Serial 4 (occupancy 0.6) is kept; serial 5 (0.4) is dropped.
+HETATM_ALTLOC_ROWS = """ATOM 1 N N . ALA A 1 ? 0.0 0.0 0.0 1.00 10.0 1 A 1
+ATOM 2 C CA . ALA A 1 ? 1.0 0.0 0.0 1.00 10.0 1 A 1
+ATOM 3 C C . ALA A 1 ? 2.0 0.0 0.0 1.00 10.0 1 A 1
+HETATM 4 O O A HOH A . ? 6.0 0.0 0.0 0.60 10.0 201 A 1
+HETATM 5 O O B HOH A . ? 6.1 0.0 0.0 0.40 10.0 201 A 1
+"""
+
+# One ALA residue with altloc CA atoms; serials 99999 and 100000..100002 span the
+# 99 999 boundary. No residue number is shared, so only serial handling is tested.
+SERIAL_ALTLOC_ROWS = """ATOM 99999 N N . ALA A 1 ? 0.0 0.0 0.0 1.00 10.0 1 A 1
+ATOM 100000 C CA A ALA A 1 ? 1.0 0.0 0.0 0.60 10.0 1 A 1
+ATOM 100001 C CA B ALA A 1 ? 1.1 0.0 0.0 0.40 10.0 1 A 1
+ATOM 100002 C C . ALA A 1 ? 2.0 0.0 0.0 1.00 10.0 1 A 1
+"""
+
 
 def _write(tmp_path: Path, rows: str, name: str = "altloc.cif") -> Path:
   path = tmp_path / name
@@ -54,6 +72,34 @@ def _write(tmp_path: Path, rows: str, name: str = "altloc.cif") -> Path:
 
 def _atoms_present(protein) -> int:
   return int(np.asarray(protein.atom_mask).sum())
+
+
+def _parse_and_reparse_temp(monkeypatch, tmp_path: Path, path: Path):
+  """Parse ``path`` and return ``(protein, raw)``.
+
+  ``raw`` is the low-level atom dict (``serial_numbers``, ``is_hetatm``, ...) of the
+  temporary file that the altloc path re-parsed. The spy copies that file while it
+  still exists, so the assertions read what the round trip actually wrote.
+  """
+  seen: list[Path] = []
+  real_parse_structure = backend._proxider.parse_structure
+
+  def spy(file_path, spec, numbering):
+    if Path(file_path) != path:
+      copy = tmp_path / f"reparsed{Path(file_path).suffix}"
+      shutil.copy(file_path, copy)
+      seen.append(copy)
+    return real_parse_structure(file_path, spec, numbering)
+
+  monkeypatch.setattr(backend._proxider, "parse_structure", spy)
+  protein = parse_structure(str(path), OutputSpec(), numbering="auth")
+  assert len(seen) == 1, "the altloc path should re-parse exactly one temporary file"
+  temp = seen[0]
+  if temp.suffix == ".cif":
+    raw = backend._proxider.parse_mmcif(str(temp), "auth")
+  else:
+    raw = backend._proxider.parse_pdb(str(temp))
+  return protein, raw
 
 
 def test_residues_17_and_17A_keep_their_own_altloc_atoms(tmp_path) -> None:
@@ -71,13 +117,23 @@ def test_label_numbering_gives_the_same_counts(tmp_path) -> None:
   assert _atoms_present(protein) == 6
 
 
-def test_serial_above_99999_with_altlocs_does_not_overflow(tmp_path) -> None:
-  # The altloc path re-parses a temporary file; serial 100001 must survive it.
-  rows = INSERTION_CODE_ROWS.replace("ATOM 8 ", "ATOM 100001 ")
-  path = _write(tmp_path, rows, name="big_serial.cif")
-  protein = parse_structure(str(path), OutputSpec(), numbering="auth")
-  assert len(np.asarray(protein.residue_index)) == 2
-  assert _atoms_present(protein) == 6
+def test_serials_above_99999_survive_the_altloc_round_trip(tmp_path, monkeypatch) -> None:
+  path = _write(tmp_path, SERIAL_ALTLOC_ROWS, name="big_serial.cif")
+  _, raw = _parse_and_reparse_temp(monkeypatch, tmp_path, path)
+  # The altloc B atom (serial 100001, occupancy 0.4) is dropped; the others keep
+  # their original serial numbers, including those above 99 999.
+  assert sorted(np.asarray(raw["serial_numbers"]).tolist()) == [99999, 100000, 100002]
+
+
+def test_hetatm_with_altloc_survives_the_altloc_round_trip(tmp_path, monkeypatch) -> None:
+  path = _write(tmp_path, HETATM_ALTLOC_ROWS, name="hetatm_altloc.cif")
+  _, raw = _parse_and_reparse_temp(monkeypatch, tmp_path, path)
+  is_hetatm = np.asarray(raw["is_hetatm"]).tolist()
+  # Exactly one HETATM survives: the kept water altloc (serial 4). Protein atoms stay ATOM.
+  assert is_hetatm.count(True) == 1
+  kept = is_hetatm.index(True)
+  assert int(np.asarray(raw["serial_numbers"])[kept]) == 4
+  assert str(np.asarray(raw["res_names"])[kept]).strip() == "HOH"
 
 
 def test_models_sharing_a_residue_are_not_merged(tmp_path) -> None:

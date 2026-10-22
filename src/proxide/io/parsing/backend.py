@@ -111,6 +111,8 @@ def load_rust(
       infer_bonds: Whether to infer bond connectivity (default: False).
       return_type: target class ("Protein" or "AtomicSystem").
       output_format_target: Target format hint ("mpnn" or "general").
+      numbering: mmCIF chain/residue numbering, ``"auth"`` (default) or ``"label"``.
+          Ignored for PDB input.
       **kwargs: Additional args passed to `OutputSpec`.
 
   Yields:
@@ -677,9 +679,11 @@ def parse_pdb_to_protein(
   cif_text = _raw_atom_data_to_mmcif(resolved, numbering)
   tmp_path: str | None = None
   try:
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".cif", delete=False) as tmp:
-      tmp.write(cif_text)
+    with tempfile.NamedTemporaryFile(
+      mode="w", suffix=".cif", delete=False, encoding="utf-8"
+    ) as tmp:
       tmp_path = tmp.name
+      tmp.write(cif_text)
     result = _proxider.parse_structure(tmp_path, spec, numbering)
     return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
   finally:
