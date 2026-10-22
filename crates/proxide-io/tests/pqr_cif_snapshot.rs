@@ -21,7 +21,7 @@
 //!   against the checked-in file.
 
 use proxide_core::structure::RawAtomData;
-use proxide_io::formats::mmcif::parse_mmcif_file;
+use proxide_io::formats::mmcif::{parse_mmcif_file, parse_mmcif_file_with, MmcifNumbering};
 use proxide_io::formats::pdb::parse_pdb_file;
 use proxide_io::formats::pqr::parse_pqr_file;
 use std::collections::{BTreeMap, BTreeSet};
@@ -41,10 +41,9 @@ const FIXTURES: &[&str] = &[
     "crates/proxide-io/tests/data/1UBQ.cif",
 ];
 
-/// Fixtures whose snapshot is EXPECTED to change in a later step of this
-/// sprint, with a reviewed reason. Empty right now: Step 0 runs before any
-/// parser change, so every fixture above must snapshot identically through
-/// Step 2 (pqr.rs) unless a later fixer step adds a reviewed entry here.
+/// Fixtures whose snapshot is EXPECTED to change, with a reviewed reason.
+/// Empty: every intentional change is re-baselined with `regenerate_snapshot`,
+/// and an entry here only documents it (the comparator is skipped on a match).
 const EXPECTED_DIVERGENCES: &[(&str, &str)] = &[];
 
 fn workspace_root() -> PathBuf {
@@ -201,7 +200,7 @@ fn parse_checked_in_lines(checked_in: &str) -> BTreeMap<String, String> {
         .filter_map(|l| {
             let colon = l.find("\": ")?;
             let key = l[..colon].trim().trim_matches('"').to_string();
-            Some((key, l.trim_end_matches(',').to_string()))
+            Some((key, l.trim().trim_end_matches(',').to_string()))
         })
         .collect()
 }
@@ -390,4 +389,24 @@ fn crn_cif_and_pdb_parity() {
             "atom {i} coordinate mismatch: cif {cif_xyz:?} vs pdb {pdb_xyz:?}"
         );
     }
+}
+
+/// Pins the numbering switch on a real fixture: 1UBQ's HOH waters are label
+/// chain B and auth chain A, so `label` reads {A, B} and `auth` reads {A}.
+#[test]
+fn numbering_pins_1ubq_chains() {
+    let path = workspace_root().join("crates/proxide-io/tests/data/1UBQ.cif");
+    let chains = |numbering| {
+        let (raw, _) = parse_mmcif_file_with(&path, numbering).expect("1UBQ.cif parses");
+        raw.chain_ids.iter().cloned().collect::<BTreeSet<String>>()
+    };
+    let label: BTreeSet<String> = ["A", "B"].iter().map(|s| s.to_string()).collect();
+    let auth: BTreeSet<String> = ["A"].iter().map(|s| s.to_string()).collect();
+    assert_eq!(chains(MmcifNumbering::Label), label);
+    assert_eq!(chains(MmcifNumbering::Auth), auth);
+    assert_eq!(
+        chains(MmcifNumbering::default()),
+        auth,
+        "default must be auth"
+    );
 }
