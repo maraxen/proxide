@@ -34,6 +34,7 @@
 //! pattern than parsing it directly in the target width would.
 
 use crate::formats::field_parse::{self, TokenFieldErrorKind};
+use crate::formats::parm7::ELEMENTS;
 use proxide_core::chem::masses::infer_element;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -75,6 +76,9 @@ pub enum PdbFieldErrorKind {
     /// A (chain, res_seq, insertion code) key reappeared after a different
     /// key was already seen in the same model+chain (decision d).
     ResidueReappears,
+    /// The element column (cols 77-78) holds a symbol that is not in the
+    /// periodic-table list (debt #2366).
+    UnknownElement,
     /// An I/O error while reading a line (not a content problem).
     Io,
 }
@@ -90,6 +94,7 @@ impl fmt::Display for PdbFieldErrorKind {
             PdbFieldErrorKind::ResidueReappears => {
                 "residue key reappeared non-contiguously in the same model+chain"
             }
+            PdbFieldErrorKind::UnknownElement => "unknown element symbol",
             PdbFieldErrorKind::Io => "I/O error",
         };
         f.write_str(s)
@@ -438,6 +443,30 @@ fn check_residue_reappearance(
 // Record parsing.
 // ---------------------------------------------------------------------
 
+/// Canonical element symbol for a raw element-column value (debt #2366).
+///
+/// Trims, title-cases (`CL`, `cl`, `Cl` -> `Cl`) and validates against the
+/// periodic-table list the crate already uses (`parm7::ELEMENTS`, Z = 1..86).
+/// Deuterium `D` is accepted as its own symbol. Returns `None` for an empty
+/// or unknown symbol; the caller turns that into a fail-loud error.
+pub(crate) fn normalize_element_symbol(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let upper = trimmed.to_ascii_uppercase();
+    if upper == "D" {
+        return Some("D".to_string());
+    }
+    if !ELEMENTS.iter().any(|e| *e == upper) {
+        return None;
+    }
+    let lower = upper.to_ascii_lowercase();
+    let mut title = lower[..1].to_ascii_uppercase();
+    title.push_str(&lower[1..]);
+    Some(title)
+}
+
 fn parse_atom_record(
     line_bytes: &[u8],
     line_no: usize,
@@ -488,7 +517,16 @@ fn parse_atom_record(
     let element = if element_field.is_empty() {
         infer_element(atom_name.trim()).to_string()
     } else {
-        element_field.to_string()
+        normalize_element_symbol(element_field).ok_or_else(|| {
+            PdbFieldError::new(
+                line_no,
+                record,
+                "element",
+                (77, 78),
+                line_bytes,
+                PdbFieldErrorKind::UnknownElement,
+            )
+        })?
     };
 
     Ok(PdbAtomRecord {
@@ -808,5 +846,51 @@ ATOM      3  N   ALA A   2      2.000   0.000   0.000  1.00  0.00           N
         let text = err.to_string();
         assert!(text.contains(PDB_MALFORMED_RECORD_CODE));
         assert_eq!(PDB_MALFORMED_RECORD_CODE, "PROX-IO-MALFORMED-RECORD");
+    }
+
+    /// Build an ATOM/HETATM line with the given atom name (cols 13-16) and
+    /// element column (cols 77-78, right-justified by the caller).
+    fn element_line(atom_name: &str, element_col: &str) -> Vec<u8> {
+        let mut line = BASE_LINE.as_bytes().to_vec();
+        set_field(&mut line, 12, 16, atom_name);
+        set_field(&mut line, 76, 78, element_col);
+        line
+    }
+
+    fn parsed_element(atom_name: &str, element_col: &str) -> Result<String, PdbFieldError> {
+        let line = element_line(atom_name, element_col);
+        parse_pdb_records(&line[..]).map(|recs| recs[0].element.clone())
+    }
+
+    #[test]
+    fn filled_element_column_is_normalised_to_canonical_symbol() {
+        // Debt #2366: a filled element column must come out as the same
+        // title-case symbol that infer_element gives a blank column.
+        assert_eq!(parsed_element("CL", "CL").unwrap(), "Cl");
+        assert_eq!(parsed_element("CL", "cl").unwrap(), "Cl");
+        assert_eq!(parsed_element("CL", "Cl").unwrap(), "Cl");
+        assert_eq!(parsed_element("ZN", "ZN").unwrap(), "Zn");
+        assert_eq!(parsed_element("FE", "FE").unwrap(), "Fe");
+        assert_eq!(parsed_element("N", " N").unwrap(), "N");
+        assert_eq!(parsed_element("D", " D").unwrap(), "D");
+    }
+
+    #[test]
+    fn filled_and_blank_element_columns_agree() {
+        for (name, col) in [("CL", "CL"), ("ZN", "ZN"), ("FE", "FE")] {
+            let filled = parsed_element(name, col).unwrap();
+            let blank = parsed_element(name, "  ").unwrap();
+            assert_eq!(filled, blank, "atom name {name}");
+        }
+    }
+
+    #[test]
+    fn unknown_element_symbol_is_an_error_not_a_pass_through() {
+        let err = parsed_element("XX", "XX").unwrap_err();
+        assert_eq!(err.kind, PdbFieldErrorKind::UnknownElement);
+        assert_eq!(err.field, "element");
+        assert_eq!(err.columns, (77, 78));
+        assert!(err.raw.contains("XX"));
+        assert!(err.to_string().contains(PDB_MALFORMED_RECORD_CODE));
     }
 }

@@ -178,7 +178,7 @@ fn read_sections<R: BufRead>(reader: R) -> Result<HashMap<String, Section>, Parm
 }
 
 /// Element symbols by atomic number (index = Z), uppercase like the PDB element column.
-const ELEMENTS: [&str; 87] = [
+pub(crate) const ELEMENTS: [&str; 87] = [
     "", "H", "HE", "LI", "BE", "B", "C", "N", "O", "F", "NE", "NA", "MG", "AL", "SI", "P", "S",
     "CL", "AR", "K", "CA", "SC", "TI", "V", "CR", "MN", "FE", "CO", "NI", "CU", "ZN", "GA", "GE",
     "AS", "SE", "BR", "KR", "RB", "SR", "Y", "ZR", "NB", "MO", "TC", "RU", "RH", "PD", "AG", "CD",
