@@ -56,6 +56,10 @@ pub enum TokenFieldErrorKind {
     /// A mmCIF value was the literal `?` (Unknown) where a required field
     /// forbids it (track b, decision e).
     Unknown,
+    /// An element symbol that is not in the periodic-table list (after trim and
+    /// title-casing), or deuterium `D`, is rejected rather than passed through
+    /// (debt #2366).
+    UnknownElement,
     /// A mmCIF `_atom_site.<column> value` non-loop form was encountered
     /// (track b, decision m).
     NonLoopUnsupported,
@@ -86,6 +90,7 @@ impl fmt::Display for TokenFieldErrorKind {
             }
             TokenFieldErrorKind::Unknown => "value is '?' (unknown) but field is required",
             TokenFieldErrorKind::NonLoopUnsupported => "non-loop _atom_site form is unsupported",
+            TokenFieldErrorKind::UnknownElement => "unknown element symbol",
             TokenFieldErrorKind::MultipleDataBlocks => {
                 "more than one data_ block contains an _atom_site loop"
             }

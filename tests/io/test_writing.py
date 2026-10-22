@@ -428,31 +428,28 @@ class TestWritePdbOnRealParsedStructures:
       parse_structure("tests/data/1uao.pdb", OutputSpec(coord_format=CoordFormat.Full))
 
   @staticmethod
-  def _cache_probe(tmp_path, name: str) -> tuple[Path, str]:
-    """A private copy of the fixture, plus the same file with x shifted.
+  def _cache_probe(tmp_path, name: str) -> Path:
+    """A private copy of the fixture, for parsing twice with caching on.
 
-    The format cache is keyed by path alone, so after overwriting the file a
-    cache HIT still returns the old coordinates and a miss the new ones --
-    which is how these tests know the second parse came from the cache.
+    The format cache is keyed on the file's content, so the second parse of this
+    unchanged copy is a cache HIT (proved by the format cache hit counter). Content
+    changes are covered by tests/io/test_format_cache_content.py.
     """
-    src = Path(TestWritePdbOnRealParsedStructures.PDB).read_text()
-    shifted = "".join(
-      (x[:30] + f"{float(x[30:38]) + 50.0:8.3f}" + x[38:]) if x.startswith("ATOM") else x
-      for x in src.splitlines(keepends=True)
-    )
     path = tmp_path / name
-    path.write_text(src)
-    return path, shifted
+    path.write_text(Path(TestWritePdbOnRealParsedStructures.PDB).read_text())
+    return path
 
   def test_full_format_cache_hit_returns_the_same_per_atom_fields(self, tmp_path) -> None:
+    from proxide._proxider import _format_cache_stats
+
     from proxide import CoordFormat, OutputSpec, parse_structure
 
-    path, shifted = self._cache_probe(tmp_path, "full_cache.pdb")
+    path = self._cache_probe(tmp_path, "full_cache.pdb")
     spec = OutputSpec(coord_format=CoordFormat.Full, enable_caching=True)
     first = parse_structure(str(path), spec)
-    path.write_text(shifted)
+    hits_before = _format_cache_stats()[0]
     second = parse_structure(str(path), spec)
-    # Proof of a cache hit: the old coordinates came back.
+    assert _format_cache_stats()[0] == hits_before + 1
     np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
     for field in ("elements", "res_names", "atom_chain_ids", "atom_res_index"):
       a, b = getattr(first, field), getattr(second, field)
@@ -460,13 +457,16 @@ class TestWritePdbOnRealParsedStructures:
       assert list(np.asarray(a)) == list(np.asarray(b)), field
 
   def test_atom37_cache_hit_keeps_the_chain_vocabulary(self, tmp_path) -> None:
+    from proxide._proxider import _format_cache_stats
+
     from proxide import CoordFormat, OutputSpec, parse_structure
 
-    path, shifted = self._cache_probe(tmp_path, "a37_cache.pdb")
+    path = self._cache_probe(tmp_path, "a37_cache.pdb")
     spec = OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True)
     first = parse_structure(str(path), spec)
-    path.write_text(shifted)
+    hits_before = _format_cache_stats()[0]
     second = parse_structure(str(path), spec)
+    assert _format_cache_stats()[0] == hits_before + 1
     np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
     assert second.chain_ids == first.chain_ids == ["A"]
 
@@ -631,8 +631,8 @@ class TestWritePdbOnRealParsedStructures:
     names = list(protein.atom_names)
     ion = [i for i, (n, r) in enumerate(zip(names, protein.res_names)) if r == "CA"]
     assert len(ion) == 1, (names[-3:], list(protein.res_names)[-3:])
-    # The PDB reader keeps the element column's case as written ("CA"; see
-    # the element-case debt). What matters here: calcium, not carbon.
+    # The PDB reader canonicalises the element column to title case ("Ca", debt
+    # #2366). What matters here: calcium, not carbon.
     assert protein.elements[ion[0]].upper() == "CA"
 
 
@@ -897,3 +897,33 @@ class TestChainFilterKeepsSourceBAndOccupancy:
       np.asarray(chain_b.b_factors), np.asarray(whole.b_factors)[-n_b:], atol=1e-3
     )
     assert np.asarray(chain_b.b_factors)[0, 0] == pytest.approx(8.64)
+def test_pdb_element_column_is_upper_case_and_right_justified(tmp_path) -> None:
+  # Debt #2366 review: wwPDB writes element symbols upper-case in cols 77-78.
+  lines = _atom_lines(write_pdb(_flat_protein(2, elements=["C", "Cl"]), tmp_path / "out.pdb"))
+  assert lines[0][76:78] == " C"
+  assert lines[1][76:78] == "CL"
+
+
+def test_cif_type_symbol_is_upper_case(tmp_path) -> None:
+  out = write_mmcif(_flat_protein(2, elements=["Cl", "C"]), tmp_path / "out.cif")
+  assert "ATOM 1 CL " in out.read_text()
+
+
+def test_parsed_cl_hetatm_round_trips_to_upper_case_element(tmp_path) -> None:
+  # Debt #2366 review: parse a 'CL' HETATM, write it back, and check cols 77-78.
+  from proxide import CoordFormat, OutputSpec, parse_structure
+
+  src = [x for x in open("tests/data/5awl.pdb") if x.startswith("ATOM")]
+  cl = "HETATM 9999 CL    CL B 900      30.000  30.000  30.000  1.00  0.00          CL\n"
+  path = tmp_path / "with_cl.pdb"
+  path.write_text("".join(src) + "TER\n" + cl + "END\n")
+  protein = parse_structure(
+    str(path), OutputSpec(coord_format=CoordFormat.Full, include_hetatm=True)
+  )
+  cl_idx = [i for i, r in enumerate(protein.res_names) if r == "CL"]
+  assert len(cl_idx) == 1
+  assert protein.elements[cl_idx[0]] == "Cl"
+  out_lines = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+  cl_lines = [line for line in out_lines if line[17:20].strip() == "CL"]
+  assert len(cl_lines) == 1
+  assert cl_lines[0][76:78] == "CL"

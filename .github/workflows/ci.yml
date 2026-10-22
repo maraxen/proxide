@@ -33,6 +33,10 @@ jobs:
         run: |
           source .venv/bin/activate
           uv pip install .[dev]
+      - name: Check version strings agree
+        run: |
+          source .venv/bin/activate
+          python scripts/check_versions.py
       - name: Lint with Ruff
         run: |
           source .venv/bin/activate
