@@ -2,7 +2,6 @@ use proxide_rs::spec::{CoordFormat, ErrorMode, HydrogenSource, MissingResidueMod
 use proxide_units::UnitSystem;
 use pyo3::prelude::*;
 
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyclass(name = "CoordFormat", eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PyCoordFormat {
@@ -34,7 +33,6 @@ impl From<PyCoordFormat> for CoordFormat {
     }
 }
 
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyclass(name = "ErrorMode", eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PyErrorMode {
@@ -63,7 +61,6 @@ impl From<PyErrorMode> for ErrorMode {
     }
 }
 
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyclass(name = "MissingResidueMode", eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PyMissingResidueMode {
@@ -95,7 +92,6 @@ impl From<PyMissingResidueMode> for MissingResidueMode {
     }
 }
 
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyclass(name = "HydrogenSource", eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PyHydrogenSource {
@@ -155,7 +151,6 @@ impl From<PyUnitSystem> for UnitSystem {
     }
 }
 
-/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyclass(name = "OutputSpec")]
 #[derive(Debug, Clone)]
 pub struct PyOutputSpec {

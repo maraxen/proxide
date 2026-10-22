@@ -35,6 +35,11 @@ STABLE = {
   "fetch_rcsb",
   "fetch_afdb",
   "fetch_foldcomp_database",
+  "OutputSpec",
+  "CoordFormat",
+  "ErrorMode",
+  "MissingResidueMode",
+  "HydrogenSource",
 }
 
 EXPERIMENTAL = {
@@ -55,11 +60,6 @@ EXPERIMENTAL = {
   "kabsch_rmsd_batch",
   "jaccard",
   "tmalign",
-  "OutputSpec",
-  "CoordFormat",
-  "ErrorMode",
-  "MissingResidueMode",
-  "HydrogenSource",
   "AtomicSystem",
   "iterload",
 }

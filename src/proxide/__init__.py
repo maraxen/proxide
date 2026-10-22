@@ -160,6 +160,11 @@ _STABLE = frozenset(
     "fetch_rcsb",
     "fetch_afdb",
     "fetch_foldcomp_database",
+    "OutputSpec",
+    "CoordFormat",
+    "ErrorMode",
+    "MissingResidueMode",
+    "HydrogenSource",
   }
 )
 __experimental__ = tuple(name for name in __all__ if name not in _STABLE)
