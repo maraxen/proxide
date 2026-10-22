@@ -11,7 +11,10 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+
+use proxide_core::spec::OutputSpec;
 
 /// Identity of a file's bytes: their length and a hash of their content. The
 /// hash is std's `DefaultHasher`: it is not stable across Rust releases, which
@@ -212,10 +215,38 @@ lazy_static::lazy_static! {
     static ref GLOBAL_CACHE: Mutex<FormatCache> = Mutex::new(FormatCache::new(100));
 }
 
-/// Get a structure from the global cache
+static HITS: AtomicU64 = AtomicU64::new(0);
+static MISSES: AtomicU64 = AtomicU64::new(0);
+
+/// Get a structure from the global cache. Counts a hit or a miss.
 pub fn get_cached(key: &CacheKey) -> Option<CachedStructure> {
     let mut cache = GLOBAL_CACHE.lock().unwrap();
-    cache.get(key).cloned()
+    let found = cache.get(key).cloned();
+    if found.is_some() {
+        HITS.fetch_add(1, Ordering::Relaxed);
+    } else {
+        MISSES.fetch_add(1, Ordering::Relaxed);
+    }
+    found
+}
+
+/// Hits, misses and entry count of the global cache since process start.
+pub fn cache_stats() -> (u64, u64, usize) {
+    (
+        HITS.load(Ordering::Relaxed),
+        MISSES.load(Ordering::Relaxed),
+        _cache_size(),
+    )
+}
+
+/// Cache-key description of every option that shapes a parse's output. The whole
+/// spec is described: Debug covers every field, so a field added later is keyed
+/// automatically. `enable_caching` is the one field left out: it only decides
+/// whether a result is stored, not what the result is.
+pub fn options_key(spec: &OutputSpec) -> String {
+    let mut keyed = spec.clone();
+    keyed.enable_caching = false;
+    format!("{keyed:?}")
 }
 
 /// Insert a structure into the global cache
@@ -424,5 +455,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let missing = dir.path().join("absent.pdb");
         assert!(CacheKey::for_file(&missing, OPTS).is_err());
+    }
+
+    #[test]
+    fn test_options_key_is_deterministic_and_field_sensitive() {
+        let base = OutputSpec::default();
+        assert_eq!(options_key(&base), options_key(&OutputSpec::default()));
+
+        let mut caching_only = OutputSpec::default();
+        caching_only.enable_caching = !base.enable_caching;
+        assert_eq!(
+            options_key(&base),
+            options_key(&caching_only),
+            "enable_caching only decides storage, so it is not keyed"
+        );
+
+        let mut other = OutputSpec::default();
+        other.remove_solvent = !base.remove_solvent;
+        assert_ne!(options_key(&base), options_key(&other));
     }
 }

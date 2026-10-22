@@ -1,6 +1,5 @@
 """Tests for proxide.io.writing."""
 
-import logging
 from pathlib import Path
 
 import numpy as np
@@ -433,37 +432,41 @@ class TestWritePdbOnRealParsedStructures:
     """A private copy of the fixture, for parsing twice with caching on.
 
     The format cache is keyed on the file's content, so the second parse of this
-    unchanged copy is a cache HIT (proved by the "Cache hit" debug record). Content
+    unchanged copy is a cache HIT (proved by the format cache hit counter). Content
     changes are covered by tests/io/test_format_cache_content.py.
     """
     path = tmp_path / name
     path.write_text(Path(TestWritePdbOnRealParsedStructures.PDB).read_text())
     return path
 
-  def test_full_format_cache_hit_returns_the_same_per_atom_fields(self, tmp_path, caplog) -> None:
+  def test_full_format_cache_hit_returns_the_same_per_atom_fields(self, tmp_path) -> None:
+    from proxide._proxider import _format_cache_stats
+
     from proxide import CoordFormat, OutputSpec, parse_structure
 
     path = self._cache_probe(tmp_path, "full_cache.pdb")
     spec = OutputSpec(coord_format=CoordFormat.Full, enable_caching=True)
     first = parse_structure(str(path), spec)
-    with caplog.at_level(logging.DEBUG):
-      second = parse_structure(str(path), spec)
-    assert "Cache hit for" in caplog.text
+    hits_before = _format_cache_stats()[0]
+    second = parse_structure(str(path), spec)
+    assert _format_cache_stats()[0] == hits_before + 1
     np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
     for field in ("elements", "res_names", "atom_chain_ids", "atom_res_index"):
       a, b = getattr(first, field), getattr(second, field)
       assert a is not None and b is not None, field
       assert list(np.asarray(a)) == list(np.asarray(b)), field
 
-  def test_atom37_cache_hit_keeps_the_chain_vocabulary(self, tmp_path, caplog) -> None:
+  def test_atom37_cache_hit_keeps_the_chain_vocabulary(self, tmp_path) -> None:
+    from proxide._proxider import _format_cache_stats
+
     from proxide import CoordFormat, OutputSpec, parse_structure
 
     path = self._cache_probe(tmp_path, "a37_cache.pdb")
     spec = OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True)
     first = parse_structure(str(path), spec)
-    with caplog.at_level(logging.DEBUG):
-      second = parse_structure(str(path), spec)
-    assert "Cache hit for" in caplog.text
+    hits_before = _format_cache_stats()[0]
+    second = parse_structure(str(path), spec)
+    assert _format_cache_stats()[0] == hits_before + 1
     np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
     assert second.chain_ids == first.chain_ids == ["A"]
 

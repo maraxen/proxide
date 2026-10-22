@@ -1,37 +1,39 @@
 """The format cache must key on file content, not just the path (debt #2372).
 
-Before the fix, the cache was keyed on (path, format, flags) only, so overwriting
-a structure file at the same path made parse_structure return the OLD parse.
+Cache behaviour is asserted with the extension's hit/miss counters, not log capture:
+pyo3-log caches each logger's level, so caplog cannot reliably see debug records.
 """
 
-import logging
 import os
 from pathlib import Path
 
 import numpy as np
+from proxide._proxider import _format_cache_stats
 
 from proxide import CoordFormat, OutputSpec, parse_structure
 
 DATA = Path("tests/data")
-CACHE_HIT = "Cache hit for"
 
 
 def _cached_spec() -> OutputSpec:
   return OutputSpec(coord_format=CoordFormat.Atom37, enable_caching=True)
 
 
-def test_overwritten_file_at_same_path_is_reparsed(tmp_path, caplog) -> None:
+def test_overwritten_file_at_same_path_is_reparsed(tmp_path) -> None:
   path = tmp_path / "structure.pdb"
   path.write_text((DATA / "5awl.pdb").read_text())
+  hits0, misses0, _ = _format_cache_stats()
   first = parse_structure(str(path), _cached_spec())
+  hits1, misses1, _ = _format_cache_stats()
   assert np.shape(first.coordinates) == (10, 37, 3)
+  assert (hits1 - hits0, misses1 - misses0) == (0, 1)
 
   path.write_text((DATA / "2ala.pdb").read_text())
-  with caplog.at_level(logging.DEBUG):
-    second = parse_structure(str(path), _cached_spec())
+  second = parse_structure(str(path), _cached_spec())
+  hits2, misses2, _ = _format_cache_stats()
   assert np.shape(second.coordinates) == (2, 37, 3)
   assert np.shape(second.atom_mask) == (2, 37)
-  assert CACHE_HIT not in caplog.text
+  assert (hits2 - hits1, misses2 - misses1) == (0, 1), "overwritten bytes must miss"
 
 
 def test_same_size_overwrite_with_same_mtime_is_reparsed(tmp_path) -> None:
@@ -49,19 +51,23 @@ def test_same_size_overwrite_with_same_mtime_is_reparsed(tmp_path) -> None:
 
   path.write_text(shifted)
   os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+  hits1, misses1, _ = _format_cache_stats()
   second = parse_structure(str(path), _cached_spec())
+  hits2, misses2, _ = _format_cache_stats()
   fresh = parse_structure(str(path), OutputSpec(coord_format=CoordFormat.Atom37))
+  assert (hits2 - hits1, misses2 - misses1) == (0, 1)
   np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(fresh.coordinates))
   assert not np.allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
 
 
-def test_unchanged_file_is_still_a_cache_hit(tmp_path, caplog) -> None:
+def test_unchanged_file_is_still_a_cache_hit(tmp_path) -> None:
   path = tmp_path / "unchanged.pdb"
   path.write_text((DATA / "2ala.pdb").read_text())
   first = parse_structure(str(path), _cached_spec())
-  with caplog.at_level(logging.DEBUG):
-    second = parse_structure(str(path), _cached_spec())
-  assert CACHE_HIT in caplog.text
+  hits1, misses1, _ = _format_cache_stats()
+  second = parse_structure(str(path), _cached_spec())
+  hits2, misses2, _ = _format_cache_stats()
+  assert (hits2 - hits1, misses2 - misses1) == (1, 0)
   np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
 
 
@@ -75,6 +81,9 @@ def test_option_change_is_not_served_from_another_options_entry(tmp_path) -> Non
   full = parse_structure(str(path), full_spec)
   assert np.shape(full.coordinates) != np.shape(atom37.coordinates)
 
+  hits1, misses1, _ = _format_cache_stats()
   again = parse_structure(str(path), _cached_spec())
+  hits2, misses2, _ = _format_cache_stats()
+  assert (hits2 - hits1, misses2 - misses1) == (1, 0), "Atom37 entry must still hit"
   assert np.shape(again.coordinates) == (10, 37, 3)
   np.testing.assert_allclose(np.asarray(again.coordinates), np.asarray(atom37.coordinates))

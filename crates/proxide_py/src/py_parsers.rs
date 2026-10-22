@@ -328,14 +328,10 @@ fn read_trajectory_frames(
     ))
 }
 
-/// Every option that shapes a parse's output, as the options part of the format
-/// cache key. The whole spec is described (Debug covers every field, so a field
-/// added later is keyed automatically). `enable_caching` is the one field left out:
-/// it only decides whether the result is stored, not what the result is.
-fn cache_options(output: &spec::OutputSpec) -> String {
-    let mut keyed = output.clone();
-    keyed.enable_caching = false;
-    format!("{keyed:?}")
+/// Format-cache counters (hits, misses, entries) for tests. Private: not in `__all__`.
+#[pyfunction]
+pub fn _format_cache_stats() -> (u64, u64, usize) {
+    formatters::cache::cache_stats()
 }
 
 /// Parse a structure file (PDB/mmCIF) into a format suitable for the Protein class.
@@ -361,22 +357,31 @@ pub fn parse_structure(
         && !spec.infer_bonds
         && !spec.add_hydrogens;
 
-    // Read the file once. The cache key and the parse both use these bytes, so the
-    // stored entry always describes what was parsed, even if the file changes on disk.
-    let bytes: Vec<u8> = py.allow_threads(|| std::fs::read(&path)).map_err(|e| {
-        pyo3::exceptions::PyValueError::new_err(format!("Structure parsing failed: {}", e))
-    })?;
+    // With caching on, read the file once: the cache key and the parse both use these
+    // bytes, so the stored entry always describes what was parsed even if the file
+    // changes on disk. With caching off the parser streams the file as before.
+    let is_cif = path.ends_with(".cif") || path.ends_with(".mmcif");
+    let bytes: Option<Vec<u8>> = if should_cache {
+        Some(py.allow_threads(|| std::fs::read(&path)).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Structure parsing failed: {}", e))
+        })?)
+    } else {
+        None
+    };
 
-    let cache_key = if should_cache {
-        match formatters::CacheKey::from_bytes(&path, &bytes, &cache_options(&spec)) {
+    let cache_key = match &bytes {
+        Some(buf) => match formatters::CacheKey::from_bytes(
+            &path,
+            buf,
+            &formatters::cache::options_key(&spec),
+        ) {
             Ok(key) => Some(key),
             Err(e) => {
                 log::debug!("Not caching {}: cannot fingerprint it ({})", path, e);
                 None
             }
-        }
-    } else {
-        None
+        },
+        None => None,
     };
     if let Some(key) = &cache_key {
         if let Some(cached) = formatters::get_cached(key) {
@@ -385,15 +390,27 @@ pub fn parse_structure(
         }
     }
 
-    // 1. Parse PDB or mmCIF from the bytes read above
+    // 1. Parse PDB or mmCIF: from the buffer when caching, else from the file
     let (raw_data_all, model_ids) = py
         .allow_threads(|| {
-            let reader = std::io::Cursor::new(&bytes[..]);
-            if path.ends_with(".cif") || path.ends_with(".mmcif") {
-                formats::mmcif::parse_mmcif_from_reader(reader).map_err(|e| e.to_string())
-            } else {
-                formats::pdb::parse_pdb_from_reader(reader).map_err(|e| e.to_string())
-            }
+            let parsed = match &bytes {
+                Some(buf) => {
+                    let reader = std::io::Cursor::new(&buf[..]);
+                    if is_cif {
+                        formats::mmcif::parse_mmcif_from_reader(reader)
+                    } else {
+                        formats::pdb::parse_pdb_from_reader(reader)
+                    }
+                }
+                None => {
+                    if is_cif {
+                        formats::mmcif::parse_mmcif_file(&path)
+                    } else {
+                        formats::pdb::parse_pdb_file(&path)
+                    }
+                }
+            };
+            parsed.map_err(|e| e.to_string())
         })
         .map_err(|e: String| {
             pyo3::exceptions::PyValueError::new_err(format!("Structure parsing failed: {}", e))
