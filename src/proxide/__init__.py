@@ -131,9 +131,38 @@ __all__ = [
   "fetch_foldcomp_database",
 ]
 
-# Names outside proxide's stability guarantee (see README "Stability"). Each is also in
-# __all__; nothing is removed or moved by this classification.
-__experimental__ = ("assign_gaff_atom_types",)
+# Stable surface at 0.1.0 is core IO only (see README "Stability"). Everything else in
+# __all__ is experimental: not covered by the stability guarantee, may change in a minor release.
+_STABLE = frozenset(
+  {
+    "io",
+    "parse_pdb",
+    "parse_mmcif",
+    "parse_pqr",
+    "parse_structure",
+    "parse_parm7",
+    "parse_amber_trajectory",
+    "parse_xtc",
+    "parse_dcd",
+    "parse_trr",
+    "read_xtc_lazy",
+    "read_xtc_parallel",
+    "read_xtc_ca_distogram",
+    "frame_count",
+    "n_atoms",
+    "TrajectoryStream",
+    "parse_mdtraj_h5_metadata",
+    "parse_mdtraj_h5_frame",
+    "parse_mdcath_metadata",
+    "parse_mdcath_frame",
+    "get_mdcath_replicas",
+    "write_dcd",
+    "fetch_rcsb",
+    "fetch_afdb",
+    "fetch_foldcomp_database",
+  }
+)
+__experimental__ = tuple(name for name in __all__ if name not in _STABLE)
 
 
 def __getattr__(name: str) -> Any:
