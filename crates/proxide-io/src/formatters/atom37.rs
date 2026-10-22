@@ -11,11 +11,15 @@ use std::collections::HashMap;
 /// Formatted structure in Atom37 representation
 #[derive(Debug)]
 pub struct FormattedAtom37 {
-    pub coordinates: Vec<f32>,   // Flat (N_res * 37 * 3) - reshaped in Python
-    pub atom_mask: Vec<f32>,     // Flat (N_res * 37)
-    pub aatype: Vec<i8>,         // (N_res,) residue type indices (0-20)
+    /// Source B-factor per slot: flat (N_res * 37); 0.0 where the slot is unplaced (see atom_mask).
+    pub b_factors: Vec<f32>,
+    /// Source occupancy per slot: flat (N_res * 37); 0.0 where the slot is unplaced.
+    pub occupancies: Vec<f32>,
+    pub coordinates: Vec<f32>, // Flat (N_res * 37 * 3) - reshaped in Python
+    pub atom_mask: Vec<f32>,   // Flat (N_res * 37)
+    pub aatype: Vec<i8>,       // (N_res,) residue type indices (0-20)
     pub residue_index: Vec<i32>, // (N_res,) PDB residue numbers
-    pub chain_index: Vec<i32>,   // (N_res,) chain indices
+    pub chain_index: Vec<i32>, // (N_res,) chain indices
 }
 
 /// Atom37 formatter - converts to standardized (N_res, 37, 3) representation
@@ -39,6 +43,8 @@ impl Atom37Formatter {
         let mut aatype = vec![0i8; num_residues];
         let mut residue_index = vec![0i32; num_residues];
         let mut chain_index = vec![0i32; num_residues];
+        let mut b_factors = vec![0.0f32; num_residues * 37];
+        let mut occupancies = vec![0.0f32; num_residues * 37];
 
         // Process each residue
         for (res_idx, res_info) in processed.residue_info.iter().enumerate() {
@@ -81,6 +87,8 @@ impl Atom37Formatter {
                     coordinates[coord_base + 1] = processed.raw_atoms.coords[global_idx * 3 + 1];
                     coordinates[coord_base + 2] = processed.raw_atoms.coords[global_idx * 3 + 2];
                     atom_mask[mask_idx] = 1.0;
+                    b_factors[mask_idx] = processed.raw_atoms.b_factors[global_idx];
+                    occupancies[mask_idx] = processed.raw_atoms.occupancy[global_idx];
                 } else if is_expected {
                     // Expected atom is missing - log warning
                     log::warn!(
@@ -104,6 +112,8 @@ impl Atom37Formatter {
             aatype,
             residue_index,
             chain_index,
+            b_factors,
+            occupancies,
         })
     }
 }

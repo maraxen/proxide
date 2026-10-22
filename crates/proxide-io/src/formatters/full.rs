@@ -19,6 +19,10 @@ const _MAX_ATOMS_PER_RESIDUE: usize = 27;
 /// Formatted structure with all atoms (padded representation)
 #[derive(Debug)]
 pub struct FormattedFull {
+    /// Source B-factor per atom: (N_atoms). Same order as `coordinates`.
+    pub b_factors: Vec<f32>,
+    /// Source occupancy per atom: (N_atoms).
+    pub occupancies: Vec<f32>,
     /// Coordinates: (N_res * max_atoms * 3) flattened
     pub coordinates: Vec<f32>,
     /// Atom mask: (N_res * max_atoms) - 1.0 for present atoms
@@ -124,6 +128,8 @@ impl FullFormatter {
             elements: processed.raw_atoms.elements.clone(),
             res_names: processed.raw_atoms.res_names.clone(),
             atom_chain_ids: processed.raw_atoms.chain_ids.clone(),
+            b_factors: processed.raw_atoms.b_factors.clone(),
+            occupancies: processed.raw_atoms.occupancy.clone(),
             chain_index,
             coord_shape: (num_atoms, 3, 1), // Flat shape indicator
         })

@@ -112,11 +112,22 @@ def _reject_nonfinite(coords: np.ndarray, fn_name: str) -> None:
 def _atom_rows(
   protein: Protein,
   fn_name: str,
-) -> tuple[np.ndarray, list[str], list[str], np.ndarray, list[str], list[str]]:
+) -> tuple[
+  np.ndarray,
+  list[str],
+  list[str],
+  np.ndarray,
+  list[str],
+  list[str],
+  np.ndarray | None,
+  np.ndarray | None,
+]:
   """Resolve the per-atom rows `write_pdb`/`write_mmcif` emit, without inventing any.
 
-  Returns (coords, atom_names, res_names, res_seqs, chain_letters, elements),
-  all of one length. Two sources are supported:
+  Returns (coords, atom_names, res_names, res_seqs, chain_letters, elements,
+  b_factors, occupancies), the first six of one length. b_factors and occupancies
+  are the Protein's own values for those rows, or None when it carries none.
+  Two sources are supported:
 
   * per-atom fields (``atom_names`` present, e.g. the flat "Full" format):
     ``res_names`` and per-atom residue ids are required, and every per-atom
@@ -187,6 +198,8 @@ def _atom_rows(
       np.asarray(res_seqs),
       chain_letters,
       [str(e) for e in fields["elements"]],
+      _per_row_values(getattr(protein, "b_factors", None), (n,), "b_factors", fn_name),
+      _per_row_values(getattr(protein, "occupancies", None), (n,), "occupancies", fn_name),
     )
 
   coords = np.asarray(protein.coordinates)
@@ -243,6 +256,12 @@ def _atom_rows(
         "refusing to name them"
       )
       raise ValueError(msg)
+  b_slots = _per_row_values(
+    getattr(protein, "b_factors", None), atom_mask.shape, "b_factors", fn_name
+  )
+  occ_slots = _per_row_values(
+    getattr(protein, "occupancies", None), atom_mask.shape, "occupancies", fn_name
+  )
   return (
     coords[res_idx, slot_idx],
     names,
@@ -250,7 +269,65 @@ def _atom_rows(
     residue_index[res_idx],
     [res_chain[r] for r in res_idx],
     [_ATOM37_ELEMENT[n] for n in names],
+    None if b_slots is None else b_slots[res_idx, slot_idx],
+    None if occ_slots is None else occ_slots[res_idx, slot_idx],
   )
+
+
+def _per_row_values(values, shape: tuple, what: str, fn_name: str) -> np.ndarray | None:
+  """A per-row B-factor or occupancy array, or None when the Protein carries none.
+
+  `shape` is the layout the rows are read from: (N_atoms,) for a per-atom
+  Protein, the atom_mask shape (N_res, slots) for Atom37/Atom14. A mismatch
+  raises: a per-atom field is never padded or truncated (debt #2367).
+  """
+  if values is None:
+    return None
+  arr = np.asarray(values, dtype=np.float64)
+  if arr.shape != tuple(shape):
+    msg = (
+      f"{fn_name}: protein.{what} has shape {arr.shape}, expected {tuple(shape)}; "
+      "refusing to guess an alignment"
+    )
+    raise ValueError(msg)
+  return arr
+
+
+def _pdb_occupancy_and_b_factor(occupancy, b_factor, i: int) -> tuple[str, str]:
+  """The PDB occupancy (columns 55-60) and B-factor (61-66) fields of atom `i`.
+
+  A value the Protein carries is written as its source value in the 6-character
+  field. A value it does not carry is written blank, never as a 1.00 / 0.00
+  that no one measured (debt #2367). proxide's PDB reader takes blank columns
+  as the documented defaults (occupancy 1.0, B-factor 0.0).
+  """
+
+  def field(value, what: str) -> str:
+    if value is None:
+      return " " * 6
+    if not np.isfinite(value):
+      msg = f"write_pdb: {what} of atom {i} is not finite ({value}); refusing to write it"
+      raise ValueError(msg)
+    text = f"{float(value):6.2f}"
+    if len(text) > 6:
+      msg = (
+        f"write_pdb: {what} {value} (atom {i}) does not fit the fixed-width PDB column; "
+        "use write_mmcif"
+      )
+      raise ValueError(msg)
+    return text
+
+  return field(occupancy, "occupancy"), field(b_factor, "B-factor")
+
+
+def _cif_occupancy_or_b_factor(value, what: str, i: int) -> str:
+  """One mmCIF occupancy or B_iso_or_equiv value; '?' (CIF's unknown) when absent."""
+  if value is None:
+    return "?"
+  if not np.isfinite(value):
+    msg = f"write_mmcif: {what} of atom {i} is not finite ({value}); refusing to write it"
+    raise ValueError(msg)
+  return f"{float(value):.2f}"
 
 
 def write_pdb(protein: Protein, path: str | Path) -> Path:
@@ -274,8 +351,8 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
   path = Path(path)
   _reject_if_batched(protein, "write_pdb")
 
-  coords, atom_names, res_names, res_seqs, chain_letters, elements = _atom_rows(
-    protein, "write_pdb"
+  coords, atom_names, res_names, res_seqs, chain_letters, elements, b_factors, occupancies = (
+    _atom_rows(protein, "write_pdb")
   )
   _reject_nonfinite(coords, "write_pdb")
 
@@ -323,6 +400,11 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
     if any(len(c) > 8 for c in xyz):
       raise _overflow(f"coordinate ({', '.join(c.strip() for c in xyz)}) (atom {i})")
 
+    occ_field, b_field = _pdb_occupancy_and_b_factor(
+      None if occupancies is None else occupancies[i],
+      None if b_factors is None else b_factors[i],
+      i,
+    )
     # PDB convention: a name whose element is one letter starts in column 14
     # (" CA "), so readers that infer elements from columns 13-14 don't read
     # CA as calcium or NE as neon. Four-letter names and two-letter or
@@ -333,7 +415,7 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
     lines.append(
       f"ATOM  {i + 1:>5} {name_field} {res_name:>3} {chain_id}{res_seq:>4}    "
       f"{''.join(xyz)}"
-      f"  1.00  0.00          {element.upper():>2}\n"
+      f"{occ_field}{b_field}          {element.upper():>2}\n"
     )
 
   # Validate everything before touching the file, so a rejected structure
@@ -364,8 +446,8 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
   path = Path(path)
   _reject_if_batched(protein, "write_mmcif")
 
-  coords, atom_names, res_names, res_seqs, chain_letters, elements = _atom_rows(
-    protein, "write_mmcif"
+  coords, atom_names, res_names, res_seqs, chain_letters, elements, b_factors, occupancies = (
+    _atom_rows(protein, "write_mmcif")
   )
   _reject_nonfinite(coords, "write_mmcif")
   if not all(chain_letters):
@@ -380,11 +462,15 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
     # Unknown element -> "?", CIF's own unknown marker (left unquoted on purpose).
     element = _cif_token(elements[i].upper(), "element", i) if elements[i] else "?"
     x, y, z = coords[i]
+    occ_text = _cif_occupancy_or_b_factor(
+      None if occupancies is None else occupancies[i], "occupancy", i
+    )
+    b_text = _cif_occupancy_or_b_factor(None if b_factors is None else b_factors[i], "B-factor", i)
     rows.append(
       f"ATOM {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
       f"{_cif_token(res_names[i], 'residue name', i)} "
       f"{_cif_token(chain_letters[i], 'chain id', i)} "
-      f"{int(res_seqs[i])} {x:.3f} {y:.3f} {z:.3f} 1.00 0.00\n"
+      f"{int(res_seqs[i])} {x:.3f} {y:.3f} {z:.3f} {occ_text} {b_text}\n"
     )
 
   # Validate every row before touching the file.
@@ -453,6 +539,11 @@ def write_npz(protein: Protein, path: str | Path) -> Path:
     data["sigmas"] = np.asarray(protein.sigmas)
   if protein.epsilons is not None:
     data["epsilons"] = np.asarray(protein.epsilons)
+  # Source B-factor and occupancy (debt #2367), present only when the Protein has them.
+  if protein.b_factors is not None:
+    data["b_factors"] = np.asarray(protein.b_factors)
+  if protein.occupancies is not None:
+    data["occupancies"] = np.asarray(protein.occupancies)
 
   # Filter out None values
   data = {k: v for k, v in data.items() if v is not None}

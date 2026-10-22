@@ -236,6 +236,11 @@ def load_rust(
                 new_full_coords = raw_full[mask]
                 new_atom_mask = obj.atom_mask[mask] if obj.atom_mask is not None else None
 
+              # Per-atom B-factor and occupancy follow the same mask as the coordinates
+              # (debt #2367); dropping them here would make a chain-filtered parse lose them.
+              new_b_factors = obj.b_factors[mask] if obj.b_factors is not None else None
+              new_occupancies = obj.occupancies[mask] if obj.occupancies is not None else None
+
               # Physics params are tricky because they might be (N_atoms,) or (N_res,)
               # depending on storage AtomicSystem stores them as (N_atoms,) currently.
               # Protein doesn't explicitly slice them here (TODO).
@@ -255,6 +260,8 @@ def load_rust(
                 # AtomicSystem required field
                 atom_mask=new_atom_mask,
                 full_coordinates=new_full_coords,
+                b_factors=new_b_factors,
+                occupancies=new_occupancies,
                 # full_atom_mask should satisfy AtomicSystem's expectation (often flat)
                 full_atom_mask=(
                   new_atom_mask.flatten()
