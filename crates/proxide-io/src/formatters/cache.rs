@@ -1,10 +1,10 @@
 //! LRU Cache for formatted structure outputs
 //!
 //! Provides caching of formatted structure data to avoid re-formatting
-//! the same structure multiple times. Entries are keyed on the identity of
-//! the file they were parsed from (canonical path plus a content
-//! fingerprint), so a file overwritten at the same path is parsed again
-//! instead of being served from the old entry.
+//! the same structure multiple times. An entry is keyed on the canonical
+//! path, a fingerprint of the exact bytes that were parsed, and a description
+//! of every option that shapes the output. A file overwritten at the same path
+//! is parsed again, and a file touched without a change in bytes stays a hit.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -12,88 +12,68 @@ use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::UNIX_EPOCH;
 
-use proxide_core::spec::CoordFormat;
-
-/// Identity of a file's bytes. Length and mtime are the cheap pre-check; the
-/// content hash is what catches an edit that keeps both (same size, same
-/// mtime). The hash is std's `DefaultHasher`: it is not stable across Rust
-/// releases, which is fine because the cache lives only in this process.
+/// Identity of a file's bytes: their length and a hash of their content. The
+/// hash is std's `DefaultHasher`: it is not stable across Rust releases, which
+/// is fine because the cache lives only in this process. mtime is deliberately
+/// not part of the identity, so touching a file without changing it keeps the
+/// entry valid.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 struct FileFingerprint {
     len: u64,
-    /// Nanoseconds since the Unix epoch; 0 when the platform reports no mtime.
-    mtime_ns: i128,
     content_hash: u64,
 }
 
 impl FileFingerprint {
-    fn of_file(path: &Path) -> io::Result<Self> {
-        let bytes = std::fs::read(path)?;
-        let mtime_ns = std::fs::metadata(path)?
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map_or(0, |d| d.as_nanos() as i128);
+    fn of_bytes(bytes: &[u8]) -> Self {
         let mut hasher = DefaultHasher::new();
         bytes.hash(&mut hasher);
-        Ok(Self {
+        Self {
             len: bytes.len() as u64,
-            mtime_ns,
             content_hash: hasher.finish(),
-        })
+        }
     }
 }
 
-/// Key for a cached parse: the source file (canonical path and content
-/// fingerprint) plus the output format and flags.
+/// Key for a cached parse: the canonical source path, the fingerprint of the
+/// bytes parsed, and the options that shape the output (see `options` below).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CacheKey {
     path: PathBuf,
     fingerprint: FileFingerprint,
-    format: CoordFormat,
-    remove_solvent: bool,
-    include_hetatm: bool,
+    options: String,
 }
 
 impl Hash for CacheKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.path.hash(state);
         self.fingerprint.hash(state);
-        (self.format as u8).hash(state);
-        self.remove_solvent.hash(state);
-        self.include_hetatm.hash(state);
+        self.options.hash(state);
     }
 }
 
 impl CacheKey {
-    /// Key for the parse of `path` as its bytes are on disk now. Reads the
-    /// file to fingerprint it. Errors if the file cannot be resolved or read:
-    /// a parse that cannot be fingerprinted must not be cached.
-    pub fn for_file(
-        path: impl AsRef<Path>,
-        format: CoordFormat,
-        remove_solvent: bool,
-        include_hetatm: bool,
-    ) -> io::Result<Self> {
-        let path = std::fs::canonicalize(path)?;
-        let fingerprint = FileFingerprint::of_file(&path)?;
+    /// Key for `bytes` read from `path`, parsed with `options`. The key is only
+    /// correct for the bytes it hashed, so pass the same buffer the parse reads.
+    /// `options` must describe every setting that changes the parse result.
+    pub fn from_bytes(path: impl AsRef<Path>, bytes: &[u8], options: &str) -> io::Result<Self> {
         Ok(Self {
-            path,
-            fingerprint,
-            format,
-            remove_solvent,
-            include_hetatm,
+            path: std::fs::canonicalize(path)?,
+            fingerprint: FileFingerprint::of_bytes(bytes),
+            options: options.to_string(),
         })
     }
 
-    /// Same file, format and flags, regardless of content.
+    /// Key for the file at `path` as it is on disk now. Reads the file once.
+    pub fn for_file(path: impl AsRef<Path>, options: &str) -> io::Result<Self> {
+        let path = path.as_ref();
+        let bytes = std::fs::read(path)?;
+        Self::from_bytes(path, &bytes, options)
+    }
+
+    /// Same file and options, regardless of content.
     fn same_slot(&self, other: &Self) -> bool {
-        self.path == other.path
-            && self.format == other.format
-            && self.remove_solvent == other.remove_solvent
-            && self.include_hetatm == other.include_hetatm
+        self.path == other.path && self.options == other.options
     }
 }
 
@@ -259,9 +239,11 @@ pub fn _cache_size() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     const ATOM_A: &[u8] = b"ATOM      1  CA  ALA A   1       1.000   0.000   0.000\n";
     const ATOM_B: &[u8] = b"ATOM      1  CA  ALA A   1       9.000   0.000   0.000\n";
+    const OPTS: &str = "unit=angstrom;target=general";
 
     fn sample_structure() -> CachedStructure {
         CachedStructure::new(CachedStructureArgs {
@@ -284,8 +266,8 @@ mod tests {
         path
     }
 
-    fn key(path: &Path, format: CoordFormat) -> CacheKey {
-        CacheKey::for_file(path, format, true, false).unwrap()
+    fn key(path: &Path) -> CacheKey {
+        CacheKey::for_file(path, OPTS).unwrap()
     }
 
     #[test]
@@ -296,9 +278,9 @@ mod tests {
         let p3 = write_file(&dir, "test3.pdb", ATOM_A);
         let mut cache = FormatCache::new(2);
 
-        let key1 = key(&p1, CoordFormat::Atom37);
-        let key2 = key(&p2, CoordFormat::Atom37);
-        let key3 = key(&p3, CoordFormat::Atom37);
+        let key1 = key(&p1);
+        let key2 = key(&p2);
+        let key3 = key(&p3);
 
         cache.insert(key1.clone(), sample_structure());
         cache.insert(key2.clone(), sample_structure());
@@ -307,11 +289,8 @@ mod tests {
         assert!(cache.get(&key1).is_some());
         assert!(cache.get(&key2).is_some());
 
-        // Insert third, should evict LRU
-        // Order after inserts: key1, key2
-        // After get(key1): key2, key1
-        // After get(key2): key1, key2
-        // So key1 is LRU and should be evicted when key3 is inserted
+        // Order after inserts: key1, key2. After the gets: key1, key2, so key1
+        // is the LRU entry and is evicted when key3 is inserted.
         cache.insert(key3.clone(), sample_structure());
 
         assert_eq!(cache._len(), 2);
@@ -321,13 +300,47 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_key_different_formats() {
+    fn test_from_bytes_matches_for_file() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_file(&dir, "test.pdb", ATOM_A);
-        let key1 = key(&path, CoordFormat::Atom37);
-        let key2 = key(&path, CoordFormat::Atom14);
+        let path = write_file(&dir, "same.pdb", ATOM_A);
+        let from_file = key(&path);
+        let bytes = std::fs::read(&path).unwrap();
+        let from_bytes = CacheKey::from_bytes(&path, &bytes, OPTS).unwrap();
+        assert_eq!(from_file, from_bytes);
+    }
 
-        assert_ne!(key1, key2);
+    #[test]
+    fn test_key_follows_the_bytes_it_is_given() {
+        // The key must describe the buffer the parse reads, not a later read of the path.
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_file(&dir, "given.pdb", ATOM_A);
+        let from_disk = key(&path);
+        let from_other_bytes = CacheKey::from_bytes(&path, ATOM_B, OPTS).unwrap();
+        assert_ne!(from_disk, from_other_bytes);
+    }
+
+    #[test]
+    fn test_different_options_are_separate_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_file(&dir, "opts.pdb", ATOM_A);
+        let mut cache = FormatCache::new(4);
+        let angstrom = CacheKey::for_file(&path, "unit=angstrom;target=general").unwrap();
+        let nanometre = CacheKey::for_file(&path, "unit=nm;target=general").unwrap();
+        let alphafold = CacheKey::for_file(&path, "unit=angstrom;target=alphafold").unwrap();
+        assert_ne!(angstrom, nanometre);
+        assert_ne!(angstrom, alphafold);
+
+        cache.insert(angstrom.clone(), sample_structure());
+        cache.insert(nanometre.clone(), sample_structure());
+        cache.insert(alphafold.clone(), sample_structure());
+        assert_eq!(
+            cache._len(),
+            3,
+            "option variants must not replace each other"
+        );
+        assert!(cache.get(&angstrom).is_some());
+        assert!(cache.get(&nanometre).is_some());
+        assert!(cache.get(&alphafold).is_some());
     }
 
     #[test]
@@ -336,12 +349,12 @@ mod tests {
         let path = write_file(&dir, "structure.pdb", ATOM_A);
         let mut cache = FormatCache::new(4);
 
-        let before = key(&path, CoordFormat::Atom37);
+        let before = key(&path);
         cache.insert(before.clone(), sample_structure());
         assert!(cache.get(&before).is_some(), "unchanged file must hit");
 
         std::fs::write(&path, ATOM_B).unwrap();
-        let after = key(&path, CoordFormat::Atom37);
+        let after = key(&path);
         assert!(
             cache.get(&after).is_none(),
             "same path with different bytes must not return the old entry"
@@ -362,7 +375,7 @@ mod tests {
         let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
         let mut cache = FormatCache::new(4);
 
-        let before = key(&path, CoordFormat::Atom37);
+        let before = key(&path);
         cache.insert(before.clone(), sample_structure());
 
         std::fs::write(&path, ATOM_B).unwrap();
@@ -372,9 +385,27 @@ mod tests {
             .unwrap()
             .set_modified(mtime)
             .unwrap();
-        let after = key(&path, CoordFormat::Atom37);
+        let after = key(&path);
         assert_ne!(before, after);
         assert!(cache.get(&after).is_none());
+    }
+
+    #[test]
+    fn test_identical_bytes_touch_is_a_hit() {
+        // An mtime change with identical bytes must not invalidate the entry.
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_file(&dir, "touched.pdb", ATOM_A);
+        let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let mut cache = FormatCache::new(4);
+        cache.insert(key(&path), sample_structure());
+
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(mtime + Duration::from_secs(3600))
+            .unwrap();
+        assert!(cache.get(&key(&path)).is_some());
     }
 
     #[test]
@@ -382,9 +413,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_file(&dir, "unchanged.pdb", ATOM_A);
         let mut cache = FormatCache::new(4);
-        cache.insert(key(&path, CoordFormat::Atom37), sample_structure());
+        cache.insert(key(&path), sample_structure());
 
-        let again = key(&path, CoordFormat::Atom37);
+        let again = key(&path);
         assert!(cache.get(&again).is_some());
     }
 
@@ -392,6 +423,6 @@ mod tests {
     fn test_key_for_missing_file_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         let missing = dir.path().join("absent.pdb");
-        assert!(CacheKey::for_file(&missing, CoordFormat::Atom37, true, false).is_err());
+        assert!(CacheKey::for_file(&missing, OPTS).is_err());
     }
 }

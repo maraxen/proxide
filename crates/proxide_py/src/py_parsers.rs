@@ -328,6 +328,16 @@ fn read_trajectory_frames(
     ))
 }
 
+/// Every option that shapes a parse's output, as the options part of the format
+/// cache key. The whole spec is described (Debug covers every field, so a field
+/// added later is keyed automatically). `enable_caching` is the one field left out:
+/// it only decides whether the result is stored, not what the result is.
+fn cache_options(output: &spec::OutputSpec) -> String {
+    let mut keyed = output.clone();
+    keyed.enable_caching = false;
+    format!("{keyed:?}")
+}
+
 /// Parse a structure file (PDB/mmCIF) into a format suitable for the Protein class.
 #[pyfunction]
 #[pyo3(signature = (path, spec=None))]
@@ -351,16 +361,14 @@ pub fn parse_structure(
         && !spec.infer_bonds
         && !spec.add_hydrogens;
 
-    // Fingerprint the file before it is parsed, so the entry stored after the
-    // parse is keyed on the bytes that were parsed. A file that cannot be read
-    // here is not cached (the parse below reports the error).
+    // Read the file once. The cache key and the parse both use these bytes, so the
+    // stored entry always describes what was parsed, even if the file changes on disk.
+    let bytes: Vec<u8> = py.allow_threads(|| std::fs::read(&path)).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("Structure parsing failed: {}", e))
+    })?;
+
     let cache_key = if should_cache {
-        match formatters::CacheKey::for_file(
-            &path,
-            spec.coord_format,
-            spec.remove_solvent,
-            spec.include_hetatm,
-        ) {
+        match formatters::CacheKey::from_bytes(&path, &bytes, &cache_options(&spec)) {
             Ok(key) => Some(key),
             Err(e) => {
                 log::debug!("Not caching {}: cannot fingerprint it ({})", path, e);
@@ -377,13 +385,14 @@ pub fn parse_structure(
         }
     }
 
-    // 1. Parse PDB or mmCIF
+    // 1. Parse PDB or mmCIF from the bytes read above
     let (raw_data_all, model_ids) = py
         .allow_threads(|| {
+            let reader = std::io::Cursor::new(&bytes[..]);
             if path.ends_with(".cif") || path.ends_with(".mmcif") {
-                formats::mmcif::parse_mmcif_file(&path).map_err(|e| e.to_string())
+                formats::mmcif::parse_mmcif_from_reader(reader).map_err(|e| e.to_string())
             } else {
-                formats::pdb::parse_pdb_file(&path).map_err(|e| e.to_string())
+                formats::pdb::parse_pdb_from_reader(reader).map_err(|e| e.to_string())
             }
         })
         .map_err(|e: String| {

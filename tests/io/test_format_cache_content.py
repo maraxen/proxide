@@ -63,3 +63,18 @@ def test_unchanged_file_is_still_a_cache_hit(tmp_path, caplog) -> None:
     second = parse_structure(str(path), _cached_spec())
   assert CACHE_HIT in caplog.text
   np.testing.assert_allclose(np.asarray(second.coordinates), np.asarray(first.coordinates))
+
+
+def test_option_change_is_not_served_from_another_options_entry(tmp_path) -> None:
+  path = tmp_path / "options.pdb"
+  path.write_text((DATA / "5awl.pdb").read_text())
+  atom37 = parse_structure(str(path), _cached_spec())
+  assert np.shape(atom37.coordinates) == (10, 37, 3)
+
+  full_spec = OutputSpec(coord_format=CoordFormat.Full, enable_caching=True)
+  full = parse_structure(str(path), full_spec)
+  assert np.shape(full.coordinates) != np.shape(atom37.coordinates)
+
+  again = parse_structure(str(path), _cached_spec())
+  assert np.shape(again.coordinates) == (10, 37, 3)
+  np.testing.assert_allclose(np.asarray(again.coordinates), np.asarray(atom37.coordinates))
