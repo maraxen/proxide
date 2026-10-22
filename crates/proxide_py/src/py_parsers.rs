@@ -64,11 +64,25 @@ pub fn parse_pdb(py: Python<'_>, path: String) -> PyResult<PyObject> {
     filtered.to_py_dict(py).map(|dict| dict.into_py(py))
 }
 
-/// Parse an mmCIF file and return raw atom data (low-level)
+/// Parse a numbering option (`"auth"` | `"label"`) or raise `ValueError`.
+fn parse_numbering(numbering: &str) -> PyResult<formats::mmcif::MmcifNumbering> {
+    formats::mmcif::MmcifNumbering::parse(numbering)
+        .map_err(pyo3::exceptions::PyValueError::new_err)
+}
+
+/// Parse an mmCIF file and return raw atom data (low-level).
+///
+/// `numbering="auth"` (default) reads `auth_asym_id` / `auth_seq_id`; `"label"`
+/// reads `label_asym_id` / `label_seq_id`. Each falls back to the other when its
+/// column is absent.
 #[pyfunction]
-pub fn parse_mmcif(py: Python<'_>, path: String) -> PyResult<PyObject> {
+#[pyo3(signature = (path, numbering="auth"))]
+pub fn parse_mmcif(py: Python<'_>, path: String, numbering: &str) -> PyResult<PyObject> {
+    let numbering = parse_numbering(numbering)?;
     let (raw_data, _model_ids) = py
-        .allow_threads(|| formats::mmcif::parse_mmcif_file(&path).map_err(|e| e.to_string()))
+        .allow_threads(|| {
+            formats::mmcif::parse_mmcif_file_with(&path, numbering).map_err(|e| e.to_string())
+        })
         .map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("mmCIF parsing failed: {}", e))
         })?;
@@ -376,14 +390,19 @@ pub fn _format_cache_stats() -> (u64, u64, usize) {
 }
 
 /// Parse a structure file (PDB/mmCIF) into a format suitable for the Protein class.
+///
+/// `numbering` (`"auth"` | `"label"`, default `"auth"`) selects the mmCIF chain and
+/// residue numbering; it is ignored for PDB input but still validated.
 #[pyfunction]
-#[pyo3(signature = (path, spec=None))]
+#[pyo3(signature = (path, spec=None, numbering="auth"))]
 pub fn parse_structure(
     py: Python,
     path: String,
     spec: Option<Bound<'_, PyOutputSpec>>,
+    numbering: &str,
 ) -> PyResult<PyObject> {
     let spec = spec.map(|s| s.borrow().inner.clone()).unwrap_or_default();
+    let numbering = parse_numbering(numbering)?;
 
     // Check cache (only if features are simple). The cache key has no model
     // selection in it, so a parse that selects models is never cached or
@@ -402,6 +421,17 @@ pub fn parse_structure(
     // bytes, so the stored entry always describes what was parsed even if the file
     // changes on disk. With caching off the parser streams the file as before.
     let is_cif = path.ends_with(".cif") || path.ends_with(".mmcif");
+    // The numbering changes what an mmCIF parse returns, so it is part of the
+    // cache key for mmCIF input (PDB parses do not depend on it and share entries).
+    let options = if is_cif {
+        format!(
+            "{};numbering={}",
+            formatters::cache::options_key(&spec),
+            numbering.as_str()
+        )
+    } else {
+        formatters::cache::options_key(&spec)
+    };
     let bytes: Option<Vec<u8>> = if should_cache {
         Some(py.allow_threads(|| std::fs::read(&path)).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("Structure parsing failed: {}", e))
@@ -411,11 +441,7 @@ pub fn parse_structure(
     };
 
     let cache_key = match &bytes {
-        Some(buf) => match formatters::CacheKey::from_bytes(
-            &path,
-            buf,
-            &formatters::cache::options_key(&spec),
-        ) {
+        Some(buf) => match formatters::CacheKey::from_bytes(&path, buf, &options) {
             Ok(key) => Some(key),
             Err(e) => {
                 log::debug!("Not caching {}: cannot fingerprint it ({})", path, e);
@@ -438,14 +464,14 @@ pub fn parse_structure(
                 Some(buf) => {
                     let reader = std::io::Cursor::new(&buf[..]);
                     if is_cif {
-                        formats::mmcif::parse_mmcif_from_reader(reader)
+                        formats::mmcif::parse_mmcif_from_reader_with(reader, numbering)
                     } else {
                         formats::pdb::parse_pdb_from_reader(reader)
                     }
                 }
                 None => {
                     if is_cif {
-                        formats::mmcif::parse_mmcif_file(&path)
+                        formats::mmcif::parse_mmcif_file_with(&path, numbering)
                     } else {
                         formats::pdb::parse_pdb_file(&path)
                     }

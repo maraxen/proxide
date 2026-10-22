@@ -45,7 +45,15 @@ const FIXTURES: &[&str] = &[
 /// sprint, with a reviewed reason. Empty right now: Step 0 runs before any
 /// parser change, so every fixture above must snapshot identically through
 /// Step 2 (pqr.rs) unless a later fixer step adds a reviewed entry here.
-const EXPECTED_DIVERGENCES: &[(&str, &str)] = &[];
+const EXPECTED_DIVERGENCES: &[(&str, &str)] = &[(
+    "crates/proxide-io/tests/data/1UBQ.cif",
+    "debt #1930: mmCIF chain ids default to auth_asym_id (was label_asym_id). In \
+     1UBQ the HOH waters are label_asym_id B / auth_asym_id A; every HOH row's \
+     chain_id moves B -> A (serials 603 onward). Residue numbers, coordinates, \
+     occupancy, B-factors and model ids are unchanged. Protein chain A residues \
+     are numbered 1-76, so the waters' auth numbers (77+) do not collide with them. \
+     Regenerated with regenerate_snapshot.",
+)];
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -242,15 +242,61 @@ fn multiple_data_blocks_error(line_no: usize, data_block_index: usize) -> CifFie
 // Per-column label/auth source resolution (decision f)
 // ---------------------------------------------------------------------
 
+/// Which mmCIF numbering the parser reads chain ids and residue numbers from.
+///
+/// `Auth` (the default) reads `auth_asym_id` / `auth_seq_id`, the numbering the
+/// PDB-format file of the same deposition uses (and Biopython and gemmi use by
+/// default). `Label` reads `label_asym_id` / `label_seq_id` (the RCSB pipeline's
+/// internal, entity-wide numbering), which was the only behaviour before the
+/// default changed. Each choice falls back to the other numbering when its
+/// column is absent from the `_atom_site` loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MmcifNumbering {
+    /// `auth_asym_id` / `auth_seq_id`, falling back to label when absent.
+    #[default]
+    Auth,
+    /// `label_asym_id` / `label_seq_id`, falling back to auth when absent.
+    Label,
+}
+
+impl MmcifNumbering {
+    /// Parse the user-facing option value: exactly `"auth"` or `"label"`.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "auth" => Ok(Self::Auth),
+            "label" => Ok(Self::Label),
+            other => Err(format!(
+                "numbering must be \"auth\" or \"label\", got {other:?}"
+            )),
+        }
+    }
+
+    /// The option value for this numbering (`"auth"` or `"label"`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auth => "auth",
+            Self::Label => "label",
+        }
+    }
+
+    /// The (preferred, fallback) column prefixes for this numbering.
+    fn prefixes(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Auth => ("auth", "label"),
+            Self::Label => ("label", "auth"),
+        }
+    }
+}
+
 enum SeqMode {
-    /// `label_seq_id` present, no `auth_seq_id` column to fall back to.
-    LabelOnly,
-    /// No `label_seq_id` column; `auth_seq_id` used directly (the
-    /// "auth-only header" case).
-    AuthOnly,
-    /// Both present: `label_seq_id` is the source; a PER-ROW `.` falls back
-    /// to `auth_seq_id`, a `?` is a hard [`TokenFieldErrorKind::Unknown`].
-    LabelWithAuthFallback,
+    /// Exactly one of the two residue-number columns exists; read it directly.
+    Only(&'static str),
+    /// Both exist: `primary` is the source; a PER-ROW `.` falls back to
+    /// `secondary`, a `?` is a hard [`TokenFieldErrorKind::Unknown`].
+    WithFallback {
+        primary: &'static str,
+        secondary: &'static str,
+    },
 }
 
 struct ColumnSources {
@@ -260,40 +306,52 @@ struct ColumnSources {
     seq_mode: SeqMode,
 }
 
+/// Resolve `_atom_site.<base>` to whichever of `<prefer>_<base>` /
+/// `<other>_<base>` the loop has, preferring `prefer`.
 fn resolve_id_col(
     column_map: &HashMap<String, usize>,
     base: &str,
+    prefer: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let label = format!("label_{base}");
-    if column_map.contains_key(&label) {
-        return Ok(label);
-    }
-    let auth = format!("auth_{base}");
-    if column_map.contains_key(&auth) {
-        return Ok(auth);
+    let other = if prefer == "auth" { "label" } else { "auth" };
+    for prefix in [prefer, other] {
+        let column = format!("{prefix}_{base}");
+        if column_map.contains_key(&column) {
+            return Ok(column);
+        }
     }
     Err(format!(
-        "mmCIF _atom_site loop is missing a required column: need label_{base} or auth_{base}"
+        "mmCIF _atom_site loop is missing a required column: need {prefer}_{base} or {other}_{base}"
     )
     .into())
 }
 
 fn resolve_column_sources(
     column_map: &HashMap<String, usize>,
+    numbering: MmcifNumbering,
 ) -> Result<ColumnSources, Box<dyn std::error::Error>> {
-    let atom_id = resolve_id_col(column_map, "atom_id")?;
-    let comp_id = resolve_id_col(column_map, "comp_id")?;
-    let asym_id = resolve_id_col(column_map, "asym_id")?;
-    let has_label_seq = column_map.contains_key("label_seq_id");
-    let has_auth_seq = column_map.contains_key("auth_seq_id");
-    let seq_mode = match (has_label_seq, has_auth_seq) {
-        (true, true) => SeqMode::LabelWithAuthFallback,
-        (true, false) => SeqMode::LabelOnly,
-        (false, true) => SeqMode::AuthOnly,
-        (false, false) => return Err(
-            "mmCIF _atom_site loop is missing a required column: need label_seq_id or auth_seq_id"
-                .into(),
-        ),
+    let (prefer, other) = numbering.prefixes();
+    // atom_id and comp_id are not chain/residue numbering: they stay label-first.
+    let atom_id = resolve_id_col(column_map, "atom_id", "label")?;
+    let comp_id = resolve_id_col(column_map, "comp_id", "label")?;
+    let asym_id = resolve_id_col(column_map, "asym_id", prefer)?;
+    let (primary, secondary) = match numbering {
+        MmcifNumbering::Auth => ("auth_seq_id", "label_seq_id"),
+        MmcifNumbering::Label => ("label_seq_id", "auth_seq_id"),
+    };
+    let seq_mode = match (
+        column_map.contains_key(primary),
+        column_map.contains_key(secondary),
+    ) {
+        (true, true) => SeqMode::WithFallback { primary, secondary },
+        (true, false) => SeqMode::Only(primary),
+        (false, true) => SeqMode::Only(secondary),
+        (false, false) => {
+            return Err(format!(
+                "mmCIF _atom_site loop is missing a required column: need {prefer}_seq_id or {other}_seq_id"
+            )
+            .into())
+        }
     };
     Ok(ColumnSources {
         atom_id,
@@ -415,50 +473,39 @@ fn required_str_from(
     }
 }
 
-/// decision f: `label_seq_id` is the source; ONLY an Inapplicable (`.`)
-/// falls back per row to `auth_seq_id` (when that column exists) -- an
-/// Unknown (`?`) is always a hard error, never a silent auth borrow.
+/// decision f, mirrored for the numbering choice: the primary residue-number
+/// column is the source; ONLY an Inapplicable (`.`) falls back per row to the
+/// secondary column (when that column exists) -- an Unknown (`?`) is always a
+/// hard error, never a silent borrow from the other numbering.
 fn read_seq_id(
     tokens: &[(String, bool)],
     column_map: &HashMap<String, usize>,
     seq_mode: &SeqMode,
     row_start_line: usize,
 ) -> Result<i32, CifFieldError> {
-    match seq_mode {
-        SeqMode::LabelOnly => required_i32(
-            tokens,
-            column_map,
-            "label_seq_id",
-            "res_seq",
-            row_start_line,
-        ),
-        SeqMode::AuthOnly => {
-            required_i32(tokens, column_map, "auth_seq_id", "res_seq", row_start_line)
+    match *seq_mode {
+        SeqMode::Only(column) => {
+            required_i32(tokens, column_map, column, "res_seq", row_start_line)
         }
-        SeqMode::LabelWithAuthFallback => {
-            match cif_value(tokens, column_map, "label_seq_id") {
-                None => required_i32(
-                    tokens,
-                    column_map,
-                    "label_seq_id",
-                    "res_seq",
-                    row_start_line,
-                ),
+        SeqMode::WithFallback { primary, secondary } => {
+            match cif_value(tokens, column_map, primary) {
+                None => required_i32(tokens, column_map, primary, "res_seq", row_start_line),
                 Some(CifValue::Unknown) => Err(CifFieldError::new(
                     row_start_line,
-                    "label_seq_id",
+                    primary,
                     "res_seq",
                     "?",
                     TokenFieldErrorKind::Unknown,
                 )),
+                // Per-row fallback to the other numbering (the RCSB HETATM/HOH case
+                // when the primary is label).
                 Some(CifValue::Inapplicable) => {
-                    // Per-row fallback to auth_seq_id (the RCSB HETATM/HOH case).
-                    required_i32(tokens, column_map, "auth_seq_id", "res_seq", row_start_line)
+                    required_i32(tokens, column_map, secondary, "res_seq", row_start_line)
                 }
                 Some(CifValue::Present(s)) => field_parse::parse_decimal_i32(s).ok_or_else(|| {
                     CifFieldError::new(
                         row_start_line,
-                        "label_seq_id",
+                        primary,
                         "res_seq",
                         s,
                         TokenFieldErrorKind::Unparseable,
@@ -764,10 +811,12 @@ struct CifParseState {
     model_ids: Vec<usize>,
     /// Residue reappearance trackers, keyed by (model, chain_id)
     residue_trackers: HashMap<(i32, String), ResidueTracker>,
+    /// Which numbering chain ids and residue numbers are read from.
+    numbering: MmcifNumbering,
 }
 
 impl CifParseState {
-    fn new() -> Self {
+    fn new(numbering: MmcifNumbering) -> Self {
         Self {
             column_names: Vec::new(),
             column_map: HashMap::new(),
@@ -780,6 +829,7 @@ impl CifParseState {
             raw_data: RawAtomData::new(),
             model_ids: Vec::new(),
             residue_trackers: HashMap::new(),
+            numbering,
         }
     }
 
@@ -823,7 +873,7 @@ impl CifParseState {
         }
         let (start_line, tokens) = self.pending_row.take().expect("checked Some above");
         if self.column_sources.is_none() {
-            self.column_sources = Some(resolve_column_sources(&self.column_map)?);
+            self.column_sources = Some(resolve_column_sources(&self.column_map, self.numbering)?);
         }
         let sources = self.column_sources.as_ref().expect("just set");
         let (atom, new_model) = extract_row(
@@ -925,16 +975,32 @@ impl CifParseState {
 pub fn parse_mmcif_file<P: AsRef<Path>>(
     path: P,
 ) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    parse_mmcif_from_reader(reader)
+    parse_mmcif_file_with(path, MmcifNumbering::default())
 }
 
-/// Internal parser implementation taking any reader
+/// Parse an mmCIF file, reading chain ids and residue numbers from `numbering`.
+pub fn parse_mmcif_file_with<P: AsRef<Path>>(
+    path: P,
+    numbering: MmcifNumbering,
+) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    parse_mmcif_from_reader_with(reader, numbering)
+}
+
+/// Parse an mmCIF reader with the default numbering ([`MmcifNumbering::Auth`]).
 pub fn parse_mmcif_from_reader<R: BufRead>(
     reader: R,
 ) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
-    let mut state = CifParseState::new();
+    parse_mmcif_from_reader_with(reader, MmcifNumbering::default())
+}
+
+/// Internal parser implementation taking any reader and a [`MmcifNumbering`].
+pub fn parse_mmcif_from_reader_with<R: BufRead>(
+    reader: R,
+    numbering: MmcifNumbering,
+) -> Result<(RawAtomData, Vec<usize>), Box<dyn std::error::Error>> {
+    let mut state = CifParseState::new(numbering);
     let mut in_text_field = false;
     let mut text_field_buffer = String::new();
     let mut text_field_start_line = 0usize;
@@ -1502,7 +1568,16 @@ _atom_site.label_seq_id
             "{}ATOM 1 N . ALA A ? ? 0.000 0.000 0.000 1.00 10.00 1 9\n",
             atom_site_header(&cols)
         );
-        let err = expect_cif_err(&text);
+        // Default (auth) numbering never reads label_seq_id, so the `?` is not hit.
+        let (raw, _) = parse_mmcif_from_reader(text.as_bytes()).unwrap();
+        assert_eq!(raw.res_ids[0], 9);
+        // Label numbering reads label_seq_id first: `?` is a hard error.
+        let err = parse_mmcif_from_reader_with(text.as_bytes(), MmcifNumbering::Label)
+            .err()
+            .expect("expected an error")
+            .downcast_ref::<CifFieldError>()
+            .cloned()
+            .expect("CifFieldError");
         assert_eq!(err.kind, TokenFieldErrorKind::Unknown);
         assert_eq!(err.column, "label_seq_id");
         assert_eq!(err.field, "res_seq");
@@ -1687,5 +1762,193 @@ _atom_site.label_seq_id
         let err = expect_cif_err(&text);
         // The error should be about residue reappearance
         assert_eq!(err.kind, TokenFieldErrorKind::ResidueReappears);
+    }
+}
+
+#[cfg(test)]
+mod numbering_tests {
+    use super::*;
+
+    const HEADER_LABEL_AND_AUTH: &str = "data_TEST
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.auth_asym_id
+_atom_site.auth_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+";
+
+    fn parse(text: &str, numbering: MmcifNumbering) -> Result<RawAtomData, CifFieldError> {
+        match parse_mmcif_from_reader_with(text.as_bytes(), numbering) {
+            Ok((raw, _)) => Ok(raw),
+            Err(e) => Err(e
+                .downcast_ref::<CifFieldError>()
+                .cloned()
+                .unwrap_or_else(|| panic!("error was not a CifFieldError: {e}"))),
+        }
+    }
+
+    fn parse_ok(text: &str, numbering: MmcifNumbering) -> RawAtomData {
+        parse(text, numbering).unwrap_or_else(|e| panic!("expected Ok, got {e:?}"))
+    }
+
+    /// One ATOM row, label chain B / seq 1, auth chain A / seq 7.
+    fn label_and_auth_differ() -> String {
+        format!("{HEADER_LABEL_AND_AUTH}ATOM 1 N ALA B 1 A 7 0.000 0.000 0.000\n")
+    }
+
+    #[test]
+    fn numbering_parses_and_defaults() {
+        assert_eq!(MmcifNumbering::default(), MmcifNumbering::Auth);
+        assert_eq!(MmcifNumbering::parse("auth"), Ok(MmcifNumbering::Auth));
+        assert_eq!(MmcifNumbering::parse("label"), Ok(MmcifNumbering::Label));
+        for bad in ["", "Auth", "LABEL", "both", " auth"] {
+            let err = MmcifNumbering::parse(bad).unwrap_err();
+            assert!(err.contains("\"auth\" or \"label\""), "{err}");
+        }
+        assert_eq!(MmcifNumbering::Auth.as_str(), "auth");
+        assert_eq!(MmcifNumbering::Label.as_str(), "label");
+    }
+
+    #[test]
+    fn default_reads_auth_chain_and_number() {
+        let (raw, _) = parse_mmcif_from_reader(label_and_auth_differ().as_bytes()).unwrap();
+        assert_eq!(raw.chain_ids[0], "A");
+        assert_eq!(raw.res_ids[0], 7);
+    }
+
+    #[test]
+    fn auth_mode_reads_auth_chain_and_number() {
+        let raw = parse_ok(&label_and_auth_differ(), MmcifNumbering::Auth);
+        assert_eq!(raw.chain_ids[0], "A");
+        assert_eq!(raw.res_ids[0], 7);
+    }
+
+    #[test]
+    fn label_mode_reads_label_chain_and_number() {
+        let raw = parse_ok(&label_and_auth_differ(), MmcifNumbering::Label);
+        assert_eq!(raw.chain_ids[0], "B");
+        assert_eq!(raw.res_ids[0], 1);
+    }
+
+    #[test]
+    fn label_only_file_reads_label_in_both_modes() {
+        let text = "data_TEST
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM 1 N ALA B 4 0.000 0.000 0.000
+";
+        for numbering in [MmcifNumbering::Auth, MmcifNumbering::Label] {
+            let raw = parse_ok(text, numbering);
+            assert_eq!(raw.chain_ids[0], "B", "{numbering:?}");
+            assert_eq!(raw.res_ids[0], 4, "{numbering:?}");
+        }
+    }
+
+    #[test]
+    fn auth_only_file_reads_auth_in_both_modes() {
+        let text = "data_TEST
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.auth_atom_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM 1 N ALA C 9 0.000 0.000 0.000
+";
+        for numbering in [MmcifNumbering::Auth, MmcifNumbering::Label] {
+            let raw = parse_ok(text, numbering);
+            assert_eq!(raw.chain_ids[0], "C", "{numbering:?}");
+            assert_eq!(raw.res_ids[0], 9, "{numbering:?}");
+        }
+    }
+
+    /// A HETATM whose label_seq_id is `.` (non-polymer) with auth_seq_id 55, and
+    /// a polymer ATOM where both numberings are present.
+    fn hetatm_dot_label_text() -> String {
+        format!(
+            "{HEADER_LABEL_AND_AUTH}ATOM 1 N ALA B 1 A 7 0.000 0.000 0.000\n\
+             HETATM 2 O HOH C . W 55 1.000 1.000 1.000\n"
+        )
+    }
+
+    #[test]
+    fn dot_label_seq_hetatm_uses_auth_number_in_label_mode() {
+        // Label mode keeps the pre-change behaviour: `.` falls back per row to auth_seq_id.
+        let raw = parse_ok(&hetatm_dot_label_text(), MmcifNumbering::Label);
+        assert_eq!(raw.res_ids[0], 1);
+        assert_eq!(raw.res_ids[1], 55);
+        assert_eq!(raw.chain_ids[1], "C");
+    }
+
+    #[test]
+    fn dot_label_seq_hetatm_uses_auth_number_in_auth_mode() {
+        let raw = parse_ok(&hetatm_dot_label_text(), MmcifNumbering::Auth);
+        assert_eq!(raw.res_ids[0], 7);
+        assert_eq!(raw.res_ids[1], 55);
+        assert_eq!(raw.chain_ids[1], "W");
+    }
+
+    #[test]
+    fn dot_auth_seq_falls_back_to_label_in_auth_mode() {
+        let text = format!("{HEADER_LABEL_AND_AUTH}ATOM 1 N ALA B 3 A . 0.000 0.000 0.000\n");
+        let raw = parse_ok(&text, MmcifNumbering::Auth);
+        assert_eq!(raw.res_ids[0], 3);
+    }
+
+    #[test]
+    fn question_mark_is_hard_error_in_both_modes() {
+        let label_q = format!("{HEADER_LABEL_AND_AUTH}ATOM 1 N ALA B ? A 7 0.000 0.000 0.000\n");
+        let err = parse(&label_q, MmcifNumbering::Label)
+            .err()
+            .expect("expected an error");
+        assert_eq!(err.kind, TokenFieldErrorKind::Unknown);
+        assert_eq!(err.column, "label_seq_id");
+
+        let auth_q = format!("{HEADER_LABEL_AND_AUTH}ATOM 1 N ALA B 1 A ? 0.000 0.000 0.000\n");
+        let err = parse(&auth_q, MmcifNumbering::Auth)
+            .err()
+            .expect("expected an error");
+        assert_eq!(err.kind, TokenFieldErrorKind::Unknown);
+        assert_eq!(err.column, "auth_seq_id");
+    }
+
+    #[test]
+    fn missing_both_seq_columns_is_an_error_naming_the_numbering() {
+        let text = "data_TEST
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM 1 N ALA A 0.000 0.000 0.000
+";
+        let err = parse_mmcif_from_reader_with(text.as_bytes(), MmcifNumbering::Auth)
+            .err()
+            .expect("expected an error")
+            .to_string();
+        assert!(err.contains("need auth_seq_id or label_seq_id"), "{err}");
     }
 }

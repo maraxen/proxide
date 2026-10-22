@@ -86,6 +86,7 @@ def load_rust(
   infer_bonds: bool = False,
   return_type: str = "Protein",
   output_format_target: str | None = None,
+  numbering: str = "auth",
   **kwargs: Any,
 ) -> Any:
   """Load a protein structure using the Rust extension.
@@ -151,7 +152,7 @@ def load_rust(
       else:
         path_str = str(file_path)
 
-      result_dict = _proxider.parse_structure(path_str, spec)
+      result_dict = _proxider.parse_structure(path_str, spec, numbering)
       obj = Protein.from_rust_dict(result_dict, source=path_str if tmp_path is None else "<stream>")
 
       if chain_id:
@@ -553,6 +554,7 @@ def parse_pdb_to_protein(
   use_jax: bool = True,
   output_format_target: str | None = None,
   altloc: str = "occupancy",
+  numbering: str = "auth",
 ) -> Protein:
   """Parse a PDB or mmCIF file and return a Protein directly.
 
@@ -572,6 +574,8 @@ def parse_pdb_to_protein(
             assembly.
           - ``"all"``: call ``_proxider.parse_structure`` directly — byte-identical
             to pre-altloc-commit behaviour; preserves all altloc atoms.
+      numbering: mmCIF chain/residue numbering, ``"auth"`` (default) or ``"label"``.
+          Ignored for PDB input; any other value raises ``ValueError``.
 
   Returns:
       A `Protein` dataclass containing the parsed structure.
@@ -592,7 +596,7 @@ def parse_pdb_to_protein(
   if altloc == "all":
     # Back-compat: delegate entirely to the Rust format-auto-detecting backend.
     # This path is byte-identical to the pre-altloc-commit behaviour.
-    result = _proxider.parse_structure(str(file_path), spec)
+    result = _proxider.parse_structure(str(file_path), spec, numbering)
     return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
 
   # --- Format-aware raw read ---
@@ -600,7 +604,7 @@ def parse_pdb_to_protein(
   # _proxider.parse_pdb (PDB-only), which raised "No atoms found in PDB file".
   is_mmcif = _detect_mmcif(file_path)
   if is_mmcif:
-    raw_dict = _proxider.parse_mmcif(str(file_path))
+    raw_dict = _proxider.parse_mmcif(str(file_path), numbering)
   else:
     raw_dict = _proxider.parse_pdb(str(file_path))
 
@@ -619,7 +623,7 @@ def parse_pdb_to_protein(
 
   if resolved is raw:
     # No duplicates found; skip the temp-file round-trip.
-    result = _proxider.parse_structure(str(file_path), spec)
+    result = _proxider.parse_structure(str(file_path), spec, numbering)
     return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
 
   # Duplicates found: write a deduplicated temp PDB and re-parse.
@@ -631,7 +635,7 @@ def parse_pdb_to_protein(
     with tempfile.NamedTemporaryFile(mode="w", suffix=".pdb", delete=False) as tmp:
       tmp.write(pdb_text)
       tmp_path = tmp.name
-    result = _proxider.parse_structure(tmp_path, spec)
+    result = _proxider.parse_structure(tmp_path, spec, numbering)
     return Protein.from_rust_dict(result, source=str(file_path), use_jax=use_jax)
   finally:
     if tmp_path and os.path.exists(tmp_path):
@@ -644,6 +648,7 @@ def parse_structure(
   use_jax: bool = True,
   output_format_target: str | None = None,
   altloc: str = "occupancy",
+  numbering: str = "auth",
 ) -> Protein:
   """Parse a protein structure using the Rust extension.
 
@@ -671,6 +676,11 @@ def parse_structure(
           the highest-occupancy conformer for every duplicate (chain, res_id,
           atom_name) key before Rust atom37 assembly. ``"all"`` preserves all
           altloc atoms (legacy behaviour, may mix conformers in χ-angle computation).
+      numbering: mmCIF chain and residue numbering. ``"auth"`` (default) reads
+          ``auth_asym_id`` / ``auth_seq_id``, matching the PDB file of the same
+          deposition. ``"label"`` reads ``label_asym_id`` / ``label_seq_id`` (the
+          pre-change default). Either falls back to the other when its column is
+          absent. Ignored for PDB input; any other value raises ``ValueError``.
 
   Returns:
       A ``Protein`` dataclass.
@@ -690,7 +700,9 @@ def parse_structure(
       >>> protein = parse_structure("1ejg.pdb", altloc="all")
 
   """
-  return parse_pdb_to_protein(file_path, spec, use_jax, output_format_target, altloc=altloc)
+  return parse_pdb_to_protein(
+    file_path, spec, use_jax, output_format_target, altloc=altloc, numbering=numbering
+  )
 
 
 def parse_parm7(file_path: str | Path) -> dict:
@@ -848,7 +860,9 @@ def parse_pdb_raw_rust(file_path: str | Path, altloc: str = "occupancy") -> RawA
   return _resolve_altlocs(raw, altloc)
 
 
-def parse_mmcif_rust(file_path: str | Path, altloc: str = "occupancy") -> RawAtomData:
+def parse_mmcif_rust(
+  file_path: str | Path, altloc: str = "occupancy", numbering: str = "auth"
+) -> RawAtomData:
   """Parse an mmCIF file and return raw atom data.
 
   Args:
@@ -856,6 +870,9 @@ def parse_mmcif_rust(file_path: str | Path, altloc: str = "occupancy") -> RawAto
       altloc: Alternate-location resolution mode. ``"occupancy"`` (default) keeps
           the highest-occupancy conformer for each (chain, res_id, atom_name).
           ``"all"`` preserves all atoms including altloc duplicates.
+      numbering: ``"auth"`` (default) reads ``auth_asym_id`` / ``auth_seq_id``;
+          ``"label"`` reads ``label_asym_id`` / ``label_seq_id``. Any other value
+          raises ``ValueError``.
 
   Returns:
       RawAtomData with parsed atom information
@@ -864,7 +881,7 @@ def parse_mmcif_rust(file_path: str | Path, altloc: str = "occupancy") -> RawAto
       ValueError: If parsing fails
 
   """
-  result = _proxider.parse_mmcif(str(file_path))
+  result = _proxider.parse_mmcif(str(file_path), numbering)
 
   raw = RawAtomData(
     num_atoms=result["num_atoms"],
