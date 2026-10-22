@@ -88,3 +88,6 @@ outputs/
 scripts/**/*.bth.lock.toml
 scripts/slurm/_bth_env.sh
 scripts/scratch/
+
+# Claude Code worktrees (debt #2926)
+.claude/worktrees/
