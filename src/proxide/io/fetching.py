@@ -2,6 +2,10 @@
 
 from proxide import _proxider
 
+# AlphaFold DB model version used when none is given. v4 is no longer served (404).
+# The pyo3 default in crates/proxide_py/src/lib.rs must match this value.
+AFDB_DEFAULT_VERSION = 6
+
 
 def fetch_rcsb(pdb_id: str, output_dir: str = ".", format_type: str = "mmcif") -> str:
   """Fetch structure content from the RCSB data bank.
@@ -43,7 +47,7 @@ def fetch_md_cath(md_cath_id: str, output_dir: str = ".") -> str:
   return _proxider.fetch_md_cath(md_cath_id, output_dir)
 
 
-def fetch_afdb(uniprot_id: str, output_dir: str = ".", version: int = 6) -> str:
+def fetch_afdb(uniprot_id: str, output_dir: str = ".", version: int = AFDB_DEFAULT_VERSION) -> str:
   """Fetch structure from AlphaFold Structure Database.
 
   Args:

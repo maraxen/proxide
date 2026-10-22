@@ -55,6 +55,7 @@ fn fetch_md_cath(py: Python<'_>, id: &str, output_dir: &str) -> PyResult<String>
 /// Wrapper for proxide_rs::io::fetching::fetch_afdb
 #[cfg(feature = "fetching")]
 #[pyfunction]
+// Default must match AFDB_DEFAULT_VERSION in src/proxide/io/fetching.py.
 #[pyo3(signature = (id, output_dir = ".cache", version = 6))]
 fn fetch_afdb(py: Python<'_>, id: &str, output_dir: &str, version: u32) -> PyResult<String> {
     py.allow_threads(|| proxide_rs::io::fetching::fetch_afdb(id, output_dir, version))

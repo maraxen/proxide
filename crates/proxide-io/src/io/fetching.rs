@@ -27,7 +27,7 @@ const CONNECT_TIMEOUT_ENV: &str = "PROXIDE_HTTP_CONNECT_TIMEOUT_SECS";
 const REQUEST_TIMEOUT_ENV: &str = "PROXIDE_HTTP_TIMEOUT_SECS";
 const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 120;
-/// Sent on every request. AlphaFold DB answers 403 to clients with no identifying agent.
+/// Sent on every request. AFDB has returned 403 to clients without an identifying User-Agent.
 const USER_AGENT: &str = concat!(
     "proxide/",
     env!("CARGO_PKG_VERSION"),
