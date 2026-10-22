@@ -6,6 +6,16 @@ from proxide import _proxider
 def fetch_rcsb(pdb_id: str, output_dir: str = ".", format_type: str = "mmcif") -> str:
   """Fetch structure content from the RCSB data bank.
 
+  A cached file is reused only if it is complete. A truncated or empty copy is
+  downloaded again. If the requested format returns 404, the other format is tried.
+  Any other HTTP error is raised unchanged.
+
+  Environment variables:
+      PROXIDE_HTTP_CONNECT_TIMEOUT_SECS: connect timeout in seconds (default 30).
+      PROXIDE_HTTP_TIMEOUT_SECS: per-read timeout in seconds, covering the wait for
+          headers and each body read (default 120). Invalid values raise RuntimeError.
+      PROXIDE_RCSB_BASE_URL: download host, for tests (a trailing slash is added).
+
   Args:
       pdb_id: The PDB ID to fetch.
       output_dir: Directory to save the file.
@@ -13,6 +23,9 @@ def fetch_rcsb(pdb_id: str, output_dir: str = ".", format_type: str = "mmcif") -
 
   Returns:
       Path to the downloaded file.
+
+  Raises:
+      RuntimeError: on invalid ID, HTTP error, timeout, or a bad timeout setting.
   """
   return _proxider.fetch_rcsb(pdb_id, output_dir, format_type)
 

@@ -5,7 +5,6 @@ point it at a 127.0.0.1 fixture server.
 """
 
 import http.server
-import os
 import pathlib
 import threading
 
@@ -71,18 +70,16 @@ def test_empty_cached_file_is_redownloaded(rcsb_server, tmp_path: pathlib.Path) 
 
 def test_nonempty_cached_file_is_hit_without_request(rcsb_server, tmp_path: pathlib.Path) -> None:
   # No route registered: any request would 404 and fail the call.
-  (tmp_path / "1ABC.pdb").write_bytes(b"HEADER    CACHED\n")
+  (tmp_path / "1ABC.pdb").write_bytes(b"HEADER    CACHED\nEND\n")
 
   path = fetching.fetch_rcsb("1abc", output_dir=str(tmp_path), format_type="pdb")
 
-  assert pathlib.Path(path).read_bytes() == b"HEADER    CACHED\n"
+  assert pathlib.Path(path).read_bytes() == b"HEADER    CACHED\nEND\n"
 
 
 @pytest.mark.network
 def test_real_rcsb_smoke(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
   """Real download of 1CRN from files.rcsb.org (skipped in CI unless opted in)."""
-  if os.environ.get("CI") and not os.environ.get("PROXIDE_NETWORK_TESTS"):
-    pytest.skip("network smoke test: set PROXIDE_NETWORK_TESTS=1 to run under CI")
   monkeypatch.delenv("PROXIDE_RCSB_BASE_URL", raising=False)
 
   path = fetching.fetch_rcsb("1CRN", output_dir=str(tmp_path), format_type="pdb")
@@ -90,3 +87,20 @@ def test_real_rcsb_smoke(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
   content = pathlib.Path(path).read_bytes()
   assert len(content) > 10_000
   assert content.startswith(b"HEADER")
+
+
+def test_base_url_without_trailing_slash_is_normalised(rcsb_server, monkeypatch, tmp_path) -> None:
+  rcsb_server.routes["/1ABC.pdb"] = (200, b"HEADER    SLASH\nEND\n")  # type: ignore[attr-defined]
+  host = rcsb_server.server_address[1]
+  monkeypatch.setenv("PROXIDE_RCSB_BASE_URL", f"http://127.0.0.1:{host}")
+
+  path = fetching.fetch_rcsb("1abc", output_dir=str(tmp_path), format_type="pdb")
+
+  assert pathlib.Path(path).read_bytes() == b"HEADER    SLASH\nEND\n"
+
+
+def test_invalid_timeout_env_is_a_clear_error(rcsb_server, monkeypatch, tmp_path) -> None:
+  monkeypatch.setenv("PROXIDE_HTTP_TIMEOUT_SECS", "soon")
+
+  with pytest.raises(RuntimeError, match="PROXIDE_HTTP_TIMEOUT_SECS"):
+    fetching.fetch_rcsb("1abc", output_dir=str(tmp_path), format_type="pdb")

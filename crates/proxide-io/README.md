@@ -57,6 +57,14 @@ proxide-io provides parsers for all major protein structure and trajectory file 
 | `mmap` | Memory-mapped file access via memmap2 |
 | `full` | Meta-feature enabling all optional features: pdb, cif, ssbond, xtc, parallel, foldcomp, fetching, hdf5, mmap |
 
+### Fetching environment variables
+
+- `PROXIDE_HTTP_CONNECT_TIMEOUT_SECS` (default 30): connect timeout.
+- `PROXIDE_HTTP_TIMEOUT_SECS` (default 120): per-read timeout. It covers the wait for headers and each body read.
+- `PROXIDE_RCSB_BASE_URL`: overrides the RCSB download host (a trailing `/` is added). Intended for tests.
+
+Invalid timeout values are errors. Downloads are written atomically. A cached file is reused only if it is complete.
+
 ## Usage
 
 ```rust
