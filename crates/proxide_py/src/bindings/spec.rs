@@ -120,6 +120,7 @@ impl From<PyHydrogenSource> for HydrogenSource {
     }
 }
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyclass(name = "UnitSystem", eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PyUnitSystem {

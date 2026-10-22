@@ -32,7 +32,10 @@ def flatten_tensor_dict(
   prefix: str = "",
   sep: str = "/",
 ) -> dict[str, np.ndarray]:
-  """Flatten a nested dict of arrays into ``prefix/key/...`` leaf keys."""
+  """Flatten a nested dict of arrays into ``prefix/key/...`` leaf keys.
+
+  Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+  """
   out: dict[str, np.ndarray] = {}
   for key, value in nested.items():
     path = f"{prefix}{sep}{key}" if prefix else str(key)
@@ -53,6 +56,8 @@ def unflatten_tensor_dict(
 
   If ``prefix`` is set, only keys starting with ``prefix + sep`` (or equal to
   ``prefix``) are included; the prefix is stripped from the result.
+
+  Experimental: not covered by proxide's stability guarantee; may change in a minor release.
   """
   root: dict[str, Any] = {}
   prefix_with_sep = f"{prefix}{sep}" if prefix else ""
@@ -89,12 +94,17 @@ def save_tensor_bundle(
   flatten: bool = True,
   prefix: str = "",
 ) -> Path:
-  """Write a compressed npz of arrays; optionally write JSON metadata beside it."""
+  """Write a compressed npz of arrays; optionally write JSON metadata beside it.
+
+  Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+  """
   path = Path(npz_path)
   path.parent.mkdir(parents=True, exist_ok=True)
-  flat = flatten_tensor_dict(tensors, prefix=prefix) if flatten else {
-    k: _to_numpy(v) for k, v in tensors.items()
-  }
+  flat = (
+    flatten_tensor_dict(tensors, prefix=prefix)
+    if flatten
+    else {k: _to_numpy(v) for k, v in tensors.items()}
+  )
   np.savez_compressed(path, **flat)  # ty: ignore[invalid-argument-type]
 
   if meta is not None:
@@ -111,13 +121,14 @@ def load_tensor_bundle(
   unflatten: bool = False,
   prefix: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-  """Load npz arrays and optional JSON meta. Optionally unflatten nested keys."""
+  """Load npz arrays and optional JSON meta. Optionally unflatten nested keys.
+
+  Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+  """
   path = Path(npz_path)
   data = np.load(path, allow_pickle=False)
   flat = {k: data[k] for k in data.files}
-  tensors: dict[str, Any] = (
-    unflatten_tensor_dict(flat, prefix=prefix) if unflatten else flat
-  )
+  tensors: dict[str, Any] = unflatten_tensor_dict(flat, prefix=prefix) if unflatten else flat
 
   meta: dict[str, Any] = {}
   mpath = Path(meta_path) if meta_path is not None else path.with_suffix(".meta.json")
@@ -132,7 +143,10 @@ def assert_bundle_keys(
   *,
   flat: bool = True,
 ) -> None:
-  """Raise ``KeyError`` if any required key is missing from a (flat) bundle."""
+  """Raise ``KeyError`` if any required key is missing from a (flat) bundle.
+
+  Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+  """
   if flat:
     keys = set(bundle.keys())
   else:

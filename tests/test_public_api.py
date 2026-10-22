@@ -40,7 +40,6 @@ STABLE = {
   "ErrorMode",
   "MissingResidueMode",
   "HydrogenSource",
-  "UnitSystem",
   "Protein",
   "write_pdb",
   "write_mmcif",
@@ -67,6 +66,7 @@ EXPERIMENTAL = {
   "tmalign",
   "AtomicSystem",
   "iterload",
+  "UnitSystem",
 }
 
 

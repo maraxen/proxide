@@ -172,7 +172,6 @@ _STABLE = frozenset(
     "ErrorMode",
     "MissingResidueMode",
     "HydrogenSource",
-    "UnitSystem",
     "Protein",
     "write_pdb",
     "write_mmcif",
