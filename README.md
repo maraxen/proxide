@@ -1,6 +1,6 @@
 # Proxide
 
-> **Alpha — experimental, no API stability guarantees.** This crate is part of an active research project; APIs may change without notice between versions. Not recommended for production use.
+> **Pre-release toward 0.1.0.** The stable surface at 0.1.0 will be core IO: structure parsing, formatting (Atom37/Atom14/Full), writing (PDB/mmCIF) and XTC trajectory reading. GAFF2, confind, rotlib and CCD/fixer are experimental and may change without deprecation. Anything not listed as stable is provisional. The PyPI wheel is MIT-licensed and excludes the GPL-2.0-or-later GAFF2 engine (`--features gaff2-engine`).
 
 **Proxide** is a high-performance library for Protein I/O and Physics bridging in JAX. It combines a flexible Python/JAX frontend with a highly optimized Rust backend (`_proxider`) to provide fast structure parsing, force field parameterization, and seamless integration with JAX MD.
 
@@ -14,7 +14,7 @@
   - **Rust Backend**: 25x faster parsing (PDB/mmCIF), 50x faster topology generation, and robust force field parameterization.
   - **JAX Frontend**: Differentiable physics, geometric deep learning utilities, and seamless GPU integration.
 - **Robust I/O**: Load PDB, mmCIF, and PQR files with automatic error handling and corrections.
-- **Molecular Dynamics**: Parse OpenMM XML force fields, assign GAFF parameters, and generate fully parameterized `AtomicSystem` objects for JAX MD.
+- **Molecular Dynamics**: Parse OpenMM XML force fields, assign GAFF parameters (experimental), and generate fully parameterized `AtomicSystem` objects for JAX MD.
 - **Trajectory Support**: High-performance parsing of XTC, DCD, and TRR trajectories.
 
 ---
