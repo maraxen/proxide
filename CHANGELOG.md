@@ -18,6 +18,9 @@ they exist only in source builds that opt in.
 - `Protein.residue_names` keeps each residue's source name (for example `MSE`) alongside the model `aatype`.
 - `fetch_rcsb` and `fetch_afdb` honour `PROXIDE_HTTP_TIMEOUT_SECS` and `PROXIDE_HTTP_CONNECT_TIMEOUT_SECS`; `PROXIDE_RCSB_BASE_URL` overrides the download host (for tests).
 - `measure_chi` accepts an optional `atom_mask`; with it, an atom is missing exactly when its mask is 0.
+- `proxide.__experimental__` lists the top-level exports outside the stable core IO set; the README Stability section names the stable groups. No names were removed.
+- `proxide` exports `write_pdb`, `write_mmcif`, `write_npz`, `Protein` and `UnitSystem` at top level; `proxide.io` exports the three writers.
+- `parse_mmcif`, `parse_structure`, `load_rust` and `project_to_mpnn_batch` accept `numbering` (`"auth"` or `"label"`).
 
 ### Changed
 - **Changed (behaviour)**: Full-format output carries per-atom elements, residue names and chains; Python no longer infers elements.
@@ -41,6 +44,11 @@ they exist only in source builds that opt in.
 - **Changed (behaviour)**: stacking proteins where only some carry `b_factors`/`occupancies` warns once and drops those fields for the batch.
 - Coordinates where `atom_mask` is 0 are 0.0 and carry no meaning; use `atom_mask`, not NaN tests, to find missing atoms. Frame validation and `measure_chi` now follow this.
 - **Changed (behaviour)**: the GAFF2 DEF parser rejects malformed `f8`/`f9` bodies, malformed `ATD` rule lines and an explicit DEF with zero parseable rules, instead of dropping them. (experimental)
+- **Changed (behaviour)**: mmCIF chains and residues use author numbering (`auth_asym_id`, `auth_seq_id`) by default; `numbering="label"` restores label numbering. The parse cache is keyed by numbering. With auth numbering, a file whose author numbering revisits a residue after its chain has moved on now raises.
+- **Changed (behaviour)**: altloc resolution keys atoms on model, chain, residue number, insertion code and atom name, so insertion-coded residues (`17` and `17A`) are no longer merged in mmCIF or PDB input.
+- **Changed (behaviour)**: `compute_pairwise_displacements` raises `ValueError` for inputs that are not 2-D (N, D) with matching D. (experimental)
+- The jax-md dependency is removed; free-space displacement and distance are plain `jax.numpy` with identical values and gradients. flax is declared directly.
+- Python 3.12+ installs get jax 0.11 with flax 0.12.10 or later; Python 3.11 stays on jax 0.10.
 
 ### Fixed
 - The parse cache no longer serves a model-selected parse, and cache hits return chain IDs instead of `None`.
@@ -51,6 +59,7 @@ they exist only in source builds that opt in.
 - The format cache is keyed on file content (path, length, content hash and output options), so a file rewritten at the same path is re-parsed instead of served stale; the key and the parse use the same read.
 - `fetch_rcsb` no longer hangs: the Python bindings released the GIL too late, deadlocking the HTTP client's logging thread. Downloads are atomic (temp file + rename), a truncated or empty cached file is re-downloaded, the format fallback runs only on HTTP 404, and requests send a `User-Agent`.
 - Element masses for upper-case element columns (`CL`, `ZN`) no longer fall back to carbon.
+- Altloc resolution of structures with serial numbers above 99999 no longer fails under auth numbering, and HETATM records, insertion codes and models survive it.
 
 ## [0.1.0a17] - 2026-09-29
 
