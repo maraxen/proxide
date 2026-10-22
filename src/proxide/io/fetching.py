@@ -43,13 +43,13 @@ def fetch_md_cath(md_cath_id: str, output_dir: str = ".") -> str:
   return _proxider.fetch_md_cath(md_cath_id, output_dir)
 
 
-def fetch_afdb(uniprot_id: str, output_dir: str = ".", version: int = 4) -> str:
+def fetch_afdb(uniprot_id: str, output_dir: str = ".", version: int = 6) -> str:
   """Fetch structure from AlphaFold Structure Database.
 
   Args:
       uniprot_id: The UniProt ID to fetch.
       output_dir: Directory to save the file.
-      version: AlphaFold database version (default: 4).
+      version: AlphaFold database model version (default: 6; v4 is no longer served).
 
   Returns:
       Path to the downloaded file.

@@ -65,6 +65,9 @@ proxide-io provides parsers for all major protein structure and trajectory file 
 
 Invalid timeout values are errors. Downloads are written atomically. A cached file is reused only if it is complete.
 
+Partial downloads (`.<name>.<pid>.<token>.part`) for the same target that have not been written for 1 hour are removed when a new download for that target starts.
+Requests send `User-Agent: proxide/<version> (+https://github.com/maraxen/proxide)`. The AlphaFold DB default model version is 6 (v4 is no longer served).
+
 ## Usage
 
 ```rust

@@ -27,6 +27,12 @@ const CONNECT_TIMEOUT_ENV: &str = "PROXIDE_HTTP_CONNECT_TIMEOUT_SECS";
 const REQUEST_TIMEOUT_ENV: &str = "PROXIDE_HTTP_TIMEOUT_SECS";
 const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 120;
+/// Sent on every request. AlphaFold DB answers 403 to clients with no identifying agent.
+const USER_AGENT: &str = concat!(
+    "proxide/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/maraxen/proxide)"
+);
 /// Attempts for a request that gets a 5xx response or a connection error.
 const MAX_ATTEMPTS: u32 = 3;
 /// Bytes read from the end of a cached PDB or mmCIF file to check it is complete.
@@ -97,6 +103,7 @@ fn request_timeout() -> Result<Duration, String> {
 fn http_client(timeout: Duration) -> Result<Client, String> {
     let connect = timeout_from_env(CONNECT_TIMEOUT_ENV, DEFAULT_CONNECT_TIMEOUT_SECS)?;
     Client::builder()
+        .user_agent(USER_AGENT)
         .connect_timeout(connect)
         .timeout(timeout)
         .build()
@@ -146,7 +153,8 @@ fn read_tail(path: &Path) -> std::io::Result<String> {
 
 /// A cached file can be reused only if it is complete.
 ///
-/// `.pdb` files must contain an `END` record in their last `TAIL_BYTES`.
+/// `.pdb` files must contain an exact `END` record line in their last `TAIL_BYTES`.
+/// `ENDMDL` does not count: a multi-model file cut right after a model ends with it.
 /// `.cif` files must end with a `#` line (checked on RCSB 1CRN, 4HHB and 6VXX).
 /// Other formats (h5, FoldComp) only need to be non-empty. A truncated copy from an
 /// older build is not complete and is downloaded again.
@@ -156,7 +164,7 @@ fn cache_is_complete(path: &Path) -> bool {
     }
     match path.extension().and_then(|e| e.to_str()) {
         Some("pdb") => match read_tail(path) {
-            Ok(tail) => tail.lines().any(|line| line.trim().starts_with("END")),
+            Ok(tail) => tail.lines().any(|line| line.trim_end() == "END"),
             Err(_) => false,
         },
         Some("cif") => match read_tail(path) {
@@ -381,13 +389,24 @@ fn create_partial(parent: &Path, file_name: &str) -> Result<(PathBuf, File), Str
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let seq = PARTIAL_SEQ.fetch_add(1, Ordering::Relaxed);
-    let tmp_path = parent.join(format!(
-        ".{}.{}.{:x}{:x}.part",
+    create_partial_with_token(parent, file_name, &format!("{:x}{:x}", nanos, seq))
+}
+
+fn partial_path(parent: &Path, file_name: &str, token: &str) -> PathBuf {
+    parent.join(format!(
+        ".{}.{}.{}.part",
         file_name,
         std::process::id(),
-        nanos,
-        seq
-    ));
+        token
+    ))
+}
+
+fn create_partial_with_token(
+    parent: &Path,
+    file_name: &str,
+    token: &str,
+) -> Result<(PathBuf, File), String> {
+    let tmp_path = partial_path(parent, file_name, token);
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -954,6 +973,122 @@ mod tests {
         assert!(fresh.exists(), "fresh partial must be kept");
         assert!(other.exists(), "partials of other targets must be kept");
         assert!(target.exists());
+    }
+
+    #[test]
+    fn test_pdb_truncated_after_endmdl_is_redownloaded() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/1ABC.pdb");
+            then.status(200).body(COMPLETE_PDB);
+        });
+
+        let output_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            output_dir.path().join("1ABC.pdb"),
+            b"MODEL        1\nATOM      1  N   ALA A   1\nENDMDL\n",
+        )
+        .unwrap();
+
+        let path = _fetch_rcsb_with_base(
+            "1ABC",
+            output_dir.path().to_str().unwrap(),
+            "pdb",
+            &base(&server),
+            TEST_TIMEOUT,
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), COMPLETE_PDB.as_bytes());
+        mock.assert();
+    }
+
+    #[test]
+    fn test_pdb_truncated_mid_model_after_an_endmdl_is_redownloaded() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/1ABC.pdb");
+            then.status(200).body(COMPLETE_PDB);
+        });
+
+        let output_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            output_dir.path().join("1ABC.pdb"),
+            b"MODEL        1\nATOM      1  N   ALA A   1\nENDMDL\nMODEL        2\nATOM      1  N   ALA A   1\n",
+        )
+        .unwrap();
+
+        let path = _fetch_rcsb_with_base(
+            "1ABC",
+            output_dir.path().to_str().unwrap(),
+            "pdb",
+            &base(&server),
+            TEST_TIMEOUT,
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), COMPLETE_PDB.as_bytes());
+        mock.assert();
+    }
+
+    #[test]
+    fn test_complete_multi_model_pdb_is_a_cache_hit() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET);
+            then.status(500);
+        });
+
+        let multi = b"MODEL        1\nATOM      1  N   ALA A   1\nENDMDL\nMODEL        2\nATOM      1  N   ALA A   1\nENDMDL\nMASTER      0    0    0    0    0    0    0    0    2    0    0    0\nEND   \n";
+        let output_dir = tempfile::tempdir().unwrap();
+        std::fs::write(output_dir.path().join("1ABC.pdb"), multi).unwrap();
+
+        let path = _fetch_rcsb_with_base(
+            "1ABC",
+            output_dir.path().to_str().unwrap(),
+            "pdb",
+            &base(&server),
+            TEST_TIMEOUT,
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), multi);
+        assert_eq!(mock.hits(), 0);
+    }
+
+    #[test]
+    fn test_create_partial_collision_errors_and_keeps_other_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = partial_path(dir.path(), "1ABC.pdb", "deadbeef");
+        std::fs::write(&other, b"OTHER WRITER").unwrap();
+
+        let err = create_partial_with_token(dir.path(), "1ABC.pdb", "deadbeef").unwrap_err();
+
+        assert!(err.contains("failed to create"), "unexpected error: {err}");
+        assert_eq!(std::fs::read(&other).unwrap(), b"OTHER WRITER");
+    }
+
+    #[test]
+    fn test_requests_send_user_agent() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/1ABC.pdb")
+                .header("user-agent", USER_AGENT);
+            then.status(200).body(COMPLETE_PDB);
+        });
+
+        let output_dir = tempfile::tempdir().unwrap();
+        _fetch_rcsb_with_base(
+            "1ABC",
+            output_dir.path().to_str().unwrap(),
+            "pdb",
+            &base(&server),
+            TEST_TIMEOUT,
+        )
+        .unwrap();
+
+        mock.assert();
     }
 
     #[test]
