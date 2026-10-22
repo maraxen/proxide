@@ -16,18 +16,22 @@ classifiers = [
     "Development Status :: 4 - Beta",
 ]
 dependencies = [
-    # jax>=0.11 relocated jax._src.core.mutable_array/MutableArray and dropped the
-    # experimental hijax.MutableHiType flax.nnx expects -- every published flax
-    # release (through 0.12.8, as of 260818) breaks against jax 0.11.x. Pin <0.11
-    # until flax catches up; verified 0.10.0-0.10.2 all work with flax 0.12.1/0.12.8.
+    # Known limit for 0.1.0, caused by flax: jax>=0.11 relocated
+    # jax._src.core.mutable_array/MutableArray and dropped the experimental
+    # hijax.MutableHiType that flax.nnx expects. Every published flax release
+    # (through 0.12.8, as of 260818) breaks against jax 0.11.x, and Protein is a
+    # flax.struct dataclass, so flax stays and the cap stays until flax catches up.
+    # Verified: jax 0.10.0-0.10.2 work with flax 0.12.1 and 0.12.8.
     "jax<0.11",
     "numpy",
     "hydride",
     "grain",
-    "jax-md",
     "msgpack",
     "msgpack-numpy",
     "equinox",
+    # Protein (proxide.core.containers) is a flax.struct dataclass; flax was only
+    # reaching the lock through jax-md, so it is declared directly.
+    "flax>=0.12.1",
     "jaxtyping",
     "array_record",
     "typer>=0.12.0",

@@ -284,3 +284,69 @@ def test_coulomb_forces_zero_for_neutral(jit_compile):
     forces = fn(displacements, distances, charges, charges)
 
     chex.assert_trees_all_close(forces, 0.0, atol=1e-10)
+
+
+def _reference_free_space_pairwise(positions1, positions2):
+    """Free-space reference (jax_md space.free + space.distance, hard-coded).
+
+    displacement[i, j] = positions2[j] - positions1[i];
+    distance = sqrt(sum(d**2)) guarded so a zero separation gives exactly 0
+    and a finite gradient.
+    """
+    displacements = positions2[None, :, :] - positions1[:, None, :]
+    squared = jnp.sum(displacements**2, axis=-1)
+    nonzero = squared > 0
+    distances = jnp.where(nonzero, jnp.sqrt(jnp.where(nonzero, squared, 0.0)), 0.0)
+    return displacements, distances
+
+
+def _random_positions_with_zero_pair():
+    key1, key2 = jax.random.split(jax.random.PRNGKey(0))
+    positions1 = jax.random.normal(key1, (7, 3))
+    positions2 = jax.random.normal(key2, (5, 3))
+    # Force an exact zero-distance pair: positions1[2] coincides with positions2[3].
+    positions1 = positions1.at[2].set(positions2[3])
+    return positions1, positions2
+
+
+@pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])
+def test_pairwise_displacements_match_reference_including_zero_distance(jit_compile):
+    """Values match the reference formula, including a zero-distance pair."""
+    positions1, positions2 = _random_positions_with_zero_pair()
+    fn = compute_pairwise_displacements
+    if jit_compile:
+        fn = jax.jit(fn)
+
+    displacements, distances = fn(positions1, positions2)
+    ref_displacements, ref_distances = _reference_free_space_pairwise(
+        positions1, positions2
+    )
+
+    chex.assert_trees_all_close(displacements, ref_displacements, rtol=1e-6, atol=1e-6)
+    chex.assert_trees_all_close(distances, ref_distances, rtol=1e-6, atol=1e-6)
+    chex.assert_trees_all_close(distances[2, 3], 0.0, atol=0.0)
+
+
+@pytest.mark.parametrize("jit_compile", [True, False], ids=["jit", "eager"])
+def test_pairwise_displacements_gradient_matches_reference_at_zero_distance(jit_compile):
+    """Gradients match the reference formula and stay finite at zero distance."""
+    positions1, positions2 = _random_positions_with_zero_pair()
+
+    def loss(fn):
+        def total(p1, p2):
+            displacements, distances = fn(p1, p2)
+            return jnp.sum(distances) + jnp.sum(displacements**2)
+
+        return total
+
+    grad_fn = jax.grad(loss(compute_pairwise_displacements), argnums=(0, 1))
+    ref_grad_fn = jax.grad(loss(_reference_free_space_pairwise), argnums=(0, 1))
+    if jit_compile:
+        grad_fn = jax.jit(grad_fn)
+        ref_grad_fn = jax.jit(ref_grad_fn)
+
+    grads = grad_fn(positions1, positions2)
+    ref_grads = ref_grad_fn(positions1, positions2)
+
+    chex.assert_tree_all_finite(grads)
+    chex.assert_trees_all_close(grads, ref_grads, rtol=1e-5, atol=1e-6)

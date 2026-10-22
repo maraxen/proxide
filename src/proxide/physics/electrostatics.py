@@ -8,7 +8,6 @@ from typing import cast
 
 import jax
 import jax.numpy as jnp
-from jax_md import space
 
 from proxide.core.types import (
   Array,
@@ -44,11 +43,14 @@ def compute_pairwise_displacements(
       5.0
 
   """
-  displacement_fn, _ = space.free()
-  displacements = jax.vmap(
-    lambda r1: jax.vmap(lambda r2: displacement_fn(r2, r1))(positions2),
-  )(positions1)
-  distances = space.distance(displacements)
+  # Free-space displacement: displacements[i, j] = positions2[j] - positions1[i].
+  p1 = jnp.asarray(positions1)
+  p2 = jnp.asarray(positions2)
+  displacements = p2[None, :, :] - p1[:, None, :]
+  # Distance with a guarded sqrt: exactly 0 at zero separation, so gradients stay finite.
+  squared = jnp.sum(displacements**2, axis=-1)
+  nonzero = squared > 0
+  distances = jnp.where(nonzero, jnp.sqrt(jnp.where(nonzero, squared, 0.0)), 0.0)
   return displacements, distances
 
 
