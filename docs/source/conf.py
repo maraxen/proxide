@@ -2,6 +2,7 @@
 
 import importlib.metadata
 import sys
+import tomllib
 from pathlib import Path
 
 # Add src to path so autodoc can find the package
@@ -34,7 +35,12 @@ author = "Proxide Team"
 try:
   release = importlib.metadata.version("proxide")
 except importlib.metadata.PackageNotFoundError:
-  release = "0+unknown"
+  # Not installed: read the checkout's pyproject.toml, located from this file.
+  try:
+    _pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    release = tomllib.loads(_pyproject.read_text(encoding="utf-8"))["project"]["version"]
+  except (OSError, KeyError):
+    release = "0+unknown"
 version = release
 
 # Extensions
