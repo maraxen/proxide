@@ -8,12 +8,16 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
 /// Assign atomic masses based on atom names
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn assign_masses(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
     Ok(chem::masses::assign_masses(&atom_names))
 }
 
 /// Assign GAFF atom types to a structure (exposed to Python).
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 ///
 /// **Two structurally different implementations, selected at build time by
 /// the `gaff2-engine` Cargo feature** (off by default -- see this crate's
@@ -90,6 +94,8 @@ fn bond_order_from_u8(order: u8) -> Result<proxide_gaff2::mol::BondOrder, String
 /// - `formal_charges` / `rings`: optional; see
 ///   `proxide-gaff2::mol::MolGraph::new`'s doc for the omission contract.
 ///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+///
 /// Returns one GAFF2 atom type per atom (including H), `"x"` (not `None`)
 /// for any atom no DEF rule matched -- this is a deliberate signature change
 /// from the pre-cutover `Vec<Option<String>>` contract (see the Cutover
@@ -130,6 +136,8 @@ pub fn assign_gaff_atom_types(
 /// Values only. This cannot distinguish a tabulated radius from the catch-all
 /// substituted for an element mbondi2 does not define -- use
 /// `assign_mbondi2_radii_with_provenance` where that matters.
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn assign_mbondi2_radii(atom_names: Vec<String>, bonds: Vec<[usize; 2]>) -> PyResult<Vec<f32>> {
     let radii = physics::gbsa::assign_mbondi2_radii(&atom_names, &bonds);
@@ -139,6 +147,8 @@ pub fn assign_mbondi2_radii(atom_names: Vec<String>, bonds: Vec<[usize; 2]>) -> 
 /// Assign scaling factors for OBC2 GBSA calculation.
 ///
 /// Values only; see `assign_mbondi2_radii` on the discarded provenance.
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn assign_obc2_scaling_factors(atom_names: Vec<String>) -> Result<Vec<f32>, PyErr> {
     let factors = physics::gbsa::assign_obc2_scaling_factors(&atom_names);
@@ -214,6 +224,8 @@ fn gb_result_dict(
 /// Returns a dict with `values`, a uint8 `sources` array, `unlicensed_atoms`,
 /// `num_unlicensed`, `all_licensed`, `source_code_meanings`, `schema_version`
 /// and `provenance`. Every key is always present.
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn assign_mbondi2_radii_with_provenance(
     atom_names: Vec<String>,
@@ -226,6 +238,8 @@ pub fn assign_mbondi2_radii_with_provenance(
 /// Assign OBC2 screening factors, returning the provenance of every value.
 ///
 /// Same return shape as `assign_mbondi2_radii_with_provenance`.
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn assign_obc2_scaling_factors_with_provenance(atom_names: Vec<String>) -> PyResult<PyObject> {
     let assigned = physics::gbsa::assign_obc2_scaling_factors_with_provenance(&atom_names);
@@ -238,6 +252,8 @@ pub fn assign_obc2_scaling_factors_with_provenance(atom_names: Vec<String>) -> P
 /// defines. Anything absent from them receives `fallback_radius` /
 /// `fallback_screen`, which are NOT measurements -- they are what the reference
 /// implementation substitutes when it has no parameter.
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn mbondi2_table_info() -> PyResult<PyObject> {
     Python::with_gil(|py| {
@@ -257,6 +273,8 @@ pub fn mbondi2_table_info() -> PyResult<PyObject> {
 }
 
 /// Get water model parameters
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn get_water_model(name: String, rigid: bool) -> PyResult<PyObject> {
     Python::with_gil(|py| {
@@ -318,12 +336,16 @@ pub fn get_water_model(name: String, rigid: bool) -> PyResult<PyObject> {
 }
 
 /// Compute bicubic interpolation parameters for CMAP
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn compute_bicubic_params(grid: Vec<Vec<f64>>) -> Vec<Vec<[f64; 4]>> {
     physics::cmap::compute_bicubic_params(&grid)
 }
 
 /// Parameterize a molecule using GAFF for ligands and small molecules
+///
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 #[pyo3(signature = (coordinates, elements, bond_tolerance=1.3))]
 pub fn parameterize_molecule(

@@ -1,6 +1,7 @@
 use proxide_rs::structure::systems::AtomicSystem;
 use pyo3::prelude::*;
 
+/// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyclass(name = "AtomicSystem")]
 pub struct PyAtomicSystem {
     pub inner: AtomicSystem,

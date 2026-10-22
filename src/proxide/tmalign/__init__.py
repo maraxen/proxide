@@ -1,5 +1,7 @@
 """TM-align pairwise structural alignment.
 
+Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+
 Thin re-export of the Rust `_proxider` bindings (`proxide-tmalign` crate). See each
 function's docstring for the input array shapes and the returned shapes.
 
@@ -17,8 +19,8 @@ costs far more than the scoring it feeds.
 """
 
 from proxide._proxider import (  # ty: ignore[unresolved-import]
-    tm_align,
-    tm_scores_fixed_correspondence,
+  tm_align,
+  tm_scores_fixed_correspondence,
 )
 
 __all__ = ["tm_align", "tm_scores_fixed_correspondence"]
