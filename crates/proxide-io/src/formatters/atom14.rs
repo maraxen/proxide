@@ -19,6 +19,27 @@ pub struct FormattedAtom14 {
     pub unplaced_residues: Vec<(usize, String)>, // (residue_index, res_name) for residues with atoms but no atom14 layout
 }
 
+/// Atom14 layouts for residues whose residue type is UNK but which map onto a
+/// standard layout: `(parent layout, atom renames applied before lookup)`.
+/// Atom14-only: the residue's aatype and the Atom37 output are unchanged.
+fn atom14_layout_alias(
+    res_name: &str,
+) -> Option<(&'static str, &'static [(&'static str, &'static str)])> {
+    match res_name {
+        // Selenomethionine: SE takes the MET SD slot (AlphaFold convention).
+        "MSE" => Some(("MET", &[("SE", "SD")])),
+        _ => None,
+    }
+}
+
+/// Apply atom14-alias renames to one atom name.
+fn layout_atom_name(name: &str, renames: &[(&str, &str)]) -> String {
+    renames
+        .iter()
+        .find(|(from, _)| *from == name)
+        .map_or_else(|| name.to_string(), |(_, to)| to.to_string())
+}
+
 /// Atom14 formatter - converts to reduced (N_res, 14, 3) representation
 pub struct Atom14Formatter;
 
@@ -53,11 +74,19 @@ impl Atom14Formatter {
                 .get(&res_info.chain_id)
                 .unwrap_or(&0) as i32;
 
-            // Get the canonical 3-letter residue name from res_type
-            let canonical_res_name = if res_info.res_type < RESTYPE_1TO3.len() {
+            // Get the canonical 3-letter residue name from res_type. A UNK residue
+            // may still have a layout through the atom14-only alias table.
+            let type_name = if res_info.res_type < RESTYPE_1TO3.len() {
                 RESTYPE_1TO3[res_info.res_type].1
             } else {
                 "UNK"
+            };
+            let (canonical_res_name, atom_renames): (&str, &[(&str, &str)]) = match type_name {
+                "UNK" => match atom14_layout_alias(&res_info.res_name) {
+                    Some((parent, renames)) => (parent, renames),
+                    None => ("UNK", &[]),
+                },
+                _ => (type_name, &[]),
             };
 
             // Get atom14 names for this residue type
@@ -72,8 +101,9 @@ impl Atom14Formatter {
 
             for local_idx in 0..(end - start) {
                 let global_idx = start + local_idx;
-                let atom_name = &processed.raw_atoms.atom_names[global_idx];
-                residue_atoms.insert(atom_name.clone(), global_idx);
+                let atom_name =
+                    layout_atom_name(&processed.raw_atoms.atom_names[global_idx], atom_renames);
+                residue_atoms.insert(atom_name, global_idx);
             }
 
             // Check if this is an unplaced residue (atoms but no atom14 layout)
@@ -258,29 +288,15 @@ mod tests {
         assert_eq!(formatted.unplaced_residues.len(), 0);
     }
 
-    #[test]
-    fn test_atom14_mse_unplaced() {
-        // Test that MSE (selenomethionine, ligand/unknown type) with atoms
-        // gets recorded in unplaced_residues
-        let mut raw = RawAtomData::with_capacity(10);
-
-        let mse_atoms = [
-            ("N", 0.0, 0.0, 0.0),
-            ("CA", 1.0, 0.0, 0.0),
-            ("C", 2.0, 0.0, 0.0),
-            ("O", 3.0, 0.0, 0.0),
-            ("CB", 1.0, 1.0, 0.0),
-            ("CG", 1.0, 2.0, 0.0),
-            ("SE", 1.0, 3.0, 0.0),
-            ("CE", 2.0, 3.0, 0.0),
-        ];
-
-        for (i, (name, x, y, z)) in mse_atoms.iter().enumerate() {
+    /// One-residue structure from `(atom name, element, x, y, z)` rows.
+    fn single_residue(res_name: &str, atoms: &[(&str, &str, f32, f32, f32)]) -> ProcessedStructure {
+        let mut raw = RawAtomData::with_capacity(atoms.len());
+        for (i, (name, element, x, y, z)) in atoms.iter().enumerate() {
             raw.add_atom(AtomRecord {
                 serial: i as i32 + 1,
                 atom_name: name.to_string(),
                 alt_loc: ' ',
-                res_name: "MSE".to_string(),
+                res_name: res_name.to_string(),
                 chain_id: "A".to_string(),
                 res_seq: 1,
                 i_code: ' ',
@@ -289,25 +305,61 @@ mod tests {
                 z: *z,
                 occupancy: 1.0,
                 temp_factor: 20.0,
-                element: "C".to_string(),
+                element: element.to_string(),
                 charge: None,
                 radius: None,
                 is_hetatm: false,
             });
         }
+        ProcessedStructure::from_raw(raw).unwrap()
+    }
 
-        let processed = proxide_core::processing::ProcessedStructure::from_raw(raw).unwrap();
-        let spec = OutputSpec::default();
-        let formatted = Atom14Formatter::format(&processed, &spec).unwrap();
+    #[test]
+    fn test_atom14_mse_placed_via_met_with_se_in_sd() {
+        // MSE (selenomethionine) is placed in the MET layout (N CA C O CB CG SD CE),
+        // with the selenium SE coordinates landing in the SD slot (AlphaFold convention).
+        let processed = single_residue(
+            "MSE",
+            &[
+                ("N", "N", 0.0, 0.0, 0.0),
+                ("CA", "C", 1.0, 0.0, 0.0),
+                ("C", "C", 2.0, 0.0, 0.0),
+                ("O", "O", 3.0, 0.0, 0.0),
+                ("CB", "C", 1.0, 1.0, 0.0),
+                ("CG", "C", 1.0, 2.0, 0.0),
+                ("SE", "Se", 1.0, 3.0, 0.0),
+                ("CE", "C", 2.0, 3.0, 0.0),
+            ],
+        );
+        let formatted = Atom14Formatter::format(&processed, &OutputSpec::default()).unwrap();
 
-        // MSE has res_type = UNK (index 20), so it has no atom14 layout
-        // All atom14 positions should be zero
+        let mask_sum: f32 = formatted.atom_mask.iter().sum();
+        assert_eq!(mask_sum, 8.0, "all 8 present MSE atoms must be placed");
+        assert!(formatted.unplaced_residues.is_empty());
+
+        // MET slot 6 is SD; SE must sit there with its own coordinates.
+        assert_eq!(formatted.atom_mask[6], 1.0);
+        assert_eq!(&formatted.coordinates[6 * 3..6 * 3 + 3], &[1.0, 3.0, 0.0]);
+        // MET slot 7 is CE.
+        assert_eq!(formatted.atom_mask[7], 1.0);
+    }
+
+    #[test]
+    fn test_atom14_unknown_residue_still_unplaced() {
+        // Negative control: a residue with no alias and no layout keeps the warning path.
+        let processed = single_residue(
+            "XYZ",
+            &[
+                ("N", "N", 0.0, 0.0, 0.0),
+                ("CA", "C", 1.0, 0.0, 0.0),
+                ("C", "C", 2.0, 0.0, 0.0),
+            ],
+        );
+        let formatted = Atom14Formatter::format(&processed, &OutputSpec::default()).unwrap();
+
         let mask_sum: f32 = formatted.atom_mask.iter().sum();
         assert_eq!(mask_sum, 0.0);
-
-        // The residue should be recorded in unplaced_residues
         assert_eq!(formatted.unplaced_residues.len(), 1);
-        assert_eq!(formatted.unplaced_residues[0].0, 0); // residue index 0
-        assert_eq!(formatted.unplaced_residues[0].1, "MSE");
+        assert_eq!(formatted.unplaced_residues[0].1, "XYZ");
     }
 }

@@ -18,23 +18,51 @@ import pytest
 
 from proxide import CoordFormat, OutputSpec, parse_structure
 
-_PDB = Path(__file__).resolve().parent.parent / "data" / "5awl.pdb"
+
+def _write_residue_pdb(tmp_path: Path, res_name: str, record: str, atoms) -> Path:
+  lines = []
+  for serial, (name, element, x, y, z) in enumerate(atoms, start=1):
+    lines.append(
+      f"{record:<6}{serial:5d} {name:<4s} {res_name} A   1    "
+      f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00          {element:>2s}\n"
+    )
+  path = tmp_path / f"{res_name}.pdb"
+  path.write_text("".join(lines) + "END\n")
+  return path
 
 
-def _with_first_residue_renamed(tmp_path: Path, new_name: str) -> tuple[Path, str]:
-  lines = [x for x in _PDB.read_text().splitlines(keepends=True) if x.startswith("ATOM")]
-  first = lines[0][22:27]  # residue number + insertion code of residue 0
-  out = [x[:17] + f"{new_name:>3}" + x[20:] if x[22:27] == first else x for x in lines]
-  path = tmp_path / f"{new_name}.pdb"
-  path.write_text("".join(out) + "END\n")
-  return path, lines[0][17:20]
+# MSE with SE (selenium). MET layout is N CA C O CB CG SD CE, so SE belongs in SD.
+_MSE_ATOMS = [
+  ("N", "N", 0.0, 0.0, 0.0),
+  ("CA", "C", 1.0, 0.0, 0.0),
+  ("C", "C", 2.0, 0.0, 0.0),
+  ("O", "O", 3.0, 0.0, 0.0),
+  ("CB", "C", 1.0, 1.0, 0.0),
+  ("CG", "C", 1.0, 2.0, 0.0),
+  ("SE", "SE", 1.0, 3.0, 0.0),
+  ("CE", "C", 2.0, 3.0, 0.0),
+]
+
+
+def test_mse_is_placed_via_met_layout_with_se_in_sd(tmp_path):
+  path = _write_residue_pdb(tmp_path, "MSE", "HETATM", _MSE_ATOMS)
+  spec = OutputSpec(coord_format=CoordFormat.Atom14)
+  with warnings.catch_warnings():
+    warnings.simplefilter("error", UserWarning)  # MSE must not be "unplaced"
+    protein = parse_structure(str(path), spec)
+  mask = np.asarray(protein.atom_mask)[0]
+  assert float(mask.sum()) == float(len(_MSE_ATOMS))  # all 8 present atoms placed
+  np.testing.assert_array_equal(mask[:8], np.ones(8, dtype=mask.dtype))
+  assert float(mask[8:].sum()) == 0.0
+  coords = np.asarray(protein.coordinates)[0]
+  np.testing.assert_allclose(coords[6], [1.0, 3.0, 0.0])  # SD slot holds SE
 
 
 def test_unknown_residue_is_reported_not_silently_dropped(tmp_path):
-  path, _ = _with_first_residue_renamed(tmp_path, "MSE")
-  with pytest.warns(UserWarning, match="MSE"):
+  # Negative control: a residue name with no alias and no layout keeps the warning.
+  path = _write_residue_pdb(tmp_path, "XYZ", "ATOM", _MSE_ATOMS[:3])
+  with pytest.warns(UserWarning, match="XYZ"):
     protein = parse_structure(str(path), OutputSpec(coord_format=CoordFormat.Atom14))
-  # The residue really has no Atom14 atoms -- the warning is the only record.
   assert float(np.asarray(protein.atom_mask)[0].sum()) == 0.0
 
 
