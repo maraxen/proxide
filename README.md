@@ -1,6 +1,6 @@
 # Proxide
 
-> **Alpha — experimental, no API stability guarantees.** This crate is part of an active research project; APIs may change without notice between versions. Not recommended for production use.
+> **Pre-release toward 0.1.0.** The stable surface at 0.1.0 will be core IO: structure parsing, formatting (Atom37/Atom14/Full), writing (PDB/mmCIF) and XTC trajectory reading. GAFF2, confind, rotlib and CCD/fixer are experimental and may change without deprecation.
 
 **Proxide** is a high-performance library for Protein I/O and Physics bridging in JAX. It combines a flexible Python/JAX frontend with a highly optimized Rust backend (`_proxider`) to provide fast structure parsing, force field parameterization, and seamless integration with JAX MD.
 
