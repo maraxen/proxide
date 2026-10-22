@@ -631,6 +631,38 @@ class TestWritePdbOnRealParsedStructures:
     names = list(protein.atom_names)
     ion = [i for i, (n, r) in enumerate(zip(names, protein.res_names)) if r == "CA"]
     assert len(ion) == 1, (names[-3:], list(protein.res_names)[-3:])
-    # The PDB reader keeps the element column's case as written ("CA"; see
-    # the element-case debt). What matters here: calcium, not carbon.
+    # The PDB reader canonicalises the element column to title case ("Ca", debt
+    # #2366). What matters here: calcium, not carbon.
     assert protein.elements[ion[0]].upper() == "CA"
+
+
+def test_pdb_element_column_is_upper_case_and_right_justified(tmp_path) -> None:
+  # Debt #2366 review: wwPDB writes element symbols upper-case in cols 77-78.
+  lines = _atom_lines(write_pdb(_flat_protein(2, elements=["C", "Cl"]), tmp_path / "out.pdb"))
+  assert lines[0][76:78] == " C"
+  assert lines[1][76:78] == "CL"
+
+
+def test_cif_type_symbol_is_upper_case(tmp_path) -> None:
+  out = write_mmcif(_flat_protein(2, elements=["Cl", "C"]), tmp_path / "out.cif")
+  assert "ATOM 1 CL " in out.read_text()
+
+
+def test_parsed_cl_hetatm_round_trips_to_upper_case_element(tmp_path) -> None:
+  # Debt #2366 review: parse a 'CL' HETATM, write it back, and check cols 77-78.
+  from proxide import CoordFormat, OutputSpec, parse_structure
+
+  src = [x for x in open("tests/data/5awl.pdb") if x.startswith("ATOM")]
+  cl = "HETATM 9999 CL    CL B 900      30.000  30.000  30.000  1.00  0.00          CL\n"
+  path = tmp_path / "with_cl.pdb"
+  path.write_text("".join(src) + "TER\n" + cl + "END\n")
+  protein = parse_structure(
+    str(path), OutputSpec(coord_format=CoordFormat.Full, include_hetatm=True)
+  )
+  cl_idx = [i for i, r in enumerate(protein.res_names) if r == "CL"]
+  assert len(cl_idx) == 1
+  assert protein.elements[cl_idx[0]] == "Cl"
+  out_lines = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+  cl_lines = [line for line in out_lines if line[17:20].strip() == "CL"]
+  assert len(cl_lines) == 1
+  assert cl_lines[0][76:78] == "CL"

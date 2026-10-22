@@ -620,6 +620,15 @@ fn read_optional_str(
     }
 }
 
+/// Strip a trailing charge suffix matching `\d*[+-]$` (`Fe2+`, `O2-`, `Na+`),
+/// so small-molecule style type symbols validate (debt #2366 review).
+fn strip_charge_suffix(symbol: &str) -> &str {
+    let Some(rest) = symbol.strip_suffix(|c: char| c == '+' || c == '-') else {
+        return symbol;
+    };
+    rest.trim_end_matches(|c: char| c.is_ascii_digit())
+}
+
 fn extract_row(
     tokens: &[(String, bool)],
     column_map: &HashMap<String, usize>,
@@ -697,7 +706,7 @@ fn extract_row(
     let element = if type_symbol.is_empty() {
         infer_element(&atom_name).to_string()
     } else {
-        normalize_element_symbol(&type_symbol).ok_or_else(|| {
+        normalize_element_symbol(strip_charge_suffix(&type_symbol)).ok_or_else(|| {
             CifFieldError::new(
                 row_start_line,
                 "type_symbol",
@@ -1213,6 +1222,22 @@ _atom_site.label_seq_id
             .expect("CifFieldError");
         assert_eq!(err.kind, TokenFieldErrorKind::UnknownElement);
         assert_eq!(err.column, "type_symbol");
+    }
+
+    #[test]
+    fn type_symbol_charge_suffix_is_stripped_before_validation() {
+        // Debt #2366 review: small-molecule style symbols carry a charge.
+        let cols: Vec<&str> = FULL_COLS
+            .iter()
+            .copied()
+            .chain(std::iter::once("type_symbol"))
+            .collect();
+        let header = atom_site_header(&cols);
+        for (raw, want) in [("Fe2+", "Fe"), ("O2-", "O"), ("Na+", "Na")] {
+            let (parsed, _) =
+                parse_mmcif_from_reader(format!("{header}{VALID_ROW} {raw}\n").as_bytes()).unwrap();
+            assert_eq!(parsed.elements[0], want, "type_symbol {raw}");
+        }
     }
 
     #[test]

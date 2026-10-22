@@ -34,7 +34,7 @@
 //! pattern than parsing it directly in the target width would.
 
 use crate::formats::field_parse::{self, TokenFieldErrorKind};
-use crate::formats::parm7::ELEMENTS;
+use proxide_core::chem::elements::canonical_element_symbol;
 use proxide_core::chem::masses::infer_element;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -445,26 +445,16 @@ fn check_residue_reappearance(
 
 /// Canonical element symbol for a raw element-column value (debt #2366).
 ///
-/// Trims, title-cases (`CL`, `cl`, `Cl` -> `Cl`) and validates against the
-/// periodic-table list the crate already uses (`parm7::ELEMENTS`, Z = 1..86).
-/// Deuterium `D` is accepted as its own symbol. Returns `None` for an empty
-/// or unknown symbol; the caller turns that into a fail-loud error.
+/// Trims, title-cases and validates against the shared IUPAC table
+/// (`proxide_core::chem::elements`), which includes `D`, `T` and `X`. Returns
+/// `None` for an empty or unknown symbol; the caller turns that into a loud
+/// error.
+///
+/// Deuterium: a filled `D` column gives `D`, but a blank column whose atom name
+/// starts with `D` still infers `C` through `infer_element`, which is unchanged
+/// here. That mismatch is pinned by a test and tracked as a follow-up.
 pub(crate) fn normalize_element_symbol(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let upper = trimmed.to_ascii_uppercase();
-    if upper == "D" {
-        return Some("D".to_string());
-    }
-    if !ELEMENTS.iter().any(|e| *e == upper) {
-        return None;
-    }
-    let lower = upper.to_ascii_lowercase();
-    let mut title = lower[..1].to_ascii_uppercase();
-    title.push_str(&lower[1..]);
-    Some(title)
+    canonical_element_symbol(raw).map(str::to_string)
 }
 
 fn parse_atom_record(
@@ -892,5 +882,32 @@ ATOM      3  N   ALA A   2      2.000   0.000   0.000  1.00  0.00           N
         assert_eq!(err.columns, (77, 78));
         assert!(err.raw.contains("XX"));
         assert!(err.to_string().contains(PDB_MALFORMED_RECORD_CODE));
+    }
+
+    #[test]
+    fn full_iupac_symbols_are_accepted() {
+        // Debt #2366 review: wwPDB files carry actinides and placeholder
+        // symbols; none of these may raise.
+        for (col, want) in [
+            ("U", "U"),
+            ("TH", "Th"),
+            ("X", "X"),
+            ("T", "T"),
+            ("Og", "Og"),
+        ] {
+            assert_eq!(parsed_element("X", col).unwrap(), want, "column {col}");
+        }
+        let err = parsed_element("XX", "XX").unwrap_err();
+        assert_eq!(err.kind, PdbFieldErrorKind::UnknownElement);
+        assert!(parsed_element("C1", "C1").is_err());
+    }
+
+    #[test]
+    fn deuterium_filled_column_and_blank_d_prefixed_name_differ() {
+        // Pinned, not fixed (debt #2366 review). A filled D column is the
+        // deuterium symbol. A blank column with a D-prefixed atom name still
+        // infers C through infer_element, which this change does not touch.
+        assert_eq!(parsed_element("D", " D").unwrap(), "D");
+        assert_eq!(parsed_element("D1", "  ").unwrap(), "C");
     }
 }
