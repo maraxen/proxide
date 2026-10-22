@@ -14,10 +14,14 @@ they exist only in source builds that opt in.
 ### Added
 - `write_pdb` and `write_mmcif` accept Atom14 `Protein` objects; atom slot names come from the per-residue Atom14 table.
 - `Protein.atom_chain_ids` carries per-atom chain IDs; `Protein.n_models` reports the size of a model stack.
+- `Protein.b_factors` and `Protein.occupancies` carry the source per-atom values (`None` when the source has none) through every format, the cache, truncation, padding, stacking and `write_npz`.
+- `Protein.residue_names` keeps each residue's source name (for example `MSE`) alongside the model `aatype`.
+- `fetch_rcsb` and `fetch_afdb` honour `PROXIDE_HTTP_TIMEOUT_SECS` and `PROXIDE_HTTP_CONNECT_TIMEOUT_SECS`; `PROXIDE_RCSB_BASE_URL` overrides the download host (for tests).
+- `measure_chi` accepts an optional `atom_mask`; with it, an atom is missing exactly when its mask is 0.
 
 ### Changed
 - **Changed (behaviour)**: Full-format output carries per-atom elements, residue names and chains; Python no longer infers elements.
-- **Changed (behaviour)**: the Atom14 formatter looks up its layout by residue type (`res_type`). Alias residues (HSD, HSE, HSP, ASH, GLH, LYN, CYX, CYM) are placed instead of emitted empty; residues with no Atom14 layout (for example MSE) raise a `UserWarning` naming them (`unplaced_residues`).
+- **Changed (behaviour)**: the Atom14 formatter looks up its layout by residue type (`res_type`). Alias residues (HSD, HSE, HSP, ASH, GLH, LYN, CYX, CYM) are placed instead of emitted empty; residues with no Atom14 layout (for example ligands) raise a `UserWarning` naming them (`unplaced_residues`).
 - **Changed (behaviour)**: `write_pdb` and `write_mmcif` write no invented values and reject non-finite coordinates. `write_pdb` also raises on column overflow; `write_mmcif` rejects values that cannot be written as CIF tokens.
 - **Changed (behaviour)**: MOL2 `MOLECULE` lines are counted raw, so a blank name line no longer shifts the charge-type line.
 - **Changed (behaviour)**: chain IDs are resolved or reported unknown, never defaulted to `"A"`; failed chain filters raise.
@@ -30,6 +34,12 @@ they exist only in source builds that opt in.
 - **Changed (behaviour)**: GAFF2 enumerates every angle and torsion; van der Waals, mass and type stand-ins are removed. (experimental)
 - **Changed (behaviour)**: the `gaff-2.2.20.dat` loader reads AMBER `parm.dat` fixed-width fields, so GAFF2 angles, torsion periodicities and impropers differ from earlier releases (720 previously dropped angle types and all impropers now load). (experimental)
 - **Changed (behaviour)**: a later AMBER `DIHE` redefinition replaces the earlier one instead of summing.
+- **Changed (behaviour)**: element symbols are normalised at parse time. A filled PDB element column or mmCIF `type_symbol` is trimmed, title-cased and checked against the 118 IUPAC symbols plus D, T and X; an unknown symbol raises `PROX-IO-MALFORMED-RECORD`. Sign-last mmCIF charge suffixes (`Fe2+`) are stripped. Writers emit upper-case elements right-justified in PDB columns 77-78.
+- **Changed (behaviour)**: `write_pdb` and `write_mmcif` write the source occupancy and B-factor, and blank columns (PDB) or `?` (mmCIF) when they are unknown. They used to write `1.00` and `0.00` for every atom.
+- **Changed (behaviour)**: selenomethionine (MSE) is typed as MET (`aatype` 12) with SE in the SD slot in Atom14 and Atom37 (it was UNK and empty in Atom14; Atom37 dropped SE). `write_pdb` and `write_mmcif` restore `HETATM MSE` with atom `SE` from `residue_names`; proteins without `residue_names` are written as MET/SD.
+- **Changed (behaviour)**: `fetch_afdb` and `proxide fetch afdb` default to AlphaFold DB model version 6; version 4 is no longer served.
+- **Changed (behaviour)**: stacking proteins where only some carry `b_factors`/`occupancies` warns once and drops those fields for the batch.
+- Coordinates where `atom_mask` is 0 are 0.0 and carry no meaning; use `atom_mask`, not NaN tests, to find missing atoms. Frame validation and `measure_chi` now follow this.
 - **Changed (behaviour)**: the GAFF2 DEF parser rejects malformed `f8`/`f9` bodies, malformed `ATD` rule lines and an explicit DEF with zero parseable rules, instead of dropping them. (experimental)
 
 ### Fixed
@@ -38,6 +48,9 @@ they exist only in source builds that opt in.
 - `load_rust(chain_id=...)` remaps `chain_index` onto the filtered chain vocabulary (kept in file order), so a single-chain parse no longer writes chain `"A"`.
 - Model-stack consumers count one structure or refuse, instead of miscounting.
 - The confind CLI propagates crowdedness and freedom errors instead of dropping residues. (experimental)
+- The format cache is keyed on file content (path, length, content hash and output options), so a file rewritten at the same path is re-parsed instead of served stale; the key and the parse use the same read.
+- `fetch_rcsb` no longer hangs: the Python bindings released the GIL too late, deadlocking the HTTP client's logging thread. Downloads are atomic (temp file + rename), a truncated or empty cached file is re-downloaded, the format fallback runs only on HTTP 404, and requests send a `User-Agent`.
+- Element masses for upper-case element columns (`CL`, `ZN`) no longer fall back to carbon.
 
 ## [0.1.0a17] - 2026-09-29
 
