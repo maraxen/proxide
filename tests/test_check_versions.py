@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
@@ -20,7 +21,10 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "check_versions.py"
 STATIC_FILES = ("pyproject.toml", "Cargo.toml", "src/proxide/__init__.py", "docs/source/conf.py")
-PROXIDE_CORE_PIN = 'proxide-core = { path = "crates/proxide-core", version = "0.1.0-alpha.17" }'
+PY_VERSION = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+CARGO_VERSION = tomllib.loads((REPO / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
+PY_VERSION_LINE = f'version = "{PY_VERSION}"'
+PROXIDE_CORE_PIN = f'proxide-core = {{ path = "crates/proxide-core", version = "{CARGO_VERSION}" }}'
 
 
 def _load_script() -> ModuleType:
@@ -69,20 +73,20 @@ def _set_package_version(path: Path, value: str) -> None:
 
 
 def _retarget_cargo(root: Path, cargo_version: str) -> None:
-    """Set the workspace version and rewrite every alpha.17 pin to match it."""
+    """Set the workspace version and rewrite every workspace-version pin to match it."""
     for manifest in [root / "Cargo.toml", *sorted((root / "crates").glob("*/Cargo.toml"))]:
         text = manifest.read_text(encoding="utf-8")
-        manifest.write_text(text.replace("0.1.0-alpha.17", cargo_version), encoding="utf-8")
+        manifest.write_text(text.replace(CARGO_VERSION, cargo_version), encoding="utf-8")
 
 
 def _mutate_root_stale_pin(root: Path) -> None:
-    _edit(root / "Cargo.toml", PROXIDE_CORE_PIN, PROXIDE_CORE_PIN.replace("alpha.17", "alpha.15"))
+    _edit(root / "Cargo.toml", PROXIDE_CORE_PIN, PROXIDE_CORE_PIN.replace(CARGO_VERSION, "0.1.0-alpha.15"))
 
 
 def _mutate_crate_stale_sibling_pin(root: Path) -> None:
     _edit(
         root / "crates/proxide-wasm/Cargo.toml",
-        'version = "0.1.0-alpha.17", default-features',
+        f'version = "{CARGO_VERSION}", default-features',
         'version = "0.1.0-alpha.9", default-features',
     )
 
@@ -97,7 +101,7 @@ def _mutate_target_table_stale_pin(root: Path) -> None:
 
 
 def _mutate_python_cargo_disagree(root: Path) -> None:
-    _edit(root / "pyproject.toml", 'version = "0.1.0a17"', 'version = "0.1.0a18"')
+    _edit(root / "pyproject.toml", PY_VERSION_LINE, 'version = "0.1.0a99"')
 
 
 def _mutate_crate_literal_package_version(root: Path) -> None:
@@ -113,7 +117,7 @@ def _mutate_single_quoted_dunder_version(root: Path) -> None:
 
 
 def _mutate_unsupported_pep440(root: Path) -> None:
-    _edit(root / "pyproject.toml", 'version = "0.1.0a17"', 'version = "0.1.0.post1"')
+    _edit(root / "pyproject.toml", PY_VERSION_LINE, 'version = "0.1.0.post1"')
 
 
 def _mutate_missing_conf(root: Path) -> None:
@@ -126,7 +130,7 @@ def _mutate_versionless_path_dep(root: Path) -> None:
 
 def _mutate_non_member_path_dep(root: Path) -> None:
     text = (root / "Cargo.toml").read_text(encoding="utf-8")
-    text += '\n[dependencies]\nstray = { path = "vendor/stray", version = "0.1.0-alpha.17" }\n'
+    text += f'\n[dependencies]\nstray = {{ path = "vendor/stray", version = "{CARGO_VERSION}" }}\n'
     (root / "Cargo.toml").write_text(text, encoding="utf-8")
 
 
@@ -144,14 +148,14 @@ def _mutate_missing_pyproject(root: Path) -> None:
 
 
 def _mutate_dynamic_version(root: Path) -> None:
-    _edit(root / "pyproject.toml", 'version = "0.1.0a17"', 'dynamic = ["version"]')
+    _edit(root / "pyproject.toml", PY_VERSION_LINE, 'dynamic = ["version"]')
 
 
 MUTATIONS: list[tuple[str, Callable[[Path], None], str, str]] = [
     ("root-stale-workspace-pin", _mutate_root_stale_pin, "Cargo.toml", "proxide-core"),
     ("crate-stale-sibling-pin", _mutate_crate_stale_sibling_pin, "crates/proxide-wasm/Cargo.toml", "alpha.9"),
     ("target-table-stale-pin", _mutate_target_table_stale_pin, "Cargo.toml", "alpha.15"),
-    ("python-cargo-disagree", _mutate_python_cargo_disagree, "pyproject.toml", "0.1.0a18"),
+    ("python-cargo-disagree", _mutate_python_cargo_disagree, "pyproject.toml", "0.1.0a99"),
     ("crate-literal-package-version", _mutate_crate_literal_package_version, "crates/proxide-core/Cargo.toml", "alpha.15"),
     ("single-quoted-dunder-version", _mutate_single_quoted_dunder_version, "src/proxide/__init__.py", "'0.1.0'"),
     ("unsupported-pep440", _mutate_unsupported_pep440, "pyproject.toml", "0.1.0.post1"),
@@ -202,7 +206,7 @@ def test_final_pypi_with_prerelease_cargo_rule(
     tmp_path: Path, pyproject_version: str, cargo_version: str, exit_code: int, fragment: str
 ) -> None:
     root = _make_tree(tmp_path)
-    _edit(root / "pyproject.toml", 'version = "0.1.0a17"', f'version = "{pyproject_version}"')
+    _edit(root / "pyproject.toml", PY_VERSION_LINE, f'version = "{pyproject_version}"')
     _retarget_cargo(root, cargo_version)
 
     result = _run_check(root)

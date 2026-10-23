@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "proxide"
-version = "0.1.0a17"
+version = "0.1.0"
 description = "Protein I/O for JAX with high-performance Rust backend"
 readme = "README.md"
 license = "MIT"
@@ -13,7 +13,7 @@ authors = [
 ]
 requires-python = ">=3.11"
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
 ]
 dependencies = [
     # jax and flax are split by Python version (debt #2912). Python 3.11 stays on
