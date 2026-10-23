@@ -11,6 +11,8 @@ they exist only in source builds that opt in.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-23
+
 ### Added
 - `write_pdb` and `write_mmcif` accept Atom14 `Protein` objects; atom slot names come from the per-residue Atom14 table.
 - `Protein.atom_chain_ids` carries per-atom chain IDs; `Protein.n_models` reports the size of a model stack.
