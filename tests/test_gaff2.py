@@ -390,3 +390,97 @@ def test_substitutions_key_always_present():
         result = parameterize_gaff_with_rdkit(prepare_mol(smiles))
         assert isinstance(result.get("substitutions"), list), smiles
         assert "missing_params" not in result, "missing terms raise; there is no fill to record"
+
+
+def test_debt_2375_regression_impropers_and_bond_sub_visibility():
+    """Regression test for Debt #2375:
+    1. build_gaff2_ffxml emits <Improper> records for planar centers (e.g. acetone).
+    2. parameterize_gaff_with_rdkit returns 'impropers' key with non-empty list for planar centers.
+    3. _BOND_TYPE_SUB substitutions in bond and angle lookups are recorded and exposed in substitutions list.
+    """
+    import io
+    from proxide.chem.gaff2 import (
+        build_gaff2_ffxml,
+        _lookup_bond_params,
+        _lookup_angle_params,
+    )
+
+    # Molecule with planar carbonyl center (acetone)
+    mol = prepare_mol("CC(=O)C")
+    charges = [0.0] * mol.GetNumAtoms()
+
+    # 1. Improper torsions in build_gaff2_ffxml
+    xml = build_gaff2_ffxml(mol, "ACE", charges)
+    assert "<Improper" in xml, "build_gaff2_ffxml must emit <Improper> records for planar centers"
+    assert 'type1="ACE_1"' in xml, "Central atom (C2, index 1) must be type1 in OpenMM Improper tag"
+    assert 'periodicity1="2"' in xml, "Improper periodicity must be 2"
+
+    # OpenMM can parse the FFXML with the improper tag
+    openmm_app = pytest.importorskip("openmm.app")
+    ff = openmm_app.ForceField(io.StringIO(xml))
+    assert ff is not None
+
+    # 2. parameterize_gaff_with_rdkit returns 'impropers'
+    res = parameterize_gaff_with_rdkit(mol, charge_method="gasteiger")
+    assert "impropers" in res, "parameterize_gaff_with_rdkit must return 'impropers' key"
+    assert len(res["impropers"]) > 0, "impropers list must not be empty for acetone"
+    impr = res["impropers"][0]
+    assert impr["center"] == 1, "Carbonyl carbon (atom 1) must be improper center"
+    assert impr["pk"] == pytest.approx(10.5)
+    assert impr["phase"] == pytest.approx(180.0)
+
+    # 3. _BOND_TYPE_SUB substitutions in bond and angle lookups are recorded
+    params = load_gaff2_parameters()
+    bond_subs = []
+    kb, r0 = _lookup_bond_params("cx", "o", params, substitutions=bond_subs)
+    assert len(bond_subs) == 1, "Expected bond substitution to be recorded"
+    assert bond_subs[0] == {"term": "bond", "from": ["cx", "o"], "to": ["c3", "o"]}
+    assert kb > 0.0 and r0 > 0.0
+
+    angle_subs = []
+    kt, t0 = _lookup_angle_params("cx", "c2", "hc", params, substitutions=angle_subs)
+    assert len(angle_subs) == 1, "Expected angle substitution to be recorded"
+    assert angle_subs[0] == {
+        "term": "angle",
+        "from": ["cx", "c2", "hc"],
+        "to": ["c3", "c2", "hc"],
+    }
+    assert kt > 0.0 and t0 > 0.0
+
+
+def test_improper_torsions_multiple_planar_centers():
+    """Verify improper torsions for benzene, acetic acid, and non-planar alkanes."""
+    # Benzene: all 6 aromatic carbons are planar centers (rule X-X-ca-ha, pk=1.1, phase=180.0)
+    mol_benzene = prepare_mol("c1ccccc1")
+    res_b = parameterize_gaff_with_rdkit(mol_benzene)
+    assert "impropers" in res_b
+    assert len(res_b["impropers"]) == 6
+    for impr in res_b["impropers"]:
+        assert impr["pk"] == pytest.approx(1.1)
+        assert impr["phase"] == pytest.approx(180.0)
+
+    # Acetic acid: carbonyl carbon matches exact rule c3-o-c-oh (pk=1.1, phase=180.0)
+    mol_ac = prepare_mol("CC(=O)O")
+    res_ac = parameterize_gaff_with_rdkit(mol_ac)
+    assert len(res_ac["impropers"]) == 1
+    impr_ac = res_ac["impropers"][0]
+    assert impr_ac["pk"] == pytest.approx(1.1)
+    assert impr_ac["phase"] == pytest.approx(180.0)
+
+    # Alkanes: methane and ethane have 0 planar centers, so 0 impropers
+    for smiles in ("C", "CC"):
+        res = parameterize_gaff_with_rdkit(prepare_mol(smiles))
+        assert "impropers" in res
+        assert len(res["impropers"]) == 0
+
+
+def test_build_gaff2_ffxml_substitutions_argument():
+    """Verify build_gaff2_ffxml records substitutions when caller provides substitutions list."""
+    from proxide.chem.gaff2 import build_gaff2_ffxml
+
+    mol = prepare_mol("CC(=O)C")
+    charges = [0.0] * mol.GetNumAtoms()
+    subs = []
+    xml = build_gaff2_ffxml(mol, "ACE", charges, substitutions=subs)
+    assert "<Improper" in xml
+    assert isinstance(subs, list)

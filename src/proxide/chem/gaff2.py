@@ -1712,7 +1712,7 @@ def _lookup_torsion_terms(
 
 
 def _lookup_bond_params(
-    ti: str, tj: str, params: dict
+    ti: str, tj: str, params: dict, substitutions: list[dict] | None = None
 ) -> tuple[float, float]:
     """Return (kb, r0) for a bond, trying substitutions on miss."""
     for a, b in [(ti, tj), (tj, ti)]:
@@ -1721,14 +1721,21 @@ def _lookup_bond_params(
     # substitution fallback
     ti_s = _BOND_TYPE_SUB.get(ti, ti)
     tj_s = _BOND_TYPE_SUB.get(tj, tj)
-    for a, b in [(ti_s, tj_s), (tj_s, ti_s)]:
-        if (a, b) in params['bonds']:
-            return params['bonds'][(a, b)]
+    if (ti_s, tj_s) != (ti, tj):
+        for a, b in [(ti_s, tj_s), (tj_s, ti_s)]:
+            if (a, b) in params['bonds']:
+                if substitutions is not None:
+                    substitutions.append({
+                        "term": "bond",
+                        "from": [ti, tj],
+                        "to": [ti_s, tj_s],
+                    })
+                return params['bonds'][(a, b)]
     raise Gaff2ParameterMissingError(f"no GAFF2 bond parameters for {ti}-{tj}")
 
 
 def _lookup_angle_params(
-    ti: str, tj: str, tk: str, params: dict
+    ti: str, tj: str, tk: str, params: dict, substitutions: list[dict] | None = None
 ) -> tuple[float, float]:
     """Return (kt, t0) for an angle, trying substitutions on miss."""
     for a, b, c in [(ti, tj, tk), (tk, tj, ti)]:
@@ -1737,10 +1744,76 @@ def _lookup_angle_params(
     ti_s = _BOND_TYPE_SUB.get(ti, ti)
     tj_s = _BOND_TYPE_SUB.get(tj, tj)
     tk_s = _BOND_TYPE_SUB.get(tk, tk)
-    for a, b, c in [(ti_s, tj_s, tk_s), (tk_s, tj_s, ti_s)]:
-        if (a, b, c) in params['angles']:
-            return params['angles'][(a, b, c)]
+    if (ti_s, tj_s, tk_s) != (ti, tj, tk):
+        for a, b, c in [(ti_s, tj_s, tk_s), (tk_s, tj_s, ti_s)]:
+            if (a, b, c) in params['angles']:
+                if substitutions is not None:
+                    substitutions.append({
+                        "term": "angle",
+                        "from": [ti, tj, tk],
+                        "to": [ti_s, tj_s, tk_s],
+                    })
+                return params['angles'][(a, b, c)]
     raise Gaff2ParameterMissingError(f"no GAFF2 angle parameters for {ti}-{tj}-{tk}")
+
+
+def _lookup_improper_params(
+    t_center: str,
+    t_nb1: str,
+    t_nb2: str,
+    t_nb3: str,
+    params: dict,
+    substitutions: list[dict] | None = None,
+) -> tuple[float, float] | None:
+    """Return (pk, phase) for an improper torsion, trying substitutions on miss.
+
+    In AMBER parm.dat, improper rules are stored as (r1, r2, r3, r4) where r3 is the
+    central atom. The three neighbors (t_nb1, t_nb2, t_nb3) can match (r1, r2, r4) in
+    any permutation. Wildcard 'X' can match any neighbor type. Rules with fewer wildcards
+    take precedence over rules with more wildcards (0 > 1 > 2).
+    """
+    improper_rules = params.get('impropers', {})
+    if not improper_rules:
+        return None
+
+    import itertools
+
+    def _find_best_rule(c: str, n1: str, n2: str, n3: str) -> tuple[float, float] | None:
+        best_match = None
+        min_wildcards = 999
+        for (r1, r2, r3, r4), (pk, phase) in improper_rules.items():
+            if r3 != c:
+                continue
+            for p1, p2, p4 in itertools.permutations((n1, n2, n3)):
+                if (r1 == "X" or r1 == p1) and (r2 == "X" or r2 == p2) and (r4 == "X" or r4 == p4):
+                    wildcards = (1 if r1 == "X" else 0) + (1 if r2 == "X" else 0) + (1 if r4 == "X" else 0)
+                    if wildcards < min_wildcards:
+                        min_wildcards = wildcards
+                        best_match = (pk, phase)
+                    break
+        return best_match
+
+    # Direct match
+    res = _find_best_rule(t_center, t_nb1, t_nb2, t_nb3)
+    if res is not None:
+        return res
+
+    # Substitution fallback
+    c_s = _BOND_TYPE_SUB.get(t_center, t_center)
+    s1 = _BOND_TYPE_SUB.get(t_nb1, t_nb1)
+    s2 = _BOND_TYPE_SUB.get(t_nb2, t_nb2)
+    s3 = _BOND_TYPE_SUB.get(t_nb3, t_nb3)
+    if (c_s, s1, s2, s3) != (t_center, t_nb1, t_nb2, t_nb3):
+        res = _find_best_rule(c_s, s1, s2, s3)
+        if res is not None:
+            if substitutions is not None:
+                substitutions.append({
+                    "term": "improper",
+                    "from": [t_center, t_nb1, t_nb2, t_nb3],
+                    "to": [c_s, s1, s2, s3],
+                })
+            return res
+    return None
 
 
 def build_gaff2_ffxml(
@@ -1750,6 +1823,7 @@ def build_gaff2_ffxml(
     *,
     gaff_version: str = "gaff-2.2.20",
     missing_torsions: Literal["raise", "omit"] = "raise",
+    substitutions: list[dict] | None = None,
 ) -> str:
     """Build a complete OpenMM FFXML string for a single small-molecule residue.
 
@@ -1851,7 +1925,7 @@ def build_gaff2_ffxml(
         j = bond.GetEndAtomIdx()
         ti = idx_to_type[i]
         tj = idx_to_type[j]
-        kb, r0 = _lookup_bond_params(ti, tj, params)
+        kb, r0 = _lookup_bond_params(ti, tj, params, substitutions=substitutions)
         if kb == 0.0:
             missing_bonds += 1
         r0_nm = r0 * _BOND_R_CONV
@@ -1879,7 +1953,7 @@ def build_gaff2_ffxml(
                 ti = idx_to_type[i]
                 tj = idx_to_type[j]
                 tk = idx_to_type[k]
-                kt, t0 = _lookup_angle_params(ti, tj, tk, params)
+                kt, t0 = _lookup_angle_params(ti, tj, tk, params, substitutions=substitutions)
                 t0_rad = t0 * _ANGLE_T_CONV
                 k_kj = kt * _ANGLE_K_CONV
                 lines.append(
@@ -1921,6 +1995,12 @@ def build_gaff2_ffxml(
                     for sub_key in [(ti_s, tj_s, tk_s, tl_s), (tl_s, tk_s, tj_s, ti_s)]:
                         torsion_params = params['torsions'].get(sub_key, [])
                         if torsion_params:
+                            if substitutions is not None and (ti_s, tj_s, tk_s, tl_s) != (ti, tj, tk_, tl):
+                                substitutions.append({
+                                    "term": "torsion",
+                                    "from": [ti, tj, tk_, tl],
+                                    "to": [ti_s, tj_s, tk_s, tl_s],
+                                })
                             break
                 if not torsion_params:
                     # Silently skipping the term used to drop the torsion from
@@ -1947,6 +2027,28 @@ def build_gaff2_ffxml(
                         f' k{term_idx}="{k_kj:.4f}"'
                     )
                 lines.append(f"    <Proper {attrs}/>")
+
+    for atom in rdmol.GetAtoms():
+        bonds_c = list(atom.GetBonds())
+        if len(bonds_c) != 3:
+            continue
+        center = atom.GetIdx()
+        nbs = sorted(b.GetOtherAtomIdx(center) for b in bonds_c)
+        nb1, nb2, nb3 = nbs
+        t_center = idx_to_type[center]
+        t1, t2, t3 = idx_to_type[nb1], idx_to_type[nb2], idx_to_type[nb3]
+        improper_params = _lookup_improper_params(
+            t_center, t1, t2, t3, params, substitutions=substitutions
+        )
+        if improper_params is not None:
+            pk, phase = improper_params
+            phase_rad = phase * _TORSION_P_CONV
+            k_kj = pk * _TORSION_K_CONV
+            lines.append(
+                f'    <Improper type1="{resname}_{center}" type2="{resname}_{nb1}"'
+                f' type3="{resname}_{nb2}" type4="{resname}_{nb3}"'
+                f' periodicity1="2" phase1="{phase_rad:.6f}" k1="{k_kj:.4f}"/>'
+            )
     lines.append("  </PeriodicTorsionForce>")
 
     # --- NonbondedForce ---
@@ -2207,30 +2309,57 @@ def parameterize_gaff_with_rdkit(
     missing: list[str] = sorted(f"mass {at}" for at in used_types if at not in params['masses'])
     masses = {at: params['masses'][at] for at in used_types if at in params['masses']}
 
-    # Bonds: the file stores each once, in one orientation -- look up both
-    # (this used a sorted key, which misses rows stored unsorted).
+    # Track type substitutions for observability (debt #1905, #2375)
+    substitutions: list[dict] = []
+
+    # Bonds: lookup with _BOND_TYPE_SUB fallback, recording substitutions.
     for b in bonds:
         t1, t2 = b['gaff_type_i'], b['gaff_type_j']
-        key = next(((a, c) for a, c in ((t1, t2), (t2, t1)) if (a, c) in params['bonds']), None)
-        if key is None:
+        try:
+            b['kb'], b['r0'] = _lookup_bond_params(t1, t2, params, substitutions=substitutions)
+        except Gaff2ParameterMissingError:
             missing.append(f"bond {t1}-{t2}")
-            continue
-        b['kb'], b['r0'] = params['bonds'][key]
 
-    # Angles: either orientation (this used to look forward only).
+    # Angles: lookup with _BOND_TYPE_SUB fallback, recording substitutions.
     for a in angles:
         t1, t2, t3 = a['types']  # ty: ignore[not-iterable]
-        key = next((k for k in ((t1, t2, t3), (t3, t2, t1)) if k in params['angles']), None)
-        if key is None:
+        try:
+            a['kt'], a['t0'] = _lookup_angle_params(t1, t2, t3, params, substitutions=substitutions)
+        except Gaff2ParameterMissingError:
             missing.append(f"angle {t1}-{t2}-{t3}")
+
+    # Build improper torsion list (planar trivalent centers)
+    impropers = []
+    for atom in mol.GetAtoms():
+        center = atom.GetIdx()
+        nbs = neighbors[center]
+        if len(nbs) != 3:
             continue
-        a['kt'], a['t0'] = params['angles'][key]
+        nb1, nb2, nb3 = sorted(nbs)
+        t_center = atom_types[center]
+        t1, t2, t3 = atom_types[nb1], atom_types[nb2], atom_types[nb3]
+        improper_params = _lookup_improper_params(
+            t_center, t1, t2, t3, params, substitutions=substitutions
+        )
+        if improper_params is not None:
+            pk, phase = improper_params
+            impropers.append({
+                'center': center,
+                'neighbors': (nb1, nb2, nb3),
+                'i': center,
+                'j': nb1,
+                'k': nb2,
+                'l': nb3,
+                'types': (t_center, t1, t2, t3),
+                'params': (pk, phase),
+                'terms': [(2, pk, phase)],
+                'pk': pk,
+                'phase': phase,
+                'periodicity': 2,
+            })
 
     # Build torsion list (1-2-3-4 connections)
     torsions = []
-
-    # Track torsion substitutions for observability (debt #1905)
-    substitutions: list[dict] = []
     if missing_torsions not in ("raise", "omit"):
         raise ValueError(f"missing_torsions must be 'raise' or 'omit', got {missing_torsions!r}")
     omitted_torsions: list[str] = []
@@ -2318,5 +2447,6 @@ def parameterize_gaff_with_rdkit(
         'bonds': bonds,
         'angles': angles,
         'torsions': torsions,
+        'impropers': impropers,
         'substitutions': substitutions,
     }
