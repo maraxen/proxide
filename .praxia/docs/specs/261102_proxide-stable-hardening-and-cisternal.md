@@ -42,6 +42,7 @@ No agent makes these. A track that reaches one stops, parks the item as `awaitin
 | O4 | sdist (#3181): ship the GPL crate sources with their own LICENSE, restructure the optional dependency, or stop publishing an sdist | T3 |
 | O5 | Repo settings: required status checks on the `main` ruleset, a reviewer on the `pypi` environment, and whether the signed-commit bypass stays | T8 |
 | O6 | Whether `Dunbrack` attribution needs correcting: the licence URL cited as ODC-BY now serves CC BY 4.0 text (#1917) | nothing in code |
+| O7 | Intel macOS (#3183): drop the wheel and say so, or make `grain` optional so it installs. A required dependency has no build there, so the published wheel cannot be installed | T9 |
 
 Agents never merge a PR, push a tag, publish, or yank.
 
@@ -57,7 +58,8 @@ Verified means probed on 2026-11-02 or read at the cited location. These probes 
 | `import proxide` does not load cisternal | verified | `sys.modules` check |
 | stdout stays clean during a parse, including a missing-atom message | verified, one case | stdout and stderr captured separately |
 | jaxlint's typer plugin command works unchanged in proxide | verified by reading only | `jaxlint/cli/plugin_command.py` |
-| Stable features are linked on macOS and Windows wheels | unverified | `strings` suggests yes; PR #80 dry run decides |
+| Stable features are linked and smoke-tested on Linux x86_64 and aarch64, Apple Silicon and Windows wheels, on 3.11 and 3.13 | verified | dry run 41491125466 |
+| The Intel macOS wheel installs | verified false | same run: no `grain` distribution for that platform |
 | maturin includes `src/proxide/agent_plugin.json` in the wheel | unverified | `include` globs suggest yes; T5 must list a built wheel |
 | Real stdio MCP transport works at import and parse cold start | unverified | T7 |
 | `wire()` can drive a typer app | unverified, likely no | cisternal documents cyclopts; T7 must decide |
@@ -150,16 +152,20 @@ Accept: one parametrized test calls each tool through the function, the CLI and 
 - Pin `test_public_api.py` to signatures, not just names.
 - CI: run tests from `uv.lock`, plus one named unlocked job (#3180).
 - Add `cargo-deny` and `pip-audit`, and Dependabot for actions and dependencies. Pin actions by SHA. Replace `curl | sh` for uv with `astral-sh/setup-uv`.
-- Reconcile the macOS and Windows `--features xtc` and "Slim" labels with what the dry run shows, and correct the CHANGELOG statement about wheel feature sets.
+- The macOS and Windows jobs pass `--features xtc` and are labelled "Slim", yet the smoke check finds all stable features linked, because default features stay on. Fix the labels and flags, and correct the CHANGELOG statement about wheel feature sets.
 - Fix the README: the "Pre-release toward 0.1.0" banner, JAX MD mention, and "requires a Rust toolchain". Create the missing GitHub release for `v0.1.0`, which needs the owner's approval because it is outward-facing.
 - Add `SECURITY.md`, `CONTRIBUTING.md` and `CITATION.cff`.
 
 Accept: each item is a CI check or a file that exists; none is a statement that it was done.
 
+### T9. Intel macOS wheel
+
+Needs O7. `smoke-wheels` in #80 is the acceptance test: its Intel macOS jobs are red today and stay a release gate. Do not remove the target from the smoke matrix unless the build target goes with it.
+
 ## 5. Ordering
 
 1. Owner: merge #81, then #79 and #80. Each carries the pytest fix where needed. Decide O1 to O6.
-2. In parallel: T1, T2, T4, T8. T3 once O4 is decided.
+2. In parallel: T1, T2, T4, T8. T3 once O4 is decided, and T9 once O7 is decided.
 3. T5, then T6, then T7.
 4. Release as 0.2.0, because #79 changes accepted input on the stable surface. Follow `261021_release-checklist.md`.
 
