@@ -29,7 +29,7 @@ Versioning rule: `crates.io` stays pre-release. A stable PyPI tag has a final `X
 
 ## Crates held back from crates.io
 
-`proxide-confind`, `proxide-rotlib` and `proxide_fixer` carry `publish = false` because they derive from CC BY-NC-SA 4.0 code (debt #1420). `proxide-frag` is held pending review (debt #1421). Do not restore them to `publish.yml` until those debts are resolved.
+`proxide-confind`, `proxide-rotlib` and `proxide_fixer` carry `publish = false` because they derive from CC BY-NC-SA 4.0 code (debt #1420). Do not restore them to `publish.yml` until that debt is resolved. `proxide-frag` was reviewed and found independent (`audits/261102_mosaist-derivation-map.md`), so it stays published.
 
 ## Before 0.1.0 (stable)
 

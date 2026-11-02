@@ -12,7 +12,7 @@ they exist only in source builds that opt in.
 ## [Unreleased]
 
 ### Changed
-- `proxide-confind`, `proxide-rotlib`, `proxide_fixer` and `proxide-frag` are no longer published to crates.io. The first three derive from CC BY-NC-SA 4.0 code (Mosaist), which is unresolved, and now carry a `NOTICE`. `proxide-frag` is held pending review. None of them is in the PyPI wheels or sdist.
+- `proxide-confind`, `proxide-rotlib` and `proxide_fixer` are no longer published to crates.io. They derive from, or depend on code derived from, CC BY-NC-SA 4.0 code (Mosaist), which is unresolved, and now carry a `NOTICE`. None of them is in the PyPI wheels or sdist. `proxide-frag` was reviewed, found independent of Mosaist, and is still published.
 
 ## [0.1.0] - 2026-10-23
 
