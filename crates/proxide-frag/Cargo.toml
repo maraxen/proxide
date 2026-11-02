@@ -4,6 +4,7 @@ version.workspace    = true
 edition.workspace    = true
 authors.workspace    = true
 license.workspace    = true
+publish = false  # Held pending review of MASTER's terms; see debt #1421.
 repository.workspace = true
 homepage.workspace   = true
 readme.workspace     = true
