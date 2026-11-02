@@ -13,6 +13,7 @@ STABLE = {
   "io",
   "parse_pdb",
   "parse_mmcif",
+  "parse_mmcif_batch",
   "parse_pqr",
   "parse_structure",
   "parse_parm7",

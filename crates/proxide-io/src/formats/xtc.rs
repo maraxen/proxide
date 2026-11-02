@@ -910,7 +910,7 @@ pub fn read_frames_parallel_with_offsets_dir<P: AsRef<Path>, D: AsRef<Path>>(
 
     // #2229: Contiguous chunk partitioning
     // #2232: Pool reader / handle reuse per chunk
-    let chunk_size = ((frame_indices.len() + n_threads - 1) / n_threads).max(1);
+    let chunk_size = frame_indices.len().div_ceil(n_threads).max(1);
     let chunks: Vec<Vec<usize>> = frame_indices
         .chunks(chunk_size)
         .map(|c| c.to_vec())

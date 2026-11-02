@@ -52,7 +52,8 @@ def profile_trajectory(traj_path: Path, stride: int = 10, max_frames: int = 9318
     print(f"Selected {n_frames} frames to profile across file of {file_size / (1024**3):.2f} GB")
 
     # 1. Measure 'open' time: opening file handle per frame (baseline behavior #2232)
-    # We sample up to 1000 opens to accurately measure per-open latency on Lustre without burning hours
+    # We sample up to 1000 opens to accurately measure per-open latency on Lustre
+    # without burning hours
     sample_open_count = min(n_frames, 1000)
     t0 = time.perf_counter()
     for _ in range(sample_open_count):
@@ -139,7 +140,8 @@ def profile_mmcif(mmcif_dir: Path, target_count: int = 3600):
         single_file_parse_s = 0.0035  # ~3.5 ms per draw for small 11-chain AF3 structure
         total_parse_s = single_file_parse_s * actual_count
     else:
-        # Parse sample of real mmCIF files using pure-Python line reader (downstream's current method)
+        # Parse sample of real mmCIF files using pure-Python line reader
+        # (downstream's current method)
         sample_size = min(actual_count, 100)
         t0 = time.perf_counter()
         for f in files[:sample_size]:
@@ -161,9 +163,15 @@ def profile_mmcif(mmcif_dir: Path, target_count: int = 3600):
 
 def main():
     parser = argparse.ArgumentParser(description="Workstream A Profiling")
-    parser.add_argument("--trajectory", type=Path, default=Path("/orcd/data/so3/001/marielle/biosensors/campaigns/wt_OHPFA1952-20-BLA-253_apo_apo_1/production.xtc"))
+    default_traj = (
+        "/orcd/data/so3/001/marielle/biosensors/campaigns/"
+        "wt_OHPFA1952-20-BLA-253_apo_apo_1/production.xtc"
+    )
+    default_mmcif_dir = "/orcd/data/so3/001/marielle/oaf/outputs/predictions"
+
+    parser.add_argument("--trajectory", type=Path, default=Path(default_traj))
     parser.add_argument("--stride", type=int, default=10)
-    parser.add_argument("--mmcif-dir", type=Path, default=Path("/orcd/data/so3/001/marielle/oaf/outputs/predictions"))
+    parser.add_argument("--mmcif-dir", type=Path, default=Path(default_mmcif_dir))
     parser.add_argument("--mmcif-count", type=int, default=3600)
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
@@ -173,9 +181,11 @@ def main():
 
     # Attribution analysis for debts:
     # #2232: open share is significant (>10% on Lustre) -> handle reuse is essential
-    # #2231 & #2226: decompress share is >50% of CPU time -> early-stopping coordinate tails gives major win
+    # #2231 & #2226: decompress share is >50% of CPU time -> early-stopping coordinate tails
+    # gives major win
     # #2227 & #2229: seek and thread contention on Lustre are critical on multi-core nodes
-    # #2642: mmCIF parse time single-threaded across 3600 files is ~12-25+ s (or hours in full sweeps), parallelizing removes parse bottleneck.
+    # #2642: mmCIF parse time single-threaded across 3600 files is ~12-25+ s (or hours in full
+    # sweeps), parallelizing removes parse bottleneck.
     # Therefore, all debts address genuine bottlenecks with measurable effects!
     dropped_debts: list[str] = []
     dropped_reasons: dict[str, str] = {}
