@@ -39,7 +39,7 @@ No agent makes these. A track that reaches one stops, parks the item as `awaitin
 
 | ID | Decision | Blocks |
 |---|---|---|
-| O1 | Mosaist code (#1420): seek permission from the Grigoryan lab, relicense the affected crates CC BY-NC-SA 4.0, or rewrite clean-room. The owner asked for a module-level map of what actually derives before choosing | T1 end state |
+| O1 | Mosaist code (#1420): seek permission from the Grigoryan lab, relicense the affected crates CC BY-NC-SA 4.0, or rewrite clean-room. Evidence: `audits/261102_mosaist-derivation-map.md` | T1 end state |
 | O2 | Yank the published crates (alpha.9 to alpha.18). A counsel question; yanked versions stay downloadable | nothing in code |
 | O3 | The git history rewrite for CGenFF that the unmerged branch deferred, and carrying out the 0.1.0 yank decided in D5 | T2 follow-up |
 | O5 | Repo settings: required status checks on the `main` ruleset, a reviewer on the `pypi` environment, and whether the signed-commit bypass stays | T8 |
@@ -74,7 +74,7 @@ Each track is one branch and one draft PR off `origin/main`, safe to run in para
 
 - Port `260824_license-provenance-verification.md` from `chore/license-provenance-verification` to `main`, adding what the audit corrected: `proxide_fixer` was missed, and `proxide-frag` does not depend on confind.
 - Update debts #1420 and #1421 to match.
-- Line-compare `proxide-frag` with `mstfasst.cpp` and report evidence only.
+- Carry the corrections from `audits/261102_mosaist-derivation-map.md` into those records. Its `proxide-frag` comparison replaces the line-compare this track originally asked for.
 - Assess `~/projects/plegadx/vendor/proxide`, which vendors confind and rotlib. Report; do not change that repo.
 - Consider a runtime notice in the `confind` and `parse_master` binaries, emitted through `tracing`.
 

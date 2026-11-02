@@ -38,6 +38,7 @@
 ## Actuation Surfaces
 
 ## Audits
+- [261102_mosaist-derivation-map](audits/261102_mosaist-derivation-map.md) — Module-level map of which proxide code derives from Mosaist, adapts it, or is independent, with what was verified against source and published crates.
 - [260824_ligand-reference-frame-final-review](audits/260824_ligand-reference-frame-final-review.md) — Final review verdict and disposition for the 10-task proxide-ligand-frame implementation plan (branch feat/ligand-reference-frame-spec)
 - [260820_gaff2-parity-verdict](audits/260820_gaff2-parity-verdict.md) — Phase 5 graded verdict (PARITY, as of the PR
 
