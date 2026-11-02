@@ -80,6 +80,8 @@ from proxide.geometry.contacts import (
   interface_counts,
   load_aligned_pairs,
   screen_self_association,
+  selftest_contacts,
+  selftest_slice2,
 )
 from proxide.io.fetching import (
   fetch_afdb,
@@ -167,6 +169,8 @@ __all__ = [
   "interface_counts",
   "load_aligned_pairs",
   "screen_self_association",
+  "selftest_contacts",
+  "selftest_slice2",
 ]
 
 # Stable surface at 0.1.0 is core IO only (see README "Stability"). Everything else in

@@ -18,6 +18,8 @@ from proxide.geometry.contacts import (
   interface_counts,
   load_aligned_pairs,
   screen_self_association,
+  selftest_contacts,
+  selftest_slice2,
 )
 
 __all__ = [
@@ -35,4 +37,6 @@ __all__ = [
   "interface_counts",
   "load_aligned_pairs",
   "screen_self_association",
+  "selftest_contacts",
+  "selftest_slice2",
 ]

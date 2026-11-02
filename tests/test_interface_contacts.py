@@ -22,6 +22,8 @@ from proxide.geometry.contacts import (
     interface_counts,
     load_aligned_pairs,
     screen_self_association,
+    selftest_contacts,
+    selftest_slice2,
 )
 
 
@@ -552,4 +554,174 @@ def test_compute_interface_contacts_with_sasa(tmp_path: Path) -> None:
     assert isinstance(res_sasa.buried_binder_a2, int)
     assert "buried_binder_a2_float" in res_sasa.details
     assert "sasa_details" in res_sasa.details
+
+
+def test_contacts_and_dock_default_epitope_and_target_offset() -> None:
+    """Test contacts_and_dock with epitope_residues=None yields docked=True when n_contacted >= 10,
+    and verify target_offset is applied correctly.
+    """
+    target_coords = np.array([[float(i) * 3.0, 0.0, 0.0] for i in range(20)])
+    target_resids = list(range(1, 21))
+    binder_coords = np.array([[float(i) * 3.0, 2.0, 0.0] for i in range(20)])
+
+    # With epitope_residues=None (default) and n_contacted >= 10 -> docked must be True
+    res = contacts_and_dock(target_coords, target_resids, binder_coords, min_interface_residues=10)
+    assert res["n_contacted"] == 20
+    assert res["epitope_contacts"] == 0
+    assert res["docked"] is True
+
+    # With target_offset non-zero (e.g. +188)
+    res_offset = contacts_and_dock(
+        target_coords, target_resids, binder_coords, target_offset=188, min_interface_residues=10
+    )
+    assert res_offset["docked"] is True
+    assert res_offset["contacted"] == [i + 188 for i in range(1, 21)]
+
+    # Batch equivalence with target_offset != 0 and epitope_residues
+    binders = [binder_coords, np.zeros((0, 3))]
+    batched = contacts_and_dock_batch(
+        target_coords, target_resids, binders, target_offset=188, epitope_residues={189, 190, 191, 192}
+    )
+    looped = [
+        contacts_and_dock(
+            target_coords, target_resids, b, target_offset=188, epitope_residues={189, 190, 191, 192}
+        )
+        for b in binders
+    ]
+    assert batched == looped
+    assert batched[0]["docked"] is True
+    assert batched[0]["epitope_contacts"] == 4
+
+
+def test_aligned_contact_overlap_empty_pairs() -> None:
+    """Test aligned_contact_overlap returns (0.0, 0, 0) when aligned_pairs is empty."""
+    res = aligned_contact_overlap({1, 2, 3}, {101, 102, 103}, [])
+    assert res == (0.0, 0, 0)
+
+
+def test_load_aligned_pairs_ragged_csv_and_errors(tmp_path: Path) -> None:
+    """Test load_aligned_pairs safely handles ragged lines and raises FileNotFoundError."""
+    # Ragged CSV with missing columns on some rows
+    ragged_csv = (
+        "human_resnum,mouse_resnum,in_crop,aligned\n"
+        "1,101,1,1\n"
+        "2\n"  # ragged row where mouse_resnum, in_crop, aligned are None
+        "3,103,1,1\n"
+    )
+    pairs = load_aligned_pairs(ragged_csv, in_crop_col="in_crop", aligned_col="aligned")
+    assert pairs == [(1, 101), (3, 103)]
+
+    # Non-existent file path
+    with pytest.raises(FileNotFoundError):
+        load_aligned_pairs(tmp_path / "does_not_exist.csv")
+
+
+def test_interface_counts_empty_inputs() -> None:
+    """Test interface_counts returns (0, 0) for empty lists, dicts, or arrays."""
+    assert interface_counts([], []) == (0, 0)
+    assert interface_counts({}, {}) == (0, 0)
+    assert interface_counts(np.zeros((0, 3)), np.zeros((0, 3))) == (0, 0)
+    assert interface_counts([], {"xyz": np.zeros((1, 3)), "resid": [1]}) == (0, 0)
+
+
+def test_screen_self_association_negative_control_failure_and_options() -> None:
+    """Test negative control failure forces outcome='inconclusive', expected_runs_per_design, and NaN ipsae."""
+    # Negative control failure (n_neg_ctl_assoc > 0)
+    runs_neg_fail = [
+        {"design_id": "pos", "group": "pos_ctl", "valid": 1, "n_if_a": 18, "n_if_b": 18, "ipsae": 0.5},
+        {"design_id": "neg", "group": "neg_ctl", "valid": 1, "n_if_a": 16, "n_if_b": 16, "ipsae": 0.5},
+        {"design_id": "d1", "group": "design", "valid": 1, "n_if_a": 5, "n_if_b": 5, "ipsae": 0.1},
+    ]
+    res_neg_fail = screen_self_association(runs_neg_fail)
+    assert res_neg_fail["controls_ok"] is False
+    assert res_neg_fail["n_neg_ctl_assoc"] == 1
+    assert res_neg_fail["outcome"] == "inconclusive"
+
+    # NaN / None / "" ipsae handling in runs
+    runs_nan_ipsae = [
+        {"design_id": "pos", "group": "pos_ctl", "valid": 1, "n_if_a": 18, "n_if_b": 18, "ipsae": 0.5},
+        {"design_id": "neg", "group": "neg_ctl", "valid": 1, "n_if_a": 16, "n_if_b": 16, "ipsae": 0.1},
+        {"design_id": "d1", "group": "design", "valid": 1, "n_if_a": 20, "n_if_b": 20, "ipsae": float("nan")},
+        {"design_id": "d2", "group": "design", "valid": 1, "n_if_a": 20, "n_if_b": 20, "ipsae": None},
+        {"design_id": "d3", "group": "design", "valid": 1, "n_if_a": 20, "n_if_b": 20, "ipsae": ""},
+    ]
+    res_nan = screen_self_association(runs_nan_ipsae)
+    assert res_nan["n_design_assoc"] == 0
+    assert res_nan["design_rate"] == 0.0
+
+    # expected_runs_per_design parameter
+    designs = {"d1": {}, "d2": {}}
+    runs_1per = [
+        {"design_id": "d1", "group": "design", "valid": 1, "n_if_a": 5, "n_if_b": 5, "ipsae": 0.1},
+        {"design_id": "d2", "group": "design", "valid": 1, "n_if_a": 5, "n_if_b": 5, "ipsae": 0.1},
+    ]
+    # With default expected_runs_per_design=2: n_runs (2) != 2 * 2 (4), so rows_complete is False
+    res_2per = screen_self_association(runs_1per, designs=designs)
+    assert res_2per["rows_complete"] is False
+
+    # With expected_runs_per_design=1: n_runs (2) == 1 * 2 (2), so rows_complete is True
+    res_1per = screen_self_association(runs_1per, designs=designs, expected_runs_per_design=1)
+    assert res_1per["rows_complete"] is True
+
+    # With expected_runs_per_design=None: rows_complete evaluates solely on n_runs > 0 and no problems
+    res_none = screen_self_association(runs_1per, designs=designs, expected_runs_per_design=None)
+    assert res_none["rows_complete"] is True
+
+
+def test_compute_shrake_rupley_and_buried_sasa_validations_and_infinite_separation() -> None:
+    """Test length validations in SASA functions, infinite separation yielding delta_sasa == 0.0,
+    and batching equivalence with compute_sasa=True.
+    """
+    # compute_shrake_rupley length mismatch
+    with pytest.raises(ValueError, match="Length mismatch"):
+        compute_shrake_rupley(np.zeros((5, 3)), ["C", "C"])
+
+    # compute_buried_sasa coordinate array length mismatches
+    c3 = np.zeros((3, 3))
+    c2 = np.zeros((2, 3))
+    with pytest.raises(ValueError, match="Length mismatch: free_coords"):
+        compute_buried_sasa(c3, ["C", "C"], [1, 2], c3, ["C"] * 3, [1, 2, 3])
+    with pytest.raises(ValueError, match="Length mismatch: complex_coords"):
+        compute_buried_sasa(c2, ["C", "C"], [1, 2], c3, ["C", "C"], [1, 2, 3])
+    with pytest.raises(ValueError, match="cannot have fewer atoms than free_coords"):
+        compute_buried_sasa(c3, ["C"] * 3, [1, 2, 3], c2, ["C"] * 2, [1, 2])
+
+    # Infinitely separated chains (offset +1000 A) yield delta_sasa == 0.0
+    free_coords = np.array([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]])
+    tgt_far = np.array([[0.0, 1000.0, 0.0], [3.0, 1000.0, 0.0]])
+    comp_far = np.vstack([free_coords, tgt_far])
+    delta_float, delta_int, details = compute_buried_sasa(
+        free_coords, ["C", "C"], [1, 2], comp_far, ["C", "C", "C", "C"], [1, 2, 10, 11]
+    )
+    assert abs(delta_float) < 1e-6
+    assert delta_int == 0
+    assert abs(details["free_sasa"] - details["complex_sasa"]) < 1e-6
+
+    # compute_interface_contacts_batch equivalence with compute_sasa=True
+    atoms_near = [
+        {"chain": "A", "name": "CA", "res": "ALA", "num": 1, "xyz": (0.0, 0.0, 0.0), "element": "C"},
+        {"chain": "B", "name": "CA", "res": "ALA", "num": 2, "xyz": (3.0, 0.0, 0.0), "element": "C"},
+    ]
+    atoms_far = [
+        {"chain": "A", "name": "CA", "res": "ALA", "num": 1, "xyz": (0.0, 0.0, 0.0), "element": "C"},
+        {"chain": "B", "name": "CA", "res": "ALA", "num": 2, "xyz": (1000.0, 0.0, 0.0), "element": "C"},
+    ]
+    structures = [atoms_near, atoms_far]
+    batched = compute_interface_contacts_batch(structures, compute_sasa=True)
+    looped = [compute_interface_contacts(s, compute_sasa=True) for s in structures]
+    assert batched == looped
+    assert batched[0].buried_binder_a2 is not None and batched[0].buried_binder_a2 > 0
+    assert batched[1].buried_binder_a2 == 0
+
+
+def test_selftest_slice2_executes_and_passes() -> None:
+    """Test that selftest_slice2 runs synthetic tests in-memory and returns all_pass=True."""
+    res = selftest_slice2()
+    assert res["all_pass"] is True
+    assert res["jaccard_pass"] is True
+    assert res["overlap_pass"] is True
+    assert res["dock_pass"] is True
+    assert res["sa_pass"] is True
+    assert res["sasa_pass"] is True
+    assert selftest_contacts() == res
 

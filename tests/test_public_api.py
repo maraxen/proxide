@@ -83,6 +83,8 @@ EXPERIMENTAL = {
   "interface_counts",
   "load_aligned_pairs",
   "screen_self_association",
+  "selftest_contacts",
+  "selftest_slice2",
 }
 
 
@@ -134,6 +136,8 @@ def test_slice2_symbols_exported_from_geometry_and_proxide() -> None:
     "interface_counts",
     "load_aligned_pairs",
     "screen_self_association",
+    "selftest_contacts",
+    "selftest_slice2",
   }
   for sym in slice2_symbols:
     assert hasattr(proxide, sym), f"Symbol '{sym}' not exported from top-level proxide"

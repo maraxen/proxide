@@ -308,15 +308,26 @@ def compute_interface_contacts(
   polar_pairs = 0
   nonpolar_pairs = 0
 
+  b_info = [
+    (
+      CHARGE_SIGN.get((b["res"], b["name"]), 0),
+      (b.get("element") or _infer_element_symbol(b["name"])).upper(),
+      (
+        (b.get("element") or _infer_element_symbol(b["name"])).upper() == "C"
+        and b["name"] not in BACKBONE_ATOMS
+      ),
+    )
+    for b in atoms_b
+  ]
+
   for i, a in enumerate(atoms_a):
     sx = CHARGE_SIGN.get((a["res"], a["name"]), 0)
     a_name = a["name"]
-    a_is_c = len(a_name) > 0 and a_name[0] == "C" and a_name not in BACKBONE_ATOMS
-    a_first = a_name[0] if a_name else ""
+    a_elem = (a.get("element") or _infer_element_symbol(a_name)).upper()
+    a_is_c = a_elem == "C" and a_name not in BACKBONE_ATOMS
 
-    for j, b in enumerate(atoms_b):
+    for j, (sy, b_elem, b_is_c) in enumerate(b_info):
       d = dist_mat[i, j]
-      sy = CHARGE_SIGN.get((b["res"], b["name"]), 0)
 
       if sx != 0 and sy != 0:
         if sx != sy and d <= cutoff_ion_pair:
@@ -324,16 +335,10 @@ def compute_interface_contacts(
         if sx == sy and d <= cutoff_like_charge:
           like_close += 1
 
-      b_name = b["name"]
-      b_first = b_name[0] if b_name else ""
-      if d <= cutoff_polar and {a_first, b_first} == {"N", "O"}:
+      if d <= cutoff_polar and {a_elem, b_elem} == {"N", "O"}:
         polar_pairs += 1
 
-      if (
-        d <= cutoff_nonpolar
-        and a_is_c
-        and (len(b_name) > 0 and b_name[0] == "C" and b_name not in BACKBONE_ATOMS)
-      ):
+      if d <= cutoff_nonpolar and a_is_c and b_is_c:
         nonpolar_pairs += 1
 
   # Interface charges
@@ -529,18 +534,18 @@ def load_aligned_pairs(
 
     pairs: list[tuple[int, int]] = []
     for row in reader:
-      val_a = row.get(col_a, "").strip()
-      val_b = row.get(col_b, "").strip()
+      val_a = (row.get(col_a) or "").strip()
+      val_b = (row.get(col_b) or "").strip()
       if not val_a or not val_b:
         continue
 
       if in_crop_col is not None:
-        in_crop_val = str(row.get(in_crop_col, "")).strip()
+        in_crop_val = (str(row.get(in_crop_col) or "")).strip()
         if in_crop_val not in ("1", "True", "true"):
           continue
 
       if aligned_col is not None:
-        aligned_val = str(row.get(aligned_col, "")).strip()
+        aligned_val = (str(row.get(aligned_col) or "")).strip()
         if aligned_val not in ("1", "True", "true"):
           continue
 
@@ -603,13 +608,13 @@ def contacts_and_dock(
 
   if epitope_residues is not None:
     epitope_contacts = len(set(contacted) & set(epitope_residues))
+    docked = bool(
+      epitope_contacts >= min_epitope_contacts
+      and n_contacted >= min_interface_residues
+    )
   else:
     epitope_contacts = 0
-
-  docked = bool(
-    epitope_contacts >= min_epitope_contacts
-    and n_contacted >= min_interface_residues
-  )
+    docked = bool(n_contacted >= min_interface_residues)
 
   return {
     "contacted": contacted,
@@ -670,13 +675,14 @@ def contacts_and_dock_batch(
 
     if epitope_residues is not None:
       epitope_contacts = len(set(contacted) & set(epitope_residues))
+      docked = bool(
+        epitope_contacts >= min_epitope_contacts
+        and n_contacted >= min_interface_residues
+      )
     else:
       epitope_contacts = 0
+      docked = bool(n_contacted >= min_interface_residues)
 
-    docked = bool(
-      epitope_contacts >= min_epitope_contacts
-      and n_contacted >= min_interface_residues
-    )
     results.append({
       "contacted": contacted,
       "n_contacted": n_contacted,
@@ -704,16 +710,24 @@ def interface_counts(
 
   def _extract(obj: Any) -> tuple[np.ndarray, list[Any]]:
     if isinstance(obj, Mapping):
+      if not obj:
+        return np.zeros((0, 3), dtype=float), []
       if "xyz" in obj and "resid" in obj:
         return np.asarray(obj["xyz"], dtype=float), list(obj["resid"])
       if "coords" in obj and "resids" in obj:
         return np.asarray(obj["coords"], dtype=float), list(obj["resids"])
       if "coords" in obj and "resid" in obj:
         return np.asarray(obj["coords"], dtype=float), list(obj["resid"])
-    if isinstance(obj, (list, tuple)) and obj and isinstance(obj[0], Mapping):
-      coords = np.array([x["xyz"] for x in obj], dtype=float)
-      resids = [x.get("num") for x in obj]
-      return coords, resids
+    if isinstance(obj, (list, tuple)):
+      if not obj:
+        return np.zeros((0, 3), dtype=float), []
+      if isinstance(obj[0], Mapping):
+        coords = np.array([x["xyz"] for x in obj], dtype=float)
+        resids = [x.get("num") for x in obj]
+        return coords, resids
+    if isinstance(obj, np.ndarray):
+      if obj.size == 0:
+        return np.zeros((0, 3), dtype=float), []
     raise TypeError(f"Unsupported input type for interface_counts: {type(obj)}")
 
   ca, ra = _extract(atoms_or_coords_a)
@@ -759,6 +773,45 @@ def associates(
   return bool(n_a >= min_if_residues and n_b >= min_if_residues and val >= min_ipsae)
 
 
+def _selftest_sa() -> dict[str, bool]:
+  """Run synthetic dimer and monomer coordinate checks and associates rules."""
+  dimer_a = {
+    "xyz": np.array([[float(i) * 3.8, 0.0, 0.0] for i in range(20)]),
+    "resid": np.arange(1, 21),
+  }
+  dimer_b = {
+    "xyz": np.array([[float(i) * 3.8, 1.0, 0.0] for i in range(20)]),
+    "resid": np.arange(1, 21),
+  }
+  monomer_b = {
+    "xyz": np.array([[float(i) * 3.8, 500.0, 0.0] for i in range(20)]),
+    "resid": np.arange(1, 21),
+  }
+
+  na_dimer, nb_dimer = interface_counts(dimer_a, dimer_b)
+  na_mono, nb_mono = interface_counts(dimer_a, monomer_b)
+
+  dimer_pass = bool(
+    na_dimer >= 12 and nb_dimer >= 12 and associates(na_dimer, nb_dimer, 0.65)
+  )
+  monomer_pass = bool(
+    na_mono == 0 and nb_mono == 0 and not associates(na_mono, nb_mono, 0.65)
+  )
+  rule_pass = bool(
+    not associates(20, 20, 0.20)
+    and not associates(5, 20, 0.65)
+    and not associates(20, 20, None)
+    and not associates(20, 20, float("nan"))
+  )
+  all_pass = bool(dimer_pass and monomer_pass and rule_pass)
+  return {
+    "all_pass": all_pass,
+    "dimer_pass": dimer_pass,
+    "monomer_pass": monomer_pass,
+    "rule_pass": rule_pass,
+  }
+
+
 def screen_self_association(
   runs: Sequence[Mapping[str, Any]],
   designs: Mapping[str, Mapping[str, Any]] | None = None,
@@ -767,6 +820,7 @@ def screen_self_association(
   min_ipsae: float = 0.4,
   monomeric_max_rate: float = 0.20,
   self_associates_min_rate: float = 0.50,
+  expected_runs_per_design: int | None = 2,
 ) -> dict[str, Any]:
   """Aggregate self-association run records and evaluate monomeric vs associating outcome.
 
@@ -859,9 +913,11 @@ def screen_self_association(
     else float("nan")
   )
 
-  if designs is not None:
+  if designs is not None and expected_runs_per_design is not None:
     rows_complete = bool(
-      n_runs == 2 * len(designs) and n_problems == 0 and not problems
+      n_runs == expected_runs_per_design * len(designs)
+      and n_problems == 0
+      and not problems
     )
   else:
     rows_complete = bool(n_runs > 0 and n_problems == 0 and not problems)
@@ -876,6 +932,9 @@ def screen_self_association(
   else:
     outcome = "inconclusive"
 
+  st = _selftest_sa()
+  selftest_all_pass = bool(st["all_pass"])
+
   return {
     "controls_ok": controls_ok,
     "design_rate": design_rate,
@@ -889,7 +948,7 @@ def screen_self_association(
     "n_shuffle_assoc": n_shuffle_assoc,
     "problems": problems[:20],
     "rows_complete": rows_complete,
-    "selftest_all_pass": True,
+    "selftest_all_pass": selftest_all_pass,
     "shuffle_rate": shuffle_rate,
     "outcome": outcome,
   }
@@ -932,6 +991,11 @@ def compute_shrake_rupley(
   Returns:
       tuple of (total_sasa_float, per_atom_sasa_array).
   """
+  if len(coords) != len(elements):
+    raise ValueError(
+      f"Length mismatch: coords has {len(coords)} atoms, but elements has {len(elements)}"
+    )
+
   n_atoms = len(coords)
   if n_atoms == 0:
     return 0.0, np.array([], dtype=float)
@@ -1011,6 +1075,27 @@ def compute_buried_sasa(
     complex_coords = np.asarray(args[2], dtype=float)
     complex_elements = list(args[3])
     _complex_resids = list(args[4])
+
+    if len(free_coords) != len(free_elements):
+      n_c, n_e = len(free_coords), len(free_elements)
+      raise ValueError(
+        f"Length mismatch: free_coords has {n_c} atoms, but free_elements has {n_e}"
+      )
+    if len(free_coords) != len(free_resids):
+      n_c, n_r = len(free_coords), len(free_resids)
+      raise ValueError(
+        f"Length mismatch: free_coords has {n_c} atoms, but free_resids has {n_r}"
+      )
+    if len(complex_coords) != len(complex_elements):
+      n_c, n_e = len(complex_coords), len(complex_elements)
+      raise ValueError(
+        f"Length mismatch: complex_coords has {n_c} atoms, but complex_elements has {n_e}"
+      )
+    if len(complex_coords) < len(free_coords):
+      n_comp, n_free = len(complex_coords), len(free_coords)
+      raise ValueError(
+        f"complex_coords ({n_comp} atoms) cannot have fewer atoms than free_coords ({n_free} atoms)"
+      )
   else:
     atoms = _normalize_atoms(structure_or_free_coords)
     atoms_a = [x for x in atoms if x["chain"] == b_chain]
@@ -1021,7 +1106,10 @@ def compute_buried_sasa(
       raise KeyError(f"Target chain '{t_chain}' not found in structure")
 
     free_coords = np.array([x["xyz"] for x in atoms_a], dtype=float)
-    free_elements = [x.get("element") or x["name"][0] for x in atoms_a]
+    free_elements = [
+      _infer_element_symbol(x.get("element") or x.get("name", ""))
+      for x in atoms_a
+    ]
     free_resids = [
       (x["num"], x["ins_code"]) if x.get("ins_code") else x["num"]
       for x in atoms_a
@@ -1029,7 +1117,10 @@ def compute_buried_sasa(
 
     atoms_comp = atoms_a + atoms_b
     complex_coords = np.array([x["xyz"] for x in atoms_comp], dtype=float)
-    complex_elements = [x.get("element") or x["name"][0] for x in atoms_comp]
+    complex_elements = [
+      _infer_element_symbol(x.get("element") or x.get("name", ""))
+      for x in atoms_comp
+    ]
 
   _, sasa_free_atoms = compute_shrake_rupley(
     free_coords, free_elements, probe_radius=probe_radius, n_points=n_points
@@ -1088,6 +1179,135 @@ def compute_buried_sasa(
   return delta_sasa_float, delta_sasa_int, details
 
 
+def selftest_slice2() -> dict[str, Any]:
+  """Self-contained synthetic selftest for Slice 2 utilities (Jaccard, overlap, dock, SA, SASA).
+
+  Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+
+  Executes in-memory synthetic geometry and decision tests without filesystem or network access.
+  """
+  # 1. Contact Jaccard
+  j_empty = contact_jaccard(set(), set()) == 0.0
+  j_ident = contact_jaccard({1, 2, 3}, {1, 2, 3}) == 1.0
+  j_part = abs(contact_jaccard({1, 2}, {2, 3}) - 1.0 / 3.0) < 1e-6
+  jaccard_pass = bool(j_empty and j_ident and j_part)
+
+  # 2. Alignment mapped overlap
+  pairs = [(1, 101), (2, 102), (3, 103)]
+  ov_j, ov_ha, ov_ma = aligned_contact_overlap({1, 2, 212}, {101, 102}, pairs)
+  ov_empty_j, ov_empty_ha, ov_empty_ma = aligned_contact_overlap({1, 2}, {101, 102}, [])
+  overlap_pass = bool(
+    ov_j == 1.0
+    and ov_ha == 2
+    and ov_ma == 2
+    and ov_empty_j == 0.0
+    and ov_empty_ha == 0
+    and ov_empty_ma == 0
+  )
+
+  # 3. Contacts and dock
+  t_coords = np.array([[float(i) * 3.0, 0.0, 0.0] for i in range(20)])
+  t_resids = list(range(1, 21))
+  b_near = np.array([[float(i) * 3.0, 2.0, 0.0] for i in range(20)])
+  b_far = np.array([[float(i) * 3.0, 500.0, 0.0] for i in range(20)])
+
+  dock_near_default = contacts_and_dock(t_coords, t_resids, b_near)
+  dock_near_epi = contacts_and_dock(
+    t_coords, t_resids, b_near, epitope_residues={1, 2, 3, 4}
+  )
+  dock_far = contacts_and_dock(t_coords, t_resids, b_far)
+  dock_batched = contacts_and_dock_batch(t_coords, t_resids, [b_near, b_far])
+
+  dock_pass = bool(
+    dock_near_default["docked"] is True
+    and dock_near_default["n_contacted"] == 20
+    and dock_near_epi["docked"] is True
+    and dock_near_epi["epitope_contacts"] == 4
+    and dock_far["docked"] is False
+    and dock_far["n_contacted"] == 0
+    and dock_batched == [dock_near_default, dock_far]
+  )
+
+  # 4. Self-association screen
+  sa_geom = _selftest_sa()
+  empty_counts = interface_counts([], []) == (0, 0)
+  test_runs = [
+    {
+      "design_id": "pos",
+      "group": "pos_ctl",
+      "valid": 1,
+      "n_if_a": 18,
+      "n_if_b": 18,
+      "ipsae": 0.5,
+    },
+    {
+      "design_id": "neg",
+      "group": "neg_ctl",
+      "valid": 1,
+      "n_if_a": 16,
+      "n_if_b": 16,
+      "ipsae": 0.1,
+    },
+    {
+      "design_id": "d1",
+      "group": "design",
+      "valid": 1,
+      "n_if_a": 5,
+      "n_if_b": 5,
+      "ipsae": 0.1,
+    },
+  ]
+  screen_res = screen_self_association(test_runs)
+  sa_pass = bool(
+    sa_geom["all_pass"]
+    and empty_counts
+    and screen_res["controls_ok"] is True
+    and screen_res["outcome"] == "monomeric"
+    and screen_res["selftest_all_pass"] is True
+  )
+
+  # 5. SASA and S1 invariant
+  c_atom = np.array([[0.0, 0.0, 0.0]])
+  c_tot, _ = compute_shrake_rupley(c_atom, ["C"])
+  c_expected = 4.0 * np.pi * (1.70 + 1.40) ** 2
+  sasa_single_ok = abs(c_tot - c_expected) < 0.1
+
+  free_c = np.array([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]])
+  tgt_near = np.array([[0.0, 2.0, 0.0], [3.0, 2.0, 0.0]])
+  tgt_far = np.array([[0.0, 1000.0, 0.0], [3.0, 1000.0, 0.0]])
+
+  comp_near = np.vstack([free_c, tgt_near])
+  comp_far = np.vstack([free_c, tgt_far])
+  elems_free = ["C", "C"]
+  elems_comp = ["C", "C", "C", "C"]
+  r_free = [1, 2]
+  r_comp = [1, 2, 10, 11]
+
+  d_float_near, _, _ = compute_buried_sasa(
+    free_c, elems_free, r_free, comp_near, elems_comp, r_comp
+  )
+  d_float_far, _, _ = compute_buried_sasa(
+    free_c, elems_free, r_free, comp_far, elems_comp, r_comp
+  )
+  sasa_pass = bool(
+    sasa_single_ok and d_float_near > 0.0 and abs(d_float_far - 0.0) < 1e-6
+  )
+
+  all_pass = bool(
+    jaccard_pass and overlap_pass and dock_pass and sa_pass and sasa_pass
+  )
+  return {
+    "all_pass": all_pass,
+    "jaccard_pass": jaccard_pass,
+    "overlap_pass": overlap_pass,
+    "dock_pass": dock_pass,
+    "sa_pass": sa_pass,
+    "sasa_pass": sasa_pass,
+  }
+
+
+selftest_contacts = selftest_slice2
+
 __all__ = [
   "InterfaceContactResult",
   "aligned_contact_overlap",
@@ -1102,4 +1322,6 @@ __all__ = [
   "interface_counts",
   "load_aligned_pairs",
   "screen_self_association",
+  "selftest_contacts",
+  "selftest_slice2",
 ]

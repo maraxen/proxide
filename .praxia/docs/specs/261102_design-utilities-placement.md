@@ -416,9 +416,10 @@ class InterfaceContactResult:
 - Computes `n_contacted = len(contacted)`.
 - If `epitope_residues` is provided, computes:
   $$\text{epitope\_contacts} = |\text{set}(\text{contacted}) \cap \text{epitope\_residues}|$$
-  (defaults to `0` if `epitope_residues is None`).
-- Evaluates binary docking verdict:
   $$\text{docked} = \text{bool}(\text{epitope\_contacts} \ge \text{min\_epitope\_contacts} \land \text{n\_contacted} \ge \text{min\_interface\_residues})$$
+- Else (`epitope_residues is None`):
+  $$\text{epitope\_contacts} = 0$$
+  $$\text{docked} = \text{bool}(\text{n\_contacted} \ge \text{min\_interface\_residues})$$
 - Returns dictionary:
   ```python
   {
@@ -486,11 +487,13 @@ class InterfaceContactResult:
   ```python
   def screen_self_association(
       runs: Sequence[Mapping[str, Any]],
+      designs: Mapping[str, Mapping[str, Any]] | None = None,
       *,
       min_if_residues: int = 12,
       min_ipsae: float = 0.4,
       monomeric_max_rate: float = 0.20,
       self_associates_min_rate: float = 0.50,
+      expected_runs_per_design: int | None = 2,
   ) -> dict[str, Any]:
   ```
 - Input `runs` is a sequence of run records (e.g. parsed from `tfr1_sa_runs.tsv`).
@@ -691,6 +694,30 @@ class InterfaceContactResult:
 2. **Negative Selftests**:
    - Infinitely separated chains (offset $+500$ Å) yield $\Delta \text{SASA}_A == 0.0$ Å².
    - Artificial negative buried area (complex SASA artificially inflated over free SASA by $> 10^{-5}$ Å²) raises `ValueError`.
+
+#### 4.9.4 Clean-Environment Selftest Gate: `selftest_slice2` / `selftest_contacts`
+- Self-contained, zero-disk, zero-network verification gate function:
+  ```python
+  def selftest_slice2() -> dict[str, Any]:
+  ```
+  Aliases: `selftest_contacts = selftest_slice2`.
+- Verifies:
+  - `jaccard_pass`: `contact_jaccard` on empty sets, identical sets, and partial overlap.
+  - `overlap_pass`: `aligned_contact_overlap` on ortholog projections and empty aligned pairs.
+  - `dock_pass`: `contacts_and_dock` on synthetic near/far coordinates, default and epitope docking, and batch equivalence.
+  - `sa_pass`: `interface_counts` on synthetic dimer/monomer coordinates, `associates` rules, and `screen_self_association` aggregation.
+  - `sasa_pass`: `compute_shrake_rupley` isolated carbon SASA, `compute_buried_sasa` on near vs infinitely separated (+1000 Å) complexes.
+- Returns:
+  ```python
+  {
+      "all_pass": bool,
+      "jaccard_pass": bool,
+      "overlap_pass": bool,
+      "dock_pass": bool,
+      "sa_pass": bool,
+      "sasa_pass": bool,
+  }
+  ```
 
 ---
 
