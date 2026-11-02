@@ -1,4 +1,4 @@
-# ligand-reference-frame Internal Docs
+# wt-261102-design-utilities Internal Docs
 
 ## Daily
 
@@ -17,6 +17,7 @@
 - [260416_phase2-plan](plans/260416_phase2-plan.md)
 
 ## Specs
+- [261102_design-utilities-placement](specs/261102_design-utilities-placement.md) — Where the TfR1 lessons live long term: inventory of proxide against our TfR1 script functions, placement per lesson, parity-test plan and open decisions; design only, no code
 - [261001_proxide-config-file](specs/261001_proxide-config-file.md) — One resolver (explicit > PROXIDE_* env > [tool.proxide] > ~/.config/proxide/config.toml > default) for threads, XTC offsets dir, fetch cache/mirrors, tool paths and dev fixtures; science parameters and secrets deliberately excluded
 - [260910_proxide-silent-substitution-observability](specs/260910_proxide-silent-substitution-observability.md) — Canonical diagnostics channel, connected telemetry, provenance/parity attestation, and a chemical-space coverage gate — built by generalising mechanisms proxide already has
 - [260821_rust-port-skill-draft](specs/260821_rust-port-skill-draft.md) — Proposal for a reusable skill covering Python→Rust ports of validated algorithmic code, distilled from the GAFF2 atom-typer port (260821)
@@ -58,6 +59,7 @@
 ## Preregistration
 
 ## Reference
+- [261021_release-checklist](reference/261021_release-checklist.md) — Numbered steps for cutting a proxide release to PyPI, and the open blockers that gate the first stable release (0.1.0)
 - [260821_gaff2-rust-port-lessons](reference/260821_gaff2-rust-port-lessons.md) — Phase-by-phase record of the Python→Rust port of the GAFF2 DEF-grammar atom typer (crates/proxide-gaff2), including per-module adversarial-verify verdicts and the 100%-exact-reproduction regression gate
 
 ## Roadmaps
