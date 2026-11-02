@@ -18,7 +18,7 @@ except importlib.metadata.PackageNotFoundError:
 # Re-export Rust extension functions for unified API (no JAX required).
 # Expose subpackages so `import proxide; proxide.io.*` / `proxide.jaccard.*` work.
 # `proxide.io` is importable without JAX (fixtures / FASTA); parsing is lazy.
-from proxide import io, jaccard, tmalign  # noqa: E402
+from proxide import geometry, io, jaccard, seqqc, tmalign  # noqa: E402
 from proxide._proxider import (  # ty: ignore[unresolved-import]
   AtomicSystem,
   CoordFormat,
@@ -74,8 +74,10 @@ from proxide.io.fetching import (
 from proxide.io.writing import write_mmcif, write_npz, write_pdb
 
 __all__ = [
+  "geometry",
   "io",
   "jaccard",
+  "seqqc",
   "tmalign",
   # Structure parsing
   "parse_pdb",
