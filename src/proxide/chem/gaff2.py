@@ -1207,6 +1207,32 @@ def _relabel_conjugated_alternation(
             atom_types[idx] = pairs[atom_types[idx]]
 
 
+_ELEMENT_NAMES: dict[int, str] = {
+    1: "hydrogen",
+    2: "helium",
+    3: "lithium",
+    4: "beryllium",
+    5: "boron",
+    6: "carbon",
+    7: "nitrogen",
+    8: "oxygen",
+    9: "fluorine",
+    10: "neon",
+    11: "sodium",
+    12: "magnesium",
+    13: "aluminum",
+    14: "silicon",
+    15: "phosphorus",
+    16: "sulfur",
+    17: "chlorine",
+    18: "argon",
+    19: "potassium",
+    20: "calcium",
+    35: "bromine",
+    53: "iodine",
+}
+
+
 def assign_gaff2_atom_types(
     mol: Chem.Mol,
     rules: list[Gaff2Rule] | None = None,
@@ -1282,18 +1308,12 @@ def assign_gaff2_atom_types(
 
         if not assigned:
             atomic_num = atom.GetAtomicNum()
-            if atomic_num == 1:
-                atom_types.append("ha")  # DEF line 91: unconstrained H catch-all
-            elif atomic_num == 6:
-                atom_types.append("c3")
-            elif atomic_num == 7:
-                atom_types.append("n3")
-            elif atomic_num == 8:
-                atom_types.append("oh")
-            elif atomic_num == 16:
-                atom_types.append("s")
-            else:
-                atom_types.append("x")
+            symbol = atom.GetSymbol()
+            elem_name = _ELEMENT_NAMES.get(atomic_num, symbol)
+            raise Gaff2AtomTypeMissingError(
+                f"no GAFF2 atom type rule matched {elem_name} "
+                f"(atomic number {atomic_num}, atom index {atom.GetIdx()})"
+            )
 
     # cc/cd-family ring/chain-alternation bookkeeping (see the two constants'
     # docstring comment above) -- two independent passes, matching
@@ -1334,6 +1354,14 @@ class Gaff2ParameterMissingError(ValueError):
     Raised instead of filling a stand-in (0.0 force constants, a 1.50 A bond,
     a 120 degree angle, carbon's mass): a made-up parameter integrates as if it
     were real (debt #1905, #2368).
+    """
+
+
+class Gaff2AtomTypeMissingError(ValueError):
+    """An atom in the molecule matched no GAFF2 atom-type rule in ATOMTYPE_GFF2.DEF.
+
+    Raised instead of silently falling back to generic placeholders ('c3', 'n3',
+    'oh', 's', 'ha', 'x') -- see fail-fast rule (debt #1899).
     """
 
 
