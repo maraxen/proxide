@@ -173,11 +173,11 @@ mod tests {
 
             for i in 0..*size {
                 let mut coords: [[[f32; 3]; 4]; 5] = [[[0.0; 3]; 4]; 5];
-                for r in 0..5 {
-                    for at in 0..4 {
-                        coords[r][at][0] = rng.gen_range(-20.0_f32..20.0);
-                        coords[r][at][1] = rng.gen_range(-20.0_f32..20.0);
-                        coords[r][at][2] = rng.gen_range(-20.0_f32..20.0);
+                for res in &mut coords {
+                    for atom in res {
+                        atom[0] = rng.gen_range(-20.0_f32..20.0);
+                        atom[1] = rng.gen_range(-20.0_f32..20.0);
+                        atom[2] = rng.gen_range(-20.0_f32..20.0);
                     }
                 }
                 let label = SourceLabel::new(&format!("DB{:07}", i), 'A', 1, ' ', 5, ' ');
@@ -189,11 +189,11 @@ mod tests {
             // Query
             let mut rng_q = rand::rngs::StdRng::seed_from_u64(99);
             let mut query_coords: [[[f32; 3]; 4]; 5] = [[[0.0; 3]; 4]; 5];
-            for r in 0..5 {
-                for at in 0..4 {
-                    query_coords[r][at][0] = rng_q.gen_range(-20.0_f32..20.0);
-                    query_coords[r][at][1] = rng_q.gen_range(-20.0_f32..20.0);
-                    query_coords[r][at][2] = rng_q.gen_range(-20.0_f32..20.0);
+            for res in &mut query_coords {
+                for atom in res {
+                    atom[0] = rng_q.gen_range(-20.0_f32..20.0);
+                    atom[1] = rng_q.gen_range(-20.0_f32..20.0);
+                    atom[2] = rng_q.gen_range(-20.0_f32..20.0);
                 }
             }
             let q_raw = Fragment::<5, Raw>::new(query_coords);
@@ -233,11 +233,11 @@ mod tests {
 
         for i in 0..20 {
             let mut coords: [[[f32; 3]; 4]; 5] = [[[0.0; 3]; 4]; 5];
-            for r in 0..5 {
-                for at in 0..4 {
-                    coords[r][at][0] = rng.gen_range(-20.0_f32..20.0);
-                    coords[r][at][1] = rng.gen_range(-20.0_f32..20.0);
-                    coords[r][at][2] = rng.gen_range(-20.0_f32..20.0);
+            for res in &mut coords {
+                for atom in res {
+                    atom[0] = rng.gen_range(-20.0_f32..20.0);
+                    atom[1] = rng.gen_range(-20.0_f32..20.0);
+                    atom[2] = rng.gen_range(-20.0_f32..20.0);
                 }
             }
             let label = SourceLabel::new(&format!("TEST{:04}", i), 'A', 1, ' ', 5, ' ');
@@ -248,11 +248,11 @@ mod tests {
 
         // Generate a random query.
         let mut query_coords: [[[f32; 3]; 4]; 5] = [[[0.0; 3]; 4]; 5];
-        for r in 0..5 {
-            for at in 0..4 {
-                query_coords[r][at][0] = rng.gen_range(-20.0_f32..20.0);
-                query_coords[r][at][1] = rng.gen_range(-20.0_f32..20.0);
-                query_coords[r][at][2] = rng.gen_range(-20.0_f32..20.0);
+        for res in &mut query_coords {
+            for atom in res {
+                atom[0] = rng.gen_range(-20.0_f32..20.0);
+                atom[1] = rng.gen_range(-20.0_f32..20.0);
+                atom[2] = rng.gen_range(-20.0_f32..20.0);
             }
         }
         let query_raw = Fragment::<5, Raw>::new(query_coords);

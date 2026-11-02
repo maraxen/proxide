@@ -513,7 +513,7 @@ mod tests {
                 // 4 Neighbors
                 for i in 0..4 {
                     atoms.add_atom(proxide_core::structure::AtomRecord {
-                        serial: (i + 2) as i32,
+                        serial: i + 2,
                         atom_name: "C".to_string(),
                         alt_loc: ' ',
                         res_name: "SAT".to_string(),
@@ -570,7 +570,7 @@ mod tests {
         let added_sat = add_hydrogens(&mut sat_structure, &mut sat_bonds).expect("Failed");
         // For now, just ensure it runs without error.
         // Ideally it should be 0, but current library/code might behave differently.
-        assert!(added_sat >= 0);
+        let _ = added_sat;
 
         // 4. Test disjoint atoms (e.g. two carbons not bonded)
         let mut disj_structure = ProcessedStructure {
@@ -578,7 +578,7 @@ mod tests {
                 let mut atoms = proxide_core::structure::RawAtomData::new();
                 for i in 0..2 {
                     atoms.add_atom(proxide_core::structure::AtomRecord {
-                        serial: (i + 1) as i32,
+                        serial: i + 1,
                         atom_name: "C".to_string(),
                         alt_loc: ' ',
                         res_name: "ALA".to_string(),

@@ -1495,7 +1495,7 @@ mod tests {
                 class4: "C".to_string(),
                 terms: vec![proxide_core::forcefield::TorsionTerm {
                     periodicity: 2,
-                    phase: 3.14159,
+                    phase: std::f32::consts::PI,
                     k: 10.0,
                 }],
             });
@@ -2151,7 +2151,7 @@ mod tests {
         let mut raw = RawAtomData::with_capacity(4);
         for i in 0..4 {
             raw.add_atom(AtomRecord {
-                serial: (i + 1) as i32,
+                serial: i + 1,
                 atom_name: format!("A{}", i),
                 res_name: "ALA".to_string(),
                 chain_id: "A".to_string(),
