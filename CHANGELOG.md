@@ -11,6 +11,9 @@ they exist only in source builds that opt in.
 
 ## [Unreleased]
 
+### Removed
+- Intel macOS wheels are no longer built. The required `grain` dependency has no build for that platform, so the 0.1.0 wheel could not be installed there.
+
 ## [0.1.0] - 2026-10-23
 
 ### Added
