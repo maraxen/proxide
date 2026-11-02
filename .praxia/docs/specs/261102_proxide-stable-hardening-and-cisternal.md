@@ -19,6 +19,9 @@ Owner decisions, 2026-11-02:
 - D2. The first cisternal integration is the skill and plugin. Stable MCP tools and a unified CLI and MCP interface are debt #3177, specified here.
 - D3. Provenance and telemetry are stored with cisternal's tooling.
 - D4. `get_mass`, CI lock use and other deferred items are filed as debt, not fixed silently.
+- D5. CGenFF (#3182): remove the file, ship the replacement release, then yank 0.1.0. Yanking stays a manual owner step.
+- D6. sdist (#3181): restructure the optional GPL dependency so an MIT-only sdist builds.
+- D7. Intel macOS (#3183): drop the target. Done on `ci/smoke-built-wheels`, PR #80.
 
 Already in draft PRs, which this spec does not redo:
 
@@ -36,13 +39,11 @@ No agent makes these. A track that reaches one stops, parks the item as `awaitin
 
 | ID | Decision | Blocks |
 |---|---|---|
-| O1 | Mosaist code (#1420): seek permission from the Grigoryan lab, relicense the three crates CC BY-NC-SA 4.0, or rewrite clean-room | T1 end state |
+| O1 | Mosaist code (#1420): seek permission from the Grigoryan lab, relicense the affected crates CC BY-NC-SA 4.0, or rewrite clean-room. The owner asked for a module-level map of what actually derives before choosing | T1 end state |
 | O2 | Yank the published crates (alpha.9 to alpha.18). A counsel question; yanked versions stay downloadable | nothing in code |
-| O3 | Yank proxide 0.1.0 over CGenFF (#3182), and the git history rewrite the unmerged branch deferred | T2 follow-up |
-| O4 | sdist (#3181): ship the GPL crate sources with their own LICENSE, restructure the optional dependency, or stop publishing an sdist | T3 |
+| O3 | The git history rewrite for CGenFF that the unmerged branch deferred, and carrying out the 0.1.0 yank decided in D5 | T2 follow-up |
 | O5 | Repo settings: required status checks on the `main` ruleset, a reviewer on the `pypi` environment, and whether the signed-commit bypass stays | T8 |
 | O6 | Whether `Dunbrack` attribution needs correcting: the licence URL cited as ODC-BY now serves CC BY 4.0 text (#1917) | nothing in code |
-| O7 | Intel macOS (#3183): drop the wheel and say so, or make `grain` optional so it installs. A required dependency has no build there, so the published wheel cannot be installed | T9 |
 
 Agents never merge a PR, push a tag, publish, or yank.
 
@@ -59,7 +60,7 @@ Verified means probed on 2026-11-02 or read at the cited location. These probes 
 | stdout stays clean during a parse, including a missing-atom message | verified, one case | stdout and stderr captured separately |
 | jaxlint's typer plugin command works unchanged in proxide | verified by reading only | `jaxlint/cli/plugin_command.py` |
 | Stable features are linked and smoke-tested on Linux x86_64 and aarch64, Apple Silicon and Windows wheels, on 3.11 and 3.13 | verified | dry run 41491125466 |
-| The Intel macOS wheel installs | verified false | same run: no `grain` distribution for that platform |
+| The Intel macOS wheel installs | verified false, target dropped (D7) | same run: no `grain` distribution for that platform |
 | maturin includes `src/proxide/agent_plugin.json` in the wheel | unverified | `include` globs suggest yes; T5 must list a built wheel |
 | Real stdio MCP transport works at import and parse cold start | unverified | T7 |
 | `wire()` can drive a typer app | unverified, likely no | cisternal documents cyclopts; T7 must decide |
@@ -90,7 +91,7 @@ Accept: `git ls-files | rg -i cgenff` is empty, and the smoke check fails when t
 
 ### T3. Make the sdist installable
 
-Needs O4. `smoke-sdist` in #80 is the acceptance test: it is red today and stays a release gate. Do not weaken or remove it to get a green run.
+Per D6, restructure so the sdist builds without the GPL crates, for example by removing the workspace path dependencies on `proxide-gaff2` and `proxide-ligand-frame` from what the sdist must resolve, while source builds can still opt in. This approach is untested: spike it first and report if Cargo or maturin rules it out, and do not fall back to shipping GPL sources or dropping the sdist without asking. `smoke-sdist` in #80 is the acceptance test: it is red today and stays a release gate. Do not weaken or remove it to get a green run.
 
 ### T4. Deeper stable-surface audit
 
@@ -158,16 +159,12 @@ Accept: one parametrized test calls each tool through the function, the CLI and 
 
 Accept: each item is a CI check or a file that exists; none is a statement that it was done.
 
-### T9. Intel macOS wheel
-
-Needs O7. `smoke-wheels` in #80 is the acceptance test: its Intel macOS jobs are red today and stay a release gate. Do not remove the target from the smoke matrix unless the build target goes with it.
-
 ## 5. Ordering
 
 1. Owner: merge #81, then #79 and #80. Each carries the pytest fix where needed. Decide O1 to O6.
-2. In parallel: T1, T2, T4, T8. T3 once O4 is decided, and T9 once O7 is decided.
+2. In parallel: T1, T2, T3, T4, T8.
 3. T5, then T6, then T7.
-4. Release as 0.2.0, because #79 changes accepted input on the stable surface. Follow `261021_release-checklist.md`.
+4. Release as 0.2.0, because #79 changes accepted input on the stable surface. Follow `261021_release-checklist.md`. The owner then yanks 0.1.0 (D5).
 
 ## 6. Verification rules
 
@@ -181,7 +178,7 @@ Needs O7. `smoke-wheels` in #80 is the acceptance test: its Intel macOS jobs are
 | Risk | Mitigation |
 |---|---|
 | #79 breaks real blank-element files | Stable-surface behaviour change, recorded, and released as 0.2.0; T4 tests downstream fixtures from the proxide-dependent repos |
-| Release blocked by red `smoke-sdist` | Intended; O4 resolves it |
+| Release blocked by red `smoke-sdist` | Intended; T3 resolves it |
 | MCP cold start too slow because of JAX | Tools import lazily; T7 measures it at production shapes and records it in the sidecar |
 | Telemetry adds a hard dependency | Extra stays optional; T6 tests the absent state |
 | Skill drifts from the API | Examples run in CI |
