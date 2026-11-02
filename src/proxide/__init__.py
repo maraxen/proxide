@@ -66,6 +66,21 @@ from proxide._proxider import (  # ty: ignore[unresolved-import]
   read_xtc_parallel,
   weighted_radius_of_gyration,
 )
+from proxide.geometry.contacts import (
+  InterfaceContactResult,
+  aligned_contact_overlap,
+  associates,
+  compute_buried_sasa,
+  compute_interface_contacts,
+  compute_interface_contacts_batch,
+  compute_shrake_rupley,
+  contact_jaccard,
+  contacts_and_dock,
+  contacts_and_dock_batch,
+  interface_counts,
+  load_aligned_pairs,
+  screen_self_association,
+)
 from proxide.io.fetching import (
   fetch_afdb,
   fetch_foldcomp_database,
@@ -138,6 +153,20 @@ __all__ = [
   "write_mmcif",
   "write_npz",
   "Protein",
+  # Geometry contacts & Slice 2 utilities
+  "InterfaceContactResult",
+  "aligned_contact_overlap",
+  "associates",
+  "compute_buried_sasa",
+  "compute_interface_contacts",
+  "compute_interface_contacts_batch",
+  "compute_shrake_rupley",
+  "contact_jaccard",
+  "contacts_and_dock",
+  "contacts_and_dock_batch",
+  "interface_counts",
+  "load_aligned_pairs",
+  "screen_self_association",
 ]
 
 # Stable surface at 0.1.0 is core IO only (see README "Stability"). Everything else in

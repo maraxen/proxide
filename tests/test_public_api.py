@@ -69,6 +69,20 @@ EXPERIMENTAL = {
   "iterload",
   "UnitSystem",
   "MissingResidueMode",
+  # Geometry contacts & Slice 2 utilities
+  "InterfaceContactResult",
+  "aligned_contact_overlap",
+  "associates",
+  "compute_buried_sasa",
+  "compute_interface_contacts",
+  "compute_interface_contacts_batch",
+  "compute_shrake_rupley",
+  "contact_jaccard",
+  "contacts_and_dock",
+  "contacts_and_dock_batch",
+  "interface_counts",
+  "load_aligned_pairs",
+  "screen_self_association",
 }
 
 
@@ -103,3 +117,26 @@ def test_stable_names_are_not_marked_experimental() -> None:
 def test_every_all_name_resolves() -> None:
   missing = [name for name in proxide.__all__ if not hasattr(proxide, name)]
   assert missing == []
+
+
+def test_slice2_symbols_exported_from_geometry_and_proxide() -> None:
+  slice2_symbols = {
+    "InterfaceContactResult",
+    "aligned_contact_overlap",
+    "associates",
+    "compute_buried_sasa",
+    "compute_interface_contacts",
+    "compute_interface_contacts_batch",
+    "compute_shrake_rupley",
+    "contact_jaccard",
+    "contacts_and_dock",
+    "contacts_and_dock_batch",
+    "interface_counts",
+    "load_aligned_pairs",
+    "screen_self_association",
+  }
+  for sym in slice2_symbols:
+    assert hasattr(proxide, sym), f"Symbol '{sym}' not exported from top-level proxide"
+    assert hasattr(
+      proxide.geometry, sym
+    ), f"Symbol '{sym}' not exported from proxide.geometry"

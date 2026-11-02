@@ -1,0 +1,14 @@
+{
+ "controls_ok": true,
+ "design_rate": 0.2,
+ "n_design_assoc": 2,
+ "n_gcn4_assoc": 2,
+ "n_problems": 0,
+ "n_runs": 24,
+ "n_shuffle_assoc": 0,
+ "n_ubiquitin_assoc": 0,
+ "problems": [],
+ "rows_complete": true,
+ "selftest_all_pass": true,
+ "shuffle_rate": 0.0
+}

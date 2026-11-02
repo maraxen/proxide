@@ -13,7 +13,13 @@ import pytest
 
 from proxide.geometry.contacts import (
     RESIDUE_CHARGE,
+    aligned_contact_overlap,
+    associates,
     compute_interface_contacts,
+    contacts_and_dock,
+    interface_counts,
+    load_aligned_pairs,
+    screen_self_association,
 )
 from proxide.seqqc import AA, screen
 
@@ -26,6 +32,13 @@ FIXTURE_HASHES: dict[str, str] = {
     "tfr1_composition.tsv": "681506b5bdafe439fe24705726bd270671bd2d289c3c30203deca14657805692",
     "interface_result.json": "109e0a6a65897612be337180ba9027891357c10eb81745625eaaa53e7a893b79",
     "tfr1_interface.tsv": "f90040b53322d346a4a7847a1ee025618877288a924e5b779526e7585199ba6c",
+    "tfr1_numbering_table.csv": "a7cd98283012c7e0ebe8e67946796c5c7ab3ccf4ed801c398b66b4b18ce54e1c",
+    "sa_result.json": "10573f96e26c4970bf8deb8ba7277047a8f6694260a26640dba0850f593bb088",
+    "tfr1_sa_runs.tsv": "b6c61fa896c710ef3ec9ac47bccf6e8d90ab06320756ec2289c2eb41678e6f5b",
+    "tfr1_sa_designs.tsv": "0af7f574eb0d68051617d19a83188a67d95a02c66bff14d6d8739e9eba165806",
+    "p3_result.json": "0f08eecaccdcfa22e9b2d45343d06d1a31acdfc6fb57e6c11daf24ed593c27cb",
+    "tfr1_p3_mouse.tsv": "e484e9305b2ad84e77ee1b4fda673f99a249270fc763de3a4645d487211a200e",
+    "tfr1_p3_mouse_runs.tsv": "2eb426825e9afb4e8b16cdbc2b6999e86d44360551f7dd74665df0b61b9bd7c2",
 }
 
 STRUCTURE_HASHES: dict[str, str] = {
@@ -191,10 +204,10 @@ def test_bathos_parity_dda7de75_composition() -> None:
 
 
 def test_bathos_parity_bba33e3a_interface_audit() -> None:
-    """Parity verification for bba33e3a (interface charge and contact analysis).
+    """Parity verification for bba33e3a (interface charge, contact analysis, and buried SASA).
 
     Reproduces exact registered contract summary from interface_result.json and per-complex
-    rows in tfr1_interface.tsv (strictly excluding buried_binder_A2).
+    rows in tfr1_interface.tsv, including buried_binder_A2 ([764, 537, 467, 515, 485]).
     """
     fix_dir = _resolve_fixture_dir()
     order_file = fix_dir / "tfr1_final_order.tsv"
@@ -225,7 +238,7 @@ def test_bathos_parity_bba33e3a_interface_audit() -> None:
             pdb = struct_dir / f"{did.split('_i')[0]}.pdb"
         assert pdb.exists(), f"PDB structure {pdb} not found"
 
-        result = compute_interface_contacts(pdb, chain_a="A", chain_b="B")
+        result = compute_interface_contacts(pdb, chain_a="A", chain_b="B", compute_sasa=True)
 
         # Contact counts and residue counts
         assert result.n_binder_interface == int(golden["n_binder_interface"])
@@ -240,6 +253,15 @@ def test_bathos_parity_bba33e3a_interface_audit() -> None:
         assert result.target_if_charge == int(golden["target_if_charge"])
         assert np.isclose(result.binder_if_frac_ek, float(golden["binder_if_frac_EK"]), atol=1e-4)
         assert np.isclose(result.binder_if_frac_hydrophobic, float(golden["binder_if_frac_hydrophobic"]), atol=1e-4)
+
+        # Buried binder SASA parity: exact integer match across all 5 structures
+        assert result.buried_binder_a2 == int(golden["buried_binder_A2"])
+        assert "buried_binder_a2_float" in result.details
+        assert np.isclose(
+            result.details["buried_binder_a2_float"],
+            float(golden["buried_binder_A2"]),
+            atol=0.5,
+        )
 
         # Target interface residue string
         assert result.details["target_if_residues"] == golden["target_if_residues"]
@@ -277,3 +299,172 @@ def test_bathos_parity_bba33e3a_interface_audit() -> None:
     assert golden_summary["selftest_all_pass"] is True
     assert total_ion_pairs == golden_summary["total_ion_pairs"] == 21
     assert total_like_close == golden_summary["total_like_charge_close"] == 2
+
+
+def test_bathos_parity_20aeafaf_self_association() -> None:
+    """Parity verification for bathos run 20aeafaf (TfR1 self-association screen).
+
+    Verifies:
+    - associates() evaluated across all 24 rows in tfr1_sa_runs.tsv matching row['assoc'].
+    - Positive control (GCN4-p1) 2/2 associates (n_pos_ctl_assoc == 2, pos_ctl >= 1).
+    - Negative control (ubiquitin) 0/2 associates (n_neg_ctl_assoc == 0, neg_ctl == 0).
+    - Controls pass (controls_ok == True).
+    - Candidates: 2/10 associate (design_rate == 0.2).
+    - Shuffles: 0/10 associate (shuffle_rate == 0.0).
+    - Exact match with sa_result.json keys and values.
+    - Bathos outcome matches 'monomeric'.
+    - Synthetic dimer (separation 3.5 A, ipsae=0.65) associates == True.
+    - Synthetic monomer (separation 40.0 A) associates == False.
+    """
+    fix_dir = _resolve_fixture_dir()
+    runs_file = fix_dir / "tfr1_sa_runs.tsv"
+    if not runs_file.exists():
+        runs_file = next(fix_dir.glob("**/tfr1_sa_runs.tsv"))
+    runs = list(csv.DictReader(runs_file.open(), delimiter="\t"))
+    assert len(runs) == 24, f"Expected 24 runs, got {len(runs)}"
+
+    designs_file = fix_dir / "tfr1_sa_designs.tsv"
+    if not designs_file.exists():
+        designs_file = next(fix_dir.glob("**/tfr1_sa_designs.tsv"))
+    designs = {r["design_id"]: r for r in csv.DictReader(designs_file.open(), delimiter="\t")}
+    assert len(designs) == 12, f"Expected 12 designs, got {len(designs)}"
+
+    # Test per-row association rule on all 24 runs
+    for r in runs:
+        na = int(r["n_if_a"])
+        nb = int(r["n_if_b"])
+        ipsae = float(r["ipsae"])
+        expected_assoc = bool(int(r["assoc"]))
+        assert (
+            associates(na, nb, ipsae) == expected_assoc
+        ), f"associates() mismatch on {r['design_id']} predictor {r['predictor']}"
+
+    # Test screen_self_association aggregation
+    res = screen_self_association(runs, designs)
+
+    golden_file = fix_dir / "sa_result.json"
+    if not golden_file.exists():
+        golden_file = next(fix_dir.glob("**/sa_result.json"))
+    golden = json.loads(golden_file.read_text())
+
+    # Assert exact key and value parity with sa_result.json
+    for k, v in golden.items():
+        assert res[k] == v, f"Mismatch in sa_result for key '{k}': got {res[k]}, expected {v}"
+
+    # Additional contracts: generic aliases and registered bathos outcome
+    assert res["n_pos_ctl_assoc"] == 2
+    assert res["n_neg_ctl_assoc"] == 0
+    assert res["outcome"] == "monomeric"
+
+    # Synthetic 3D coordinates test (dimer vs monomer)
+    chain_a = {"xyz": np.array([[i * 3.8, 0.0, 0.0] for i in range(20)]), "resid": np.arange(1, 21)}
+    dimer_b = {"xyz": np.array([[i * 3.8, 3.5, 0.0] for i in range(20)]), "resid": np.arange(1, 21)}
+    monomer_b = {"xyz": np.array([[i * 3.8, 40.0, 0.0] for i in range(20)]), "resid": np.arange(1, 21)}
+
+    na_dimer, nb_dimer = interface_counts(chain_a, dimer_b)
+    assert na_dimer >= 12 and nb_dimer >= 12
+    assert associates(na_dimer, nb_dimer, 0.65) is True
+
+    na_mono, nb_mono = interface_counts(chain_a, monomer_b)
+    assert na_mono == 0 and nb_mono == 0
+    assert associates(na_mono, nb_mono, 0.65) is False
+
+
+def test_bathos_parity_5d906f67_mouse_overlap() -> None:
+    """Parity verification for bathos run 5d906f67 (P3 mouse cross-reactivity and overlap).
+
+    Verifies:
+    - load_aligned_pairs parses exactly 194 aligned pairs in crop.
+    - Human residue 212 is strictly unaligned.
+    - contacts_and_dock on the 5 complex PDBs yields total human contacted residues matching
+      n_human_contacted [11, 12, 12, 18, 14] and all 5 contact human 212.
+    - Aligned contacts n_h_aligned_contacts match [10, 11, 11, 17, 13] exactly.
+    - All 14 candidates in tfr1_p3_mouse.tsv have contact_overlap == 0.0 and mouse_no_docked == 1.
+    - All 84 runs in tfr1_p3_mouse_runs.tsv have docked == 0.
+    - Summary parity with p3_result.json: median_overlap == 0.0, max_overlap == 0.0,
+      n_designs == 14, n_mouse_runs_valid == 84, n_designs_mouse_docked_any == 0.
+    - Registered bathos outcome is 'pass'.
+    """
+    fix_dir = _resolve_fixture_dir()
+
+    # 1. Numbering table alignment
+    tbl_file = fix_dir / "tfr1_numbering_table.csv"
+    if not tbl_file.exists():
+        tbl_file = next(fix_dir.glob("**/tfr1_numbering_table.csv"))
+    pairs = load_aligned_pairs(tbl_file)
+    assert len(pairs) == 194
+    h_aligned = {h for h, _ in pairs}
+    assert 212 not in h_aligned, "Human residue 212 must not be in aligned pairs"
+
+    # 2. Human complex contacts on 5 PDBs
+    struct_dir = fix_dir / "structures"
+    if not struct_dir.exists():
+        struct_dir = fix_dir / "f3" / "structures"
+
+    pdb_map = {
+        "f2c006r13": (struct_dir / "f2c006r13.pdb", 11, 10),
+        "f2c008r18": (struct_dir / "f2c008r18.pdb", 12, 11),
+        "f2c016r5_H32": (struct_dir / "f2c016r5_H32.pdb", 12, 11),
+        "f2c020r4_H62": (struct_dir / "f2c020r4_H62.pdb", 18, 17),
+        "f2c025r15_H60": (struct_dir / "f2c025r15_H60.pdb", 14, 13),
+    }
+
+    from proxide.geometry.contacts import _parse_pdb_text
+
+    for did, (pdb_path, exp_human, exp_aligned) in pdb_map.items():
+        atoms = _parse_pdb_text(pdb_path.read_text())
+        atoms_b = [x for x in atoms if x["chain"] == "B"]
+        atoms_a = [x for x in atoms if x["chain"] == "A"]
+        t_coords = np.array([x["xyz"] for x in atoms_b])
+        t_resids = [x["num"] for x in atoms_b]
+        b_coords = np.array([x["xyz"] for x in atoms_a])
+
+        h_dock = contacts_and_dock(t_coords, t_resids, b_coords, target_offset=0)
+        assert h_dock["n_contacted"] == exp_human
+        assert 212 in h_dock["contacted"], f"Human 212 must be contacted in {did}.pdb"
+
+        # Overlap with empty mouse contacts drops 212
+        j, nh, nm = aligned_contact_overlap(set(h_dock["contacted"]), set(), pairs)
+        assert nh == exp_aligned
+        assert nm == 0
+        assert j == 0.0
+
+    # 3. Candidate TSV verification
+    cand_file = fix_dir / "tfr1_p3_mouse.tsv"
+    if not cand_file.exists():
+        cand_file = next(fix_dir.glob("**/tfr1_p3_mouse.tsv"))
+    cand_rows = list(csv.DictReader(cand_file.open(), delimiter="\t"))
+    assert len(cand_rows) == 14
+
+    for r in cand_rows:
+        assert float(r["contact_overlap"]) == 0.0
+        assert int(r["mouse_no_docked"]) == 1
+        assert int(r["n_mouse_docked"]) == 0
+        assert int(r["n_mouse_runs_valid"]) == 6
+
+    # 4. Runs TSV verification
+    runs_file = fix_dir / "tfr1_p3_mouse_runs.tsv"
+    if not runs_file.exists():
+        runs_file = next(fix_dir.glob("**/tfr1_p3_mouse_runs.tsv"))
+    runs_rows = list(csv.DictReader(runs_file.open(), delimiter="\t"))
+    assert len(runs_rows) == 84
+
+    for r in runs_rows:
+        assert int(r["docked"]) == 0
+        assert int(r["valid"]) == 1
+
+    # 5. Golden summary parity with p3_result.json
+    p3_file = fix_dir / "p3_result.json"
+    if not p3_file.exists():
+        p3_file = next(fix_dir.glob("**/p3_result.json"))
+    p3_golden = json.loads(p3_file.read_text())
+
+    assert p3_golden["n_designs"] == 14
+    assert p3_golden["n_designs_complete"] == 14
+    assert p3_golden["n_mouse_runs_valid"] == 84
+    assert p3_golden["n_designs_mouse_docked_any"] == 0
+    assert p3_golden["median_overlap"] == 0.0
+    assert p3_golden["max_overlap"] == 0.0
+    assert p3_golden["n_overlap_at_or_above_floor"] == 0
+    assert p3_golden["selftest_all_pass"] is True
+    assert p3_golden["rows_complete"] is True
