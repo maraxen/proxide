@@ -17,7 +17,7 @@
 - [260416_phase2-plan](plans/260416_phase2-plan.md)
 
 ## Specs
-- [261102_design-utilities-placement](specs/261102_design-utilities-placement.md) — Where the TfR1 lessons live long term: inventory of proxide against our TfR1 script functions, placement per lesson, parity-test plan and open decisions; design only, no code
+- [261102_design-utilities-placement](specs/261102_design-utilities-placement.md) — Engineering specification for Slice 1 design-screening utilities in proxide: proxide.seqqc and proxide.geometry.contacts, with exact API signatures, batching contracts, selftest gates, and bathos parity verification
 - [261001_proxide-config-file](specs/261001_proxide-config-file.md) — One resolver (explicit > PROXIDE_* env > [tool.proxide] > ~/.config/proxide/config.toml > default) for threads, XTC offsets dir, fetch cache/mirrors, tool paths and dev fixtures; science parameters and secrets deliberately excluded
 - [260910_proxide-silent-substitution-observability](specs/260910_proxide-silent-substitution-observability.md) — Canonical diagnostics channel, connected telemetry, provenance/parity attestation, and a chemical-space coverage gate — built by generalising mechanisms proxide already has
 - [260821_rust-port-skill-draft](specs/260821_rust-port-skill-draft.md) — Proposal for a reusable skill covering Python→Rust ports of validated algorithmic code, distilled from the GAFF2 atom-typer port (260821)
