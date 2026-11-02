@@ -193,3 +193,22 @@ def test_2d_array_with_pad_mask_equivalence() -> None:
     assert np.isclose(res_arr["mean_ek"], res_seqs["mean_ek"])
     assert np.isclose(res_arr["mean_net_charge"], res_seqs["mean_net_charge"])
     assert np.isclose(res_arr["mean_gravy"], res_seqs["mean_gravy"])
+
+
+def test_empty_2d_ndarray_and_ndim_validation() -> None:
+    """Empty 2D ndarray and non-2D ndarray raise descriptive ValueErrors."""
+    empty_2d = np.empty((0, 10), dtype=int)
+    mask = np.empty((0, 10), dtype=bool)
+    with pytest.raises(ValueError, match="Sequences array cannot be empty"):
+        screen(empty_2d, pad_mask=mask)
+
+    dim1 = np.array([0, 1, 2], dtype=int)
+    with pytest.raises(ValueError, match="Expected 2D sequences array"):
+        screen(dim1, pad_mask=dim1 > 0)
+
+
+def test_isoelectric_point_unbracketed_boundary() -> None:
+    """Extreme sequences outside standard titration window resolve to boundaries without drift."""
+    # Poly-arginine has net positive charge at pH 14.0
+    assert isoelectric_point("R" * 1000) == 14.0
+

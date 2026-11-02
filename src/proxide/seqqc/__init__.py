@@ -1,5 +1,7 @@
 """Sequence Quality Control (seqqc) submodule for proxide.
 
+Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+
 Provides pure-Python/NumPy utilities for sequence composition analysis,
 net charge titration (heuristic and Bjellqvist), isoelectric point, hydropathy (GRAVY),
 aromatic fraction, sequence entropy, and screening against background composition.
@@ -136,7 +138,17 @@ def isoelectric_point(sequence: str, model: str = "bjellqvist") -> float:
     raise ValueError(f"Unsupported model for isoelectric point: '{model}'. Expected 'bjellqvist'.")
 
   low, high = 0.0, 14.0
-  while (high - low) > 1e-4:
+  q_low = net_charge(seq, ph=low, model=model)
+  if q_low <= 0.0:
+    return 0.0
+  q_high = net_charge(seq, ph=high, model=model)
+  if q_high >= 0.0:
+    return 14.0
+
+  max_iter = 100
+  for _ in range(max_iter):
+    if (high - low) <= 1e-4:
+      break
     mid = (low + high) / 2.0
     q = net_charge(seq, ph=mid, model=model)
     if q > 0.0:
@@ -194,6 +206,10 @@ def screen(
 
   # Coerce input sequences to dictionary of groups
   if isinstance(sequences, np.ndarray):
+    if sequences.ndim != 2:
+      raise ValueError(f"Expected 2D sequences array (B, L), got ndim={sequences.ndim}")
+    if sequences.shape[0] == 0:
+      raise ValueError("Sequences array cannot be empty")
     if pad_mask is None:
       raise ValueError("pad_mask must be provided for 2D array representation")
     if pad_mask.shape != sequences.shape:

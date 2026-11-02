@@ -273,6 +273,7 @@ All test fixtures are stored under `tests/fixtures/tfr1/` in the `proxide` repos
 | Fixture Path | SHA256 Hash | Purpose |
 |---|---|---|
 | `tests/fixtures/tfr1/tfr1_final_slate.csv` | `346c70e21e626c33fa803f18346a1b5b7caebb3615766e36b58670ff45671b5f` | 5 delivered TfR1 designs for `dda7de75` parity |
+| `tests/fixtures/tfr1/tfr1_f2_candidates.tsv` | `fc4c470cf19b6ca7ea692c99dc6d2a0f758fce317c176d1557f135b464a5fa88` | Full TfR1 F2 candidate pool (594 designs) for `dda7de75` parity |
 | `tests/fixtures/tfr1/tfr1_final_order.tsv` | `bc5b1570564b2847c457b9cb056d70192ad065755a8d25d7dd5758f41d4b2003` | Ordering and rank metadata for `bba33e3a` audit |
 | `tests/fixtures/tfr1/composition_result.json` | `66377549e3564c7287eb599bee4464523b0cdf796b9a48b00c6fbf6b608f91a6` | Golden registered output for `dda7de75` |
 | `tests/fixtures/tfr1/tfr1_composition.tsv` | `681506b5bdafe439fe24705726bd270671bd2d289c3c30203deca14657805692` | Golden per-group TSV output for `dda7de75` |

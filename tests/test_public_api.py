@@ -63,6 +63,8 @@ EXPERIMENTAL = {
   "kabsch_rmsd_batch",
   "jaccard",
   "tmalign",
+  "geometry",
+  "seqqc",
   "AtomicSystem",
   "iterload",
   "UnitSystem",

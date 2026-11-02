@@ -171,3 +171,68 @@ def test_batched_equals_looped_equivalence() -> None:
     assert len(batched) == len(looped)
     for b, l in zip(batched, looped):
         assert b == l
+
+
+def test_distinct_chains_validation() -> None:
+    """Distinct chain validation: chain_a == chain_b raises ValueError."""
+    atoms = [
+        _mk_atom("A", "LYS", "NZ", 1, (0.0, 0.0, 0.0)),
+        _mk_atom("A", "GLU", "OE1", 10, (3.0, 0.0, 0.0)),
+    ]
+    with pytest.raises(ValueError, match="Chains must be distinct"):
+        compute_interface_contacts(atoms, chain_a="A", chain_b="A")
+
+
+def test_endmdl_record_stops_parsing() -> None:
+    """Multi-model PDB files stop at ENDMDL to prevent atom duplication."""
+    pdb_text = """MODEL        1
+ATOM      1  NZ  LYS A   1       0.000   0.000   0.000  1.00 20.00           N
+ATOM      2  OE1 GLU B  10       3.000   0.000   0.000  1.00 20.00           O
+ENDMDL
+MODEL        2
+ATOM      1  NZ  LYS A   1       0.000   0.000   0.000  1.00 20.00           N
+ATOM      2  OE1 GLU B  10       3.000   0.000   0.000  1.00 20.00           O
+ENDMDL
+"""
+    res = compute_interface_contacts(pdb_text, chain_a="A", chain_b="B")
+    assert res.ion_pairs == 1
+    assert res.polar_pairs == 1
+    assert res.n_binder_interface == 1
+    assert res.n_target_interface == 1
+
+
+def test_solvent_water_filtering() -> None:
+    """Solvent water residues (HOH, WAT, TIP3, H2O) are excluded from interface residues."""
+    pdb_text = """ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C
+ATOM      2  O   HOH A 100       2.000   0.000   0.000  1.00 20.00           O
+ATOM      3  CA  ALA B   2      10.000   0.000   0.000  1.00 20.00           C
+ATOM      4  O   WAT B 200       8.000   0.000   0.000  1.00 20.00           O
+"""
+    res = compute_interface_contacts(pdb_text, chain_a="A", chain_b="B")
+    assert res.n_binder_interface == 0
+    assert res.n_target_interface == 0
+
+
+def test_hydrogen_atom_filtering() -> None:
+    """Hydrogens are excluded so heavy-atom distance cutoffs are strictly respected."""
+    pdb_text = """ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 20.00           C
+ATOM      2  H   ALA A   1       4.000   0.000   0.000  1.00 20.00           H
+ATOM      3  CA  ALA B   2       5.500   0.000   0.000  1.00 20.00           C
+"""
+    res = compute_interface_contacts(pdb_text, chain_a="A", chain_b="B")
+    assert res.n_binder_interface == 0
+    assert res.n_target_interface == 0
+
+
+def test_insertion_code_preservation() -> None:
+    """Insertion codes are preserved in residue identifiers and prevent key collisions."""
+    pdb_text = """ATOM      1  CA  ALA A 100       0.000   0.000   0.000  1.00 20.00           C
+ATOM      2  CA  GLU A 100A      1.500   0.000   0.000  1.00 20.00           C
+ATOM      3  CA  LYS B 200       3.000   0.000   0.000  1.00 20.00           C
+"""
+    res = compute_interface_contacts(pdb_text, chain_a="A", chain_b="B")
+    assert res.details["binder_len"] == 2
+    assert res.n_binder_interface == 2
+    assert res.interface_residues_a == [100, (100, "A")]
+    assert res.details["interface_residues_a_types"] == {100: "ALA", (100, "A"): "GLU"}
+

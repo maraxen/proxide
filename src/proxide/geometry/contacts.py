@@ -1,4 +1,7 @@
-"""Interface contact analysis and charge classification between chains."""
+"""Interface contact analysis and charge classification between chains.
+
+Experimental: not covered by proxide's stability guarantee; may change in a minor release.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+SOLVENT_RESIDUES: frozenset[str] = frozenset({"HOH", "WAT", "TIP3", "H2O"})
 
 # Cation and anion atom identification
 CHARGE_SIGN: dict[tuple[str, str], int] = {
@@ -56,8 +61,8 @@ class InterfaceContactResult:
 
   n_binder_interface: int
   n_target_interface: int
-  interface_residues_a: list[int]
-  interface_residues_b: list[int]
+  interface_residues_a: list[Any]
+  interface_residues_b: list[Any]
   ion_pairs: int
   like_close: int
   polar_pairs: int
@@ -76,10 +81,19 @@ def _parse_pdb_text(text: str) -> list[dict[str, Any]]:
   """Parse standard PDB ATOM/HETATM lines into atom record dictionaries."""
   atoms: list[dict[str, Any]] = []
   for ln in text.splitlines():
+    if ln.startswith("ENDMDL"):
+      break
     if ln.startswith(("ATOM", "HETATM")) and len(ln) >= 54:
-      name = ln[12:16].strip()
       res = ln[17:20].strip()
+      if res in SOLVENT_RESIDUES:
+        continue
+      name = ln[12:16].strip()
+      element = ln[76:78].strip().upper() if len(ln) >= 78 else ""
+      is_h = element == "H" or name.startswith("H")
+      if is_h or (len(name) >= 2 and name[0].isdigit() and name[1] == "H"):
+        continue
       chain = ln[21]
+      ins_code = ln[26].strip() if len(ln) > 26 else ""
       try:
         num = int(ln[22:26])
         x = float(ln[30:38])
@@ -87,7 +101,15 @@ def _parse_pdb_text(text: str) -> list[dict[str, Any]]:
         z = float(ln[46:54])
       except ValueError:
         continue
-      atoms.append({"name": name, "res": res, "chain": chain, "num": num, "xyz": (x, y, z)})
+      atoms.append({
+        "name": name,
+        "res": res,
+        "chain": chain,
+        "num": num,
+        "ins_code": ins_code,
+        "res_id": (num, ins_code) if ins_code else num,
+        "xyz": (x, y, z),
+      })
   return atoms
 
 
@@ -98,7 +120,7 @@ def _normalize_atoms(structure: str | Path | list[dict[str, Any]]) -> list[dict[
       raise FileNotFoundError(f"Structure file not found: {structure}")
     return _parse_pdb_text(structure.read_text())
   elif isinstance(structure, str):
-    if "\n" in structure or structure.startswith(("ATOM", "HETATM", "HEADER", "REMARK")):
+    if "\n" in structure or structure.startswith(("ATOM", "HETATM", "HEADER", "REMARK", "MODEL")):
       return _parse_pdb_text(structure)
     p = Path(structure)
     if p.exists() and p.is_file():
@@ -107,13 +129,23 @@ def _normalize_atoms(structure: str | Path | list[dict[str, Any]]) -> list[dict[
   elif isinstance(structure, list):
     if not structure:
       return []
+    filtered = []
     for i, atom in enumerate(structure):
       if not isinstance(atom, dict):
         raise TypeError(f"Expected dict at index {i}, got {type(atom).__name__}")
       for key in ("chain", "name", "res", "num", "xyz"):
         if key not in atom:
           raise KeyError(f"Atom record missing required key: '{key}'")
-    return structure
+      res = atom["res"]
+      if res in SOLVENT_RESIDUES:
+        continue
+      name = atom["name"]
+      element = atom.get("element", "").strip().upper()
+      is_h = element == "H" or name.startswith("H")
+      if is_h or (len(name) >= 2 and name[0].isdigit() and name[1] == "H"):
+        continue
+      filtered.append(atom)
+    return filtered
   else:
     raise TypeError(f"Unsupported structure input type: {type(structure).__name__}")
 
@@ -143,6 +175,9 @@ def compute_interface_contacts(
   Returns:
       InterfaceContactResult dataclass containing contact counts, residue lists, and fractions.
   """
+  if chain_a == chain_b:
+    raise ValueError(f"Chains must be distinct (got chain_a='{chain_a}', chain_b='{chain_b}')")
+
   atoms = _normalize_atoms(structure)
   if not atoms:
     raise ValueError("Structure contains no atoms")
@@ -162,16 +197,38 @@ def compute_interface_contacts(
   # Cross-chain pairwise atom distance matrix
   dist_mat = np.linalg.norm(coords_a[:, None, :] - coords_b[None, :, :], axis=2)
 
+  # Unique residue identifiers: (num, ins_code)
+  res_map_a: dict[tuple[int, str], str] = {}
+  for x in atoms_a:
+    k = (x["num"], x.get("ins_code", ""))
+    res_map_a[k] = x["res"]
+
+  res_map_b: dict[tuple[int, str], str] = {}
+  for x in atoms_b:
+    k = (x["num"], x.get("ins_code", ""))
+    res_map_b[k] = x["res"]
+
   # Interface residues (any heavy atom within cutoff_heavy)
-  a_if_residues = sorted(
-    {atoms_a[i]["num"] for i in range(len(atoms_a)) if dist_mat[i].min() <= cutoff_heavy}
+  a_if_keys = sorted(
+    {
+      (atoms_a[i]["num"], atoms_a[i].get("ins_code", ""))
+      for i in range(len(atoms_a))
+      if dist_mat[i].min() <= cutoff_heavy
+    }
   )
-  b_if_residues = sorted(
-    {atoms_b[j]["num"] for j in range(len(atoms_b)) if dist_mat[:, j].min() <= cutoff_heavy}
+  b_if_keys = sorted(
+    {
+      (atoms_b[j]["num"], atoms_b[j].get("ins_code", ""))
+      for j in range(len(atoms_b))
+      if dist_mat[:, j].min() <= cutoff_heavy
+    }
   )
 
-  res_map_a = {x["num"]: x["res"] for x in atoms_a}
-  res_map_b = {x["num"]: x["res"] for x in atoms_b}
+  def _format_res_id(k: tuple[int, str]) -> int | tuple[int, str]:
+    return (k[0], k[1]) if k[1] else k[0]
+
+  a_if_residues = [_format_res_id(k) for k in a_if_keys]
+  b_if_residues = [_format_res_id(k) for k in b_if_keys]
 
   # Charge classifications
   ion_pairs = 0
@@ -208,32 +265,32 @@ def compute_interface_contacts(
         nonpolar_pairs += 1
 
   # Interface charges
-  binder_if_charge = sum(RESIDUE_CHARGE.get(res_map_a[n], 0) for n in a_if_residues)
-  target_if_charge = sum(RESIDUE_CHARGE.get(res_map_b[n], 0) for n in b_if_residues)
+  binder_if_charge = sum(RESIDUE_CHARGE.get(res_map_a[k], 0) for k in a_if_keys)
+  target_if_charge = sum(RESIDUE_CHARGE.get(res_map_b[k], 0) for k in b_if_keys)
 
   # Fractions
-  n_a_if = len(a_if_residues)
-  ek_count = sum(res_map_a[n] in ("GLU", "LYS") for n in a_if_residues)
-  hyd_count = sum(res_map_a[n] in HYDROPHOBIC_RESIDUES for n in a_if_residues)
+  n_a_if = len(a_if_keys)
+  ek_count = sum(res_map_a[k] in ("GLU", "LYS") for k in a_if_keys)
+  hyd_count = sum(res_map_a[k] in HYDROPHOBIC_RESIDUES for k in a_if_keys)
 
   binder_if_frac_ek = round(ek_count / max(1, n_a_if), 2)
   binder_if_frac_hydrophobic = round(hyd_count / max(1, n_a_if), 2)
 
   details: dict[str, Any] = {
     "binder_len": len(res_map_a),
-    "binder_net_charge": sum(RESIDUE_CHARGE.get(res_map_a[n], 0) for n in res_map_a),
+    "binder_net_charge": sum(RESIDUE_CHARGE.get(res_map_a[k], 0) for k in res_map_a),
     "target_len": len(res_map_b),
-    "target_net_charge": sum(RESIDUE_CHARGE.get(res_map_b[n], 0) for n in res_map_b),
+    "target_net_charge": sum(RESIDUE_CHARGE.get(res_map_b[k], 0) for k in res_map_b),
     "target_if_residues": " ".join(
-      f"{THREE_TO_ONE.get(res_map_b[n], 'X')}{n}" for n in b_if_residues
+      f"{THREE_TO_ONE.get(res_map_b[k], 'X')}{k[0]}{k[1]}" for k in b_if_keys
     ),
-    "interface_residues_a_types": {n: res_map_a[n] for n in a_if_residues},
-    "interface_residues_b_types": {n: res_map_b[n] for n in b_if_residues},
+    "interface_residues_a_types": {_format_res_id(k): res_map_a[k] for k in a_if_keys},
+    "interface_residues_b_types": {_format_res_id(k): res_map_b[k] for k in b_if_keys},
   }
 
   return InterfaceContactResult(
     n_binder_interface=n_a_if,
-    n_target_interface=len(b_if_residues),
+    n_target_interface=len(b_if_keys),
     interface_residues_a=a_if_residues,
     interface_residues_b=b_if_residues,
     ion_pairs=ion_pairs,

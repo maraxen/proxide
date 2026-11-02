@@ -20,6 +20,7 @@ from proxide.seqqc import AA, screen
 # Table 5.1 Golden SHA256 hashes
 FIXTURE_HASHES: dict[str, str] = {
     "tfr1_final_slate.csv": "346c70e21e626c33fa803f18346a1b5b7caebb3615766e36b58670ff45671b5f",
+    "tfr1_f2_candidates.tsv": "fc4c470cf19b6ca7ea692c99dc6d2a0f758fce317c176d1557f135b464a5fa88",
     "tfr1_final_order.tsv": "bc5b1570564b2847c457b9cb056d70192ad065755a8d25d7dd5758f41d4b2003",
     "composition_result.json": "66377549e3564c7287eb599bee4464523b0cdf796b9a48b00c6fbf6b608f91a6",
     "tfr1_composition.tsv": "681506b5bdafe439fe24705726bd270671bd2d289c3c30203deca14657805692",
@@ -53,7 +54,8 @@ def _resolve_fixture_dir() -> Path:
     raise FileNotFoundError("Could not locate TfR1 test fixtures directory")
 
 
-def test_fixture_hashes_match_spec_table_5_1() -> None:
+@pytest.fixture(autouse=True)
+def check_fixture_hashes() -> None:
     """Pre-verification: assert all fixture files match golden SHA256 hashes before assertions."""
     fix_dir = _resolve_fixture_dir()
     for fname, expected_hash in FIXTURE_HASHES.items():
@@ -78,10 +80,15 @@ def test_fixture_hashes_match_spec_table_5_1() -> None:
         assert actual_hash == expected_hash, f"Hash mismatch for {sname}: got {actual_hash}, expected {expected_hash}"
 
 
-def test_bathos_parity_dda7de75_composition() -> None:
-    """Parity verification for dda7de75 (composition analysis of final five designs).
+def test_fixture_hashes_match_spec_table_5_1() -> None:
+    """Explicit test function ensuring fixture hashes pass under direct invocation."""
+    pass
 
-    Reproduces exact registered outputs from composition_result.json and tfr1_composition.tsv.
+
+def test_bathos_parity_dda7de75_composition() -> None:
+    """Parity verification for dda7de75 (composition analysis of full pool and final slate).
+
+    Reproduces exact registered outputs from composition_result.json and all rows of tfr1_composition.tsv.
     """
     fix_dir = _resolve_fixture_dir()
     slate_file = fix_dir / "tfr1_final_slate.csv"
@@ -92,8 +99,31 @@ def test_bathos_parity_dda7de75_composition() -> None:
     assert len(rows) == 5, f"Expected 5 final designs, got {len(rows)}"
     final_seqs = [r["sequence"] for r in rows]
 
-    # Run screen with 'final_five' group
-    res = screen({"final_five": final_seqs})
+    # Load candidate pool
+    candidates_file = fix_dir / "tfr1_f2_candidates.tsv"
+    if not candidates_file.exists():
+        candidates_file = next(fix_dir.glob("**/tfr1_f2_candidates.tsv"))
+    cand_rows = list(csv.DictReader(candidates_file.open(), delimiter="\t"))
+    assert len(cand_rows) == 594, f"Expected 594 candidates, got {len(cand_rows)}"
+
+    pool_all = [r["best_seq"] for r in cand_rows]
+    pool_cond = [r["best_seq"] for r in cand_rows if r["conditioned"] == "1"]
+    pool_uncond = [r["best_seq"] for r in cand_rows if r["conditioned"] == "0"]
+    pool_high = [r["best_seq"] for r in cand_rows if r["high"] == "1"]
+    pool_not_high = [r["best_seq"] for r in cand_rows if r["high"] == "0"]
+
+    groups_input: dict[str, list[str]] = {
+        "pool_all": pool_all,
+        "pool_conditioned": pool_cond,
+        "pool_high": pool_high,
+        "pool_not_high": pool_not_high,
+        "final_five": final_seqs,
+    }
+    if pool_uncond:
+        groups_input["pool_unconditioned"] = pool_uncond
+
+    # Run screen across all candidate groups and final slate
+    res = screen(groups_input)
     assert res["controls_pass"] is True
 
     # Golden comparison from composition_result.json
@@ -101,25 +131,63 @@ def test_bathos_parity_dda7de75_composition() -> None:
     if not golden_json_file.exists():
         golden_json_file = next(fix_dir.glob("**/composition_result.json"))
     golden_json = json.loads(golden_json_file.read_text())
-    golden_group = golden_json["groups"]["final_five"]
 
-    group_res = res["groups"]["final_five"]
+    # Top-level parity assertions
+    assert res["pool_n"] == golden_json["pool_n"] == 594
+    assert np.isclose(res["pool_mean_ek"], golden_json["pool_mean_ek"], atol=1e-4)
+    assert np.isclose(res["pool_ek_enrichment"], golden_json["pool_ek_enrichment"], atol=1e-2)
+    assert np.isclose(res["final_mean_ek"], golden_json["final_mean_ek"], atol=1e-4)
+    assert np.isclose(res["background_ek"], golden_json["background_ek"], atol=1e-4)
 
-    # Spec §5.2 assertions
-    assert group_res["n"] == 5
-    assert np.isclose(group_res["mean_len"], 82.4, atol=1e-3)
-    assert np.isclose(group_res["mean_ek"], 0.4517, atol=1e-4)
-    assert np.isclose(group_res["frac_ek_gt_30pct"], 1.0, atol=1e-4)
-    assert np.isclose(group_res["mean_net_charge"], -8.5, atol=0.05)
-    assert np.isclose(group_res["frac_net_neg"], 1.0, atol=1e-4)
+    # All group-level assertions matching composition_result.json
+    for grp_name, golden_group in golden_json["groups"].items():
+        assert grp_name in res["groups"], f"Group '{grp_name}' missing from screen result"
+        group_res = res["groups"][grp_name]
+        assert group_res["n"] == golden_group["n"]
+        assert np.isclose(group_res["mean_len"], golden_group["mean_len"], atol=1e-3)
+        assert np.isclose(group_res["mean_ek"], golden_group["mean_ek"], atol=1e-4)
+        assert np.isclose(group_res["frac_ek_gt_30pct"], golden_group["frac_ek_gt_30pct"], atol=1e-4)
+        assert np.isclose(group_res["mean_net_charge"], golden_group["mean_net_charge"], atol=0.05)
+        assert np.isclose(group_res["frac_net_neg"], golden_group["frac_net_neg"], atol=1e-4)
 
-    # Per-amino acid frequency parity
-    for a in AA:
-        expected_freq = golden_group["mean_freq"][a]
-        actual_freq = group_res["mean_freq"][a]
-        assert np.isclose(actual_freq, expected_freq, atol=1e-4), (
-            f"Frequency mismatch for AA '{a}': got {actual_freq}, expected {expected_freq}"
-        )
+        # Per-amino acid frequency parity
+        for a in AA:
+            expected_freq = golden_group["mean_freq"][a]
+            actual_freq = group_res["mean_freq"][a]
+            assert np.isclose(actual_freq, expected_freq, atol=1e-4), (
+                f"Frequency mismatch for group '{grp_name}', AA '{a}': got {actual_freq}, expected {expected_freq}"
+            )
+
+    # Fold over background assertions matching composition_result.json
+    for grp_name, golden_fold in golden_json["fold_over_background"].items():
+        assert grp_name in res["fold_over_background"], f"Fold over background missing group '{grp_name}'"
+        for a in AA:
+            assert np.isclose(res["fold_over_background"][grp_name][a], golden_fold[a], atol=0.02), (
+                f"Fold enrichment mismatch for group '{grp_name}', AA '{a}'"
+            )
+
+    # Parity verification for all rows of tfr1_composition.tsv
+    tsv_file = fix_dir / "tfr1_composition.tsv"
+    if not tsv_file.exists():
+        tsv_file = next(fix_dir.glob("**/tfr1_composition.tsv"))
+    tsv_rows = list(csv.DictReader(tsv_file.open(), delimiter="\t"))
+    assert len(tsv_rows) == 5, f"Expected 5 rows in tfr1_composition.tsv, got {len(tsv_rows)}"
+
+    for row in tsv_rows:
+        grp = row["group"]
+        assert grp in res["groups"], f"TSV group '{grp}' not found in screen groups"
+        g_res = res["groups"][grp]
+        assert g_res["n"] == int(row["n"])
+        assert np.isclose(g_res["mean_len"], float(row["mean_len"]), atol=1e-3)
+        assert np.isclose(g_res["mean_ek"], float(row["mean_ek"]), atol=1e-3)
+        assert np.isclose(g_res["frac_ek_gt_30pct"], float(row["frac_ek_gt_30pct"]), atol=1e-3)
+        assert np.isclose(g_res["mean_net_charge"], float(row["mean_net_charge"]), atol=0.05)
+        assert np.isclose(g_res["frac_net_neg"], float(row["frac_net_neg"]), atol=1e-3)
+        for a in AA:
+            col = f"fold_{a}"
+            assert np.isclose(res["fold_over_background"][grp][a], float(row[col]), atol=0.02), (
+                f"TSV fold mismatch for group '{grp}', AA '{a}'"
+            )
 
 
 def test_bathos_parity_bba33e3a_interface_audit() -> None:
