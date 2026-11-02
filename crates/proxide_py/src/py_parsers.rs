@@ -94,6 +94,76 @@ pub fn parse_mmcif(py: Python<'_>, path: String, numbering: &str) -> PyResult<Py
     Ok(dict.into_py(py))
 }
 
+/// Parse a batch of mmCIF files concurrently via Rust rayon (#2642).
+///
+/// Returns a list of dictionaries matching `paths` 1:1.
+/// Each dictionary contains:
+/// - `success`: bool (true if parsed successfully, false on error)
+/// - `error`: Optional[str] (error message if failed, None if successful)
+/// - `element`: List[str]
+/// - `atom_name`: List[str]
+/// - `chain`: List[str]
+/// - `residue`: List[str]
+/// - `xyz`: np.ndarray shape (N, 3) float32
+/// - `b_factor`: np.ndarray shape (N,) float32
+/// - `label_seq_id`: np.ndarray shape (N,) int32
+/// - `ligand_flag`: List[bool]
+///
+/// If `fail_on_ligands` is true, files containing ligand/HETATM atoms return an error for that file.
+#[pyfunction]
+#[pyo3(signature = (paths, fail_on_ligands=false, numbering="auth"))]
+pub fn parse_mmcif_batch(
+    py: Python<'_>,
+    paths: Vec<String>,
+    fail_on_ligands: bool,
+    numbering: &str,
+) -> PyResult<Vec<PyObject>> {
+    let numbering = parse_numbering(numbering)?;
+    let batch_results = py.allow_threads(|| {
+        formats::mmcif::parse_mmcif_batch(&paths, fail_on_ligands, numbering)
+    });
+
+    let mut py_results = Vec::with_capacity(batch_results.len());
+    for res in batch_results {
+        let dict = PyDict::new_bound(py);
+        match res {
+            Ok(table) => {
+                let n_atoms = table.b_factor.len();
+                dict.set_item("success", true)?;
+                dict.set_item("error", py.None())?;
+                dict.set_item("element", table.element)?;
+                dict.set_item("atom_name", table.atom_name)?;
+                dict.set_item("chain", table.chain)?;
+                dict.set_item("residue", table.residue)?;
+
+                let xyz_arr = PyArray1::from_vec_bound(py, table.xyz);
+                let xyz_reshaped = xyz_arr.reshape((n_atoms, 3)).map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!("Failed to reshape xyz: {}", e))
+                })?;
+                dict.set_item("xyz", xyz_reshaped)?;
+
+                dict.set_item("b_factor", PyArray1::from_vec_bound(py, table.b_factor))?;
+                dict.set_item("label_seq_id", PyArray1::from_vec_bound(py, table.label_seq_id))?;
+                dict.set_item("ligand_flag", table.ligand_flag)?;
+            }
+            Err(e) => {
+                dict.set_item("success", false)?;
+                dict.set_item("error", e)?;
+                dict.set_item("element", py.None())?;
+                dict.set_item("atom_name", py.None())?;
+                dict.set_item("chain", py.None())?;
+                dict.set_item("residue", py.None())?;
+                dict.set_item("xyz", py.None())?;
+                dict.set_item("b_factor", py.None())?;
+                dict.set_item("label_seq_id", py.None())?;
+                dict.set_item("ligand_flag", py.None())?;
+            }
+        }
+        py_results.push(dict.into_py(py));
+    }
+    Ok(py_results)
+}
+
 /// Parse a PQR file and return raw atom data with charges and radii
 #[pyfunction]
 pub fn parse_pqr(py: Python<'_>, path: String) -> PyResult<PyObject> {

@@ -193,19 +193,22 @@ fn test_xtc_offset_cache_invalidation() {
         return;
     };
     let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let parent = path.parent().unwrap();
     let sidecar = PathBuf::from(format!("{}.offsets", path.display()));
 
     assert!(!sidecar.exists(), "sidecar should not exist yet");
 
     let n_frames = {
-        let mut reader = XtcReader::open(&path).expect("open failed");
+        let mut reader =
+            XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
         reader.frame_count().expect("frame_count failed")
     };
     assert!(sidecar.exists(), "sidecar should be written after first open");
 
     // Second open must reuse the cache and agree on frame count.
     {
-        let mut reader = XtcReader::open(&path).expect("open failed");
+        let mut reader =
+            XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
         assert_eq!(reader.frame_count().unwrap(), n_frames);
     }
 
@@ -221,7 +224,8 @@ fn test_xtc_offset_cache_invalidation() {
         f.write_all(&[0u8]).unwrap();
     }
 
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let mut reader =
+        XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     // Forcing a refresh must not panic even though the file was corrupted by
     // the trailing byte; frame_count() on the (now invalid-per-cache) file
     // re-scans rather than trusting the stale/mismatched sidecar.
@@ -407,7 +411,8 @@ fn test_mda_offsets_npz_imported_when_proxide_sidecar_missing() {
     write_mda_offsets_npz(&path, &offsets, file_size, n_atoms as i32);
 
     // Fresh open: must import MDA npz, create proxide sidecar, agree on count.
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let parent = path.parent().unwrap();
+    let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     assert_eq!(reader.frame_count().unwrap(), n_frames);
     assert_eq!(reader.n_atoms().unwrap(), n_atoms);
     assert!(
@@ -439,7 +444,8 @@ fn test_mda_offsets_npz_size_mismatch_falls_through_to_scan() {
         n_atoms as i32,
     );
 
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let parent = path.parent().unwrap();
+    let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     assert_eq!(reader.frame_count().unwrap(), n_frames);
     assert!(
         proxide_sidecar.exists(),
@@ -457,17 +463,18 @@ fn test_xtc_reader_large_fixture_offsets_and_seek() {
         return;
     };
     let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let parent = path.parent().unwrap();
     let sidecar = PathBuf::from(format!("{}.offsets", path.display()));
 
     let n_frames = {
-        let mut reader = XtcReader::open(&path).expect("open failed");
+        let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
         reader.frame_count().expect("frame_count failed")
     };
     assert_eq!(n_frames, 5000);
     assert!(sidecar.exists(), "sidecar should be written after first open");
 
     // Second open reuses the cached sidecar and must agree.
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     assert_eq!(reader.frame_count().unwrap(), n_frames);
     assert_eq!(reader.n_atoms().unwrap(), 4);
 
@@ -709,9 +716,10 @@ fn test_stale_pre_fix_offset_cache_is_rescanned_not_trusted() {
     // just "any version mismatch gets rescanned" (already true, and would
     // prove nothing about whether the bump itself happened).
     stale_cache.version = OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX;
-    stale_cache.store(&path).expect("failed to write stale sidecar");
+    let parent = path.parent().unwrap();
+    stale_cache.store(&path, Some(parent)).expect("failed to write stale sidecar");
 
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     let count = reader
         .frame_count()
         .expect("frame_count failed on rescan");
@@ -1009,4 +1017,96 @@ fn test_xtc_box_vectors_match_ground_truth_across_full_trajectory() {
         "worst-case box vector diff across trajectory was {max_abs_diff} Angstrom \
          at frame {max_abs_diff_frame}"
     );
+}
+
+#[test]
+fn test_sidecar_resolver_tier_5_off_writes_nothing_adjacent() {
+    let Some(xtc_path) = test_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let sidecar = PathBuf::from(format!("{}.offsets", path.display()));
+
+    // When no explicit arg, env var, or config is set, resolver falls through to tier 5: off
+    // XtcReader::open should read offsets into memory and NOT write any sidecar to disk
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let count = reader.frame_count().expect("frame_count failed");
+    assert!(count > 0);
+    assert!(
+        !sidecar.exists(),
+        "when caching is disabled, XtcReader::open must never write a sidecar adjacent to the file"
+    );
+}
+
+#[test]
+fn test_sidecar_resolver_5_tier_hierarchy() {
+    use crate::formats::xtc::resolve_offsets_dir;
+
+    // Tier 1: Explicit path
+    assert_eq!(
+        resolve_offsets_dir(Some(Path::new("/tmp/explicit_cache"))),
+        Some(PathBuf::from("/tmp/explicit_cache"))
+    );
+    // Explicit disable
+    assert_eq!(resolve_offsets_dir(Some(Path::new("off"))), None);
+    assert_eq!(resolve_offsets_dir(Some(Path::new("none"))), None);
+    assert_eq!(resolve_offsets_dir(Some(Path::new(""))), None);
+
+    // Tier 2: Environment variable
+    std::env::set_var("PROXIDE_OFFSETS_DIR", "/tmp/env_cache");
+    assert_eq!(
+        resolve_offsets_dir(None),
+        Some(PathBuf::from("/tmp/env_cache"))
+    );
+    // Tier 1 overrides Tier 2
+    assert_eq!(
+        resolve_offsets_dir(Some(Path::new("/tmp/explicit_override"))),
+        Some(PathBuf::from("/tmp/explicit_override"))
+    );
+    // Env var disable
+    std::env::set_var("PROXIDE_OFFSETS_DIR", "off");
+    assert_eq!(resolve_offsets_dir(None), None);
+    std::env::set_var("PROXIDE_OFFSETS_DIR", "none");
+    assert_eq!(resolve_offsets_dir(None), None);
+    std::env::remove_var("PROXIDE_OFFSETS_DIR");
+}
+
+#[test]
+fn test_read_frames_parallel_early_stop_parity_against_all() {
+    use crate::formats::xtc::read_frames_parallel;
+
+    let Some(xtc_path) = frame0_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n_frames = reader.frame_count().unwrap();
+    let n_atoms = reader.n_atoms().unwrap();
+    assert!(n_atoms >= 6);
+
+    // Subset leading atoms (e.g. 0, 2, 5) which triggers #2231 & #2226
+    let atom_indices = vec![0, 2, 5];
+    let frame_indices: Vec<usize> = (0..n_frames.min(20)).collect();
+
+    // 1. Parallel read with early-stopping (#2231 / #2226)
+    let par_frames = read_frames_parallel(&path, &frame_indices, Some(&atom_indices))
+        .expect("read_frames_parallel failed");
+
+    // 2. Serial read using AtomSelection::All
+    for (idx, &frame_idx) in frame_indices.iter().enumerate() {
+        let molly_frame = reader
+            .read_frame_at(frame_idx, &AtomSelection::All)
+            .expect("read_frame_at failed");
+        let expected_positions = crate::formats::xtc::select_positions(&molly_frame, Some(&atom_indices)).unwrap();
+        assert_eq!(
+            par_frames[idx].positions, expected_positions,
+            "positions mismatch at frame {frame_idx}"
+        );
+        assert_eq!(
+            par_frames[idx].box_vectors,
+            molly_frame.boxvec_cols_2d(),
+            "box vectors mismatch at frame {frame_idx}"
+        );
+        assert_eq!(par_frames[idx].time, molly_frame.time);
+    }
 }

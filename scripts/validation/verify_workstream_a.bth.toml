@@ -1,0 +1,28 @@
+[experiment]
+hypothesis = """
+Workstream A implementations (#2231 early-stopping decompression, #2226 coordinate tail skip,
+#2232 reader handle pooling, #2227 native thread control, #2229 contiguous chunk partitioning,
+5-tier sidecar cache resolver, and #2642 batch mmCIF parser) preserve bit-exact parity
+with existing single-threaded and eager reference readers (new == old and batched == looped),
+correctly isolate per-file errors without swallowing, and enforce sidecar location hierarchy.
+"""
+
+[outcomes.pass]
+condition = "parity_passed == true AND mmcif_parity_passed == true AND trajectory_parity_passed == true AND sidecar_resolver_passed == true"
+decision = "Parity and error isolation verified across all Workstream A implementations. Ready for PR."
+reasoning = "All assertions pass bit-exact and behaviorally across trajectory, mmCIF, and sidecar resolver."
+is_residual = false
+
+[outcomes.fail]
+condition = "parity_passed == false"
+decision = "Fix regressions or behavioral mismatches before proceeding."
+reasoning = "Parity or sidecar resolver checks failed."
+is_residual = true
+
+[result_schema]
+parity_passed = "bool"
+mmcif_parity_passed = "bool"
+trajectory_parity_passed = "bool"
+sidecar_resolver_passed = "bool"
+mmcif_files_verified = "int"
+trajectory_configs_verified = "int"

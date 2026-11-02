@@ -54,6 +54,7 @@ from proxide._proxider import (  # ty: ignore[unresolved-import]
   # HDF5/MDCATH
   parse_mdtraj_h5_metadata,
   parse_mmcif,
+  parse_mmcif_batch,
   # Structure parsing
   parse_pdb,
   parse_pqr,
@@ -80,6 +81,7 @@ __all__ = [
   # Structure parsing
   "parse_pdb",
   "parse_mmcif",
+  "parse_mmcif_batch",
   "parse_pqr",
   "parse_structure",
   "parse_parm7",
@@ -145,6 +147,7 @@ _STABLE = frozenset(
     "io",
     "parse_pdb",
     "parse_mmcif",
+    "parse_mmcif_batch",
     "parse_pqr",
     "parse_structure",
     "parse_parm7",

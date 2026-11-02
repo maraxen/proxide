@@ -971,6 +971,105 @@ impl CifParseState {
     }
 }
 
+/// Tabular representation of macromolecular structure atoms returned by [`parse_mmcif_batch`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct PolymerAtomTable {
+    /// Chemical element symbol (e.g. "C", "N", "O")
+    pub element: Vec<String>,
+    /// Atom name (e.g. "CA", "CB", "N", "O")
+    pub atom_name: Vec<String>,
+    /// Chain identifier (asym id)
+    pub chain: Vec<String>,
+    /// Residue name (e.g. "ALA", "GLY", "ASP")
+    pub residue: Vec<String>,
+    /// Cartesian coordinates in Angstroms, flattened [x0, y0, z0, x1, y1, z1, ...]
+    pub xyz: Vec<f32>,
+    /// Temperature factor (B-factor)
+    pub b_factor: Vec<f32>,
+    /// Residue sequence number (from label_seq_id, or auth_seq_id fallback)
+    pub label_seq_id: Vec<i32>,
+    /// Flag indicating whether the atom belongs to a ligand/HETATM/non-polymer entity
+    pub ligand_flag: Vec<bool>,
+}
+
+/// Concurrently parse a batch of mmCIF files using rayon (#2642).
+///
+/// Returns a vector of results corresponding 1:1 with `paths`.
+/// If parsing fails for a file or if `fail_on_ligands` is true and ligand atoms are present,
+/// that file's result is an `Err` containing the error message, swallowing none.
+#[cfg(feature = "parallel")]
+pub fn parse_mmcif_batch<P: AsRef<Path> + Sync>(
+    paths: &[P],
+    fail_on_ligands: bool,
+    numbering: MmcifNumbering,
+) -> Vec<Result<PolymerAtomTable, String>> {
+    use rayon::prelude::*;
+    paths
+        .par_iter()
+        .map(|p| {
+            let path = p.as_ref();
+            let (raw_data, _model_ids) = match parse_mmcif_file_with(path, numbering) {
+                Ok(data) => data,
+                Err(e) => return Err(format!("{}: {}", path.display(), e)),
+            };
+
+            if fail_on_ligands && raw_data.is_hetatm.iter().any(|&flag| flag) {
+                return Err(format!(
+                    "{}: structure contains ligand/HETATM atoms (fail_on_ligands=true)",
+                    path.display()
+                ));
+            }
+
+            Ok(PolymerAtomTable {
+                element: raw_data.elements,
+                atom_name: raw_data.atom_names,
+                chain: raw_data.chain_ids,
+                residue: raw_data.res_names,
+                xyz: raw_data.coords,
+                b_factor: raw_data.b_factors,
+                label_seq_id: raw_data.res_ids,
+                ligand_flag: raw_data.is_hetatm,
+            })
+        })
+        .collect()
+}
+
+#[cfg(not(feature = "parallel"))]
+pub fn parse_mmcif_batch<P: AsRef<Path>>(
+    paths: &[P],
+    fail_on_ligands: bool,
+    numbering: MmcifNumbering,
+) -> Vec<Result<PolymerAtomTable, String>> {
+    paths
+        .iter()
+        .map(|p| {
+            let path = p.as_ref();
+            let (raw_data, _model_ids) = match parse_mmcif_file_with(path, numbering) {
+                Ok(data) => data,
+                Err(e) => return Err(format!("{}: {}", path.display(), e)),
+            };
+
+            if fail_on_ligands && raw_data.is_hetatm.iter().any(|&flag| flag) {
+                return Err(format!(
+                    "{}: structure contains ligand/HETATM atoms (fail_on_ligands=true)",
+                    path.display()
+                ));
+            }
+
+            Ok(PolymerAtomTable {
+                element: raw_data.elements,
+                atom_name: raw_data.atom_names,
+                chain: raw_data.chain_ids,
+                residue: raw_data.res_names,
+                xyz: raw_data.coords,
+                b_factor: raw_data.b_factors,
+                label_seq_id: raw_data.res_ids,
+                ligand_flag: raw_data.is_hetatm,
+            })
+        })
+        .collect()
+}
+
 /// Parse mmCIF file and return raw atom data with model IDs
 pub fn parse_mmcif_file<P: AsRef<Path>>(
     path: P,
@@ -1950,5 +2049,79 @@ ATOM 1 N ALA A 0.000 0.000 0.000
             .expect("expected an error")
             .to_string();
         assert!(err.contains("need auth_seq_id or label_seq_id"), "{err}");
+    }
+
+    #[test]
+    fn test_parse_mmcif_batch_parity_and_isolation() {
+        use super::parse_mmcif_batch;
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let crn_path = manifest_dir.join("tests/data/1CRN.cif");
+        let ubq_path = manifest_dir.join("tests/data/1UBQ.cif");
+        let nonexistent_path = manifest_dir.join("tests/data/NONEXISTENT_XYZ.cif");
+
+        let paths = vec![
+            crn_path.clone(),
+            nonexistent_path.clone(),
+            ubq_path.clone(),
+            crn_path.clone(),
+        ];
+
+        let results = parse_mmcif_batch(&paths, false, MmcifNumbering::Auth);
+        assert_eq!(results.len(), 4);
+
+        // 1CRN (index 0) must succeed
+        let crn_res = results[0].as_ref().expect("1CRN should parse successfully");
+        let (crn_expected, _) = parse_mmcif_file_with(&crn_path, MmcifNumbering::Auth)
+            .expect("serial parse of 1CRN");
+        assert_eq!(crn_res.element, crn_expected.elements);
+        assert_eq!(crn_res.atom_name, crn_expected.atom_names);
+        assert_eq!(crn_res.chain, crn_expected.chain_ids);
+        assert_eq!(crn_res.residue, crn_expected.res_names);
+        assert_eq!(crn_res.xyz, crn_expected.coords);
+        assert_eq!(crn_res.b_factor, crn_expected.b_factors);
+        assert_eq!(crn_res.label_seq_id, crn_expected.res_ids);
+        assert_eq!(crn_res.ligand_flag, crn_expected.is_hetatm);
+
+        // Nonexistent (index 1) must return Err with path, swallowing none
+        let nonexist_err = results[1].as_ref().expect_err("nonexistent must fail");
+        assert!(
+            nonexist_err.contains("NONEXISTENT_XYZ.cif"),
+            "Error must name file: {nonexist_err}"
+        );
+
+        // 1UBQ (index 2) must succeed with fail_on_ligands=false
+        let ubq_res = results[2].as_ref().expect("1UBQ should parse successfully");
+        let (ubq_expected, _) = parse_mmcif_file_with(&ubq_path, MmcifNumbering::Auth)
+            .expect("serial parse of 1UBQ");
+        assert_eq!(ubq_res.xyz, ubq_expected.coords);
+        assert_eq!(ubq_res.label_seq_id, ubq_expected.res_ids);
+        assert_eq!(ubq_res.ligand_flag, ubq_expected.is_hetatm);
+        // Verify ligand flags are preserved (1UBQ has HOH)
+        assert!(ubq_res.ligand_flag.iter().any(|&f| f));
+
+        // 1CRN (index 3) duplicate in batch matches index 0 exactly
+        assert_eq!(crn_res, results[3].as_ref().unwrap());
+    }
+
+    #[test]
+    fn test_parse_mmcif_batch_fail_on_ligands() {
+        use super::parse_mmcif_batch;
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let crn_path = manifest_dir.join("tests/data/1CRN.cif");
+        let ubq_path = manifest_dir.join("tests/data/1UBQ.cif");
+
+        let paths = vec![crn_path, ubq_path];
+        let results = parse_mmcif_batch(&paths, true, MmcifNumbering::Auth);
+        assert_eq!(results.len(), 2);
+
+        // 1CRN has no ligands -> succeeds even with fail_on_ligands=true
+        assert!(results[0].is_ok());
+
+        // 1UBQ has ligands -> fails with fail_on_ligands=true
+        let err = results[1].as_ref().expect_err("1UBQ should fail when fail_on_ligands=true");
+        assert!(
+            err.contains("contains ligand/HETATM atoms"),
+            "Error message should mention ligands: {err}"
+        );
     }
 }

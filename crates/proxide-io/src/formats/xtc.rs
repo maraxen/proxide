@@ -134,8 +134,174 @@ const OFFSET_CACHE_VERSION: u16 = 2;
 #[cfg(test)]
 const OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX: u16 = 1;
 
+/// Resolve the cache directory for trajectory frame offset sidecars according to the
+/// 5-tier resolution order:
+/// 1. Explicit argument (`explicit: Option<&Path>`)
+/// 2. Environment variable `PROXIDE_OFFSETS_DIR` (empty or "none"/"off"/"false"/"0" disables)
+/// 3. `[tool.proxide] offsets_dir = "..."` in `pyproject.toml`
+/// 4. `[offsets] dir = "..."` or `offsets_dir = "..."` in `$XDG_CONFIG_HOME/proxide/config.toml` (or `~/.config/proxide/config.toml`)
+/// 5. Off (`None`) — caching is disabled. Never write sidecar files adjacent to library/trajectory code by default.
+pub fn resolve_offsets_dir(explicit: Option<&Path>) -> Option<PathBuf> {
+    // Tier 1: Explicit argument
+    if let Some(path) = explicit {
+        let s = path.as_os_str().to_string_lossy();
+        let trimmed = s.trim();
+        if trimmed.is_empty()
+            || trimmed.eq_ignore_ascii_case("none")
+            || trimmed.eq_ignore_ascii_case("off")
+            || trimmed.eq_ignore_ascii_case("false")
+            || trimmed == "0"
+        {
+            return None;
+        }
+        return Some(path.to_path_buf());
+    }
+
+    // Tier 2: Environment variable PROXIDE_OFFSETS_DIR
+    if let Ok(val) = std::env::var("PROXIDE_OFFSETS_DIR") {
+        let trimmed = val.trim();
+        if trimmed.is_empty()
+            || trimmed.eq_ignore_ascii_case("none")
+            || trimmed.eq_ignore_ascii_case("off")
+            || trimmed.eq_ignore_ascii_case("false")
+            || trimmed == "0"
+        {
+            return None;
+        }
+        return Some(PathBuf::from(trimmed));
+    }
+
+    // Tier 3: [tool.proxide] in pyproject.toml
+    if let Some(dir) = find_pyproject_offsets_dir() {
+        return dir;
+    }
+
+    // Tier 4: XDG config file
+    if let Some(dir) = find_xdg_offsets_dir() {
+        return dir;
+    }
+
+    // Tier 5: Off
+    None
+}
+
+/// Helper for Tier 3: Search upwards for pyproject.toml and parse [tool.proxide] offsets_dir.
+fn find_pyproject_offsets_dir() -> Option<Option<PathBuf>> {
+    let mut curr = std::env::current_dir().ok()?;
+    for _ in 0..12 {
+        let candidate = curr.join("pyproject.toml");
+        if candidate.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&candidate) {
+                if let Some(res) = parse_pyproject_offsets_val(&content, &curr) {
+                    return Some(res);
+                }
+            }
+        }
+        if !curr.pop() {
+            break;
+        }
+    }
+    None
+}
+
+fn parse_pyproject_offsets_val(content: &str, base_dir: &Path) -> Option<Option<PathBuf>> {
+    let mut in_tool_proxide = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            let section = trimmed[1..trimmed.len() - 1].trim();
+            in_tool_proxide = section == "tool.proxide";
+            continue;
+        }
+        if in_tool_proxide {
+            if let Some((k, v)) = trimmed.split_once('=') {
+                let key = k.trim();
+                if key == "offsets_dir" || key == "offsets-dir" || key == "cache_dir" {
+                    let val = v.trim().trim_matches('"').trim_matches('\'').trim();
+                    if val.is_empty()
+                        || val.eq_ignore_ascii_case("none")
+                        || val.eq_ignore_ascii_case("off")
+                        || val.eq_ignore_ascii_case("false")
+                        || val == "0"
+                    {
+                        return Some(None);
+                    }
+                    let p = PathBuf::from(val);
+                    let resolved = if p.is_relative() {
+                        base_dir.join(p)
+                    } else {
+                        p
+                    };
+                    return Some(Some(resolved));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Helper for Tier 4: Search XDG config for proxide config.toml.
+fn find_xdg_offsets_dir() -> Option<Option<PathBuf>> {
+    let config_path = if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.trim().is_empty() {
+            PathBuf::from(xdg.trim()).join("proxide/config.toml")
+        } else {
+            let home = std::env::var("HOME").ok()?;
+            PathBuf::from(home).join(".config/proxide/config.toml")
+        }
+    } else {
+        let home = std::env::var("HOME").ok()?;
+        PathBuf::from(home).join(".config/proxide/config.toml")
+    };
+
+    if !config_path.is_file() {
+        return None;
+    }
+
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let mut in_offsets_section = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            let section = trimmed[1..trimmed.len() - 1].trim();
+            in_offsets_section = section == "offsets" || section == "cache" || section == "tool.proxide";
+            continue;
+        }
+        if let Some((k, v)) = trimmed.split_once('=') {
+            let key = k.trim();
+            if (in_offsets_section && (key == "dir" || key == "offsets_dir" || key == "path"))
+                || key == "offsets_dir"
+            {
+                let val = v.trim().trim_matches('"').trim_matches('\'').trim();
+                if val.is_empty()
+                    || val.eq_ignore_ascii_case("none")
+                    || val.eq_ignore_ascii_case("off")
+                    || val.eq_ignore_ascii_case("false")
+                    || val == "0"
+                {
+                    return Some(None);
+                }
+                let mut path_str = val.to_string();
+                if path_str.starts_with("~/") {
+                    if let Ok(home) = std::env::var("HOME") {
+                        path_str = format!("{home}/{}", &path_str[2..]);
+                    }
+                }
+                return Some(Some(PathBuf::from(path_str)));
+            }
+        }
+    }
+    None
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
-struct OffsetCache {
+pub struct OffsetCache {
     magic: u32,
     version: u16,
     mtime_secs: u64,
@@ -146,13 +312,31 @@ struct OffsetCache {
 }
 
 impl OffsetCache {
-    fn sidecar_path(traj_path: &Path) -> PathBuf {
-        let mut s = traj_path.as_os_str().to_owned();
-        s.push(".offsets");
-        PathBuf::from(s)
+    /// Return the sidecar path for a trajectory given an optional offsets directory.
+    /// If `offsets_dir` is None, caching is off and returns None.
+    pub fn sidecar_path(traj_path: &Path, offsets_dir: Option<&Path>) -> Option<PathBuf> {
+        let dir = offsets_dir?;
+        if let Some(parent) = traj_path.parent() {
+            if parent == dir {
+                let mut s = traj_path.as_os_str().to_owned();
+                s.push(".offsets");
+                return Some(PathBuf::from(s));
+            }
+        }
+        let canon = traj_path.canonicalize().unwrap_or_else(|_| traj_path.to_path_buf());
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        canon.to_string_lossy().hash(&mut hasher);
+        let h = hasher.finish();
+        let fname = traj_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("traj");
+        Some(dir.join(format!("{fname}_{h:016x}.offsets")))
     }
 
-    fn from_metadata(
+    pub fn from_metadata(
         meta: &std::fs::Metadata,
         natoms: usize,
         offsets: Vec<u64>,
@@ -201,27 +385,39 @@ impl OffsetCache {
     }
 
     /// Load and validate the sidecar for `traj_path`. Returns `None` on any
-    /// miss, mismatch, or corruption — callers fall back to a rescan.
+    /// miss, mismatch, corruption, or if `offsets_dir` is `None` (caching off) —
+    /// callers fall back to a rescan.
     ///
     /// On a proxide `.offsets` miss, also tries an MDAnalysis
     /// `.xtc_offsets.npz` sidecar. Matching size + natoms converts it into a
-    /// proxide bincode sidecar (mtime taken from `stat()` at convert time —
-    /// MDA's `ctime` is intentionally ignored).
-    fn load(traj_path: &Path, meta: &std::fs::Metadata, natoms: usize) -> Option<Self> {
-        let sidecar = Self::sidecar_path(traj_path);
-        if let Ok(file) = File::open(sidecar) {
-            if let Ok(cache) = bincode::deserialize_from::<_, Self>(io::BufReader::new(file)) {
-                if cache.matches(meta, natoms) {
-                    return Some(cache);
+    /// proxide bincode sidecar stored in `offsets_dir`.
+    pub fn load(
+        traj_path: &Path,
+        offsets_dir: Option<&Path>,
+        meta: &std::fs::Metadata,
+        natoms: usize,
+    ) -> Option<Self> {
+        let dir = offsets_dir?;
+        if let Some(sidecar) = Self::sidecar_path(traj_path, Some(dir)) {
+            if let Ok(file) = File::open(&sidecar) {
+                if let Ok(cache) = bincode::deserialize_from::<_, Self>(io::BufReader::new(file)) {
+                    if cache.matches(meta, natoms) {
+                        return Some(cache);
+                    }
                 }
             }
         }
-        Self::try_load_mda_npz(traj_path, meta, natoms)
+        Self::try_load_mda_npz(traj_path, Some(dir), meta, natoms)
     }
 
     /// Best-effort import of an MDAnalysis offset npz. Any failure returns
     /// `None` so the caller falls through to `determine_offsets`.
-    fn try_load_mda_npz(traj_path: &Path, meta: &std::fs::Metadata, natoms: usize) -> Option<Self> {
+    fn try_load_mda_npz(
+        traj_path: &Path,
+        offsets_dir: Option<&Path>,
+        meta: &std::fs::Metadata,
+        natoms: usize,
+    ) -> Option<Self> {
         let mda_path = Self::mda_sidecar_path(traj_path);
         let file = File::open(&mda_path).ok()?;
         let mut npz = ndarray_npy::NpzReader::new(file).ok()?;
@@ -239,13 +435,16 @@ impl OffsetCache {
 
         let offsets: Vec<u64> = offsets_arr.iter().map(|&x| x as u64).collect();
         let cache = Self::from_metadata(meta, natoms, offsets).ok()?;
-        // Persist proxide sidecar so the next open skips both MDA and rescan.
-        if cache.store(traj_path).is_ok() {
-            log::info!(
-                "Imported MDAnalysis offset cache {} → {}",
-                mda_path.display(),
-                Self::sidecar_path(traj_path).display()
-            );
+        if let Some(dir) = offsets_dir {
+            if cache.store(traj_path, Some(dir)).is_ok() {
+                if let Some(saved) = Self::sidecar_path(traj_path, Some(dir)) {
+                    log::info!(
+                        "Imported MDAnalysis offset cache {} → {}",
+                        mda_path.display(),
+                        saved.display()
+                    );
+                }
+            }
         }
         Some(cache)
     }
@@ -276,10 +475,15 @@ impl OffsetCache {
     }
 
     /// Persist via temp-file-then-rename, so a concurrent reader never observes
-    /// a partially-written sidecar. Best-effort: failures (e.g. read-only data
-    /// directory) are not fatal — the caller already has the offsets in memory.
-    fn store(&self, traj_path: &Path) -> io::Result<()> {
-        let sidecar = Self::sidecar_path(traj_path);
+    /// a partially-written sidecar. If `offsets_dir` is None, caching is disabled
+    /// and nothing is written to disk.
+    pub fn store(&self, traj_path: &Path, offsets_dir: Option<&Path>) -> io::Result<()> {
+        let Some(sidecar) = Self::sidecar_path(traj_path, offsets_dir) else {
+            return Ok(());
+        };
+        if let Some(parent) = sidecar.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let tmp = sidecar.with_extension("offsets.tmp");
         {
             let file = File::create(&tmp)?;
@@ -288,6 +492,13 @@ impl OffsetCache {
         }
         std::fs::rename(tmp, sidecar)?;
         Ok(())
+    }
+
+    /// Legacy helper to store adjacent to trajectory file (for tests).
+    #[cfg(test)]
+    pub fn store_adjacent(&self, traj_path: &Path) -> io::Result<()> {
+        let parent = traj_path.parent().unwrap_or_else(|| Path::new("."));
+        self.store(traj_path, Some(parent))
     }
 }
 
@@ -304,18 +515,30 @@ impl OffsetCache {
 /// opens of the same trajectory (a common workflow) skip the rescan.
 pub struct XtcReader {
     path: PathBuf,
+    offsets_dir: Option<PathBuf>,
     reader: XTCReader<File>,
     offsets: Option<Vec<u64>>,
     natoms: Option<usize>,
 }
 
 impl XtcReader {
-    /// Open a trajectory. Does not scan for offsets or decode any frame yet.
+    /// Open a trajectory with default 5-tier offsets cache resolution.
+    /// Does not scan for offsets or decode any frame yet.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, XtcError> {
+        Self::open_with_offsets_dir(path, None::<&Path>)
+    }
+
+    /// Open a trajectory with an explicit offsets cache directory (or None to run the 5-tier resolver).
+    pub fn open_with_offsets_dir<P: AsRef<Path>, D: AsRef<Path>>(
+        path: P,
+        offsets_dir: Option<D>,
+    ) -> Result<Self, XtcError> {
         let path = path.as_ref().to_path_buf();
         let reader = XTCReader::open(&path)?;
+        let resolved = resolve_offsets_dir(offsets_dir.as_ref().map(|d| d.as_ref()));
         Ok(Self {
             path,
+            offsets_dir: resolved,
             reader,
             offsets: None,
             natoms: None,
@@ -362,7 +585,9 @@ impl XtcReader {
         if self.offsets.is_none() {
             let natoms = self.peek_natoms()?;
             let meta = std::fs::metadata(&self.path)?;
-            if let Some(cache) = OffsetCache::load(&self.path, &meta, natoms) {
+            if let Some(cache) =
+                OffsetCache::load(&self.path, self.offsets_dir.as_deref(), &meta, natoms)
+            {
                 self.natoms = Some(cache.natoms);
                 self.offsets = Some(cache.offsets);
             } else {
@@ -389,9 +614,9 @@ impl XtcReader {
         self.drop_trailing_frame_if_truncated(&mut offsets)?;
         let meta = std::fs::metadata(&self.path)?;
         if let Ok(cache) = OffsetCache::from_metadata(&meta, natoms, offsets.clone()) {
-            // Best-effort: a failure to persist (e.g. read-only directory)
+            // Best-effort: a failure to persist (e.g. read-only directory or caching off)
             // must not fail the read itself, since offsets are already in hand.
-            let _ = cache.store(&self.path);
+            let _ = cache.store(&self.path, self.offsets_dir.as_deref());
         }
         self.natoms = Some(natoms);
         self.offsets = Some(offsets);
@@ -636,36 +861,92 @@ pub fn read_frames_parallel<P: AsRef<Path>>(
     frame_indices: &[usize],
     atom_indices: Option<&[usize]>,
 ) -> Result<Vec<SelectedFrame>, XtcError> {
+    read_frames_parallel_with_offsets_dir(path, frame_indices, atom_indices, None::<&Path>)
+}
+
+/// Decode a set of frames concurrently via contiguous chunks across workers.
+///
+/// Implements throughput optimizations:
+/// - #2231: Early-stop coordinate decompression using `AtomSelection::Until` when
+///   the requested atoms lead the frame (e.g. protein-leading selections in solvated systems).
+/// - #2226: Early frame tail skipping with `BUFFERED = true` in `read_frame_at_offset`.
+/// - #2227: Native thread control via `proxide_parallel_rt::num_threads().max(1)`.
+/// - #2229: Contiguous chunk partitioning of frame indices for sequential forward seeking.
+/// - #2232: File handle pooling — each worker reuses a single `XTCReader` across its chunk.
+#[cfg(feature = "parallel")]
+pub fn read_frames_parallel_with_offsets_dir<P: AsRef<Path>, D: AsRef<Path>>(
+    path: P,
+    frame_indices: &[usize],
+    atom_indices: Option<&[usize]>,
+    offsets_dir: Option<D>,
+) -> Result<Vec<SelectedFrame>, XtcError> {
     let path = path.as_ref();
-    let mut reader = XtcReader::open(path)?;
+    let mut reader = XtcReader::open_with_offsets_dir(path, offsets_dir)?;
     let offsets = reader.ensure_offsets()?.clone();
     let n_frames = offsets.len();
+    let n_atoms = reader.n_atoms()?;
 
-    let indices = frame_indices.to_vec();
-    let par = indices
+    if frame_indices.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // #2231 (order: #2231 BEFORE #2226): Early stopping decompression up to max_idx
+    // #2226: Coordinate buffer tail-skipping with BUFFERED = true
+    let (selection, use_buffered) = match atom_indices {
+        Some(indices) if !indices.is_empty() => {
+            let max_idx = indices.iter().copied().max().unwrap_or(0);
+            let needed_atoms = max_idx + 1;
+            if needed_atoms < n_atoms {
+                (AtomSelection::Until(needed_atoms as u32), true)
+            } else {
+                (AtomSelection::All, false)
+            }
+        }
+        _ => (AtomSelection::All, false),
+    };
+
+    // #2227: Native thread control via proxide_parallel_rt
+    let n_threads = proxide_parallel_rt::num_threads().max(1);
+
+    // #2229: Contiguous chunk partitioning
+    // #2232: Pool reader / handle reuse per chunk
+    let chunk_size = ((frame_indices.len() + n_threads - 1) / n_threads).max(1);
+    let chunks: Vec<Vec<usize>> = frame_indices
+        .chunks(chunk_size)
+        .map(|c| c.to_vec())
+        .collect();
+
+    let par = chunks
         .into_par()
-        .map(|index| -> Result<SelectedFrame, XtcError> {
-            let offset = *offsets
-                .get(index)
-                .ok_or(XtcError::FrameOutOfBounds { index, n_frames })?;
+        .num_threads(n_threads)
+        .map(|chunk| -> Result<Vec<SelectedFrame>, XtcError> {
             let mut worker_reader = XTCReader::open(path)?;
             let mut frame = MollyFrame::default();
-            worker_reader.read_frame_at_offset::<false>(&mut frame, offset, &AtomSelection::All)?;
-            // `frame` (full atom count) is filtered here, inside the worker,
-            // and dropped at the end of this closure — it never travels back
-            // to the caller's collected Vec at full size.
-            let positions = select_positions(&frame, atom_indices)?;
-            let box_vectors = frame.boxvec_cols_2d();
-            let time = frame.time;
-            Ok(SelectedFrame {
-                positions,
-                box_vectors,
-                time,
-            })
+            let mut chunk_frames = Vec::with_capacity(chunk.len());
+            for &index in &chunk {
+                let offset = *offsets
+                    .get(index)
+                    .ok_or(XtcError::FrameOutOfBounds { index, n_frames })?;
+                if use_buffered {
+                    worker_reader.read_frame_at_offset::<true>(&mut frame, offset, &selection)?;
+                } else {
+                    worker_reader.read_frame_at_offset::<false>(&mut frame, offset, &selection)?;
+                }
+                let positions = select_positions(&frame, atom_indices)?;
+                let box_vectors = frame.boxvec_cols_2d();
+                let time = frame.time;
+                chunk_frames.push(SelectedFrame {
+                    positions,
+                    box_vectors,
+                    time,
+                });
+            }
+            Ok(chunk_frames)
         });
-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    let par = par.num_threads(proxide_parallel_rt::num_threads());
-    par.collect::<Vec<_>>().into_iter().collect()
+
+    let collected: Result<Vec<Vec<SelectedFrame>>, XtcError> =
+        par.collect::<Vec<_>>().into_iter().collect();
+    Ok(collected?.into_iter().flatten().collect())
 }
 
 /// Compute per-frame pairwise-distance "distograms" for a caller-selected
@@ -697,7 +978,17 @@ pub fn read_xtc_distogram_parallel<P: AsRef<Path>>(
     frame_indices: &[usize],
     atom_indices: &[usize],
 ) -> Result<Vec<Vec<f32>>, XtcError> {
-    let frames = read_frames_parallel(path, frame_indices, Some(atom_indices))?;
+    read_xtc_distogram_parallel_with_offsets_dir(path, frame_indices, atom_indices, None::<&Path>)
+}
+
+#[cfg(feature = "parallel")]
+pub fn read_xtc_distogram_parallel_with_offsets_dir<P: AsRef<Path>, D: AsRef<Path>>(
+    path: P,
+    frame_indices: &[usize],
+    atom_indices: &[usize],
+    offsets_dir: Option<D>,
+) -> Result<Vec<Vec<f32>>, XtcError> {
+    let frames = read_frames_parallel_with_offsets_dir(path, frame_indices, Some(atom_indices), offsets_dir)?;
 
     Ok(frames
         .iter()
