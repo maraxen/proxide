@@ -397,11 +397,11 @@ mod tests {
             BondOrder::Single,
             BondOrder::Double,
         ];
-        for i in 0..6 {
+        for (i, &order) in ring_orders.iter().enumerate() {
             bonds.push(Bond {
                 i,
                 j: (i + 1) % 6,
-                order: ring_orders[i],
+                order,
                 aromatic: true,
             });
         }
@@ -430,11 +430,11 @@ mod tests {
         let types = assign_gaff2_atom_types(&mol).expect("real bundled DEF should parse and match");
 
         assert_eq!(types.len(), 12);
-        for i in 0..6 {
-            assert_eq!(types[i], "ca", "ring carbon {i} should type as ca (AR1)");
+        for (i, ty) in types.iter().enumerate().take(6) {
+            assert_eq!(ty, "ca", "ring carbon {i} should type as ca (AR1)");
         }
-        for i in 6..12 {
-            assert_eq!(types[i], "ha", "ring hydrogen {i} should type as ha");
+        for (i, ty) in types.iter().enumerate().take(12).skip(6) {
+            assert_eq!(ty, "ha", "ring hydrogen {i} should type as ha");
         }
     }
 }
