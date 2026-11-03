@@ -18,7 +18,7 @@ fn freedom_before_contacts_returns_error() {
     };
 
     let backbone = make_synthetic_backbone(2, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // Cache residue but don't call contacts
     let ri = ResidueIndex(0);
@@ -41,7 +41,7 @@ fn crowdedness_before_cache_returns_error() {
     };
 
     let backbone = make_synthetic_backbone(2, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // neighbors() is purely geometric (CA grid built at construction) — no caching needed.
     let ri = ResidueIndex(0);
@@ -83,7 +83,7 @@ fn cache_residue_missing_n() {
         chain_map: vec![0],
     });
 
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
     let ri = ResidueIndex(0);
 
     let _result = confind.cache_residue(ri);
@@ -124,7 +124,7 @@ fn cache_residue_missing_ca() {
         chain_map: vec![0],
     });
 
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
     let ri = ResidueIndex(0);
 
     let _result = confind.cache_residue(ri);
@@ -164,7 +164,7 @@ fn cache_residue_missing_c() {
         chain_map: vec![0],
     });
 
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
     let ri = ResidueIndex(0);
 
     let _result = confind.cache_residue(ri);
@@ -182,7 +182,7 @@ fn contacts_uncached_returns_error() {
     };
 
     let backbone = make_synthetic_backbone(2, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // Don't cache anything, try to get contacts
     let residues = vec![ResidueIndex(0)];
@@ -203,7 +203,7 @@ fn interference_uncached_residue_returns_error() {
     };
 
     let backbone = make_synthetic_backbone(2, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let ri = ResidueIndex(0);
     let result = confind.interference(&[ri], 0.5);

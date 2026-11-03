@@ -22,7 +22,7 @@ fn test_invariant_symmetry() {
     };
 
     let backbone = make_two_chain_backbone(5, 3.8, [0.0, 6.0, 0.0]);
-    let cf = ConFind::new(rotlib, backbone, false);
+    let cf = ConFind::new(rotlib, backbone, false).unwrap();
     let residues: Vec<ResidueIndex> = (0..10).map(ResidueIndex).collect();
     let contacts = cf.contacts(&residues, 0.0).unwrap();
 
@@ -47,7 +47,7 @@ fn test_invariant_spatial_cutoff() {
 
     // Chain B placed at y = 30.0 Å (> DCUT = 25.0 Å)
     let backbone = make_two_chain_backbone(5, 3.8, [0.0, 30.0, 0.0]);
-    let cf = ConFind::new(rotlib, backbone, false);
+    let cf = ConFind::new(rotlib, backbone, false).unwrap();
     let residues: Vec<ResidueIndex> = (0..10).map(ResidueIndex).collect();
     let contacts = cf.contacts(&residues, 0.0).unwrap();
 
@@ -71,7 +71,7 @@ fn test_invariant_metric_bounds() {
     };
 
     let backbone = make_two_chain_backbone(5, 3.8, [0.0, 8.0, 0.0]);
-    let cf = ConFind::new(rotlib, backbone, false);
+    let cf = ConFind::new(rotlib, backbone, false).unwrap();
     let residues: Vec<ResidueIndex> = (0..10).map(ResidueIndex).collect();
     let contacts = cf.contacts(&residues, 0.0).unwrap();
 
@@ -109,8 +109,8 @@ fn test_invariant_se3_invariance() {
         rb.o = rb.o.map(rot_trans);
     }
 
-    let cf_orig = ConFind::new(rotlib.clone(), bb_orig, false);
-    let cf_trans = ConFind::new(rotlib, Arc::new(bb_trans), false);
+    let cf_orig = ConFind::new(rotlib.clone(), bb_orig, false).unwrap();
+    let cf_trans = ConFind::new(rotlib, Arc::new(bb_trans), false).unwrap();
 
     let residues: Vec<ResidueIndex> = (0..8).map(ResidueIndex).collect();
     let cd_orig = cf_orig.contacts(&residues, 0.0).unwrap();
@@ -140,7 +140,7 @@ fn test_invariant_isolated_crowdedness_freedom() {
 
     // Widely spaced residues (spacing 20.0 Å) have minimal crowding and high freedom
     let backbone = make_synthetic_backbone(3, 20.0);
-    let cf = ConFind::new(rotlib, backbone, false);
+    let cf = ConFind::new(rotlib, backbone, false).unwrap();
     let residues: Vec<ResidueIndex> = (0..3).map(ResidueIndex).collect();
     let _ = cf.contacts(&residues, 0.0).unwrap();
 

@@ -1,3 +1,4 @@
+use crate::config::ConfigError;
 use crate::coords::ResidueIndex;
 
 /// Error type for ConFind operations.
@@ -7,8 +8,10 @@ pub enum ConFindError {
     NotCached(ResidueIndex),
     #[error("residue {0:?} missing backbone atom {1}")]
     MissingBackbone(ResidueIndex, &'static str),
-    #[error("freedom not computed for {0:?} — must be in contacts() query set")]
-    FreedomNotComputed(ResidueIndex),
+    #[error("residue {0:?} is not in the configured analysis scope")]
+    OutOfScope(ResidueIndex),
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(#[from] ConfigError),
     #[error("structure failed {0} precondition check(s); see log for per-residue diagnostics")]
     PreconditionsFailed(usize),
     #[error("invalid BackboneOptions: {0}")]

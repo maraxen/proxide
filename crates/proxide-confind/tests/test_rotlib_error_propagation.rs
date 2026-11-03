@@ -70,11 +70,11 @@ fn cache_residue_propagates_unknown_aa_error() {
     let rotlib = Arc::new(lib);
 
     let backbone = make_synthetic_backbone(1, 3.8);
-    let confind = ConFind::new(rotlib, backbone, false);
-
-    let err = confind
-        .cache_residue(ResidueIndex(0))
-        .expect_err("caching must fail: TRP is not in the synthetic library");
+    // R_max is derived from the loaded library at construction (spec 3.8.5), so a library
+    // missing an amino acid is rejected up front instead of at first use.
+    let err = ConFind::new(rotlib, backbone, false)
+        .err()
+        .expect("construction must fail: TRP is not in the synthetic library");
 
     assert!(
         matches!(&err, ConFindError::RotlibError(RotlibError::UnknownAa(a)) if a == "TRP"),
@@ -89,7 +89,7 @@ fn cache_residue_positive_control_with_trp_present_succeeds() {
     let rotlib = Arc::new(lib);
 
     let backbone = make_synthetic_backbone(1, 3.8);
-    let confind = ConFind::new(rotlib, backbone, false);
+    let confind = ConFind::new(rotlib, backbone, false).unwrap();
 
     confind
         .cache_residue(ResidueIndex(0))

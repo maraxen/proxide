@@ -7,13 +7,19 @@
 //! # Algorithm phases
 //!
 //! - **Phase A — Cache:** for each residue, enumerate its rotamers, prune those
-//!   clashing with backbone atoms (distance <= 2.0 Å), and compute crowdedness
-//!   C(i) = 1.0 - (Omega_i / Omega_lib).
-//! - **Phase B — Contacts:** for each candidate pair within the 25.0 Å Cα–Cα cutoff,
-//!   enumerate cross-rotamer contacts (distance <= 3.0 Å) in parallel (orx-parallel)
-//!   weighted by P(a) P(b) P(r_a) P(r_b) and normalized by Omega_i * Omega_j.
-//! - **Phase C — Freedom:** aggregate collision probabilities into a scalar residual
-//!   conformational freedom value F(i) per residue.
+//!   clashing with backbone atoms (distance <= `d_clash`, default 2.0 Å), and derive
+//!   crowdedness C(i) (prior-mass or rotamer-count fraction, see [`CrowdednessMode`]) and
+//!   the directed interference I(i, j) summed over the unpruned library.
+//! - **Phase B — Contacts:** for each candidate pair within the `d_cut` (default 25.0 Å)
+//!   Cα–Cα cutoff, enumerate cross-rotamer contacts (distance <= `d_cont`, default 3.0 Å)
+//!   in parallel (orx-parallel) weighted by P(a) P(b) P(r_a) P(r_b) and normalized by
+//!   Omega_i * Omega_j.
+//! - **Phase C — Freedom:** aggregate collision probabilities of the residues in the
+//!   configured [`ResidueScope`] into a scalar residual conformational freedom value
+//!   F(i) per residue (see [`FreedomMode`]).
+//!
+//! All options live in one typed [`ConFindConfig`] accepted by [`ConFind::with_config`];
+//! see the [`config`] module for defaults, validation rules and the option/output matrix.
 //!
 //! # References
 //!
@@ -23,6 +29,7 @@
 //!   reflect protein stability." *PLoS ONE*, 12(5), e0178272.
 
 pub mod cache;
+pub mod config;
 pub mod confind;
 pub mod contact_list;
 pub mod coords;
@@ -34,6 +41,9 @@ pub mod params;
 pub mod precondition;
 
 pub use confind::ConFind;
+pub use config::{
+    CbClashPolicy, ConFindConfig, ConfigError, CrowdednessMode, Cutoffs, FreedomMode, ResidueScope,
+};
 pub use contact_list::{ContactList, CONTACT_THRESHOLD};
 pub use coords::{
     extract_f64_backbone, extract_f64_backbone_with_options, load_pdb_f64, BackboneOptions,

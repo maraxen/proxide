@@ -268,24 +268,16 @@ pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
         let xyz = [rec.x64, rec.y64, rec.z64];
         match rec.atom_name.as_str() {
             "N" => {
-                if builder.n.is_none() {
-                    builder.n = Some(xyz);
-                }
+                builder.n.get_or_insert(xyz);
             }
             "CA" => {
-                if builder.ca.is_none() {
-                    builder.ca = Some(xyz);
-                }
+                builder.ca.get_or_insert(xyz);
             }
             "C" => {
-                if builder.c.is_none() {
-                    builder.c = Some(xyz);
-                }
+                builder.c.get_or_insert(xyz);
             }
             "O" => {
-                if builder.o.is_none() {
-                    builder.o = Some(xyz);
-                }
+                builder.o.get_or_insert(xyz);
             }
             _ => {}
         }

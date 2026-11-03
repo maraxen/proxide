@@ -1,4 +1,17 @@
-use proxide_confind::{load_pdb_f64, ConFind, ResidueIndex};
+//! `confind` command line driver.
+//!
+//! Required: `--p <pdb>` `--rLib <library>`.
+//! Optional: `--o <file>`, `--sel <spec>`, `--cdcut <f64>`, `--incut <f64>`, `--threads <n>`,
+//! and the configuration options `--cbclash`, `--crowdmode`, `--freedommode`, `--scope`,
+//! `--dclash`, `--dcont`, `--dcut`, `--taulo`, `--tauhi` (see the crate README).
+//! Flags may appear in any order. An invalid value or configuration exits non-zero with a
+//! message naming the option, the offending value and the allowed values.
+
+use orx_parallel::{IntoParIter, ParIter};
+use proxide_confind::{
+    load_pdb_f64, CbClashPolicy, ConFind, ConFindConfig, ConFindError, ConfigError,
+    CrowdednessMode, Cutoffs, FreedomMode, ProteinBackbone, ResidueIndex, ResidueScope,
+};
 use proxide_rotlib::RotamerLibrary;
 use std::fs;
 use std::io::{BufWriter, Write};
@@ -28,11 +41,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         log::info!("note: thread count is configured per-operation in orx-parallel");
     }
 
-    let cf = ConFind::new(rotlib, backbone.clone(), false);
+    // Resolve the freedom scope against the loaded structure.
+    let scope = match &opts.scope {
+        ScopeArg::All => ResidueScope::All,
+        ScopeArg::Spec(spec) => ResidueScope::Subset(
+            parse_selection(spec, &backbone).map_err(|e| format!("--scope: {e}"))?,
+        ),
+    };
+    let config = opts.config.clone().with_scope(scope);
+
+    let cf = ConFind::with_config(rotlib, backbone.clone(), false, config)
+        .map_err(|e| describe_error(&e))?;
 
     // Determine residue selection.
     let residues: Vec<ResidueIndex> = if let Some(ref sel) = opts.sel {
-        parse_selection(sel, &backbone)
+        parse_selection(sel, &backbone).map_err(|e| format!("--sel: {e}"))?
     } else {
         (0..backbone.bb.len() as u32).map(ResidueIndex).collect()
     };
@@ -40,18 +63,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("running contacts on {} residues...", residues.len());
     let contact_list = cf.contacts(&residues, opts.cd_cut)?;
 
-    // contacts() caches every queried residue (failures propagate) and
-    // computes freedom for each, so an error here is a broken invariant.
-    // Propagate it: `.ok()` used to drop the residue from the output without
-    // a word (debt #1905).
     let crowdedness_list: Vec<(ResidueIndex, f64)> = residues
         .iter()
         .map(|&ri| cf.crowdedness(ri).map(|c| (ri, c)))
         .collect::<Result<_, _>>()?;
 
-    let freedom_list: Vec<(ResidueIndex, f64)> = residues
-        .iter()
-        .map(|&ri| cf.freedom(ri).map(|f| (ri, f)))
+    // Freedom is reported for selected residues inside the analysis scope.
+    let freedom_residues: Vec<ResidueIndex> =
+        residues.iter().copied().filter(|&ri| cf.in_scope(ri)).collect();
+    let freedom_list: Vec<(ResidueIndex, f64)> = freedom_residues
+        .into_par()
+        .map(|ri| cf.freedom(ri).map(|f| (ri, f)))
+        .collect::<Vec<Result<(ResidueIndex, f64), ConFindError>>>()
+        .into_iter()
         .collect::<Result<_, _>>()?;
 
     let interference_list = cf.interference(&residues, opts.in_cut)?;
@@ -63,6 +87,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(BufWriter::new(std::io::stdout()))
     };
     let mut out = out;
+
+    // Header: every effective option value, so a run is reproducible from its output.
+    let cfg = cf.config();
+    let cut = &cfg.cutoffs;
+    writeln!(out, "# cbclash\t{}", cfg.cb_clash_policy)?;
+    writeln!(out, "# crowdmode\t{}", cfg.crowdedness_mode)?;
+    writeln!(out, "# freedommode\t{}", cfg.freedom_mode)?;
+    match &opts.scope {
+        ScopeArg::All => writeln!(out, "# scope\tall")?,
+        ScopeArg::Spec(spec) => {
+            let n = match &cfg.scope {
+                ResidueScope::Subset(v) => v.len(),
+                ResidueScope::All => backbone.bb.len(),
+            };
+            writeln!(out, "# scope\t{spec}\t({n} residues)")?
+        }
+    }
+    writeln!(out, "# dclash\t{}", cut.d_clash)?;
+    writeln!(out, "# dcont\t{}", cut.d_cont)?;
+    writeln!(out, "# dcut\t{}", cut.d_cut)?;
+    writeln!(out, "# taulo\t{}", cut.tau_lo)?;
+    writeln!(out, "# tauhi\t{}", cut.tau_hi)?;
+    writeln!(out, "# cdcut\t{}", opts.cd_cut)?;
+    writeln!(out, "# incut\t{}", opts.in_cut)?;
 
     for (&(ri, rj), &cd) in contact_list.pairs.iter().zip(&contact_list.degrees) {
         let id_a = cf.residue_id(ri);
@@ -128,6 +176,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let seq: Vec<&str> = backbone.bb.iter().map(|rb| rb.res_name.as_str()).collect();
     writeln!(out, "SEQUENCE: {}", seq.join(" "))?;
 
+    out.flush()?;
     Ok(())
 }
 
@@ -139,19 +188,38 @@ fn format_resnum(res_id: i32, ins: char) -> String {
     }
 }
 
-fn parse_selection(sel: &str, backbone: &proxide_confind::ProteinBackbone) -> Vec<ResidueIndex> {
-    // Format: chain:start-end (e.g. "A:10-50") or chain (e.g. "A").
+/// Parse a residue selection: comma/whitespace separated tokens `chain:start-end`,
+/// `chain:number` or `chain`. If `spec` names an existing file its contents are used
+/// (lines starting with `#` are ignored). Malformed tokens and tokens matching no residue
+/// are errors.
+fn parse_selection(spec: &str, backbone: &ProteinBackbone) -> Result<Vec<ResidueIndex>, String> {
+    let text = if std::path::Path::new(spec).is_file() {
+        fs::read_to_string(spec)
+            .map_err(|e| format!("cannot read selection file '{spec}': {e}"))?
+            .lines()
+            .filter(|l| !l.trim_start().starts_with('#'))
+            .collect::<Vec<_>>()
+            .join(",")
+    } else {
+        spec.to_string()
+    };
+
     let mut result = Vec::new();
-    for part in sel.split(',') {
+    for part in text.split(|c: char| c == ',' || c.is_whitespace()) {
         let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let before = result.len();
         if let Some((chain, range)) = part.split_once(':') {
+            let bad = || format!("malformed residue token '{part}' (expected chain:start-end)");
             let (start, end) = if let Some((s, e)) = range.split_once('-') {
                 (
-                    s.parse::<i32>().unwrap_or(i32::MIN),
-                    e.parse::<i32>().unwrap_or(i32::MAX),
+                    s.parse::<i32>().map_err(|_| bad())?,
+                    e.parse::<i32>().map_err(|_| bad())?,
                 )
             } else {
-                let v = range.parse::<i32>().unwrap_or(0);
+                let v = range.parse::<i32>().map_err(|_| bad())?;
                 (v, v)
             };
             for (i, id) in backbone.ids.iter().enumerate() {
@@ -166,10 +234,53 @@ fn parse_selection(sel: &str, backbone: &proxide_confind::ProteinBackbone) -> Ve
                 }
             }
         }
+        if result.len() == before {
+            return Err(format!("residue token '{part}' matches no residue"));
+        }
     }
     result.sort_unstable();
     result.dedup();
-    result
+    Ok(result)
+}
+
+/// Render an error with the option flag(s) responsible.
+fn describe_error(e: &ConFindError) -> String {
+    match e {
+        ConFindError::InvalidConfig(c) => describe_config_error(c),
+        other => other.to_string(),
+    }
+}
+
+fn describe_config_error(c: &ConfigError) -> String {
+    match c {
+        ConfigError::InvalidCutoff { name, .. } => {
+            let flag = match *name {
+                "d_clash" => "--dclash",
+                "d_cont" => "--dcont",
+                "d_cut" => "--dcut",
+                "tau_lo" => "--taulo",
+                "tau_hi" => "--tauhi",
+                _ => "--?",
+            };
+            format!("{flag}: {c}; allowed: a finite number > 0")
+        }
+        ConfigError::TauOrder { .. } => {
+            format!("--taulo/--tauhi: {c}; allowed: --taulo < --tauhi (or --freedommode single-threshold)")
+        }
+        ConfigError::DcutTooSmall { .. } => {
+            format!("--dcut: {c}; allowed: --dcut >= 2*max R_max + --dcont")
+        }
+        ConfigError::EmptyScope => {
+            format!("--scope: {c}; allowed: 'all' or a non-empty residue list")
+        }
+        ConfigError::ScopeOutOfRange { .. } => format!("--scope: {c}"),
+        ConfigError::UnknownVariant { option, .. } => format!("--{option}: {c}"),
+    }
+}
+
+enum ScopeArg {
+    All,
+    Spec(String),
 }
 
 struct Opts {
@@ -180,6 +291,8 @@ struct Opts {
     cd_cut: f64,
     in_cut: f64,
     threads: Option<usize>,
+    scope: ScopeArg,
+    config: ConFindConfig,
 }
 
 fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
@@ -190,42 +303,79 @@ fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
     let mut cd_cut = 0.05;
     let mut in_cut = 0.0;
     let mut threads = None;
+    let mut scope = ScopeArg::All;
+    let mut cutoffs = Cutoffs::default();
+    let mut cb_clash = CbClashPolicy::default();
+    let mut crowd = CrowdednessMode::default();
+    let mut freedom = FreedomMode::default();
+
+    fn number(flag: &str, value: &str) -> Result<f64, String> {
+        value
+            .parse::<f64>()
+            .map_err(|_| format!("{flag}: invalid value '{value}'; allowed: a finite number"))
+    }
 
     let mut i = 1;
     while i < args.len() {
-        match args[i].as_str() {
-            "--p" => {
-                i += 1;
-                pdb = Some(PathBuf::from(&args[i]));
-            }
-            "--rLib" => {
-                i += 1;
-                rlib = Some(PathBuf::from(&args[i]));
-            }
-            "--o" => {
-                i += 1;
-                out = Some(PathBuf::from(&args[i]));
-            }
-            "--sel" => {
-                i += 1;
-                sel = Some(args[i].clone());
-            }
-            "--cdcut" => {
-                i += 1;
-                cd_cut = args[i].parse()?;
-            }
-            "--incut" => {
-                i += 1;
-                in_cut = args[i].parse()?;
-            }
+        let flag = args[i].as_str();
+        let mut value = || -> Result<&str, String> {
+            i += 1;
+            args.get(i)
+                .map(String::as_str)
+                .ok_or_else(|| format!("{flag}: missing value"))
+        };
+        match flag {
+            "--p" => pdb = Some(PathBuf::from(value()?)),
+            "--rLib" => rlib = Some(PathBuf::from(value()?)),
+            "--o" => out = Some(PathBuf::from(value()?)),
+            "--sel" => sel = Some(value()?.to_string()),
+            "--cdcut" => cd_cut = number(flag, value()?)?,
+            "--incut" => in_cut = number(flag, value()?)?,
             "--threads" => {
-                i += 1;
-                threads = Some(args[i].parse()?);
+                let v = value()?;
+                threads = Some(v.parse::<usize>().map_err(|_| {
+                    format!("--threads: invalid value '{v}'; allowed: a non-negative integer")
+                })?);
             }
-            _ => {}
+            "--cbclash" => {
+                cb_clash = value()?
+                    .parse::<CbClashPolicy>()
+                    .map_err(|e| describe_config_error(&e))?
+            }
+            "--crowdmode" => {
+                crowd = value()?
+                    .parse::<CrowdednessMode>()
+                    .map_err(|e| describe_config_error(&e))?
+            }
+            "--freedommode" => {
+                freedom = value()?
+                    .parse::<FreedomMode>()
+                    .map_err(|e| describe_config_error(&e))?
+            }
+            "--scope" => {
+                let v = value()?;
+                scope = if v == "all" {
+                    ScopeArg::All
+                } else {
+                    ScopeArg::Spec(v.to_string())
+                };
+            }
+            "--dclash" => cutoffs.d_clash = number(flag, value()?)?,
+            "--dcont" => cutoffs.d_cont = number(flag, value()?)?,
+            "--dcut" => cutoffs.d_cut = number(flag, value()?)?,
+            "--taulo" => cutoffs.tau_lo = number(flag, value()?)?,
+            "--tauhi" => cutoffs.tau_hi = number(flag, value()?)?,
+            other => return Err(format!("unknown option '{other}'").into()),
         }
         i += 1;
     }
+
+    let config = ConFindConfig::default()
+        .with_cutoffs(cutoffs)
+        .with_cb_clash_policy(cb_clash)
+        .with_crowdedness_mode(crowd)
+        .with_freedom_mode(freedom);
+    config.validate().map_err(|e| describe_config_error(&e))?;
 
     Ok(Opts {
         pdb: pdb.ok_or("--p <pdb> required")?,
@@ -235,5 +385,7 @@ fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
         cd_cut,
         in_cut,
         threads,
+        scope,
+        config,
     })
 }

@@ -76,10 +76,11 @@ def parse_confind_output(path: Path, is_upstream: bool = False):
     return contacts, crowdedness, freedom, dihedrals
 
 
-def run_benchmark(pdb_path: Path, tag: str):
+def run_benchmark(pdb_path: Path, tag: str, extra_flags=None):
     """Run upstream and clean confind, returning parsed outputs."""
     up_out = SCRATCH / f"{tag}_upstream.out"
-    clean_out = SCRATCH / f"{tag}_clean.out"
+    suffix = "_" + "_".join(f.lstrip("-") for f in extra_flags) if extra_flags else ""
+    clean_out = SCRATCH / f"{tag}_clean{suffix}.out"
 
     # Upstream Mosaist (reuse scratch output if already generated in /tmp/mosaist_scratch)
     if not up_out.exists():
@@ -98,15 +99,18 @@ def run_benchmark(pdb_path: Path, tag: str):
         )
 
     # Cleanroom confind
+    cmd = [
+        str(CLEAN_BIN),
+        "--p", str(pdb_path),
+        "--rLib", str(CLEAN_RLIB),
+        "--o", str(clean_out),
+        "--cdcut", "0.0",
+        "--incut", "0.0",
+    ]
+    if extra_flags:
+        cmd.extend(extra_flags)
     subprocess.run(
-        [
-            str(CLEAN_BIN),
-            "--p", str(pdb_path),
-            "--rLib", str(CLEAN_RLIB),
-            "--o", str(clean_out),
-            "--cdcut", "0.0",
-            "--incut", "0.0",
-        ],
+        cmd,
         check=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
@@ -252,20 +256,32 @@ def main():
     parser.add_argument("--out", type=Path, default=Path("outputs/parity/confind_parity_results.json"))
     args = parser.parse_args()
 
-    print("Running Benchmark 1: 1CRN...")
-    up_c_crn, up_cr_crn, up_fr_crn, up_dih_crn, cl_c_crn, cl_cr_crn, cl_fr_crn = run_benchmark(CRN_PDB, "1crn")
+    parity_flags = ["--cbclash", "ala-only", "--crowdmode", "pruned-count-fraction"]
+
+    print("Running Benchmark 1 (parity flags: ala-only + pruned-count-fraction): 1CRN...")
+    up_c_crn, up_cr_crn, up_fr_crn, up_dih_crn, cl_c_crn, cl_cr_crn, cl_fr_crn = run_benchmark(CRN_PDB, "1crn", parity_flags)
     med_cd_crn, mean_cd_crn, max_cd_crn, pct_1e4_crn, pct_005_crn, n_pairs_crn, com_pairs_crn = compute_contact_deltas(up_c_crn, cl_c_crn)
     med_cr_crn, _, _ = compute_metric_deltas(up_cr_crn, cl_cr_crn)
     med_fr_crn, _, _ = compute_metric_deltas(up_fr_crn, cl_fr_crn)
 
-    print("Running Benchmark 2: 1UBQ...")
-    up_c_ubq, up_cr_ubq, up_fr_ubq, up_dih_ubq, cl_c_ubq, cl_cr_ubq, cl_fr_ubq = run_benchmark(UBQ_PDB, "1ubq")
+    print("Running Benchmark 1b (default flags: all-residues + probability-weighted): 1CRN...")
+    _, _, _, _, cl_c_crn_def, cl_cr_crn_def, cl_fr_crn_def = run_benchmark(CRN_PDB, "1crn", None)
+    med_cd_crn_def, _, _, _, _, _, _ = compute_contact_deltas(up_c_crn, cl_c_crn_def)
+    med_cr_crn_def, _, _ = compute_metric_deltas(up_cr_crn, cl_cr_crn_def)
+
+    print("Running Benchmark 2 (parity flags: ala-only + pruned-count-fraction): 1UBQ...")
+    up_c_ubq, up_cr_ubq, up_fr_ubq, up_dih_ubq, cl_c_ubq, cl_cr_ubq, cl_fr_ubq = run_benchmark(UBQ_PDB, "1ubq", parity_flags)
     med_cd_ubq, mean_cd_ubq, max_cd_ubq, pct_1e4_ubq, pct_005_ubq, n_pairs_ubq, com_pairs_ubq = compute_contact_deltas(up_c_ubq, cl_c_ubq)
     med_cr_ubq, _, _ = compute_metric_deltas(up_cr_ubq, cl_cr_ubq)
     med_fr_ubq, _, _ = compute_metric_deltas(up_fr_ubq, cl_fr_ubq)
 
+    print("Running Benchmark 2b (default flags: all-residues + probability-weighted): 1UBQ...")
+    _, _, _, _, cl_c_ubq_def, cl_cr_ubq_def, cl_fr_ubq_def = run_benchmark(UBQ_PDB, "1ubq", None)
+    med_cd_ubq_def, _, _, _, _, _, _ = compute_contact_deltas(up_c_ubq, cl_c_ubq_def)
+    med_cr_ubq_def, _, _ = compute_metric_deltas(up_cr_ubq, cl_cr_ubq_def)
+
     print("Running Benchmark 3: Multi-chain complex (f2c006r13.pdb)...")
-    up_c_mc, _, _, _, cl_c_mc, _, _ = run_benchmark(MULTICHAIN_PDB, "multichain")
+    up_c_mc, _, _, _, cl_c_mc, _, _ = run_benchmark(MULTICHAIN_PDB, "multichain", parity_flags)
     med_cd_mc, mean_cd_mc, max_cd_mc, pct_1e4_mc, pct_005_mc, n_pairs_mc, com_pairs_mc = compute_contact_deltas(up_c_mc, cl_c_mc)
 
     print("Assessing Debt #1903 (Omega Dihedral Sign)...")
@@ -274,12 +290,21 @@ def main():
     print("Assessing Debt #1904 (Chain Semantics & Breaks)...")
     prevented, up_break_val, cl_break_val = assess_chain_semantics()
 
+    # Check that both parity-policy and default-policy runs produce valid outputs
+    default_options_valid = (
+        med_cd_crn_def <= 0.0001
+        and med_cd_ubq_def <= 0.0001
+        and len(cl_cr_crn_def) == len(cl_cr_crn)
+        and len(cl_cr_ubq_def) == len(cl_cr_ubq)
+    )
+
     # Determine overall outcome
     passed = (
         med_cd_crn <= 0.0001
         and med_cd_ubq <= 0.0001
         and opp_sign == 0
         and prevented
+        and default_options_valid
     )
     outcome_label = "pass" if passed else ("marginal" if (med_cd_crn <= 0.0002 and med_cd_ubq <= 0.0002) else "fail")
 
@@ -291,6 +316,8 @@ def main():
         "pct_within_005_1crn": round(float(pct_005_crn), 4),
         "median_crowdedness_delta_1crn": round(float(med_cr_crn), 6),
         "median_freedom_delta_1crn": round(float(med_fr_crn), 6),
+        "median_contact_delta_1crn_default": round(float(med_cd_crn_def), 6),
+        "median_crowdedness_delta_1crn_default": round(float(med_cr_crn_def), 6),
 
         "median_contact_delta_1ubq": round(float(med_cd_ubq), 6),
         "mean_contact_delta_1ubq": round(float(mean_cd_ubq), 6),
@@ -299,6 +326,8 @@ def main():
         "pct_within_005_1ubq": round(float(pct_005_ubq), 4),
         "median_crowdedness_delta_1ubq": round(float(med_cr_ubq), 6),
         "median_freedom_delta_1ubq": round(float(med_fr_ubq), 6),
+        "median_contact_delta_1ubq_default": round(float(med_cd_ubq_def), 6),
+        "median_crowdedness_delta_1ubq_default": round(float(med_cr_ubq_def), 6),
 
         "multichain_contacts_count": int(n_pairs_mc),
         "multichain_common_pairs": int(com_pairs_mc),
@@ -310,6 +339,7 @@ def main():
         "omega_opposite_sign_count": int(opp_sign),
         "max_omega_delta_deg": round(float(max_omg_delta), 6),
         "chain_break_prevented_spurious_contacts": bool(prevented),
+        "default_options_valid": bool(default_options_valid),
         "outcome": outcome_label,
     }
 

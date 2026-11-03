@@ -16,7 +16,7 @@ fn parallel_determinism_contacts() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let all_residues: Vec<ResidueIndex> = (0..4).map(ResidueIndex).collect();
 
@@ -61,7 +61,7 @@ fn parallel_determinism_freedom() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let all_residues: Vec<ResidueIndex> = (0..4).map(ResidueIndex).collect();
 
@@ -85,7 +85,7 @@ fn parallel_cache_all_idempotent() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // Call cache_all twice
     let result1 = confind.cache_all();
@@ -109,7 +109,7 @@ fn parallel_contacts_subset_vs_all() {
     };
 
     let backbone = make_synthetic_backbone(5, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // Call contacts on [0,1,2] then on [1,2,3]
     let subset1: Vec<ResidueIndex> = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];

@@ -206,7 +206,7 @@ END
     assert!(!fb1, "interior residue must record used_default_bin=false");
 
     // End-to-end ConFind verification
-    let cf = ConFind::new(rotlib, Arc::new(backbone), false);
+    let cf = ConFind::new(rotlib, Arc::new(backbone), false).unwrap();
     assert!(
         cf.used_default_bin(ResidueIndex(0)).unwrap(),
         "N-terminal residue must record used_default_bin=true in ConFind"

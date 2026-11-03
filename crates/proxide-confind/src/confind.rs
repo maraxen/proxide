@@ -6,13 +6,15 @@
 //! - Zheng, W., & Grigoryan, G. (2017). "Sequence statistics of tertiary structural motifs
 //!   reflect protein stability." *PLoS ONE*, 12(5), e0178272.
 
-use crate::cache::{build_backbone_grid, cache_residue, ResidueCache};
+use crate::cache::{build_backbone_grid_with, cache_residue, ResidueCache};
+use crate::config::{ConFindConfig, ConfigError, ResidueScope};
 use crate::contact_list::ContactList;
 use crate::coords::{ProteinBackbone, ResidueIndex};
 use crate::error::ConFindError;
+use crate::freedom::compute_freedom;
 use crate::grid::ProximityGrid;
-use crate::parallel::run_phases_b_c;
-use crate::params::DCUT;
+use crate::parallel::{collision_masses, run_phase_b};
+use crate::params::AA_NAMES;
 use crate::precondition::require_preconditions;
 use dashmap::DashMap;
 use orx_parallel::{IntoParIter, ParIter};
@@ -28,46 +30,134 @@ pub struct ConFind {
     pub strict: bool,
     /// Shared protein backbone.
     pub backbone: Arc<ProteinBackbone>,
+    /// Validated configuration in force.
+    config: ConFindConfig,
+    /// Membership mask of the freedom analysis scope (`None` = every residue).
+    scope_mask: Option<Vec<bool>>,
+    /// Maximum sidechain reach per amino acid, derived from the loaded library (Å).
+    r_max: Vec<(&'static str, f64)>,
     /// Spatial acceleration grid for backbone heavy atoms.
     bb_grid: Arc<ProximityGrid<ResidueIndex>>,
     /// Concurrent cache of Phase A residue states.
     cache: DashMap<ResidueIndex, Arc<ResidueCache>>,
     /// Concurrent cache of Phase B pairwise contact degrees.
     contacts_cache: DashMap<(ResidueIndex, ResidueIndex), f64>,
-    /// Concurrent cache of Phase C residual structural freedom values.
+    /// Concurrent cache of residual structural freedom values.
     freedom_cache: DashMap<ResidueIndex, f64>,
 }
 
 impl ConFind {
-    /// Construct a new ConFind instance and build spatial acceleration structures.
+    /// Construct with [`ConFindConfig::default`]. Equivalent to
+    /// [`with_config`](Self::with_config) with the default configuration.
     pub fn new(
         rotlib: Arc<RotamerLibrary>,
         backbone: Arc<ProteinBackbone>,
         strict: bool,
-    ) -> Self {
-        let bb_grid = Arc::new(build_backbone_grid(&backbone));
-
-        Self {
-            rotlib,
-            strict,
-            backbone,
-            bb_grid,
-            cache: DashMap::new(),
-            contacts_cache: DashMap::new(),
-            freedom_cache: DashMap::new(),
-        }
+    ) -> Result<Self, ConFindError> {
+        Self::with_config(rotlib, backbone, strict, ConFindConfig::default())
     }
 
-    /// Construct a new ConFind instance and validate preconditions if strict is true.
+    /// Alias of [`new`](Self::new), retained for source compatibility.
     pub fn try_new(
         rotlib: Arc<RotamerLibrary>,
         backbone: Arc<ProteinBackbone>,
         strict: bool,
     ) -> Result<Self, ConFindError> {
+        Self::new(rotlib, backbone, strict)
+    }
+
+    /// Construct with an explicit configuration.
+    ///
+    /// Validates the configuration (V1, V2, V3, then V6), enforces structural preconditions
+    /// when `strict` is set, computes `R_max(a)` for the 18 amino acids from `rotlib`
+    /// (spec §3.8.5), checks `d_cut >= 2 * max R_max + d_cont` (V5) and builds the spatial
+    /// index. Nothing is silently corrected.
+    pub fn with_config(
+        rotlib: Arc<RotamerLibrary>,
+        backbone: Arc<ProteinBackbone>,
+        strict: bool,
+        config: ConFindConfig,
+    ) -> Result<Self, ConFindError> {
+        config.validate()?;
+
+        let n_residues = backbone.bb.len();
+        let scope_mask = match &config.scope {
+            ResidueScope::All => None,
+            ResidueScope::Subset(list) => {
+                let mut mask = vec![false; n_residues];
+                for ri in list {
+                    let slot =
+                        mask.get_mut(ri.0 as usize)
+                            .ok_or(ConfigError::ScopeOutOfRange {
+                                index: ri.0,
+                                n_residues,
+                            })?;
+                    *slot = true;
+                }
+                Some(mask)
+            }
+        };
+
         if strict {
             require_preconditions(&backbone)?;
         }
-        Ok(Self::new(rotlib, backbone, strict))
+
+        let mut r_max = Vec::with_capacity(AA_NAMES.len());
+        for &aa in AA_NAMES {
+            r_max.push((aa, rotlib.max_sidechain_reach(aa)?));
+        }
+        let largest = r_max.iter().map(|&(_, r)| r).fold(0.0f64, f64::max);
+        let required = 2.0 * largest + config.cutoffs.d_cont;
+        if config.cutoffs.d_cut < required {
+            return Err(ConfigError::DcutTooSmall {
+                d_cut: config.cutoffs.d_cut,
+                required,
+            }
+            .into());
+        }
+
+        let bb_grid = Arc::new(build_backbone_grid_with(
+            &backbone,
+            config.cutoffs.d_clash,
+        ));
+
+        Ok(Self {
+            rotlib,
+            strict,
+            backbone,
+            config,
+            scope_mask,
+            r_max,
+            bb_grid,
+            cache: DashMap::new(),
+            contacts_cache: DashMap::new(),
+            freedom_cache: DashMap::new(),
+        })
+    }
+
+    /// The validated configuration in force.
+    pub fn config(&self) -> &ConFindConfig {
+        &self.config
+    }
+
+    /// Library-derived maximum sidechain reach `R_max(aa)` in Å for one of the 18 amino
+    /// acids of [`AA_NAMES`], or `None` for any other name.
+    pub fn r_max(&self, aa: &str) -> Option<f64> {
+        self.r_max.iter().find(|(a, _)| *a == aa).map(|&(_, r)| r)
+    }
+
+    /// Minimum valid neighbour cutoff `2 * max_a R_max(a) + d_cont` for the loaded library.
+    pub fn d_cut_min(&self) -> f64 {
+        2.0 * self.r_max.iter().map(|&(_, r)| r).fold(0.0f64, f64::max)
+            + self.config.cutoffs.d_cont
+    }
+
+    /// Whether residue `ri` belongs to the configured analysis scope.
+    pub fn in_scope(&self, ri: ResidueIndex) -> bool {
+        match &self.scope_mask {
+            None => (ri.0 as usize) < self.n_residues(),
+            Some(mask) => mask.get(ri.0 as usize).copied().unwrap_or(false),
+        }
     }
 
     /// Number of protein residues in backbone.
@@ -99,15 +189,35 @@ impl ConFind {
         result
     }
 
+    fn compute_cache(&self, ri: ResidueIndex) -> Result<ResidueCache, ConFindError> {
+        cache_residue(
+            ri,
+            &self.backbone,
+            &self.rotlib,
+            &self.bb_grid,
+            self.config.cutoffs.d_clash,
+            self.config.cb_clash_policy,
+        )
+    }
+
+    /// The Phase A state of residue `ri` (counts, masses, surviving rotamers, interference),
+    /// computed on first use.
+    pub fn residue_cache(&self, ri: ResidueIndex) -> Result<Arc<ResidueCache>, ConFindError> {
+        self.cached(ri)
+    }
+
     /// Execute Phase A rotamer placement and backbone clash pruning for residue `ri`.
     pub fn cache_residue(&self, ri: ResidueIndex) -> Result<(), ConFindError> {
-        if self.cache.contains_key(&ri) {
-            return Ok(());
-        }
+        self.cached(ri).map(|_| ())
+    }
 
-        let rc = cache_residue(ri, &self.backbone, &self.rotlib, &self.bb_grid)?;
-        self.cache.insert(ri, Arc::new(rc));
-        Ok(())
+    fn cached(&self, ri: ResidueIndex) -> Result<Arc<ResidueCache>, ConFindError> {
+        if let Some(rc) = self.cache.get(&ri) {
+            return Ok(Arc::clone(&rc));
+        }
+        let rc = Arc::new(self.compute_cache(ri)?);
+        self.cache.insert(ri, Arc::clone(&rc));
+        Ok(rc)
     }
 
     /// Concurrently execute Phase A caching for all residues in structure.
@@ -118,7 +228,7 @@ impl ConFind {
         let cached_items: Vec<Result<(ResidueIndex, ResidueCache), ConFindError>> = indices
             .into_par()
             .map(|ri| {
-                let rc = cache_residue(ri, &self.backbone, &self.rotlib, &self.bb_grid)?;
+                let rc = self.compute_cache(ri)?;
                 Ok((ri, rc))
             })
             .collect();
@@ -131,14 +241,14 @@ impl ConFind {
         Ok(())
     }
 
-    /// Query residues within 25.0 Å Cα–Cα distance cutoff.
+    /// Query residues within `config.cutoffs.d_cut` Cα–Cα distance (inclusive).
     pub fn neighbors(&self, ri: ResidueIndex) -> Vec<ResidueIndex> {
         let ca_i = match self.backbone.bb[ri.0 as usize].ca {
             Some(ca) => ca,
             None => return Vec::new(),
         };
 
-        let dcut_sq = DCUT * DCUT;
+        let dcut_sq = self.config.cutoffs.d_cut * self.config.cutoffs.d_cut;
         let mut result = Vec::new();
 
         for (j, rb) in self.backbone.bb.iter().enumerate() {
@@ -163,12 +273,7 @@ impl ConFind {
     /// Return whether `default_bin` fallback was used when caching residue `ri`
     /// due to an undefined (`None`) `phi` or `psi` backbone angle (Debt #1897).
     pub fn used_default_bin(&self, ri: ResidueIndex) -> Result<bool, ConFindError> {
-        self.cache_residue(ri)?;
-        let entry = self
-            .cache
-            .get(&ri)
-            .ok_or(ConFindError::NotCached(ri))?;
-        Ok(entry.used_default_bin)
+        Ok(self.cached(ri)?.used_default_bin)
     }
 
     /// Compute pairwise contact degrees across query residue set.
@@ -182,18 +287,23 @@ impl ConFind {
             self.cache_residue(ri)?;
         }
 
-        run_phases_b_c(
+        run_phase_b(
             residues,
             cd_cut,
             &self.backbone,
             &self.cache,
             &self.contacts_cache,
-            &self.freedom_cache,
+            self.config.cutoffs.d_cut,
+            self.config.cutoffs.d_cont,
         )
     }
 
-    /// Compute mutual sidechain-to-backbone interference.
-    /// Evaluates pairs where BOTH endpoints are present in `residues` and value >= in_cut.
+    /// Mutual interference `I(i, j)` (spec §2.6, §3.8.3): pairs where BOTH endpoints are
+    /// present in the query set and value >= in_cut.
+    ///
+    /// Interference is directed: the entry `(i, j)` is the prior mass of the unpruned
+    /// library rotamers of `i` whose clash atoms hit the backbone of `j`; `(j, i)` is
+    /// reported separately. Pairs are listed in query order of `i`, then of `j`.
     ///
     /// All query residues must be cached prior to calling (e.g. via [`cache_residue`](Self::cache_residue),
     /// [`cache_all`](Self::cache_all), or [`contacts`](Self::contacts)); returns
@@ -210,22 +320,17 @@ impl ConFind {
         }
 
         let mut contact_list = ContactList::default();
-        let n = residues.len();
 
-        for i in 0..n {
-            let ri = residues[i];
+        for &ri in residues {
             let cache_i = self.cache.get(&ri).unwrap();
-
-            for &rj in &residues[(i + 1)..n] {
-                let cache_j = self.cache.get(&rj).unwrap();
-
-                let val_ij = cache_i.interference.get(&rj).copied().unwrap_or(0.0);
-                let val_ji = cache_j.interference.get(&ri).copied().unwrap_or(0.0);
-                let total_interference = val_ij + val_ji;
-
-                if total_interference >= in_cut {
+            for &rj in residues {
+                if rj == ri {
+                    continue;
+                }
+                let value = cache_i.interference.get(&rj).copied().unwrap_or(0.0);
+                if value >= in_cut {
                     contact_list.pairs.push((ri, rj));
-                    contact_list.degrees.push(total_interference);
+                    contact_list.degrees.push(value);
                 }
             }
         }
@@ -306,19 +411,47 @@ impl ConFind {
         atoms
     }
 
-    /// Query fraction of rotamers pruned by backbone clash for residue `ri`.
+    /// Crowdedness `C(i)` per `config.crowdedness_mode` (spec §2.4): the pruned fraction of
+    /// prior mass (`ProbabilityWeighted`) or of rotamer count (`PrunedCountFraction`).
+    /// Independent of the analysis scope and of the freedom options.
     pub fn crowdedness(&self, ri: ResidueIndex) -> Result<f64, ConFindError> {
-        self.cache_residue(ri)?;
-        Ok(self.cache.get(&ri).unwrap().crowdedness)
+        Ok(self.cached(ri)?.crowdedness(self.config.crowdedness_mode))
     }
 
-    /// Query residual conformational freedom for residue `ri`.
-    /// Residue must have been included in a preceding `contacts()` query set.
+    /// Freedom `F(i)` per `config.freedom_mode` (spec §2.5), with collision mass accumulated
+    /// over the residues of `config.scope` within `d_cut` Cα–Cα of `ri`.
+    ///
+    /// Computed on demand; does not require a preceding [`contacts`](Self::contacts) call.
+    /// Returns [`ConFindError::OutOfScope`] if `ri` is not in the scope. Errors while
+    /// caching `ri` or any neighbour propagate.
     pub fn freedom(&self, ri: ResidueIndex) -> Result<f64, ConFindError> {
-        if let Some(f) = self.freedom_cache.get(&ri) {
-            Ok(*f)
-        } else {
-            Err(ConFindError::FreedomNotComputed(ri))
+        if !self.in_scope(ri) {
+            return Err(ConFindError::OutOfScope(ri));
         }
+        if let Some(f) = self.freedom_cache.get(&ri) {
+            return Ok(*f);
+        }
+
+        let cache_i = self.cached(ri)?;
+        let mut neighbour_caches = Vec::new();
+        for rj in self.neighbors(ri) {
+            if self.in_scope(rj) {
+                neighbour_caches.push(self.cached(rj)?);
+            }
+        }
+
+        let masses = collision_masses(&cache_i, &neighbour_caches, self.config.cutoffs.d_cont);
+        let contested: Vec<f64> = masses.into_iter().filter(|&m| m > 0.0).collect();
+        let cut = &self.config.cutoffs;
+        let value = compute_freedom(
+            self.config.freedom_mode,
+            &contested,
+            cache_i.n_surviving,
+            cache_i.n_library,
+            cut.tau_lo,
+            cut.tau_hi,
+        );
+        self.freedom_cache.insert(ri, value);
+        Ok(value)
     }
 }

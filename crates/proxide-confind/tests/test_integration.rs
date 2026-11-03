@@ -16,7 +16,7 @@ fn cache_all_no_panic() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let result = confind.cache_all();
     assert!(result.is_ok(), "cache_all should return Ok");
@@ -34,7 +34,7 @@ fn contacts_returns_contact_list() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let all_residues: Vec<ResidueIndex> = (0..4).map(ResidueIndex).collect();
     let result = confind.contacts(&all_residues, 0.0);
@@ -57,7 +57,7 @@ fn freedom_in_range_after_contacts() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let all_residues: Vec<ResidueIndex> = (0..4).map(ResidueIndex).collect();
     confind.contacts(&all_residues, 0.0).ok();
@@ -78,7 +78,7 @@ fn crowdedness_in_range_after_cache() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     confind.cache_all().ok();
     // Crowdedness is computed during cache_residue_impl
@@ -97,7 +97,7 @@ fn neighbors_excludes_self() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let ri = ResidueIndex(1);
     let neighbors = confind.neighbors(ri);
@@ -119,7 +119,7 @@ fn neighbors_respects_dcut() {
 
     // Very wide spacing (30 Å > DCUT=25.0)
     let backbone = make_synthetic_backbone(4, 30.0);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // All residues should have no neighbors at 30 Å spacing
     for i in 0..4 {
@@ -145,7 +145,7 @@ fn freedom_not_available_before_contacts() {
     };
 
     let backbone = make_synthetic_backbone(2, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // Cache but don't call contacts
     confind.cache_residue(ResidueIndex(0)).ok();
@@ -166,7 +166,7 @@ fn n_residues_matches_backbone() {
     };
 
     let backbone = make_synthetic_backbone(5, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     assert_eq!(
         confind.n_residues(),
@@ -187,7 +187,7 @@ fn constrained_contacts_returns_vec() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let ri = ResidueIndex(0);
     confind.cache_residue(ri).ok();
@@ -221,7 +221,7 @@ fn constrained_contacts_uncached_returns_empty() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let ri = ResidueIndex(1);
     // Don't cache ri

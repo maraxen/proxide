@@ -26,7 +26,7 @@ fn test_contact_degree_distance_monotonicity() {
 
     for &dist in &distances {
         let backbone = make_two_chain_backbone(3, 3.8, [0.0, dist, 0.0]);
-        let cf = ConFind::new(rotlib.clone(), backbone, false);
+        let cf = ConFind::new(rotlib.clone(), backbone, false).unwrap();
         let residues: Vec<ResidueIndex> = (0..6).map(ResidueIndex).collect();
         let contacts = cf.contacts(&residues, 0.0).unwrap();
 
@@ -61,7 +61,7 @@ fn test_interference_properties() {
 
     // Close spacing (4.0 Å) induces steric interference
     let backbone = make_two_chain_backbone(3, 3.8, [0.0, 4.0, 0.0]);
-    let cf = ConFind::new(rotlib, backbone, false);
+    let cf = ConFind::new(rotlib, backbone, false).unwrap();
     cf.cache_all().unwrap();
     let residues: Vec<ResidueIndex> = (0..6).map(ResidueIndex).collect();
 

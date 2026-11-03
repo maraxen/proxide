@@ -4,9 +4,9 @@ stage_name = "validation"
 novel = true
 
 [outcomes.pass]
-condition = "median_contact_delta_1crn <= 0.0001 AND median_contact_delta_1ubq <= 0.0001 AND omega_opposite_sign_count = 0 AND chain_break_prevented_spurious_contacts = true"
+condition = "median_contact_delta_1crn <= 0.0001 AND median_contact_delta_1ubq <= 0.0001 AND omega_opposite_sign_count = 0 AND chain_break_prevented_spurious_contacts = true AND default_options_valid = true"
 decision = "accept_clean_room_confind"
-reasoning = "Median contact degree deltas on 1CRN and 1UBQ are within 1e-4, IUPAC omega sign convention holds with 0 inverted residues (#1903), and chain break segmentation eliminates spurious contacts (#1904)."
+reasoning = "Median contact degree deltas on 1CRN and 1UBQ are within 1e-4 under both parity (--cbclash ala-only --crowdmode pruned-count-fraction) and default (--cbclash all-residues --crowdmode probability-weighted) policies, IUPAC omega sign convention holds with 0 inverted residues (#1903), and chain break segmentation eliminates spurious contacts (#1904)."
 is_residual = false
 
 [outcomes.marginal]
@@ -29,6 +29,8 @@ pct_within_1e4_1crn = "float"
 pct_within_005_1crn = "float"
 median_crowdedness_delta_1crn = "float"
 median_freedom_delta_1crn = "float"
+median_contact_delta_1crn_default = "float"
+median_crowdedness_delta_1crn_default = "float"
 
 median_contact_delta_1ubq = "float"
 mean_contact_delta_1ubq = "float"
@@ -37,6 +39,8 @@ pct_within_1e4_1ubq = "float"
 pct_within_005_1ubq = "float"
 median_crowdedness_delta_1ubq = "float"
 median_freedom_delta_1ubq = "float"
+median_contact_delta_1ubq_default = "float"
+median_crowdedness_delta_1ubq_default = "float"
 
 multichain_contacts_count = "int"
 multichain_common_pairs = "int"
@@ -48,4 +52,5 @@ omega_same_sign_count = "int"
 omega_opposite_sign_count = "int"
 max_omega_delta_deg = "float"
 chain_break_prevented_spurious_contacts = "bool"
+default_options_valid = "bool"
 outcome = "string"

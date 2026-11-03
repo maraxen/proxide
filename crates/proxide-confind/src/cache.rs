@@ -6,6 +6,7 @@
 //! - Zheng, W., & Grigoryan, G. (2017). "Sequence statistics of tertiary structural motifs
 //!   reflect protein stability." *PLoS ONE*, 12(5), e0178272.
 
+use crate::config::{CbClashPolicy, CrowdednessMode};
 use crate::coords::{ProteinBackbone, ResidueBackbone, ResidueIndex};
 use crate::error::ConFindError;
 use crate::grid::ProximityGrid;
@@ -27,13 +28,16 @@ pub struct PlacedRotamerData {
     pub p_r: f64,
     /// Product weight P(a) * P(r_a).
     pub weight: f64,
-    /// World coordinates of sidechain heavy atoms (excluding backbone and non-ALA CB).
+    /// World coordinates of contact atoms `S_cont` (sidechain heavy atoms; Cβ only for ALA).
     pub atoms: Vec<[f64; 3]>,
     /// Bounding box [min_x, max_x, min_y, max_y, min_z, max_z] for fast collision pruning.
     pub bbox: [f64; 6],
 }
 
 /// Cached Phase A computation for a single protein residue position.
+///
+/// Holds the counts and masses from which every crowdedness mode is derived, so changing
+/// the mode never changes the surviving sets.
 #[derive(Clone, Debug)]
 pub struct ResidueCache {
     /// Residue index in ProteinBackbone.
@@ -42,20 +46,55 @@ pub struct ResidueCache {
     pub res_name: String,
     /// Whether `default_bin` was used because `phi` or `psi` was undefined (`None`, Debt #1897).
     pub used_default_bin: bool,
-    /// Fraction of rotamers pruned by steric clash with the backbone in [0.0, 1.0].
-    pub crowdedness: f64,
-    /// Surviving partition function weight Omega_i = sum P(a) P(r_a) for unpruned rotamers.
+    /// Surviving partition function weight Omega_i = sum P(a) P(r_a) for unpruned rotamers
+    /// (`W_surv`, with P(a) in percent).
     pub omega_i: f64,
-    /// Unpruned library partition function weight Omega_lib = sum P(a) P(r_a) across all rotamers.
+    /// Library partition function weight Omega_lib = sum P(a) P(r_a) across all rotamers
+    /// (`W_lib`, with P(a) in percent).
     pub omega_lib: f64,
-    /// Total number of rotamers in the library for this position.
+    /// Total number of rotamers in the library for this position (`N_lib`).
     pub n_library: usize,
-    /// Number of rotamers that survived backbone clash pruning.
+    /// Number of rotamers that survived backbone clash pruning (`N_surv`).
     pub n_surviving: usize,
     /// Surviving rotamers with placed heavy-atom coordinates.
     pub surviving_rotamers: Vec<PlacedRotamerData>,
-    /// Mutual sidechain-to-backbone interference I(i, j) with other residues.
+    /// Directed interference I(i, j) of this residue's library rotamers with the backbone of
+    /// residue j (prior mass, with P(a) divided by 100).
     pub interference: HashMap<ResidueIndex, f64>,
+}
+
+impl ResidueCache {
+    /// Crowdedness C(i) under `mode` (spec §2.4). A zero denominator gives 0.
+    pub fn crowdedness(&self, mode: CrowdednessMode) -> f64 {
+        let (surv, lib) = match mode {
+            CrowdednessMode::ProbabilityWeighted => (self.omega_i, self.omega_lib),
+            CrowdednessMode::PrunedCountFraction => {
+                (self.n_surviving as f64, self.n_library as f64)
+            }
+        };
+        if lib > 0.0 {
+            (1.0 - surv / lib).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+}
+
+/// A library rotamer placed in the lab frame, before backbone pruning.
+#[derive(Clone, Debug)]
+pub struct RotamerCandidate {
+    /// Amino acid code.
+    pub aa: &'static str,
+    /// Rotamer index within the bin.
+    pub rot_idx: usize,
+    /// Background propensity P(a) in percent.
+    pub p_a: f64,
+    /// Rotamer probability P(r | a, phi, psi).
+    pub p_r: f64,
+    /// Contact atoms `S_cont` (per `counts_as_sidechain`).
+    pub cont_atoms: Vec<[f64; 3]>,
+    /// Cβ position if the rotamer has one (added to the clash set per [`CbClashPolicy`]).
+    pub cb: Option<[f64; 3]>,
 }
 
 /// Extract all present backbone heavy atoms (N, CA, C, O) and their corresponding residue indices.
@@ -88,56 +127,126 @@ pub fn build_bb_atoms(bb: &ProteinBackbone) -> (Vec<[f64; 3]>, Vec<ResidueIndex>
 
 /// Build spatial hash grid indexing all backbone heavy atoms (N, CA, C, O) across the protein.
 pub fn build_backbone_grid(bb: &ProteinBackbone) -> ProximityGrid<ResidueIndex> {
-    let (points, tags) = build_bb_atoms(bb);
-    ProximityGrid::build(&points, tags, CLASH_DIST)
+    build_backbone_grid_with(bb, CLASH_DIST)
 }
 
-/// Execute Phase A rotamer placement, backbone clash pruning, and crowdedness evaluation.
-pub fn cache_residue(
+/// Build the backbone grid for clash distance `d_clash`.
+///
+/// The cell size is only a performance parameter (queries are exact for any radius); it is
+/// floored at the default clash distance so that a very small `d_clash` cannot make the
+/// grid arbitrarily fine.
+pub fn build_backbone_grid_with(bb: &ProteinBackbone, d_clash: f64) -> ProximityGrid<ResidueIndex> {
+    let (points, tags) = build_bb_atoms(bb);
+    ProximityGrid::build(&points, tags, d_clash.max(CLASH_DIST))
+}
+
+/// Phase A kernel: backbone-clash pruning, crowdedness masses and interference for the
+/// library rotamers of one residue (spec §2.4, §2.6, §3.8.3).
+///
+/// A rotamer is pruned if any atom of `S_clash` lies within `d_clash` (inclusive) of any
+/// backbone atom of a residue other than `ri`. A pruned rotamer contributes its full prior
+/// mass `P(a)/100 * P(r)` to the interference of every residue whose backbone it hits,
+/// so the result does not depend on atom order within a rotamer.
+pub fn evaluate_candidates(
     ri: ResidueIndex,
-    bb: &ProteinBackbone,
-    rotlib: &RotamerLibrary,
+    res_name: &str,
+    used_default_bin: bool,
+    candidates: Vec<RotamerCandidate>,
     bb_grid: &ProximityGrid<ResidueIndex>,
-) -> Result<ResidueCache, ConFindError> {
-    let rb: &ResidueBackbone = &bb.bb[ri.0 as usize];
-
-    let n = rb
-        .n
-        .ok_or(ConFindError::MissingBackbone(ri, "N"))?;
-    let ca = rb
-        .ca
-        .ok_or(ConFindError::MissingBackbone(ri, "CA"))?;
-    let c = rb
-        .c
-        .ok_or(ConFindError::MissingBackbone(ri, "C"))?;
-
-    // For Glycine: no sidechain, crowdedness is defined as 0.0 (spec §3.3).
-    if rb.res_name == "GLY" {
-        return Ok(ResidueCache {
-            index: ri,
-            res_name: rb.res_name.clone(),
-            used_default_bin: rb.phi.is_none() || rb.psi.is_none(),
-            crowdedness: 0.0,
-            omega_i: 0.0,
-            omega_lib: 0.0,
-            n_library: 0,
-            n_surviving: 0,
-            surviving_rotamers: Vec::new(),
-            interference: HashMap::new(),
-        });
-    }
-
-    let phi = rb.phi;
-    let psi = rb.psi;
-    let cis_proline = rb.is_cis_peptide;
-
+    d_clash: f64,
+    policy: CbClashPolicy,
+) -> ResidueCache {
     let mut n_library = 0usize;
     let mut n_surviving = 0usize;
     let mut omega_lib = 0.0f64;
     let mut omega_i = 0.0f64;
     let mut surviving_rotamers = Vec::new();
-    let mut interference_map: HashMap<ResidueIndex, f64> = HashMap::new();
+    let mut interference: HashMap<ResidueIndex, f64> = HashMap::new();
+
+    for cand in candidates {
+        n_library += 1;
+        let rot_weight = cand.p_a * cand.p_r;
+        omega_lib += rot_weight;
+
+        let extra = match policy {
+            CbClashPolicy::AllResidues => cand.cb,
+            CbClashPolicy::AlaOnly => None,
+        };
+        let mut clashing: HashSet<ResidueIndex> = HashSet::new();
+        for pt in cand.cont_atoms.iter().copied().chain(extra) {
+            for neighbor in bb_grid.points_within(pt, 0.0, d_clash) {
+                if neighbor != ri {
+                    clashing.insert(neighbor);
+                }
+            }
+        }
+
+        if clashing.is_empty() {
+            omega_i += rot_weight;
+            n_surviving += 1;
+            let bbox = compute_bbox(&cand.cont_atoms);
+            surviving_rotamers.push(PlacedRotamerData {
+                aa: cand.aa,
+                rot_idx: cand.rot_idx,
+                p_a: cand.p_a,
+                p_r: cand.p_r,
+                weight: rot_weight,
+                atoms: cand.cont_atoms,
+                bbox,
+            });
+        } else {
+            for neighbor in clashing {
+                *interference.entry(neighbor).or_insert(0.0) += rot_weight / 100.0;
+            }
+        }
+    }
+
+    ResidueCache {
+        index: ri,
+        res_name: res_name.to_string(),
+        used_default_bin,
+        omega_i,
+        omega_lib,
+        n_library,
+        n_surviving,
+        surviving_rotamers,
+        interference,
+    }
+}
+
+/// Execute Phase A rotamer placement, backbone clash pruning, and crowdedness masses.
+pub fn cache_residue(
+    ri: ResidueIndex,
+    bb: &ProteinBackbone,
+    rotlib: &RotamerLibrary,
+    bb_grid: &ProximityGrid<ResidueIndex>,
+    d_clash: f64,
+    policy: CbClashPolicy,
+) -> Result<ResidueCache, ConFindError> {
+    let rb: &ResidueBackbone = &bb.bb[ri.0 as usize];
+
+    let n = rb.n.ok_or(ConFindError::MissingBackbone(ri, "N"))?;
+    let ca = rb.ca.ok_or(ConFindError::MissingBackbone(ri, "CA"))?;
+    let c = rb.c.ok_or(ConFindError::MissingBackbone(ri, "C"))?;
+
+    // Glycine: no sidechain, empty library, crowdedness defined as 0.
+    if rb.res_name == "GLY" {
+        return Ok(evaluate_candidates(
+            ri,
+            &rb.res_name,
+            rb.phi.is_none() || rb.psi.is_none(),
+            Vec::new(),
+            bb_grid,
+            d_clash,
+            policy,
+        ));
+    }
+
+    let phi = rb.phi;
+    let psi = rb.psi;
+    let cis_proline = rb.is_cis_peptide;
     let mut used_default_bin = phi.is_none() || psi.is_none();
+    let mut candidates = Vec::new();
 
     for &aa in AA_NAMES {
         let p_a = aa_propensity(aa);
@@ -151,82 +260,39 @@ pub fn cache_residue(
 
         for rot_idx in 0..nr {
             let p_r = rotlib.rotamer_probability(aa, phi, psi, cis_proline, rot_idx)?;
-
-            n_library += 1;
-            let rot_weight = p_a * p_r;
-            omega_lib += rot_weight;
-
             let placed = rotlib.place_rotamer(aa, phi, psi, rot_idx, cis_proline, n, ca, c)?;
             used_default_bin |= placed.used_default_bin;
 
-            // Extract sidechain heavy atoms (spec §4.5)
-            let mut sc_atoms = Vec::new();
+            let mut cont_atoms = Vec::new();
+            let mut cb = None;
             for atom in placed.atoms {
+                if atom.name == "CB" {
+                    cb = Some(atom.xyz);
+                }
                 if counts_as_sidechain(&atom.name, aa) {
-                    sc_atoms.push(atom.xyz);
+                    cont_atoms.push(atom.xyz);
                 }
             }
-
-            // Check backbone steric clashes (spec §2.4: distance <= 2.0 Å to any other residue)
-            let mut has_clash = false;
-            let mut clashing_neighbors = HashSet::new();
-
-            for &pt in &sc_atoms {
-                let neighbors = bb_grid.points_within(pt, 0.0, CLASH_DIST);
-                for neighbor_idx in neighbors {
-                    if neighbor_idx != ri {
-                        has_clash = true;
-                        clashing_neighbors.insert(neighbor_idx);
-                    }
-                }
-            }
-
-            if has_clash {
-                // Rotamer clashing with backbone does not survive Phase A
-                for neighbor_idx in clashing_neighbors {
-                    *interference_map.entry(neighbor_idx).or_insert(0.0) += rot_weight;
-                }
-            } else {
-                // Rotamer survives Phase A
-                omega_i += rot_weight;
-                n_surviving += 1;
-                let bbox = compute_bbox(&sc_atoms);
-                surviving_rotamers.push(PlacedRotamerData {
-                    aa,
-                    rot_idx,
-                    p_a,
-                    p_r,
-                    weight: rot_weight,
-                    atoms: sc_atoms,
-                    bbox,
-                });
-            }
+            candidates.push(RotamerCandidate {
+                aa,
+                rot_idx,
+                p_a,
+                p_r,
+                cont_atoms,
+                cb,
+            });
         }
     }
 
-    // Crowdedness C(i) calculation (spec §2.4): 1.0 - (Omega_i / Omega_lib)
-    let crowdedness = if omega_lib > 0.0 {
-        if n_surviving == 0 {
-            1.0
-        } else {
-            (1.0 - (omega_i / omega_lib)).clamp(0.0, 1.0)
-        }
-    } else {
-        0.0
-    };
-
-    Ok(ResidueCache {
-        index: ri,
-        res_name: rb.res_name.clone(),
+    Ok(evaluate_candidates(
+        ri,
+        &rb.res_name,
         used_default_bin,
-        crowdedness,
-        omega_i,
-        omega_lib,
-        n_library,
-        n_surviving,
-        surviving_rotamers,
-        interference: interference_map,
-    })
+        candidates,
+        bb_grid,
+        d_clash,
+        policy,
+    ))
 }
 
 /// Compute axis-aligned bounding box [min_x, max_x, min_y, max_y, min_z, max_z]

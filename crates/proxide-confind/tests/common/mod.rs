@@ -252,11 +252,43 @@ pub fn load_rotlib_or_skip() -> Option<Arc<RotamerLibrary>> {
     None
 }
 
-/// Create a lightweight in-memory RotamerLibrary for tests that do not evaluate sidechain rotamers.
+/// Create a lightweight in-memory RotamerLibrary for tests that do not evaluate sidechain
+/// rotamers in detail. It holds every one of the 18 amino acids of `AA_NAMES` with a single
+/// Cβ rotamer (construction derives the maximum sidechain reach from the library, so every
+/// amino acid must be present).
 pub fn dummy_rotlib() -> Arc<RotamerLibrary> {
-    let mut pb = proxide_rotlib::pb::rotlib_v1::RotamerLibrary::default();
-    pb.attribution = "synthetic-test".to_string();
-    pb.geometry_mode = proxide_rotlib::pb::rotlib_v1::GeometryMode::Precomputed as i32;
+    use proxide_rotlib::pb::rotlib_v1 as pb_v1;
+    let residues = proxide_confind::AA_NAMES
+        .iter()
+        .map(|aa| pb_v1::ResidueEntry {
+            code: aa.to_string(),
+            atom_names: vec!["CB".to_string()],
+            num_chi: 0,
+            phi_centers: vec![0.0],
+            psi_centers: vec![0.0],
+            default_bin: 0,
+            bins: vec![pb_v1::Bin {
+                phi: 0.0,
+                psi: 0.0,
+                freq: 1.0,
+                rotamers: vec![pb_v1::Rotamer {
+                    prob: 1.0,
+                    chi: vec![],
+                    coords: vec![pb_v1::Vec3 {
+                        x: 1.5,
+                        y: 0.0,
+                        z: 0.0,
+                    }],
+                }],
+            }],
+        })
+        .collect();
+    let pb = pb_v1::RotamerLibrary {
+        attribution: "synthetic-test".to_string(),
+        geometry_mode: pb_v1::GeometryMode::Precomputed as i32,
+        residues,
+        ..Default::default()
+    };
     Arc::new(RotamerLibrary::from_protobuf(&pb).expect("failed to construct dummy rotlib"))
 }
 
@@ -291,4 +323,88 @@ pub fn res_idx(
         .position(|id| id.chain_id == chain && id.res_id == res_id)
         .unwrap_or_else(|| panic!("residue {},{} not found", chain, res_id));
     proxide_confind::coords::ResidueIndex(i as u32)
+}
+
+/// Ideal alpha-helix backbone generator (spec 5.2): CA on a helix of radius 2.3 A, rise
+/// 1.5 A and 100 degrees per residue, N/C placed with N-CA-C = 111 degrees (1.46 A / 1.52 A
+/// bonds) and O off C. Dihedral annotations are (-57, -47) in the interior, None at termini.
+pub fn make_helix_backbone(n_res: usize) -> Arc<ProteinBackbone> {
+    use std::f64::consts::PI;
+    let ca: Vec<[f64; 3]> = (0..n_res)
+        .map(|i| {
+            let th = i as f64 * 100.0_f64.to_radians();
+            [2.3 * th.cos(), 2.3 * th.sin(), 1.5 * i as f64]
+        })
+        .collect();
+    let norm = |v: [f64; 3]| {
+        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        [v[0] / l, v[1] / l, v[2] / l]
+    };
+    let a = 34.5_f64 * PI / 180.0;
+    let mut bb = Vec::new();
+    let mut ids = Vec::new();
+    let mut chain_map = Vec::new();
+    for i in 0..n_res {
+        let prev = ca[i.saturating_sub(1)];
+        let next = ca[(i + 1).min(n_res - 1)];
+        let t = norm([next[0] - prev[0], next[1] - prev[1], next[2] - prev[2]]);
+        let p = ca[i];
+        let inward = norm([-p[0], -p[1], 0.0]);
+        let place = |len: f64, sign: f64| {
+            [
+                p[0] + len * (sign * a.cos() * t[0] + a.sin() * inward[0]),
+                p[1] + len * (sign * a.cos() * t[1] + a.sin() * inward[1]),
+                p[2] + len * (sign * a.cos() * t[2] + a.sin() * inward[2]),
+            ]
+        };
+        let n_pos = place(1.46, -1.0);
+        let c_pos = place(1.52, 1.0);
+        let out_dir = norm([
+            -0.8 * inward[0] + 0.5 * t[0],
+            -0.8 * inward[1] + 0.5 * t[1],
+            -0.8 * inward[2] + 0.5 * t[2],
+        ]);
+        let o_pos = [
+            c_pos[0] + 1.23 * out_dir[0],
+            c_pos[1] + 1.23 * out_dir[1],
+            c_pos[2] + 1.23 * out_dir[2],
+        ];
+        bb.push(ResidueBackbone {
+            res_name: "ALA".to_string(),
+            n: Some(n_pos),
+            ca: Some(p),
+            c: Some(c_pos),
+            o: Some(o_pos),
+            phi: if i == 0 { None } else { Some(-57.0) },
+            psi: if i == n_res - 1 { None } else { Some(-47.0) },
+            omega: if i == 0 { None } else { Some(180.0) },
+            is_cis_peptide: false,
+        });
+        ids.push(ResidueId {
+            chain_id: "A".to_string(),
+            res_id: (i + 1) as i32,
+            insertion_code: ' ',
+        });
+        chain_map.push(0);
+    }
+    Arc::new(ProteinBackbone { bb, ids, chain_map })
+}
+
+/// The committed rotamer library; panics (never skips) if it cannot be loaded.
+pub fn require_rotlib() -> Arc<RotamerLibrary> {
+    load_rotlib_or_skip().expect("committed rotamer library data/rotlibs/*.pb.zst must load")
+}
+
+/// Path of the wwPDB crambin entry 1CRN (CC0, see proxide-io/tests/data/PROVENANCE.md).
+pub fn crambin_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../proxide-io/tests/data/1CRN.pdb")
+}
+
+/// First `n` residues of a backbone (file order preserved).
+pub fn truncate_backbone(bb: &ProteinBackbone, n: usize) -> Arc<ProteinBackbone> {
+    Arc::new(ProteinBackbone {
+        bb: bb.bb[..n].to_vec(),
+        ids: bb.ids[..n].to_vec(),
+        chain_map: bb.chain_map[..n].to_vec(),
+    })
 }

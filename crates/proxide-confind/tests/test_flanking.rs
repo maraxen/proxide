@@ -10,7 +10,7 @@ fn flanking_same_chain_adjacent_skipped() {
 
     // 3-residue chain, spacing 3.8 Å
     let backbone = make_synthetic_backbone(3, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // ignore_flanking=1, dcut_bb=15.0
     let residues = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];
@@ -37,7 +37,7 @@ fn flanking_same_chain_nonadjacent_included() {
 
     // 3-residue chain, spacing 3.8 Å
     let backbone = make_synthetic_backbone(3, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];
     let result = confind.bb_interaction(&residues, 15.0, 1);
@@ -58,7 +58,7 @@ fn flanking_zero_same_chain_all_included() {
     let rotlib = dummy_rotlib();
 
     let backbone = make_synthetic_backbone(3, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];
     let result = confind.bb_interaction(&residues, 15.0, 0);
@@ -87,7 +87,7 @@ fn flanking_large_ignore_value() {
     let rotlib = dummy_rotlib();
 
     let backbone = make_synthetic_backbone(3, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];
     // ignore_flanking=100 should skip all pairs on same chain
@@ -110,7 +110,7 @@ fn flanking_cross_chain_always_included() {
 
     // Two chains, residue 0 from each placed 3.8 Å apart
     let backbone = make_two_chain_backbone(1, 3.8, [0.0, 0.0, 0.0]);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0), ResidueIndex(1)];
     let result = confind.bb_interaction(&residues, 15.0, 1);
