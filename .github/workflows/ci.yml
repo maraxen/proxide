@@ -55,6 +55,10 @@ jobs:
         python-version: ['3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
+        with:
+          # tests/validation/test_stale_debt_reproduction_fidelity.py and
+          # scripts/validation/verify_stale_debts.py read historical commits.
+          fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
