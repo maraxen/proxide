@@ -453,7 +453,7 @@ fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedL
 /// regression test below, both of which predate that change.
 #[cfg(test)]
 fn extract_element_from_name(name: &str) -> &str {
-    proxide_core::chem::masses::infer_element(name)
+    proxide_core::chem::masses::infer_element(name).expect("test fixture names have an element")
 }
 
 // ── Helper: splice loops into topology ───────────────────────────────────────

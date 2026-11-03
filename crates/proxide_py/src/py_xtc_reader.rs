@@ -117,12 +117,13 @@ fn frames_to_pydict(
 /// (investigated under praxia debt #1237 / proxide#16) before comparing the
 /// two directly.
 #[pyfunction]
-#[pyo3(signature = (path, stride=1, atom_indices=None))]
+#[pyo3(signature = (path, stride=1, atom_indices=None, offsets_dir=None))]
 pub fn read_xtc_lazy(
     py: Python<'_>,
     path: String,
     stride: usize,
     atom_indices: Option<Vec<usize>>,
+    offsets_dir: Option<String>,
 ) -> PyResult<PyObject> {
     #[cfg(feature = "xtc")]
     {
@@ -131,7 +132,8 @@ pub fn read_xtc_lazy(
 
         let (num_frames, num_atoms, flat_coords, flat_boxes, flat_times, total_frames) = py
             .allow_threads(|| -> Result<_, String> {
-                let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
+                let mut reader = XtcReader::open_with_offsets_dir(&path, offsets_dir.as_deref())
+                    .map_err(|e| e.to_string())?;
                 let total_frames = reader.frame_count().map_err(|e| e.to_string())?;
                 let n_atoms = reader.n_atoms().map_err(|e| e.to_string())?;
                 validate_atom_indices(&atom_indices, n_atoms)?;
@@ -179,7 +181,7 @@ pub fn read_xtc_lazy(
 
     #[cfg(not(feature = "xtc"))]
     {
-        let _ = (py, path, stride, atom_indices);
+        let _ = (py, path, stride, atom_indices, offsets_dir);
         Err(pyo3::exceptions::PyImportError::new_err(
             "XTC support requires compiling with 'xtc' feature.",
         ))
@@ -193,21 +195,24 @@ pub fn read_xtc_lazy(
 /// mdtraj's `atom_indices` semantics. Same `box_vectors` convention as
 /// [`read_xtc_lazy`] too (see its doc comment).
 #[pyfunction]
-#[pyo3(signature = (path, stride=1, atom_indices=None))]
+#[pyo3(signature = (path, stride=1, atom_indices=None, offsets_dir=None))]
 pub fn read_xtc_parallel(
     py: Python<'_>,
     path: String,
     stride: usize,
     atom_indices: Option<Vec<usize>>,
+    offsets_dir: Option<String>,
 ) -> PyResult<PyObject> {
     #[cfg(all(feature = "xtc", feature = "parallel"))]
     {
-        use crate::formats::xtc::{read_frames_parallel, XtcReader};
+        use crate::formats::xtc::{read_frames_parallel_with_offsets_dir, XtcReader};
 
         let (num_frames, num_atoms, flat_coords, flat_boxes, flat_times, total_frames) = py
             .allow_threads(|| -> Result<_, String> {
                 let (total_frames, n_atoms) = {
-                    let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
+                    let mut reader =
+                        XtcReader::open_with_offsets_dir(&path, offsets_dir.as_deref())
+                            .map_err(|e| e.to_string())?;
                     let total_frames = reader.frame_count().map_err(|e| e.to_string())?;
                     let n_atoms = reader.n_atoms().map_err(|e| e.to_string())?;
                     (total_frames, n_atoms)
@@ -222,8 +227,13 @@ pub fn read_xtc_parallel(
                 // atoms each, in atom_indices' exact order with duplicates
                 // preserved, so only Angstrom scaling and box-vector handling
                 // remain to be done in this loop.
-                let frames = read_frames_parallel(&path, &indices, atom_indices.as_deref())
-                    .map_err(|e| e.to_string())?;
+                let frames = read_frames_parallel_with_offsets_dir(
+                    &path,
+                    &indices,
+                    atom_indices.as_deref(),
+                    offsets_dir.as_deref(),
+                )
+                .map_err(|e| e.to_string())?;
 
                 let mut flat_coords = Vec::with_capacity(frames.len() * selected_natoms * 3);
                 let mut flat_boxes = Vec::with_capacity(frames.len() * 9);
@@ -268,7 +278,7 @@ pub fn read_xtc_parallel(
 
     #[cfg(not(all(feature = "xtc", feature = "parallel")))]
     {
-        let _ = (py, path, stride, atom_indices);
+        let _ = (py, path, stride, atom_indices, offsets_dir);
         Err(pyo3::exceptions::PyImportError::new_err(
             "Parallel XTC reading requires compiling with the 'xtc' and 'parallel' features.",
         ))
@@ -285,13 +295,15 @@ pub fn read_xtc_parallel(
 /// `XtcReader::drop_trailing_frame_if_truncated`), rather than counting a
 /// partially-flushed in-flight frame as complete.
 #[pyfunction]
-pub fn frame_count(py: Python<'_>, path: String) -> PyResult<usize> {
+#[pyo3(signature = (path, offsets_dir=None))]
+pub fn frame_count(py: Python<'_>, path: String, offsets_dir: Option<String>) -> PyResult<usize> {
     #[cfg(feature = "xtc")]
     {
         use crate::formats::xtc::XtcReader;
 
         py.allow_threads(|| -> Result<usize, String> {
-            let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
+            let mut reader = XtcReader::open_with_offsets_dir(&path, offsets_dir.as_deref())
+                .map_err(|e| e.to_string())?;
             reader.frame_count().map_err(|e| e.to_string())
         })
         .map_err(pyo3::exceptions::PyValueError::new_err)
@@ -299,7 +311,7 @@ pub fn frame_count(py: Python<'_>, path: String) -> PyResult<usize> {
 
     #[cfg(not(feature = "xtc"))]
     {
-        let _ = (py, path);
+        let _ = (py, path, offsets_dir);
         Err(pyo3::exceptions::PyImportError::new_err(
             "XTC support requires compiling with 'xtc' feature.",
         ))
@@ -327,16 +339,17 @@ pub fn frame_count(py: Python<'_>, path: String) -> PyResult<usize> {
 /// matches `numpy.triu_indices(len(atom_indices), k=1)` — row-major
 /// iteration over the upper triangle: `(0,1) (0,2) ... (0,n-1) (1,2) ...`.
 #[pyfunction]
-#[pyo3(signature = (path, atom_indices, stride=1))]
+#[pyo3(signature = (path, atom_indices, stride=1, offsets_dir=None))]
 pub fn read_xtc_ca_distogram(
     py: Python<'_>,
     path: String,
     atom_indices: Vec<usize>,
     stride: usize,
+    offsets_dir: Option<String>,
 ) -> PyResult<PyObject> {
     #[cfg(all(feature = "xtc", feature = "parallel"))]
     {
-        use crate::formats::xtc::{read_xtc_distogram_parallel, XtcReader};
+        use crate::formats::xtc::{read_xtc_distogram_parallel_with_offsets_dir, XtcReader};
 
         if atom_indices.is_empty() {
             return Err(pyo3::exceptions::PyValueError::new_err(
@@ -366,7 +379,9 @@ pub fn read_xtc_ca_distogram(
         let (n_frames, n_pairs, flat) = py
             .allow_threads(|| -> Result<_, String> {
                 let (total_frames, n_atoms) = {
-                    let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
+                    let mut reader =
+                        XtcReader::open_with_offsets_dir(&path, offsets_dir.as_deref())
+                            .map_err(|e| e.to_string())?;
                     let total_frames = reader.frame_count().map_err(|e| e.to_string())?;
                     let n_atoms = reader.n_atoms().map_err(|e| e.to_string())?;
                     (total_frames, n_atoms)
@@ -377,8 +392,13 @@ pub fn read_xtc_ca_distogram(
                 let n = atom_indices.len();
                 let n_pairs = n.saturating_sub(1) * n / 2;
 
-                let distograms = read_xtc_distogram_parallel(&path, &frame_indices, &atom_indices)
-                    .map_err(|e| e.to_string())?;
+                let distograms = read_xtc_distogram_parallel_with_offsets_dir(
+                    &path,
+                    &frame_indices,
+                    &atom_indices,
+                    offsets_dir.as_deref(),
+                )
+                .map_err(|e| e.to_string())?;
 
                 let mut flat = Vec::with_capacity(distograms.len() * n_pairs);
                 for row in &distograms {
@@ -397,7 +417,7 @@ pub fn read_xtc_ca_distogram(
 
     #[cfg(not(all(feature = "xtc", feature = "parallel")))]
     {
-        let _ = (py, path, atom_indices, stride);
+        let _ = (py, path, atom_indices, stride, offsets_dir);
         Err(pyo3::exceptions::PyImportError::new_err(
             "CA distogram reading requires compiling with the 'xtc' and 'parallel' features.",
         ))
@@ -407,13 +427,15 @@ pub fn read_xtc_ca_distogram(
 /// Number of atoms per frame in an XTC trajectory, from the first frame's
 /// header — never decodes coordinate data.
 #[pyfunction]
-pub fn n_atoms(py: Python<'_>, path: String) -> PyResult<usize> {
+#[pyo3(signature = (path, offsets_dir=None))]
+pub fn n_atoms(py: Python<'_>, path: String, offsets_dir: Option<String>) -> PyResult<usize> {
     #[cfg(feature = "xtc")]
     {
         use crate::formats::xtc::XtcReader;
 
         py.allow_threads(|| -> Result<usize, String> {
-            let mut reader = XtcReader::open(&path).map_err(|e| e.to_string())?;
+            let mut reader = XtcReader::open_with_offsets_dir(&path, offsets_dir.as_deref())
+                .map_err(|e| e.to_string())?;
             reader.n_atoms().map_err(|e| e.to_string())
         })
         .map_err(pyo3::exceptions::PyValueError::new_err)
@@ -421,7 +443,7 @@ pub fn n_atoms(py: Python<'_>, path: String) -> PyResult<usize> {
 
     #[cfg(not(feature = "xtc"))]
     {
-        let _ = (py, path);
+        let _ = (py, path, offsets_dir);
         Err(pyo3::exceptions::PyImportError::new_err(
             "XTC support requires compiling with 'xtc' feature.",
         ))

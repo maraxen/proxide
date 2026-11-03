@@ -674,8 +674,11 @@ class TestWriteOccupancyAndBFactorAreSourceValues:
 
     protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
     written = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
-    assert _source_occ_b(str(tmp_path / "out.pdb")) == pytest.approx(
-      _source_occ_b(self.PDB), abs=1e-3
+    # pytest.approx rejects nested sequences from pytest 9.2, so compare arrays.
+    np.testing.assert_allclose(
+      np.asarray(_source_occ_b(str(tmp_path / "out.pdb"))),
+      np.asarray(_source_occ_b(self.PDB)),
+      atol=1e-3,
     )
     assert len(written) == len(_source_occ_b(self.PDB))
     # The real case: 5awl's B-factor of 8.64 must not come out as 0.00.

@@ -3,36 +3,37 @@
 //! Provides functions to assign atomic masses based on element type.
 //! Used for MD simulations.
 
-/// Default mass for unknown elements
-pub const DEFAULT_MASS: f32 = 12.0;
-
-/// Get atomic mass for an element symbol
-pub fn get_mass(element: &str) -> f32 {
+/// Get atomic mass for an element symbol (in amu/Da)
+///
+/// Returns `None` when the element has no tabulated mass. A mass is never
+/// guessed or defaulted to carbon (see project hard rule on unknown values,
+/// ledger A1).
+pub fn get_mass(element: &str) -> Option<f32> {
     match element {
-        "H" => 1.008,
-        "C" => 12.011,
-        "N" => 14.007,
-        "O" => 15.999,
-        "S" => 32.06,
-        "P" => 30.97,
-        "F" => 18.998,
-        "Cl" => 35.45,
-        "Br" => 79.904,
-        "I" => 126.90,
-        "Na" => 22.990,
-        "K" => 39.098,
-        "Ca" => 40.078,
-        "Mg" => 24.305,
-        "Zn" => 65.38,
-        "Fe" => 55.845,
-        "Cu" => 63.546,
-        "Mn" => 54.938,
-        "Se" => 78.971,
+        "H" => Some(1.008),
+        "C" => Some(12.011),
+        "N" => Some(14.007),
+        "O" => Some(15.999),
+        "S" => Some(32.06),
+        "P" => Some(30.97),
+        "F" => Some(18.998),
+        "Cl" => Some(35.45),
+        "Br" => Some(79.904),
+        "I" => Some(126.90),
+        "Na" => Some(22.990),
+        "K" => Some(39.098),
+        "Ca" => Some(40.078),
+        "Mg" => Some(24.305),
+        "Zn" => Some(65.38),
+        "Fe" => Some(55.845),
+        "Cu" => Some(63.546),
+        "Mn" => Some(54.938),
+        "Se" => Some(78.971),
         // IUPAC 2021 conventional standard atomic weight.
-        "Si" => 28.085,
+        "Si" => Some(28.085),
         // Deuterium (2H), IUPAC: 2.014 amu.
-        "D" => 2.014,
-        _ => DEFAULT_MASS,
+        "D" => Some(2.014),
+        _ => None,
     }
 }
 
@@ -46,12 +47,25 @@ pub fn get_mass(element: &str) -> f32 {
 ///
 /// # Returns
 /// * List of masses in amu
-pub fn assign_masses(atom_names: &[String]) -> Vec<f32> {
+///
+/// # Errors
+/// Returns an error if an element cannot be inferred from an atom name,
+/// or if an inferred element has no tabulated atomic mass. A mass is
+/// never guessed or defaulted (see the project hard rule on unknown values,
+/// ledger A1).
+pub fn assign_masses(atom_names: &[String]) -> Result<Vec<f32>, String> {
     atom_names
         .iter()
-        .map(|name| {
-            let element = infer_element(name);
-            get_mass(element)
+        .enumerate()
+        .map(|(i, name)| {
+            let elem = infer_element(name).ok_or_else(|| {
+                format!("cannot infer an element from atom name {name:?} at index {i}")
+            })?;
+            get_mass(elem).ok_or_else(|| {
+                format!(
+                    "no tabulated mass for element {elem:?} from atom name {name:?} at index {i}"
+                )
+            })
         })
         .collect()
 }
@@ -73,44 +87,49 @@ pub fn assign_masses(atom_names: &[String]) -> Vec<f32> {
 /// elsewhere in the name (e.g. the trailing branch index in "HG1") are left
 /// alone -- only a *leading* digit is a PDB naming-convention prefix, not
 /// part of the element.
-pub fn infer_element(atom_name: &str) -> &str {
+///
+/// Returns `None` when the name does not determine an element: empty names,
+/// names of only digits, and any other leading letter. This used to return
+/// `"C"`, which made "carbon" and "unknown" the same value (ledger A1). Callers
+/// must decide what unknown means for them; parsers raise.
+pub fn infer_element(atom_name: &str) -> Option<&'static str> {
     let name = atom_name.trim();
     let name = name.trim_start_matches(|c: char| c.is_ascii_digit());
     if name.is_empty() {
-        return "C";
+        return None;
     }
 
     // Check for common two-character elements first
     if name.len() >= 2 {
         let two_char = &name[..2];
         match two_char {
-            "Cl" | "CL" => return "Cl",
-            "Br" | "BR" => return "Br",
-            "Na" | "NA" => return "Na",
-            "Mg" | "MG" => return "Mg",
-            "Zn" | "ZN" => return "Zn",
-            "Fe" | "FE" => return "Fe",
-            "Cu" | "CU" => return "Cu",
-            "Mn" | "MN" => return "Mn",
-            "Se" | "SE" => return "Se",
-            "Si" | "SI" => return "Si",
+            "Cl" | "CL" => return Some("Cl"),
+            "Br" | "BR" => return Some("Br"),
+            "Na" | "NA" => return Some("Na"),
+            "Mg" | "MG" => return Some("Mg"),
+            "Zn" | "ZN" => return Some("Zn"),
+            "Fe" | "FE" => return Some("Fe"),
+            "Cu" | "CU" => return Some("Cu"),
+            "Mn" | "MN" => return Some("Mn"),
+            "Se" | "SE" => return Some("Se"),
+            "Si" | "SI" => return Some("Si"),
             _ => {}
         }
     }
 
     // Default: use first character
-    let first = name.chars().next().unwrap();
+    let first = name.chars().next()?;
     match first {
-        'H' | 'h' => "H",
-        'C' | 'c' => "C",
-        'N' | 'n' => "N",
-        'O' | 'o' => "O",
-        'S' | 's' => "S",
-        'P' | 'p' => "P",
-        'F' | 'f' => "F",
-        'I' | 'i' => "I",
-        'K' | 'k' => "K",
-        _ => "C", // Default to carbon
+        'H' | 'h' => Some("H"),
+        'C' | 'c' => Some("C"),
+        'N' | 'n' => Some("N"),
+        'O' | 'o' => Some("O"),
+        'S' | 's' => Some("S"),
+        'P' | 'p' => Some("P"),
+        'F' | 'f' => Some("F"),
+        'I' | 'i' => Some("I"),
+        'K' | 'k' => Some("K"),
+        _ => None,
     }
 }
 
@@ -127,7 +146,7 @@ mod tests {
             "O".to_string(),
             "H".to_string(),
         ];
-        let masses = assign_masses(&names);
+        let masses = assign_masses(&names).unwrap();
 
         assert!((masses[0] - 14.007).abs() < 0.001); // N
         assert!((masses[1] - 12.011).abs() < 0.001); // CA -> C
@@ -138,11 +157,11 @@ mod tests {
 
     #[test]
     fn test_infer_element() {
-        assert_eq!(infer_element("CA"), "C"); // Alpha carbon
-        assert_eq!(infer_element("N"), "N");
-        assert_eq!(infer_element("CL"), "Cl");
-        assert_eq!(infer_element("Na"), "Na");
-        assert_eq!(infer_element("FE"), "Fe");
+        assert_eq!(infer_element("CA"), Some("C")); // Alpha carbon
+        assert_eq!(infer_element("N"), Some("N"));
+        assert_eq!(infer_element("CL"), Some("Cl"));
+        assert_eq!(infer_element("Na"), Some("Na"));
+        assert_eq!(infer_element("FE"), Some("Fe"));
     }
 
     #[test]
@@ -152,50 +171,50 @@ mod tests {
         // See tests/test_element_inference_conformance.py for the structural anti-pattern scan.
 
         // Single-letter elements (PDB form: all-caps, canonical: uppercase)
-        assert_eq!(infer_element("H"), "H");
-        assert_eq!(infer_element("h"), "H");
-        assert_eq!(infer_element("C"), "C");
-        assert_eq!(infer_element("c"), "C");
-        assert_eq!(infer_element("N"), "N");
-        assert_eq!(infer_element("n"), "N");
-        assert_eq!(infer_element("O"), "O");
-        assert_eq!(infer_element("o"), "O");
-        assert_eq!(infer_element("S"), "S");
-        assert_eq!(infer_element("s"), "S");
-        assert_eq!(infer_element("P"), "P");
-        assert_eq!(infer_element("p"), "P");
-        assert_eq!(infer_element("F"), "F");
-        assert_eq!(infer_element("f"), "F");
-        assert_eq!(infer_element("I"), "I");
-        assert_eq!(infer_element("i"), "I");
-        assert_eq!(infer_element("K"), "K");
-        assert_eq!(infer_element("k"), "K");
+        assert_eq!(infer_element("H"), Some("H"));
+        assert_eq!(infer_element("h"), Some("H"));
+        assert_eq!(infer_element("C"), Some("C"));
+        assert_eq!(infer_element("c"), Some("C"));
+        assert_eq!(infer_element("N"), Some("N"));
+        assert_eq!(infer_element("n"), Some("N"));
+        assert_eq!(infer_element("O"), Some("O"));
+        assert_eq!(infer_element("o"), Some("O"));
+        assert_eq!(infer_element("S"), Some("S"));
+        assert_eq!(infer_element("s"), Some("S"));
+        assert_eq!(infer_element("P"), Some("P"));
+        assert_eq!(infer_element("p"), Some("P"));
+        assert_eq!(infer_element("F"), Some("F"));
+        assert_eq!(infer_element("f"), Some("F"));
+        assert_eq!(infer_element("I"), Some("I"));
+        assert_eq!(infer_element("i"), Some("I"));
+        assert_eq!(infer_element("K"), Some("K"));
+        assert_eq!(infer_element("k"), Some("K"));
 
         // Two-letter elements: PDB names are ALL-CAPS, must map to title-case canonical form
         // (implemented for PDB format + title-case, not bare lowercase, per real-world PDB usage)
-        assert_eq!(infer_element("CL"), "Cl");
-        assert_eq!(infer_element("Cl"), "Cl");
-        assert_eq!(infer_element("BR"), "Br");
-        assert_eq!(infer_element("Br"), "Br");
-        assert_eq!(infer_element("NA"), "Na");
-        assert_eq!(infer_element("Na"), "Na");
-        assert_eq!(infer_element("MG"), "Mg");
-        assert_eq!(infer_element("Mg"), "Mg");
-        assert_eq!(infer_element("ZN"), "Zn");
-        assert_eq!(infer_element("Zn"), "Zn");
-        assert_eq!(infer_element("FE"), "Fe");
-        assert_eq!(infer_element("Fe"), "Fe");
-        assert_eq!(infer_element("CU"), "Cu");
-        assert_eq!(infer_element("Cu"), "Cu");
-        assert_eq!(infer_element("MN"), "Mn");
-        assert_eq!(infer_element("Mn"), "Mn");
-        assert_eq!(infer_element("SE"), "Se");
-        assert_eq!(infer_element("Se"), "Se");
+        assert_eq!(infer_element("CL"), Some("Cl"));
+        assert_eq!(infer_element("Cl"), Some("Cl"));
+        assert_eq!(infer_element("BR"), Some("Br"));
+        assert_eq!(infer_element("Br"), Some("Br"));
+        assert_eq!(infer_element("NA"), Some("Na"));
+        assert_eq!(infer_element("Na"), Some("Na"));
+        assert_eq!(infer_element("MG"), Some("Mg"));
+        assert_eq!(infer_element("Mg"), Some("Mg"));
+        assert_eq!(infer_element("ZN"), Some("Zn"));
+        assert_eq!(infer_element("Zn"), Some("Zn"));
+        assert_eq!(infer_element("FE"), Some("Fe"));
+        assert_eq!(infer_element("Fe"), Some("Fe"));
+        assert_eq!(infer_element("CU"), Some("Cu"));
+        assert_eq!(infer_element("Cu"), Some("Cu"));
+        assert_eq!(infer_element("MN"), Some("Mn"));
+        assert_eq!(infer_element("Mn"), Some("Mn"));
+        assert_eq!(infer_element("SE"), Some("Se"));
+        assert_eq!(infer_element("Se"), Some("Se"));
 
         // Critical edge case: CA (alpha carbon, protein backbone) must stay "C", not "Ca"
-        assert_eq!(infer_element("CA"), "C");
-        assert_eq!(infer_element("Ca"), "C"); // title-case variant must also be "C"
-        assert_eq!(infer_element("ca"), "C");
+        assert_eq!(infer_element("CA"), Some("C"));
+        assert_eq!(infer_element("Ca"), Some("C")); // title-case variant must also be "C"
+        assert_eq!(infer_element("ca"), Some("C"));
     }
 
     #[test]
@@ -206,27 +225,48 @@ mod tests {
         // leading digit, `infer_element` silently fell through to the "C"
         // default -- a latent bug at proxide-io/src/formats/pdb.rs:68 (blank
         // element column + digit-prefixed hydrogen name) predating this fix.
-        assert_eq!(infer_element("1HB"), "H");
-        assert_eq!(infer_element("2HG1"), "H");
-        assert_eq!(infer_element("1CL"), "Cl");
-        assert_eq!(infer_element("2Cl"), "Cl");
-        assert_eq!(infer_element("3HD1"), "H");
+        assert_eq!(infer_element("1HB"), Some("H"));
+        assert_eq!(infer_element("2HG1"), Some("H"));
+        assert_eq!(infer_element("1CL"), Some("Cl"));
+        assert_eq!(infer_element("2Cl"), Some("Cl"));
+        assert_eq!(infer_element("3HD1"), Some("H"));
 
         // Not digit-prefixed: unaffected, including the critical CA case.
-        assert_eq!(infer_element("CA"), "C");
-        assert_eq!(infer_element("HB"), "H");
+        assert_eq!(infer_element("CA"), Some("C"));
+        assert_eq!(infer_element("HB"), Some("H"));
 
-        // A name that is nothing but digits after stripping falls back to
-        // the same "unknown -> C" default as an empty name (unchanged
-        // behaviour, just reached via a different path now).
-        assert_eq!(infer_element("1"), "C");
+        // A name that is nothing but digits is unknown, like an empty name.
+        assert_eq!(infer_element("1"), None);
+    }
+
+    #[test]
+    fn unknown_names_are_not_carbon() {
+        for name in ["", "   ", "1", "QZ", "XX", "D1", "EPW", "AU", "LI"] {
+            assert_eq!(infer_element(name), None, "{name:?} must be unknown");
+        }
+    }
+
+    #[test]
+    fn assign_masses_refuses_unknown_names_and_names_them() {
+        let err = assign_masses(&["CA".to_string(), "QZ".to_string()]).unwrap_err();
+        assert!(err.contains("QZ") && err.contains("index 1"), "{err}");
     }
 
     #[test]
     fn get_mass_deuterium_and_title_case_symbols() {
-        assert!((get_mass("Zn") - 65.38).abs() < 1e-3);
-        assert!((get_mass("Cl") - 35.45).abs() < 1e-3);
+        assert!((get_mass("Zn").unwrap() - 65.38).abs() < 1e-3);
+        assert!((get_mass("Cl").unwrap() - 35.45).abs() < 1e-3);
         // Deuterium: 2.014 amu, not the carbon fallback.
-        assert!((get_mass("D") - 2.014).abs() < 1e-3);
+        assert!((get_mass("D").unwrap() - 2.014).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_get_mass_untabulated_returns_none() {
+        // Untabulated elements must return None, never default mass 12.0.
+        for elem in [
+            "", "X", "AU", "Au", "LI", "Li", "U", "He", "Ne", "Ar", "Kr", "Xe", "Rn", "foo",
+        ] {
+            assert_eq!(get_mass(elem), None, "{elem:?} must return None");
+        }
     }
 }

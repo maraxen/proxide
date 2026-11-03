@@ -1,5 +1,7 @@
 # proxide-rotlib
 
+> **Licence notice.** This crate is derived from, or depends on code derived from, [Mosaist](https://github.com/Grigoryanlab/Mosaist), which is licensed CC BY-NC-SA 4.0. This is unresolved. Do not assume MIT terms cover it, and do not use it for commercial purposes. See [NOTICE](NOTICE).
+
 > **Alpha — experimental, no API stability guarantees.** This crate is part of an active research project; APIs may change without notice between versions. Not recommended for production use.
 
 Backbone-dependent rotamer library for protein sidechain placement.
