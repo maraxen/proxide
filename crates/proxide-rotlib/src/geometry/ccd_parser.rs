@@ -525,8 +525,8 @@ fn lookup_angle(
     if let Some(&ang) = angles.get(&(a3.to_string(), center.to_string(), a1.to_string())) {
         return ang;
     }
-    let fallback_val = 109.5;
-    let citation = "Ideal tetrahedral sp3 valence angle";
+    let fallback_val = 109.47;
+    let citation = "Ideal tetrahedral sp3 valence angle arccos(-1/3)";
     tracing::warn!(
         component = %component,
         atom_1 = %a1,
@@ -706,7 +706,7 @@ N CA C 111.0
         let angle_fb = fallbacks.iter().find(|f| f.parameter_kind == FallbackKind::ValenceAngle);
         assert!(angle_fb.is_some());
         let a = angle_fb.unwrap();
-        assert_eq!(a.citation, "Ideal tetrahedral sp3 valence angle");
-        assert_eq!(a.fallback_value, 109.5);
+        assert_eq!(a.citation, "Ideal tetrahedral sp3 valence angle arccos(-1/3)");
+        assert_eq!(a.fallback_value, 109.47);
     }
 }
