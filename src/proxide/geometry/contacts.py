@@ -72,7 +72,6 @@ BONDI_RADII: dict[str, float] = {
   "BR": 1.85,
   "I": 1.98,
 }
-DEFAULT_RADIUS: float = 2.00
 PROBE_RADIUS: float = 1.40
 
 
@@ -93,8 +92,8 @@ class InterfaceContactResult:
   nonpolar_pairs: int
   binder_if_charge: int
   target_if_charge: int
-  binder_if_frac_ek: float
-  binder_if_frac_hydrophobic: float
+  binder_if_frac_ek: float | None
+  binder_if_frac_hydrophobic: float | None
   details: dict[str, Any]
   buried_binder_a2: int | None = None
 
@@ -117,48 +116,161 @@ def _infer_element_symbol(atom_name: str) -> str:
   return ""
 
 
-def _parse_pdb_text(text: str) -> list[dict[str, Any]]:
+def _format_res_id(k: tuple[int, str]) -> int | tuple[int, str]:
+  """Return num when the insertion code is blank, otherwise (num, ins_code)."""
+  return (k[0], k[1]) if k[1] else k[0]
+
+
+def _contact_id(k: Any) -> int | tuple[int, str]:
+  """Normalize a residue id to the same form as _format_res_id."""
+  if isinstance(k, tuple):
+    num = int(k[0])
+    ins = ""
+    if len(k) > 1 and k[1] is not None:
+      ins = str(k[1]).strip()
+    return _format_res_id((num, ins))
+  return int(k)
+
+
+def _residue_key_from_atom(atom: Mapping[str, Any]) -> int | tuple[int, str]:
+  """Key an atom dict by (num, ins_code). Missing num is an error."""
+  if "num" not in atom or atom["num"] is None:
+    raise KeyError("Atom record missing required key: 'num'")
+  ins = atom.get("ins_code") or ""
+  return _format_res_id((int(atom["num"]), str(ins).strip()))
+
+
+def _atom_altloc(atom: Mapping[str, Any]) -> str:
+  raw = atom.get("altloc", atom.get("altLoc", ""))
+  return str(raw or "").strip()
+
+
+class _ParsedAtoms(list[dict[str, Any]]):
+  """Atom records plus the altLoc conformer that was kept."""
+
+  altloc_kept: str
+  altloc_skipped: int
+
+  def __init__(
+    self,
+    atoms: list[dict[str, Any]],
+    *,
+    altloc_kept: str,
+    altloc_skipped: int,
+  ) -> None:
+    super().__init__(atoms)
+    self.altloc_kept = altloc_kept
+    self.altloc_skipped = altloc_skipped
+
+
+def _filter_altloc_occupancy(atoms: list[dict[str, Any]]) -> _ParsedAtoms:
+  """Keep blank altLoc plus one conformer and drop occupancy <= 0.
+
+  The selected conformer is the non-blank altLoc with the highest summed
+  occupancy. Equal sums keep the letter that appears first. Occupancy that
+  was not present on the record is not treated as a measurement.
+  """
+  eligible: list[dict[str, Any]] = []
+  skipped = 0
+  for atom in atoms:
+    occ = atom.get("occupancy", None)
+    if occ is not None and float(occ) <= 0.0:
+      skipped += 1
+      continue
+    eligible.append(atom)
+
+  order: list[str] = []
+  occ_sum: dict[str, float] = {}
+  for atom in eligible:
+    alt = _atom_altloc(atom)
+    if not alt:
+      continue
+    if alt not in occ_sum:
+      order.append(alt)
+      occ_sum[alt] = 0.0
+    occ = atom.get("occupancy", None)
+    if occ is not None:
+      occ_sum[alt] += float(occ)
+
+  if order:
+    selected = max(order, key=lambda letter: (occ_sum[letter], -order.index(letter)))
+  else:
+    selected = ""
+
+  kept: list[dict[str, Any]] = []
+  for atom in eligible:
+    alt = _atom_altloc(atom)
+    if alt and alt != selected:
+      skipped += 1
+      continue
+    kept.append(atom)
+  return _ParsedAtoms(kept, altloc_kept=selected, altloc_skipped=skipped)
+
+
+def _parse_coord_error(lineno: int, name: str) -> ValueError:
+  return ValueError(
+    f"PDB line {lineno}: cannot parse residue number or coordinates for atom '{name}'"
+  )
+
+
+def _parse_pdb_text(text: str) -> _ParsedAtoms:
   """Parse standard PDB ATOM/HETATM lines into atom record dictionaries."""
   atoms: list[dict[str, Any]] = []
-  for ln in text.splitlines():
+  for lineno, ln in enumerate(text.splitlines(), start=1):
     if ln.startswith("ENDMDL"):
       break
-    if ln.startswith(("ATOM", "HETATM")) and len(ln) >= 54:
-      res = ln[17:20].strip()
-      if res in SOLVENT_RESIDUES:
-        continue
-      name = ln[12:16].strip()
-      raw_elem = ln[76:78].strip().upper() if len(ln) >= 78 else ""
-      if raw_elem == "CA" or (not raw_elem and name == "CA"):
-        element = "C"
-      elif raw_elem:
-        element = raw_elem
-      else:
-        element = _infer_element_symbol(name)
+    if not ln.startswith(("ATOM", "HETATM")):
+      continue
+    name = ln[12:16].strip() if len(ln) >= 16 else ln[12:].strip()
+    if len(ln) < 54:
+      raise _parse_coord_error(lineno, name)
+    try:
+      num = int(ln[22:26])
+      x = float(ln[30:38])
+      y = float(ln[38:46])
+      z = float(ln[46:54])
+    except ValueError as err:
+      raise _parse_coord_error(lineno, name) from err
 
-      is_h = element == "H" or name.startswith("H")
-      if is_h or (len(name) >= 2 and name[0].isdigit() and name[1] == "H"):
-        continue
-      chain = ln[21]
-      ins_code = ln[26].strip() if len(ln) > 26 else ""
+    res = ln[17:20].strip()
+    if res in SOLVENT_RESIDUES:
+      continue
+    raw_elem = ln[76:78].strip().upper() if len(ln) >= 78 else ""
+    if raw_elem == "CA" or (not raw_elem and name == "CA"):
+      element = "C"
+    elif raw_elem:
+      element = raw_elem
+    else:
+      element = _infer_element_symbol(name)
+
+    is_h = element == "H" or name.startswith("H")
+    if is_h or (len(name) >= 2 and name[0].isdigit() and name[1] == "H"):
+      continue
+
+    chain = ln[21]
+    ins_code = ln[26].strip() if len(ln) > 26 else ""
+    altloc = ln[16].strip() if len(ln) > 16 else ""
+    occupancy: float | None = None
+    if len(ln) >= 60 and ln[54:60].strip():
       try:
-        num = int(ln[22:26])
-        x = float(ln[30:38])
-        y = float(ln[38:46])
-        z = float(ln[46:54])
-      except ValueError:
-        continue
-      atoms.append({
-        "name": name,
-        "res": res,
-        "chain": chain,
-        "num": num,
-        "ins_code": ins_code,
-        "res_id": (num, ins_code) if ins_code else num,
-        "xyz": (x, y, z),
-        "element": element,
-      })
-  return atoms
+        occupancy = float(ln[54:60])
+      except ValueError as err:
+        raise ValueError(
+          f"PDB line {lineno}: cannot parse occupancy for atom '{name}'"
+        ) from err
+    atoms.append({
+      "name": name,
+      "res": res,
+      "chain": chain,
+      "num": num,
+      "ins_code": ins_code,
+      "res_id": (num, ins_code) if ins_code else num,
+      "xyz": (x, y, z),
+      "element": element,
+      "altloc": altloc,
+      "occupancy": occupancy,
+    })
+  return _filter_altloc_occupancy(atoms)
 
 
 def _normalize_atoms(
@@ -205,7 +317,7 @@ def _normalize_atoms(
       atom_copy = dict(atom)
       atom_copy["element"] = element
       filtered.append(atom_copy)
-    return filtered
+    return _filter_altloc_occupancy(filtered)
   else:
     raise TypeError(
       f"Unsupported structure input type: {type(structure).__name__}"
@@ -265,6 +377,10 @@ def compute_interface_contacts(
 
   coords_a = np.array([x["xyz"] for x in atoms_a], dtype=float).reshape(-1, 3)
   coords_b = np.array([x["xyz"] for x in atoms_b], dtype=float).reshape(-1, 3)
+  if not np.isfinite(coords_a).all():
+    raise ValueError(f"Non-finite coordinates in chain '{chain_a}'")
+  if not np.isfinite(coords_b).all():
+    raise ValueError(f"Non-finite coordinates in chain '{chain_b}'")
 
   # Cross-chain pairwise atom distance matrix
   dist_mat = np.linalg.norm(coords_a[:, None, :] - coords_b[None, :, :], axis=2)
@@ -295,9 +411,6 @@ def compute_interface_contacts(
       if dist_mat[:, j].min() <= cutoff_heavy
     }
   )
-
-  def _format_res_id(k: tuple[int, str]) -> int | tuple[int, str]:
-    return (k[0], k[1]) if k[1] else k[0]
 
   a_if_residues = [_format_res_id(k) for k in a_if_keys]
   b_if_residues = [_format_res_id(k) for k in b_if_keys]
@@ -350,8 +463,12 @@ def compute_interface_contacts(
   ek_count = sum(res_map_a[k] in ("GLU", "LYS") for k in a_if_keys)
   hyd_count = sum(res_map_a[k] in HYDROPHOBIC_RESIDUES for k in a_if_keys)
 
-  binder_if_frac_ek = round(ek_count / max(1, n_a_if), 2)
-  binder_if_frac_hydrophobic = round(hyd_count / max(1, n_a_if), 2)
+  if n_a_if == 0:
+    binder_if_frac_ek = None
+    binder_if_frac_hydrophobic = None
+  else:
+    binder_if_frac_ek = round(ek_count / n_a_if, 2)
+    binder_if_frac_hydrophobic = round(hyd_count / n_a_if, 2)
 
   details: dict[str, Any] = {
     "binder_len": len(res_map_a),
@@ -371,6 +488,8 @@ def compute_interface_contacts(
     "interface_residues_b_types": {
       _format_res_id(k): res_map_b[k] for k in b_if_keys
     },
+    "altloc_kept": getattr(atoms, "altloc_kept", ""),
+    "altloc_skipped": getattr(atoms, "altloc_skipped", 0),
   }
 
   buried_binder_a2: int | None = None
@@ -469,19 +588,25 @@ def aligned_contact_overlap(
 ) -> tuple[float, int, int]:
   """Project contacts from two orthologs onto aligned positions in ortholog A numbering.
 
-  Drops unaligned residues (e.g. human 212). Returns (jaccard, n_a_aligned, n_b_aligned).
+  Drops unaligned residues (e.g. human 212). An insertion-code residue is left
+  out when the table has no pair for that full id. Returns
+  (jaccard, n_a_aligned, n_b_aligned).
 
   Experimental: not covered by proxide's stability guarantee; may change in a minor release.
   """
 
-  def _to_int(k: Any) -> int:
-    return k[0] if isinstance(k, tuple) else int(k)
+  ca_ids = {_contact_id(x) for x in contacts_a}
+  cb_ids = {_contact_id(x) for x in contacts_b}
 
-  ca_ints = {_to_int(x) for x in contacts_a}
-  cb_ints = {_to_int(x) for x in contacts_b}
-
-  h_aligned = {a for a, b in aligned_pairs if a in ca_ints}
-  m_aligned = {a for a, b in aligned_pairs if b in cb_ints}
+  h_aligned = set()
+  m_aligned = set()
+  for a, b in aligned_pairs:
+    aid = _contact_id(a)
+    bid = _contact_id(b)
+    if aid in ca_ids:
+      h_aligned.add(aid)
+    if bid in cb_ids:
+      m_aligned.add(aid)
 
   j = contact_jaccard(h_aligned, m_aligned)
   return j, len(h_aligned), len(m_aligned)
@@ -723,7 +848,7 @@ def interface_counts(
         return np.zeros((0, 3), dtype=float), []
       if isinstance(obj[0], Mapping):
         coords = np.array([x["xyz"] for x in obj], dtype=float)
-        resids = [x.get("num") for x in obj]
+        resids = [_residue_key_from_atom(x) for x in obj]
         return coords, resids
     if isinstance(obj, np.ndarray):
       if obj.size == 0:
@@ -839,13 +964,15 @@ def screen_self_association(
   n_shuffle_assoc = 0
   n_shuffle_valid = 0
 
+  known_groups = {"pos_ctl", "neg_ctl", "design", "shuffle"}
+
   for row in runs:
     did = row.get("design_id", "unknown")
     grp = row.get("group") or row.get("role")
-    if grp is None and designs is not None and did in designs:
+    if grp in (None, "") and designs is not None and did in designs:
       grp = designs[did].get("group") or designs[did].get("role")
-    if grp is None:
-      grp = "design"
+    if grp not in (None, ""):
+      grp = str(grp).strip()
 
     # Validity check
     is_valid = True
@@ -862,6 +989,15 @@ def screen_self_association(
       problems.append(f"{did}: {prob_msg}")
       continue
 
+    if grp in (None, ""):
+      n_problems += 1
+      problems.append(f"{did}: missing group")
+      continue
+    if grp not in known_groups:
+      n_problems += 1
+      problems.append(f"{did}: unrecognized group '{grp}'")
+      continue
+
     # Association determination
     is_assoc = False
     if "assoc" in row and row["assoc"] not in (None, ""):
@@ -870,11 +1006,19 @@ def screen_self_association(
       except (ValueError, TypeError):
         is_assoc = False
     else:
+      missing = [
+        name
+        for name in ("n_if_a", "n_if_b", "ipsae")
+        if name not in row or row[name] in (None, "")
+      ]
+      if missing:
+        n_problems += 1
+        problems.append(f"{did}: missing {', '.join(missing)}")
+        continue
       try:
-        na = int(row.get("n_if_a", 0))
-        nb = int(row.get("n_if_b", 0))
-        ipsae_raw = row.get("ipsae")
-        ipsae = float(ipsae_raw) if ipsae_raw not in (None, "") else None
+        na = int(row["n_if_a"])
+        nb = int(row["n_if_b"])
+        ipsae = float(row["ipsae"])
         is_assoc = associates(
           na, nb, ipsae, min_if_residues=min_if_residues, min_ipsae=min_ipsae
         )
@@ -902,16 +1046,18 @@ def screen_self_association(
 
   controls_ok = bool(n_pos_ctl_assoc >= 1 and n_neg_ctl_assoc == 0)
 
-  design_rate = (
-    round(n_design_assoc / n_design_valid, 3)
-    if n_design_valid > 0
-    else float("nan")
-  )
-  shuffle_rate = (
-    round(n_shuffle_assoc / n_shuffle_valid, 3)
-    if n_shuffle_valid > 0
-    else float("nan")
-  )
+  if n_design_valid > 0:
+    design_rate = n_design_assoc / n_design_valid
+    design_rate_display = round(design_rate, 3)
+  else:
+    design_rate = None
+    design_rate_display = None
+  if n_shuffle_valid > 0:
+    shuffle_rate = n_shuffle_assoc / n_shuffle_valid
+    shuffle_rate_display = round(shuffle_rate, 3)
+  else:
+    shuffle_rate = None
+    shuffle_rate_display = None
 
   if designs is not None and expected_runs_per_design is not None:
     rows_complete = bool(
@@ -925,9 +1071,9 @@ def screen_self_association(
   # Outcome logic
   if not controls_ok or not rows_complete:
     outcome = "inconclusive"
-  elif not math.isnan(design_rate) and design_rate <= monomeric_max_rate:
+  elif design_rate is not None and design_rate <= monomeric_max_rate:
     outcome = "monomeric"
-  elif not math.isnan(design_rate) and design_rate >= self_associates_min_rate:
+  elif design_rate is not None and design_rate >= self_associates_min_rate:
     outcome = "self_associates"
   else:
     outcome = "inconclusive"
@@ -938,6 +1084,7 @@ def screen_self_association(
   return {
     "controls_ok": controls_ok,
     "design_rate": design_rate,
+    "design_rate_display": design_rate_display,
     "n_design_assoc": n_design_assoc,
     "n_pos_ctl_assoc": n_pos_ctl_assoc,
     "n_neg_ctl_assoc": n_neg_ctl_assoc,
@@ -946,10 +1093,11 @@ def screen_self_association(
     "n_problems": n_problems,
     "n_runs": n_runs,
     "n_shuffle_assoc": n_shuffle_assoc,
-    "problems": problems[:20],
+    "problems": problems,
     "rows_complete": rows_complete,
     "selftest_all_pass": selftest_all_pass,
     "shuffle_rate": shuffle_rate,
+    "shuffle_rate_display": shuffle_rate_display,
     "outcome": outcome,
   }
 
@@ -1001,13 +1149,11 @@ def compute_shrake_rupley(
     return 0.0, np.array([], dtype=float)
 
   coords_arr = np.asarray(coords, dtype=float)
-  radii = np.array(
-    [
-      BONDI_RADII.get("C" if e.upper() == "CA" else e.upper(), DEFAULT_RADIUS)
-      for e in elements
-    ],
-    dtype=float,
-  )
+  resolved = ["C" if str(e).upper() == "CA" else str(e).upper() for e in elements]
+  missing = sorted({elem for elem in resolved if elem not in BONDI_RADII})
+  if missing:
+    raise ValueError("Elements missing from BONDI_RADII: " + ", ".join(missing))
+  radii = np.array([BONDI_RADII[elem] for elem in resolved], dtype=float)
   eff_radii = radii + probe_radius
   max_eff = float(np.max(eff_radii))
   pts = _generate_sphere_points(n_points)

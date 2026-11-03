@@ -145,8 +145,8 @@ def test_negative_selftest_distant_chains() -> None:
     assert res.like_close == 0
     assert res.polar_pairs == 0
     assert res.nonpolar_pairs == 0
-    assert res.binder_if_frac_ek == 0.0
-    assert res.binder_if_frac_hydrophobic == 0.0
+    assert res.binder_if_frac_ek is None
+    assert res.binder_if_frac_hydrophobic is None
 
 
 def test_negative_selftest_error_handling() -> None:
@@ -712,6 +712,272 @@ def test_compute_shrake_rupley_and_buried_sasa_validations_and_infinite_separati
     assert batched == looped
     assert batched[0].buried_binder_a2 is not None and batched[0].buried_binder_a2 > 0
     assert batched[1].buried_binder_a2 == 0
+
+
+def _controls() -> list[dict[str, Any]]:
+    return [
+        {"design_id": "pos", "group": "pos_ctl", "valid": 1, "n_if_a": 18, "n_if_b": 18, "ipsae": 0.5},
+        {"design_id": "neg", "group": "neg_ctl", "valid": 1, "n_if_a": 16, "n_if_b": 16, "ipsae": 0.1},
+    ]
+
+
+def test_f1_unparseable_atom_records_raise() -> None:
+    """ATOM/HETATM records with unreadable coordinates or residue numbers raise."""
+    partner = (
+        "ATOM      1  NZ  LYS A   1       0.000   0.000   0.000  1.00 20.00           N\n"
+        "ATOM      2  CA  GLU B  10      20.000   0.000   0.000  1.00 20.00           C\n"
+    )
+    oe1 = "ATOM      3  OE1 GLU B  10       3.000   0.000   0.000  1.00 20.00           O"
+    cases = [
+        partner + "ATOM      3  OE1 GLU B  10\n",
+        partner + oe1[:30] + ("*" * 24) + oe1[54:] + "\n",
+        partner + oe1[:30] + (" " * 24) + oe1[54:] + "\n",
+        partner + oe1[:22] + "    " + oe1[26:] + "\n",
+    ]
+    for pdb in cases:
+        with pytest.raises(ValueError, match=r"line 3") as exc:
+            compute_interface_contacts(pdb)
+        assert "OE1" in str(exc.value)
+
+
+def test_f2_nonfinite_coordinates_raise() -> None:
+    """NaN or infinite coordinates are an error, not a non-contact."""
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        atoms = [
+            _mk_atom("A", "LYS", "NZ", 1, (bad, 0.0, 0.0)),
+            _mk_atom("B", "GLU", "OE1", 10, (3.0, 0.0, 0.0)),
+        ]
+        with pytest.raises(ValueError, match="[Nn]on-finite"):
+            compute_interface_contacts(atoms)
+
+
+def test_f3_aligned_overlap_keeps_insertion_code() -> None:
+    """Alignment matches the full residue id; bare 100 is not 100A."""
+    dropped = aligned_contact_overlap({(100, "A")}, {200}, [(100, 200)])
+    assert dropped == (0.0, 0, 1)
+
+    matched = aligned_contact_overlap({(100, "A")}, {250}, [((100, "A"), 250)])
+    assert matched == (1.0, 1, 1)
+
+    plain = aligned_contact_overlap({100, (100, "")}, {200}, [(100, 200)])
+    assert plain == (1.0, 1, 1)
+
+
+def test_f4_interface_counts_insertion_code_and_missing_num() -> None:
+    """100 and 100A are distinct residues; an atom without num raises KeyError."""
+    atoms_b = [{"xyz": (1.0, 0.0, 0.0), "num": 5}]
+    split = [
+        {"xyz": (0.0, 0.0, 0.0), "num": 100, "ins_code": ""},
+        {"xyz": (0.4, 0.0, 0.0), "num": 100, "ins_code": "A"},
+    ]
+    assert interface_counts(split, atoms_b) == (2, 1)
+
+    same = [
+        {"xyz": (0.0, 0.0, 0.0), "num": 100},
+        {"xyz": (0.2, 0.0, 0.0), "num": 100},
+    ]
+    assert interface_counts(same, atoms_b) == (1, 1)
+
+    with pytest.raises(KeyError, match="num"):
+        interface_counts([{"xyz": (0.0, 0.0, 0.0)}], atoms_b)
+
+
+def test_f5_missing_run_metrics_excluded() -> None:
+    """A valid row missing n_if_a, n_if_b, or ipsae is a problem, not a zero."""
+    missing = [
+        {"design_id": "m_a", "group": "design", "valid": 1, "n_if_b": 20, "ipsae": 0.8},
+        {"design_id": "m_b", "group": "design", "valid": 1, "n_if_a": 20, "ipsae": 0.8},
+        {"design_id": "m_ip", "group": "design", "valid": 1, "n_if_a": 20, "n_if_b": 20},
+    ]
+    res = screen_self_association(_controls() + missing)
+    assert res["n_problems"] == 3
+    assert res["n_design_assoc"] == 0
+    assert res["design_rate"] is None
+    assert any("m_a" in p and "n_if_a" in p for p in res["problems"])
+    assert any("m_b" in p and "n_if_b" in p for p in res["problems"])
+    assert any("m_ip" in p and "ipsae" in p for p in res["problems"])
+
+    zero = {
+        "design_id": "z",
+        "group": "design",
+        "valid": 1,
+        "n_if_a": 0,
+        "n_if_b": 0,
+        "ipsae": 0.9,
+    }
+    kept = screen_self_association(_controls() + [zero])
+    assert kept["n_problems"] == 0
+    assert kept["design_rate"] == 0.0
+    assert kept["outcome"] == "monomeric"
+
+
+def test_f6_design_rate_threshold_uses_unrounded_ratio() -> None:
+    """0.2004 is not monomeric and 0.4996 does not self-associate."""
+    low = _controls() + [
+        {
+            "design_id": f"d{i}",
+            "group": "design",
+            "valid": 1,
+            "n_if_a": 20 if i < 501 else 5,
+            "n_if_b": 20 if i < 501 else 5,
+            "ipsae": 0.8 if i < 501 else 0.1,
+        }
+        for i in range(2500)
+    ]
+    res_low = screen_self_association(low)
+    assert res_low["design_rate"] == 501 / 2500
+    assert res_low["design_rate_display"] == round(501 / 2500, 3)
+    assert res_low["outcome"] == "inconclusive"
+
+    high = _controls() + [
+        {
+            "design_id": f"d{i}",
+            "group": "design",
+            "valid": 1,
+            "n_if_a": 20 if i < 1249 else 5,
+            "n_if_b": 20 if i < 1249 else 5,
+            "ipsae": 0.8 if i < 1249 else 0.1,
+        }
+        for i in range(2500)
+    ]
+    res_high = screen_self_association(high)
+    assert res_high["design_rate"] == 1249 / 2500
+    assert res_high["design_rate_display"] == round(1249 / 2500, 3)
+    assert res_high["outcome"] == "inconclusive"
+
+
+def test_f7_unknown_elements_raise() -> None:
+    """Elements absent from BONDI_RADII raise."""
+    coords = np.zeros((1, 3))
+    with pytest.raises(ValueError, match="ZN"):
+        compute_shrake_rupley(coords, ["Zn"])
+    with pytest.raises(ValueError, match="FE"):
+        compute_shrake_rupley(coords, ["Fe"])
+    with pytest.raises(ValueError, match="NA") as exc:
+        compute_shrake_rupley(np.zeros((3, 3)), ["Na", "Zn", "Fe"])
+    message = str(exc.value)
+    assert "NA" in message and "ZN" in message and "FE" in message
+
+    import proxide.geometry.contacts as contacts_mod
+
+    assert not hasattr(contacts_mod, "DEFAULT_RADIUS")
+
+
+def test_f9_group_label_stripped_and_known() -> None:
+    """Only pos_ctl, neg_ctl, design, and shuffle count; labels are stripped."""
+    missing = {"design_id": "ghost", "valid": 1, "n_if_a": 20, "n_if_b": 20, "ipsae": 0.8}
+    bad = {"design_id": "dcap", "group": "Design", "valid": 1, "n_if_a": 20, "n_if_b": 20, "ipsae": 0.8}
+    padded = {
+        "design_id": "pos2",
+        "group": "pos_ctl ",
+        "valid": 1,
+        "n_if_a": 18,
+        "n_if_b": 18,
+        "ipsae": 0.6,
+    }
+    res = screen_self_association(_controls() + [missing, bad, padded])
+    assert res["n_design_assoc"] == 0
+    assert res["n_pos_ctl_assoc"] == 2
+    assert res["n_problems"] == 2
+    assert any("ghost" in p and "missing group" in p for p in res["problems"])
+    assert any("dcap" in p and "Design" in p for p in res["problems"])
+
+
+def test_f10_no_design_runs_rate_is_none() -> None:
+    """No valid design or shuffle runs yield None rates and an inconclusive outcome."""
+    res = screen_self_association(_controls())
+    assert res["design_rate"] is None
+    assert res["shuffle_rate"] is None
+    assert res["design_rate_display"] is None
+    assert res["shuffle_rate_display"] is None
+    assert res["outcome"] == "inconclusive"
+    assert res["n_problems"] == 0
+
+
+def test_f11_altloc_occupancy_one_conformer() -> None:
+    """Blank altLoc plus one conformer is kept; occupancy 0.00 and other altLocs are not."""
+    pdb = "\n".join([
+        "ATOM      1  NZ  LYS A   1       0.000   0.000   0.000  1.00 20.00           N",
+        "ATOM      2  CA  GLU B  10       3.000   0.000   0.000  1.00 20.00           C",
+        "ATOM      3  OE1AGLU B  10      30.000   0.000   0.000  0.70 20.00           O",
+        "ATOM      4  OE1BGLU B  10       3.000   0.000   0.000  0.30 20.00           O",
+        "ATOM      5  OE2 GLU B  10       3.000   0.000   0.000  0.00 20.00           O",
+    ]) + "\n"
+    res = compute_interface_contacts(pdb)
+    assert res.ion_pairs == 0
+    assert res.n_target_interface == 1
+    assert res.details["altloc_kept"] == "A"
+    assert res.details["altloc_skipped"] == 2
+
+
+def test_f12_cutoff_boundaries_are_inclusive() -> None:
+    """Pairs exactly on a cutoff count; pairs 0.01 A outside do not."""
+    def pair(res_a: str, name_a: str, res_b: str, name_b: str, distance: float) -> list[dict[str, Any]]:
+        return [
+            _mk_atom("A", res_a, name_a, 1, (0.0, 0.0, 0.0)),
+            _mk_atom("B", res_b, name_b, 2, (distance, 0.0, 0.0)),
+        ]
+
+    on_ion = compute_interface_contacts(pair("LYS", "NZ", "GLU", "OE1", 4.0))
+    off_ion = compute_interface_contacts(pair("LYS", "NZ", "GLU", "OE1", 4.01))
+    assert on_ion.ion_pairs == 1
+    assert off_ion.ion_pairs == 0
+
+    on_like = compute_interface_contacts(pair("GLU", "OE1", "ASP", "OD1", 4.5))
+    off_like = compute_interface_contacts(pair("GLU", "OE1", "ASP", "OD1", 4.51))
+    assert on_like.like_close == 1
+    assert off_like.like_close == 0
+
+    on_polar = compute_interface_contacts(pair("SER", "OG", "LYS", "NZ", 3.5))
+    off_polar = compute_interface_contacts(pair("SER", "OG", "LYS", "NZ", 3.51))
+    assert on_polar.polar_pairs == 1
+    assert off_polar.polar_pairs == 0
+
+    on_nonpolar = compute_interface_contacts(pair("LEU", "CD1", "ILE", "CG2", 4.5))
+    off_nonpolar = compute_interface_contacts(pair("LEU", "CD1", "ILE", "CG2", 4.51))
+    assert on_nonpolar.nonpolar_pairs == 1
+    assert off_nonpolar.nonpolar_pairs == 0
+
+    on_heavy = compute_interface_contacts(pair("ALA", "CB", "ALA", "CB", 5.0))
+    off_heavy = compute_interface_contacts(pair("ALA", "CB", "ALA", "CB", 5.01))
+    assert on_heavy.n_binder_interface == 1 and on_heavy.n_target_interface == 1
+    assert off_heavy.n_binder_interface == 0 and off_heavy.n_target_interface == 0
+
+    on_counts = interface_counts(
+        {"xyz": np.array([[0.0, 0.0, 0.0]]), "resid": np.array([1])},
+        {"xyz": np.array([[5.0, 0.0, 0.0]]), "resid": np.array([2])},
+    )
+    off_counts = interface_counts(
+        {"xyz": np.array([[0.0, 0.0, 0.0]]), "resid": np.array([1])},
+        {"xyz": np.array([[5.01, 0.0, 0.0]]), "resid": np.array([2])},
+    )
+    assert on_counts == (1, 1)
+    assert off_counts == (0, 0)
+
+
+def test_f13_interface_counts_chain_order() -> None:
+    """Twelve interfacial residues on A and three on B stay in that order."""
+    chain_a = {
+        "xyz": np.array([[i * 0.3, 1.0, 0.0] for i in range(12)]),
+        "resid": np.arange(1, 13),
+    }
+    chain_b = {
+        "xyz": np.array([[0.0, 0.0, float(i)] for i in range(3)]),
+        "resid": np.arange(1, 4),
+    }
+    assert interface_counts(chain_a, chain_b) == (12, 3)
+
+
+def test_f14_problems_are_not_truncated() -> None:
+    """Every problem is returned; the list is not silently capped at 20."""
+    bad = [
+        {"design_id": f"bad{i}", "group": "design", "valid": 0, "problem": f"err{i}"}
+        for i in range(25)
+    ]
+    res = screen_self_association(_controls() + bad)
+    assert res["n_problems"] == 25
+    assert len(res["problems"]) == 25
+    assert "bad24" in res["problems"][-1]
 
 
 def test_selftest_slice2_executes_and_passes() -> None:
