@@ -7,9 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
   build-wheels-linux:
@@ -45,8 +43,8 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-15-intel
-            target: x86_64
+          # No Intel macOS wheel: the required grain dependency has no build for it,
+          # so the wheel could not be installed (debt #3183).
           - runner: macos-latest
             target: aarch64
     steps:
@@ -103,6 +101,75 @@ jobs:
           name: wheels-sdist
           path: dist
 
+  # Install what was built, in a clean environment, on the platform it targets.
+  # CI's tests build from a tree with extra files fetched in, so only this sees
+  # what a user gets. Runs on workflow_dispatch too, so a dry run exercises it.
+  smoke-wheels:
+    name: Smoke ${{ matrix.target.artifact }} (Python ${{ matrix.python }})
+    runs-on: ${{ matrix.target.runner }}
+    needs: [build-wheels-linux, build-wheels-macos, build-wheels-windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+        target:
+          - { runner: ubuntu-latest, artifact: wheels-linux-x86_64 }
+          - { runner: ubuntu-24.04-arm, artifact: wheels-linux-aarch64 }
+          - { runner: macos-latest, artifact: wheels-macos-aarch64 }
+          - { runner: windows-latest, artifact: wheels-windows-x64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Download the built wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.target.artifact }}
+          path: wheelhouse
+      - name: Install the wheel into a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/smoke"
+          if [ -d "$RUNNER_TEMP/smoke/Scripts" ]; then bin=Scripts; else bin=bin; fi
+          echo "SMOKE_PYTHON=$RUNNER_TEMP/smoke/$bin/python" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/smoke/$bin/python" -m pip install --quiet wheelhouse/*.whl
+      - name: Exercise the stable surface from outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$SMOKE_PYTHON" "$GITHUB_WORKSPACE/scripts/smoke_wheel.py" \
+            --xtc "$GITHUB_WORKSPACE/tests/data/trajectories/frame0.xtc"
+
+  smoke-sdist:
+    name: Smoke sdist
+    runs-on: ubuntu-latest
+    needs: [build-sdist]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc (required by prost-build)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Download the built sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-sdist
+          path: sdist
+      - name: Build and install from the sdist in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/smoke"
+          "$RUNNER_TEMP/smoke/bin/python" -m pip install --quiet sdist/*.tar.gz
+      - name: Exercise the stable surface from outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$RUNNER_TEMP/smoke/bin/python" "$GITHUB_WORKSPACE/scripts/smoke_wheel.py" \
+            --xtc "$GITHUB_WORKSPACE/tests/data/trajectories/frame0.xtc"
+
   verify-crates:
     name: Validate crate metadata
     runs-on: ubuntu-latest
@@ -120,7 +187,7 @@ jobs:
           set -e
           bad=$(cargo metadata --no-deps --format-version 1 | jq -r '
             .packages[] |
-            select(.name | IN("proxide_py", "proxide-wasm") | not) |
+            select(.publish == null) |
             select(.description == null or .license == null or .repository == null) |
             .name + ": missing description, license, or repository"
           ')
@@ -155,12 +222,13 @@ jobs:
       - name: Copy README into each crate directory
         run: |
           for crate in proxide-units proxide-core proxide-parallel-rt proxide-geometry \
-                       proxide-gaff proxide-io proxide-rotlib proxide-frag \
-                       proxide-physics proxide-confind proxide_rs proxide_fixer; do
+                       proxide-gaff proxide-io proxide-frag proxide-physics proxide_rs; do
             cp -n README.md crates/$crate/README.md
           done
       - name: Publish crates in topological order
-        # proxide_py and proxide-wasm are intentionally absent: publish = false
+        # proxide_py and proxide-wasm are intentionally absent: publish = false.
+        # proxide-confind, proxide-rotlib and proxide_fixer are absent for licensing
+        # (debt #1420). proxide-frag was reviewed and is independent of Mosaist.
         # pub() is idempotent: skips crates already on crates.io so reruns are safe.
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -186,29 +254,29 @@ jobs:
           # Tier 2
           pub proxide-geometry
           sleep 30
-          # Tier 3 — gaff/io/rotlib/frag all depend on core + geometry
+          # Tier 3 — gaff/io depend on core + geometry; frag has no proxide deps
           pub proxide-gaff
           sleep 30
           pub proxide-io
-          pub proxide-rotlib
           pub proxide-frag
           sleep 30
           # Tier 4
           pub proxide-physics
-          pub proxide-confind
           sleep 30
           # Tier 5
           pub proxide_rs
           sleep 30
-          # Tier 6
-          pub proxide_fixer
 
   release:
     name: Release
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build-wheels-linux, build-wheels-macos, build-wheels-windows, build-sdist]
+    needs: [smoke-wheels, smoke-sdist]
     environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Download wheels and sdist
         uses: actions/download-artifact@v4
