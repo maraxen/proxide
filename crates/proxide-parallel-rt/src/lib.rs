@@ -1,13 +1,30 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-static NUM_THREADS: AtomicUsize = AtomicUsize::new(1);
+/// `0` means the caller has not chosen a count (`None` from
+/// [`num_threads_override`]). [`num_threads`] still reports 1 in that state
+/// so existing call sites stay sequential-by-default.
+static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn set_num_threads(n: usize) {
     NUM_THREADS.store(n.max(1), Ordering::Relaxed);
 }
 
+/// Restore the process default: no explicit thread count.
+pub fn clear_num_threads() {
+    NUM_THREADS.store(0, Ordering::Relaxed);
+}
+
 pub fn num_threads() -> usize {
-    NUM_THREADS.load(Ordering::Relaxed)
+    NUM_THREADS.load(Ordering::Relaxed).max(1)
+}
+
+/// `Some(n)` after [`set_num_threads`] (`n >= 1`; `0` is clamped to 1).
+/// `None` when the count is still the process default.
+pub fn num_threads_override() -> Option<usize> {
+    match NUM_THREADS.load(Ordering::Relaxed) {
+        0 => None,
+        n => Some(n),
+    }
 }
 
 #[cfg(test)]
