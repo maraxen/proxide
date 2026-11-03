@@ -16,6 +16,8 @@ import subprocess
 import types
 from pathlib import Path
 
+import pytest
+
 _REPO = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO / "scripts" / "validation" / "verify_stale_debts.py"
 _RS_COMMIT = "48b1c5c"
@@ -123,6 +125,7 @@ def _reproduction_with_result(monkeypatch, result: dict) -> bool:
 
 def test_debt_1905_reproduction_false_when_c3_c_c3_is_restored(monkeypatch):
     """A different missing c3 angle is not the c3-c-c3 zero fill."""
+    pytest.importorskip("rdkit.Chem")  # the 1d4c925 verifier imports rdkit
     result = {
         "missing_params": [
             {"term": "angle", "types": ["c3", "c", "o"]},
@@ -137,6 +140,7 @@ def test_debt_1905_reproduction_false_when_c3_c_c3_is_restored(monkeypatch):
 
 def test_debt_1905_reproduction_false_when_c3_c_c3_fill_is_nonzero(monkeypatch):
     """Listing c3-c-c3 as missing is not the defect when the angle constants are not 0.0."""
+    pytest.importorskip("rdkit.Chem")  # the 1d4c925 verifier imports rdkit
     result = {
         "missing_params": [
             {"term": "angle", "types": ["c3", "c", "c3"]},
