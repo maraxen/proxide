@@ -12,7 +12,7 @@ use pyo3::types::{PyDict, PyList};
 /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 #[pyfunction]
 pub fn assign_masses(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
-    Ok(chem::masses::assign_masses(&atom_names))
+    chem::masses::assign_masses(&atom_names).map_err(pyo3::exceptions::PyValueError::new_err)
 }
 
 /// Assign GAFF atom types to a structure (exposed to Python).

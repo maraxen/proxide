@@ -14,5 +14,8 @@ def assign_masses(atom_names: list[str]) -> list[float]:
   Returns:
       List of masses in amu.
 
+  Raises:
+      ValueError: If an element cannot be inferred from an atom name.
+
   """
   return _proxider.assign_masses(atom_names)
