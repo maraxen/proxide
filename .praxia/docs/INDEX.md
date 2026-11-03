@@ -38,6 +38,7 @@
 ## Actuation Surfaces
 
 ## Audits
+- [261103_crates-io-versions](audits/data/261103_crates-io-versions.jsonl)
 - [261102_mosaist-derivation-map](audits/261102_mosaist-derivation-map.md) — Module-level map of which proxide code derives from Mosaist, adapts it, or is independent, with what was verified against source and published crates.
 - [260824_ligand-reference-frame-final-review](audits/260824_ligand-reference-frame-final-review.md) — Final review verdict and disposition for the 10-task proxide-ligand-frame implementation plan (branch feat/ligand-reference-frame-spec)
 - [260820_gaff2-parity-verdict](audits/260820_gaff2-parity-verdict.md) — Phase 5 graded verdict (PARITY, as of the PR
@@ -60,7 +61,7 @@
 ## Preregistration
 
 ## Reference
-- [261021_release-checklist](reference/261021_release-checklist.md) — Numbered steps for cutting a proxide release to PyPI, and the open blockers that gate the first stable release (0.1.0)
+- [261021_release-checklist](reference/261021_release-checklist.md) — Numbered steps for the proxide release procedure (cutting a release to PyPI)
 - [260821_gaff2-rust-port-lessons](reference/260821_gaff2-rust-port-lessons.md) — Phase-by-phase record of the Python→Rust port of the GAFF2 DEF-grammar atom typer (crates/proxide-gaff2), including per-module adversarial-verify verdicts and the 100%-exact-reproduction regression gate
 
 ## Roadmaps

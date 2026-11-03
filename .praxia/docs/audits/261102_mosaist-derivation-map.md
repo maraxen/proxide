@@ -22,7 +22,7 @@ Compares proxide `origin/main` 5c1c035 with Mosaist 450816a, whose `LICENSE.md` 
 | `proxide_fixer` | Own code independent | alpha.10 to alpha.18, MIT | rotlib, plus one constant from confind |
 | `proxide-frag` | Independent | alpha.9 to alpha.18, MIT | no proxide crate |
 
-None of these versions is yanked. No 0.1.0 of these crates was published.
+None of these versions is yanked. No 0.1.0 of these crates was published. Source: the crates.io versions API for each crate, fetched 2026-11-03 and saved as [`data/261103_crates-io-versions.jsonl`](data/261103_crates-io-versions.jsonl) (`num`, `yanked`, `created_at` per version). `proxide_fixer` has no 0.1.0-alpha.9 on crates.io; its first published version is 0.1.0-alpha.10.
 
 The PyPI wheel is not exposed through these crates. `cargo tree` on `proxide_py` with all features resolves none of the four.
 
