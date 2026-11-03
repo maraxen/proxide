@@ -137,11 +137,11 @@ fn random_fragments(n: usize, seed: u64) -> Vec<Fragment<5, Raw>> {
     (0..n)
         .map(|_| {
             let mut coords: [[[f32; 3]; 4]; 5] = [[[0.0; 3]; 4]; 5];
-            for r in 0..5 {
-                for at in 0..4 {
-                    coords[r][at][0] = rng.gen_range(-20.0_f32..20.0);
-                    coords[r][at][1] = rng.gen_range(-20.0_f32..20.0);
-                    coords[r][at][2] = rng.gen_range(-20.0_f32..20.0);
+            for res in &mut coords {
+                for atom in res {
+                    atom[0] = rng.gen_range(-20.0_f32..20.0);
+                    atom[1] = rng.gen_range(-20.0_f32..20.0);
+                    atom[2] = rng.gen_range(-20.0_f32..20.0);
                 }
             }
             Fragment::<5, Raw>::new(coords)
@@ -195,12 +195,12 @@ fn ac2_symmetric_already_centered() {
     let mut coords: [[[f32; 3]; 4]; 5] = [[[0.0; 3]; 4]; 5];
     // Place atoms symmetrically so centroid = 0: pairs at +d and -d.
     // With 20 atoms total, place 10 at +1 and 10 at -1 on x.
-    for r in 0..5 {
-        for at in 0..4 {
+    for (r, res) in coords.iter_mut().enumerate() {
+        for (at, atom) in res.iter_mut().enumerate() {
             let sign = if (r * 4 + at) % 2 == 0 { 1.0 } else { -1.0 };
-            coords[r][at][0] = sign;
-            coords[r][at][1] = 0.0;
-            coords[r][at][2] = 0.0;
+            atom[0] = sign;
+            atom[1] = 0.0;
+            atom[2] = 0.0;
         }
     }
     let result = Fragment::<5, Raw>::new(coords).center();

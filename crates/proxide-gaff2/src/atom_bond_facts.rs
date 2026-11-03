@@ -643,14 +643,14 @@ mod tests {
         let b = bond(0, 1, BondOrder::Single, false);
         let f = bond_category_facts(&b);
         assert_eq!(f.len(), 8);
-        assert_eq!(f["SB"], true);
-        assert_eq!(f["DB"], false);
-        assert_eq!(f["TB"], false);
-        assert_eq!(f["AB"], false);
-        assert_eq!(f["DL"], false);
-        assert_eq!(f["sb"], true);
-        assert_eq!(f["db"], false);
-        assert_eq!(f["tb"], false);
+        assert!(f["SB"]);
+        assert!(!f["DB"]);
+        assert!(!f["TB"]);
+        assert!(!f["AB"]);
+        assert!(!f["DL"]);
+        assert!(f["sb"]);
+        assert!(!f["db"]);
+        assert!(!f["tb"]);
     }
 
     #[test]
