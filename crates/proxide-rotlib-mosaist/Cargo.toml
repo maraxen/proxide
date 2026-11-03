@@ -7,7 +7,7 @@ publish = false
 description = "Mosaist binary rotlib.bin format reader and Protobuf converter (Non-Commercial)"
 
 [dependencies]
-proxide-rotlib = { path = "../proxide-rotlib" }
+proxide-rotlib = { path = "../proxide-rotlib", version = "0.1.1-dev.0" }
 prost = "0.13"
 zstd = "0.13"
 clap = { version = "4.4", features = ["derive"] }
