@@ -79,10 +79,10 @@ jobs:
           source .venv/bin/activate
           uv pip install .[dev,openmm]
       - name: Verify GAFF2 rules load from the installed package
-        # Fail-loud smoke gate for debt #1896: confirms the packaged DEF
-        # round-tripped through the (non-editable) wheel build and loads
-        # via the same PROXIDE_GAFF2_DEF-aware path gaff2.py's real callers
-        # use -- not just that the file exists on the checkout's disk.
+        # Fail-loud smoke gate for debt #1896: confirms a DEF fetched into the
+        # tree round-trips through a non-editable build and loads via the same
+        # PROXIDE_GAFF2_DEF-aware path gaff2.py's real callers use. Published
+        # wheels do not carry this GPL file; publish.yml's smoke jobs assert that.
         run: |
           source .venv/bin/activate
           python -c "from proxide.chem.gaff2 import load_gaff2_rules; r, _ = load_gaff2_rules(); assert r, 'no GAFF2 rules loaded'"
