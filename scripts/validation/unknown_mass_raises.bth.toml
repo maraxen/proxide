@@ -1,0 +1,35 @@
+[metadata]
+title = "proxide unknown mass handling: refusal and fallback verification on untabulated elements (debt #3179)"
+created = "261102"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "At branch fix/unknown-mass-raises-3179 (task 261102_proxide-followups, debt #3179), proxide.chem.masses eliminates DEFAULT_MASS = 12.0: get_mass returns Option<f32>, and assign_masses raises ValueError on every untabulated element or uninferable atom name rather than silently returning carbon's 12.0/12.011 amu. GBSA assign_mbondi2_radii_with_provenance and assign_obc2_scaling_factors_with_provenance record ParameterSource::Fallback = 3 for unknown elements. Negative control: an intentionally injected silent 12.0 fallback is detected by the validator."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "tabulated_all_pass == true AND untabulated_all_refused == true AND silent_12_count == 0 AND gbsa_fallback_correct == true AND neg_controls_passed >= 1"
+decision = "Verify debt #3179 resolved: get_mass and assign_masses refuse untabulated elements, GBSA records Fallback = 3, and no silent 12.0 fallback occurs."
+reasoning = "Every tabulated element is accurately assigned, all untabulated candidates raise ValueError without silent 12.0 fallback, GBSA provenance records fallback, and negative control fires."
+is_residual = false
+adversarial_check = "neg_controls_passed == 0"
+
+[outcomes.fail]
+condition = "NOT (tabulated_all_pass == true AND untabulated_all_refused == true AND silent_12_count == 0 AND gbsa_fallback_correct == true AND neg_controls_passed >= 1)"
+decision = "Investigate failure: untabulated element did not raise ValueError, GBSA fallback was not recorded, or negative control failed."
+reasoning = "Any silent substitution of 12.0, failure to raise ValueError on untabulated elements, or failing negative control invalidates the unknown mass fix."
+is_residual = true
+
+[result_schema]
+all_pass = "bool"
+tabulated_all_pass = "bool"
+n_tabulated_tested = "int"
+untabulated_all_refused = "bool"
+n_untabulated_tested = "int"
+silent_12_count = "int"
+gbsa_fallback_correct = "bool"
+neg_controls_passed = "int"
+
+[dependencies]
+proxide_version = { type = "git_sha", required = true }

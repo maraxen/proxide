@@ -3,36 +3,37 @@
 //! Provides functions to assign atomic masses based on element type.
 //! Used for MD simulations.
 
-/// Default mass for unknown elements
-pub const DEFAULT_MASS: f32 = 12.0;
-
-/// Get atomic mass for an element symbol
-pub fn get_mass(element: &str) -> f32 {
+/// Get atomic mass for an element symbol (in amu/Da)
+///
+/// Returns `None` when the element has no tabulated mass. A mass is never
+/// guessed or defaulted to carbon (see project hard rule on unknown values,
+/// ledger A1).
+pub fn get_mass(element: &str) -> Option<f32> {
     match element {
-        "H" => 1.008,
-        "C" => 12.011,
-        "N" => 14.007,
-        "O" => 15.999,
-        "S" => 32.06,
-        "P" => 30.97,
-        "F" => 18.998,
-        "Cl" => 35.45,
-        "Br" => 79.904,
-        "I" => 126.90,
-        "Na" => 22.990,
-        "K" => 39.098,
-        "Ca" => 40.078,
-        "Mg" => 24.305,
-        "Zn" => 65.38,
-        "Fe" => 55.845,
-        "Cu" => 63.546,
-        "Mn" => 54.938,
-        "Se" => 78.971,
+        "H" => Some(1.008),
+        "C" => Some(12.011),
+        "N" => Some(14.007),
+        "O" => Some(15.999),
+        "S" => Some(32.06),
+        "P" => Some(30.97),
+        "F" => Some(18.998),
+        "Cl" => Some(35.45),
+        "Br" => Some(79.904),
+        "I" => Some(126.90),
+        "Na" => Some(22.990),
+        "K" => Some(39.098),
+        "Ca" => Some(40.078),
+        "Mg" => Some(24.305),
+        "Zn" => Some(65.38),
+        "Fe" => Some(55.845),
+        "Cu" => Some(63.546),
+        "Mn" => Some(54.938),
+        "Se" => Some(78.971),
         // IUPAC 2021 conventional standard atomic weight.
-        "Si" => 28.085,
+        "Si" => Some(28.085),
         // Deuterium (2H), IUPAC: 2.014 amu.
-        "D" => 2.014,
-        _ => DEFAULT_MASS,
+        "D" => Some(2.014),
+        _ => None,
     }
 }
 
@@ -48,15 +49,22 @@ pub fn get_mass(element: &str) -> f32 {
 /// * List of masses in amu
 ///
 /// # Errors
-/// Names no element can be inferred from, reported with their index. A mass is
-/// never guessed for them (see the project hard rule on unknown values).
+/// Returns an error if an element cannot be inferred from an atom name,
+/// or if an inferred element has no tabulated atomic mass. A mass is
+/// never guessed or defaulted (see the project hard rule on unknown values,
+/// ledger A1).
 pub fn assign_masses(atom_names: &[String]) -> Result<Vec<f32>, String> {
     atom_names
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            infer_element(name).map(get_mass).ok_or_else(|| {
+            let elem = infer_element(name).ok_or_else(|| {
                 format!("cannot infer an element from atom name {name:?} at index {i}")
+            })?;
+            get_mass(elem).ok_or_else(|| {
+                format!(
+                    "no tabulated mass for element {elem:?} from atom name {name:?} at index {i}"
+                )
             })
         })
         .collect()
@@ -246,9 +254,19 @@ mod tests {
 
     #[test]
     fn get_mass_deuterium_and_title_case_symbols() {
-        assert!((get_mass("Zn") - 65.38).abs() < 1e-3);
-        assert!((get_mass("Cl") - 35.45).abs() < 1e-3);
+        assert!((get_mass("Zn").unwrap() - 65.38).abs() < 1e-3);
+        assert!((get_mass("Cl").unwrap() - 35.45).abs() < 1e-3);
         // Deuterium: 2.014 amu, not the carbon fallback.
-        assert!((get_mass("D") - 2.014).abs() < 1e-3);
+        assert!((get_mass("D").unwrap() - 2.014).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_get_mass_untabulated_returns_none() {
+        // Untabulated elements must return None, never default mass 12.0.
+        for elem in [
+            "", "X", "AU", "Au", "LI", "Li", "U", "He", "Ne", "Ar", "Kr", "Xe", "Rn", "foo",
+        ] {
+            assert_eq!(get_mass(elem), None, "{elem:?} must return None");
+        }
     }
 }
