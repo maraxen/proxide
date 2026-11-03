@@ -15,6 +15,7 @@ they exist only in source builds that opt in.
 - **Changed (behaviour)**: with a blank element column (PDB), an absent `type_symbol` (mmCIF), or in PQR, an atom name that does not determine an element raises `PROX-IO-MALFORMED-RECORD` instead of being typed as carbon. This covers names such as `QZ`, `D1`, `EPW` and `AU`. Fill the element column to parse them.
 - **Changed (behaviour)**: `assign_masses` raises `ValueError` for such a name instead of returning carbon's mass. (experimental)
 - **Changed (behaviour)**: `assign_mbondi2_radii_with_provenance` and `assign_obc2_scaling_factors_with_provenance` give such a name the recorded fallback (`ParameterSource::Fallback`) instead of carbon's tabulated value. (experimental)
+- `proxide-confind`, `proxide-rotlib` and `proxide_fixer` are no longer published to crates.io. They derive from, or depend on code derived from, CC BY-NC-SA 4.0 code (Mosaist), which is unresolved, and now carry a `NOTICE`. None of them is in the PyPI wheels or sdist. `proxide-frag` was reviewed, found independent of Mosaist, and is still published.
 
 ## [0.1.0] - 2026-10-23
 
