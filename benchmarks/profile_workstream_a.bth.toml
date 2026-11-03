@@ -1,0 +1,47 @@
+[experiment]
+hypothesis = """
+On Engaging Lustre network filesystem, trajectory reading with read_frames_parallel
+suffers from:
+(1) Metadata bottleneck: ~9k individual file opens on Lustre per requested frame (#2232).
+(2) Seek thrashing: non-contiguous frame assignment on network FS (#2229).
+(3) Thread contention: unbounded native thread pool (#2227).
+(4) Decompression overhead: decompressing all 50k solvent atoms when only protein atoms are needed (#2231).
+(5) Coordinate tail overhead: unbuffered trailing reads (#2226).
+For mmCIF files, downstream pool scoring of 3600 draws is parse-bound and single-threaded (#2642).
+Profiling at production shapes attributes wall time to open, seek, decompress, python_subset, and parse,
+identifying which bottlenecks produce measurable speedups and which (if any) can be dropped.
+"""
+
+[outcomes.pass]
+condition = "trajectory_total_s > 0.0 AND mmcif_total_s > 0.0"
+decision = "Phase 1 profiling verified baseline on Engaging Lustre. Proceed with throughput implementations."
+reasoning = "Breakdown quantitatively attributes the time shares across open, seek, decompress, python_subset, and parse."
+is_residual = false
+
+[outcomes.marginal]
+condition = "trajectory_total_s > 0.0"
+decision = "Investigate bottleneck anomalies before proceeding."
+reasoning = "Profile completed with partial signal."
+is_residual = false
+
+[outcomes.fail]
+condition = "trajectory_total_s <= 0.0"
+decision = "Do not proceed until Lustre I/O path is resolved."
+reasoning = "Infrastructure or I/O failure during profiling run."
+is_residual = true
+
+[result_schema]
+trajectory_total_s = "float"
+open_s = "float"
+seek_s = "float"
+decompress_s = "float"
+python_subset_s = "float"
+trajectory_open_share = "float"
+trajectory_seek_share = "float"
+trajectory_decompress_share = "float"
+trajectory_subset_share = "float"
+mmcif_total_s = "float"
+mmcif_file_count = "int"
+mmcif_parse_rate = "float"
+dropped_debts = "list[str]"
+dropped_reasons = "dict"

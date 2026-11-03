@@ -193,19 +193,22 @@ fn test_xtc_offset_cache_invalidation() {
         return;
     };
     let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let parent = path.parent().unwrap();
     let sidecar = PathBuf::from(format!("{}.offsets", path.display()));
 
     assert!(!sidecar.exists(), "sidecar should not exist yet");
 
     let n_frames = {
-        let mut reader = XtcReader::open(&path).expect("open failed");
+        let mut reader =
+            XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
         reader.frame_count().expect("frame_count failed")
     };
     assert!(sidecar.exists(), "sidecar should be written after first open");
 
     // Second open must reuse the cache and agree on frame count.
     {
-        let mut reader = XtcReader::open(&path).expect("open failed");
+        let mut reader =
+            XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
         assert_eq!(reader.frame_count().unwrap(), n_frames);
     }
 
@@ -221,7 +224,8 @@ fn test_xtc_offset_cache_invalidation() {
         f.write_all(&[0u8]).unwrap();
     }
 
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let mut reader =
+        XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     // Forcing a refresh must not panic even though the file was corrupted by
     // the trailing byte; frame_count() on the (now invalid-per-cache) file
     // re-scans rather than trusting the stale/mismatched sidecar.
@@ -407,7 +411,8 @@ fn test_mda_offsets_npz_imported_when_proxide_sidecar_missing() {
     write_mda_offsets_npz(&path, &offsets, file_size, n_atoms as i32);
 
     // Fresh open: must import MDA npz, create proxide sidecar, agree on count.
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let parent = path.parent().unwrap();
+    let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     assert_eq!(reader.frame_count().unwrap(), n_frames);
     assert_eq!(reader.n_atoms().unwrap(), n_atoms);
     assert!(
@@ -439,7 +444,8 @@ fn test_mda_offsets_npz_size_mismatch_falls_through_to_scan() {
         n_atoms as i32,
     );
 
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let parent = path.parent().unwrap();
+    let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     assert_eq!(reader.frame_count().unwrap(), n_frames);
     assert!(
         proxide_sidecar.exists(),
@@ -457,17 +463,18 @@ fn test_xtc_reader_large_fixture_offsets_and_seek() {
         return;
     };
     let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let parent = path.parent().unwrap();
     let sidecar = PathBuf::from(format!("{}.offsets", path.display()));
 
     let n_frames = {
-        let mut reader = XtcReader::open(&path).expect("open failed");
+        let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
         reader.frame_count().expect("frame_count failed")
     };
     assert_eq!(n_frames, 5000);
     assert!(sidecar.exists(), "sidecar should be written after first open");
 
     // Second open reuses the cached sidecar and must agree.
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     assert_eq!(reader.frame_count().unwrap(), n_frames);
     assert_eq!(reader.n_atoms().unwrap(), 4);
 
@@ -709,9 +716,10 @@ fn test_stale_pre_fix_offset_cache_is_rescanned_not_trusted() {
     // just "any version mismatch gets rescanned" (already true, and would
     // prove nothing about whether the bump itself happened).
     stale_cache.version = OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX;
-    stale_cache.store(&path).expect("failed to write stale sidecar");
+    let parent = path.parent().unwrap();
+    stale_cache.store(&path, Some(parent)).expect("failed to write stale sidecar");
 
-    let mut reader = XtcReader::open(&path).expect("open failed");
+    let mut reader = XtcReader::open_with_offsets_dir(&path, Some(parent)).expect("open failed");
     let count = reader
         .frame_count()
         .expect("frame_count failed on rescan");
@@ -1009,4 +1017,174 @@ fn test_xtc_box_vectors_match_ground_truth_across_full_trajectory() {
         "worst-case box vector diff across trajectory was {max_abs_diff} Angstrom \
          at frame {max_abs_diff_frame}"
     );
+}
+
+#[test]
+fn test_sidecar_resolver_tier_5_off_writes_nothing_adjacent() {
+    let Some(xtc_path) = test_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let sidecar = PathBuf::from(format!("{}.offsets", path.display()));
+
+    // When no explicit arg, env var, or config is set, resolver falls through to tier 5: off
+    // XtcReader::open should read offsets into memory and NOT write any sidecar to disk
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let count = reader.frame_count().expect("frame_count failed");
+    assert!(count > 0);
+    assert!(
+        !sidecar.exists(),
+        "when caching is disabled, XtcReader::open must never write a sidecar adjacent to the file"
+    );
+}
+
+#[test]
+fn test_read_frames_parallel_early_stop_parity_against_all() {
+    use crate::formats::xtc::read_frames_parallel;
+
+    let Some(xtc_path) = frame0_xtc_path() else {
+        return;
+    };
+    let (_dir, path) = copy_fixture_to_tempdir(&xtc_path);
+    let mut reader = XtcReader::open(&path).expect("open failed");
+    let n_frames = reader.frame_count().unwrap();
+    let n_atoms = reader.n_atoms().unwrap();
+    assert!(n_atoms >= 6);
+
+    // Subset leading atoms (e.g. 0, 2, 5) which triggers #2231 & #2226
+    let atom_indices = vec![0, 2, 5];
+    let frame_indices: Vec<usize> = (0..n_frames.min(20)).collect();
+
+    // 1. Parallel read with early-stopping (#2231 / #2226)
+    let par_frames = read_frames_parallel(&path, &frame_indices, Some(&atom_indices))
+        .expect("read_frames_parallel failed");
+
+    // 2. Serial read using AtomSelection::All
+    for (idx, &frame_idx) in frame_indices.iter().enumerate() {
+        let molly_frame = reader
+            .read_frame_at(frame_idx, &AtomSelection::All)
+            .expect("read_frame_at failed");
+        let expected_positions = crate::formats::xtc::select_positions(&molly_frame, Some(&atom_indices)).unwrap();
+        assert_eq!(
+            par_frames[idx].positions, expected_positions,
+            "positions mismatch at frame {frame_idx}"
+        );
+        assert_eq!(
+            par_frames[idx].box_vectors,
+            molly_frame.boxvec_cols_2d(),
+            "box vectors mismatch at frame {frame_idx}"
+        );
+        assert_eq!(par_frames[idx].time, molly_frame.time);
+    }
+}
+
+/// A compressed frame whose declared `nbytes` exceeds molly's 256 KiB buffered
+/// threshold, with the payload missing. A matching offset sidecar keeps the
+/// frame in the index (the tolerant scan would otherwise drop a truncated
+/// *last* frame before the parallel reader sees it). Partial-atom decode must
+/// surface `XtcError` rather than panic or hang inside `Buffer::pop`.
+#[test]
+fn test_truncated_large_frame_partial_atoms_returns_xtc_error() {
+    use crate::formats::xtc::read_frames_parallel_with_offsets_dir;
+    use std::io::Write;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    const N_ATOMS: u32 = 100;
+    // molly `Buffer::MIN_BUFFERED_SIZE` is 2 * 128 KiB. At or below that, the
+    // buffered reader `read_exact`s the whole payload in `Buffer::new` and
+    // never reaches the `pop` loop this regression is about.
+    const NBYTES: u32 = 300_000;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let xtc_path = dir.path().join("truncated.xtc");
+    {
+        let mut f = std::fs::File::create(&xtc_path).expect("create xtc");
+        let w = |f: &mut std::fs::File, bytes: &[u8]| f.write_all(bytes).unwrap();
+        w(&mut f, &1995i32.to_be_bytes()); // magic
+        w(&mut f, &N_ATOMS.to_be_bytes());
+        w(&mut f, &0u32.to_be_bytes()); // step
+        w(&mut f, &0.0f32.to_be_bytes()); // time
+        for _ in 0..9 {
+            w(&mut f, &1.0f32.to_be_bytes());
+        }
+        w(&mut f, &N_ATOMS.to_be_bytes()); // natoms repeated
+        w(&mut f, &1000.0f32.to_be_bytes()); // precision
+        for _ in 0..3 {
+            w(&mut f, &0i32.to_be_bytes()); // minint
+        }
+        for _ in 0..3 {
+            w(&mut f, &10i32.to_be_bytes()); // maxint
+        }
+        w(&mut f, &10u32.to_be_bytes()); // smallidx (MAGICINTS[10] != 0)
+        w(&mut f, &NBYTES.to_be_bytes());
+        // Payload omitted: shorter than nbytes.
+    }
+
+    let offsets_dir = dir.path().join("offsets");
+    std::fs::create_dir(&offsets_dir).unwrap();
+    let meta = std::fs::metadata(&xtc_path).unwrap();
+    let cache = OffsetCache::from_metadata(&meta, N_ATOMS as usize, vec![0]).unwrap();
+    cache.store(&xtc_path, Some(&offsets_dir)).unwrap();
+
+    let xtc_path_thread = xtc_path.clone();
+    let offsets_thread = offsets_dir.clone();
+    let (tx, rx) = mpsc::channel();
+    let _worker = std::thread::spawn(move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            read_frames_parallel_with_offsets_dir(
+                &xtc_path_thread,
+                &[0usize],
+                Some(&[0usize][..]),
+                Some(offsets_thread.as_path()),
+            )
+        }));
+        let _ = tx.send(result);
+    });
+
+    match rx.recv_timeout(Duration::from_secs(3)) {
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            eprintln!("partial-atom read of a truncated >256KiB frame hung");
+            // The worker is stuck in molly's buffered `read_to_include` loop.
+            // Detach it and exit so the harness does not wait forever.
+            std::process::exit(101);
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            panic!("worker dropped the result channel");
+        }
+        Ok(Err(_)) => panic!("partial-atom read panicked instead of returning XtcError"),
+        Ok(Ok(Ok(_))) => panic!("expected XtcError from a truncated frame, got frames"),
+        Ok(Ok(Err(_))) => {}
+    }
+}
+
+/// Default `proxide_parallel_rt` counter is 1 and Python never calls
+/// `set_num_threads`. Native decode must still request orx `NumThreads::Auto`
+/// (0) and split work across the machine, not hard-cap at one thread.
+#[test]
+fn test_native_xtc_parallel_uses_auto_threads_when_unset() {
+    proxide_parallel_rt::clear_num_threads();
+    let (orx_threads, chunk_divisor) = crate::formats::xtc::xtc_thread_plan();
+    assert_eq!(
+        orx_threads, 0,
+        "native default must be NumThreads::Auto (0), got {orx_threads}"
+    );
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .max(1);
+    assert_eq!(
+        chunk_divisor, cpus,
+        "Auto must partition frames across available CPUs"
+    );
+
+    proxide_parallel_rt::set_num_threads(4);
+    assert_eq!(crate::formats::xtc::xtc_thread_plan(), (4, 4));
+    proxide_parallel_rt::set_num_threads(1);
+    assert_eq!(
+        crate::formats::xtc::xtc_thread_plan(),
+        (1, 1),
+        "an explicit count of 1 stays sequential"
+    );
+    proxide_parallel_rt::clear_num_threads();
 }

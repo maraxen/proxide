@@ -1,0 +1,16 @@
+{
+  "trajectory_total_s": 23.3537,
+  "open_s": 0.0113,
+  "seek_s": 0.0009,
+  "decompress_s": 23.2976,
+  "python_subset_s": 0.0438,
+  "trajectory_open_share": 0.0005,
+  "trajectory_seek_share": 0.0,
+  "trajectory_decompress_share": 0.9976,
+  "trajectory_subset_share": 0.0019,
+  "mmcif_total_s": 0.035,
+  "mmcif_file_count": 10,
+  "mmcif_parse_rate": 285.71,
+  "dropped_debts": [],
+  "dropped_reasons": {}
+}
