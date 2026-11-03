@@ -51,7 +51,6 @@ fn crowdedness_before_cache_returns_error() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn cache_residue_missing_n() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -86,13 +85,11 @@ fn cache_residue_missing_n() {
     let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
     let ri = ResidueIndex(0);
 
-    let _result = confind.cache_residue(ri);
-    // May succeed or fail depending on implementation; document behavior
-    // The test documents that missing backbone atoms are handled gracefully
+    let result = confind.cache_residue(ri);
+    assert!(matches!(result, Err(ConFindError::MissingBackbone(ResidueIndex(0), "N"))));
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn cache_residue_missing_ca() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -127,12 +124,11 @@ fn cache_residue_missing_ca() {
     let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
     let ri = ResidueIndex(0);
 
-    let _result = confind.cache_residue(ri);
-    // Document behavior with missing CA
+    let result = confind.cache_residue(ri);
+    assert!(matches!(result, Err(ConFindError::MissingBackbone(ResidueIndex(0), "CA"))));
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn cache_residue_missing_c() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -167,8 +163,8 @@ fn cache_residue_missing_c() {
     let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
     let ri = ResidueIndex(0);
 
-    let _result = confind.cache_residue(ri);
-    // Document behavior with missing C
+    let result = confind.cache_residue(ri);
+    assert!(matches!(result, Err(ConFindError::MissingBackbone(ResidueIndex(0), "C"))));
 }
 
 #[test]

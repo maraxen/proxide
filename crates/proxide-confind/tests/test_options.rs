@@ -570,8 +570,20 @@ fn construction_validates_in_documented_order() {
             ..Cutoffs::default()
         });
     assert!(matches!(
-        ConFind::with_config(rotlib, make_helix_backbone(3), false, cfg).err(),
+        ConFind::with_config(rotlib.clone(), make_helix_backbone(3), false, cfg).err(),
         Some(ConFindError::InvalidConfig(ConfigError::ScopeOutOfRange { .. }))
+    ));
+    // V5 before strict preconditions: a structure with missing backbone atoms and d_cut = 5.0
+    // with strict = true still fails with DcutTooSmall (V5) before PreconditionsFailed.
+    let mut bad_bb = (*make_helix_backbone(3)).clone();
+    bad_bb.bb[0].n = None;
+    let cfg = ConFindConfig::default().with_cutoffs(Cutoffs {
+        d_cut: 5.0,
+        ..Cutoffs::default()
+    });
+    assert!(matches!(
+        ConFind::with_config(rotlib, Arc::new(bad_bb), true, cfg).err(),
+        Some(ConFindError::InvalidConfig(ConfigError::DcutTooSmall { .. }))
     ));
 }
 

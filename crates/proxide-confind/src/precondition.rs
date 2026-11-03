@@ -37,7 +37,7 @@ pub enum Severity {
 }
 
 /// Result of precondition checking on a ProteinBackbone.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PreconditionReport {
     pub violations: Vec<PreconditionViolation>,
 }

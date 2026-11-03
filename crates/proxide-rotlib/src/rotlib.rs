@@ -496,20 +496,28 @@ impl RotamerLibrary {
             .get(aa)
             .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
 
+        let extra_cis = if aa == "PRO" {
+            self.entries.get(CIS_PRO_KEY)
+        } else {
+            None
+        };
+
         let mut reach: Option<f64> = None;
-        for bin in &entry.rotamers {
-            for rotamer in &bin.coords {
-                for (xyz, name) in rotamer.iter().zip(&entry.atom_names) {
-                    if crate::sidechain::is_backbone_or_hydrogen(name) {
-                        continue;
+        for e in std::iter::once(entry).chain(extra_cis) {
+            for bin in &e.rotamers {
+                for rotamer in &bin.coords {
+                    for (xyz, name) in rotamer.iter().zip(&e.atom_names) {
+                        if crate::sidechain::is_backbone_or_hydrogen(name) {
+                            continue;
+                        }
+                        let d = (xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2]).sqrt();
+                        if !d.is_finite() {
+                            return Err(RotlibError::InvalidFormat(format!(
+                                "residue '{aa}': non-finite sidechain coordinate for atom {name}"
+                            )));
+                        }
+                        reach = Some(reach.map_or(d, |r| r.max(d)));
                     }
-                    let d = (xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2]).sqrt();
-                    if !d.is_finite() {
-                        return Err(RotlibError::InvalidFormat(format!(
-                            "residue '{aa}': non-finite sidechain coordinate for atom {name}"
-                        )));
-                    }
-                    reach = Some(reach.map_or(d, |r| r.max(d)));
                 }
             }
         }
@@ -828,5 +836,78 @@ mod tests {
         assert!(result_fallback.is_ok());
         let bin_fallback = result_fallback.unwrap();
         assert_eq!(bin_fallback, 0);
+    }
+
+    #[test]
+    fn test_max_sidechain_reach_and_errors() {
+        use std::collections::HashMap;
+        let pro_entry = AaEntry {
+            atom_names: vec!["N".to_string(), "CB".to_string(), "HB1".to_string()],
+            bin_phi_centers: vec![-60.0],
+            bin_psi_centers: vec![-45.0],
+            default_bin: 0,
+            rotamers: vec![BinData {
+                probs: vec![1.0],
+                coords: vec![vec![[100.0, 0.0, 0.0], [3.0, 4.0, 0.0], [50.0, 0.0, 0.0]]],
+            }],
+        };
+        let cpro_entry = AaEntry {
+            atom_names: vec!["CB".to_string()],
+            bin_phi_centers: vec![-60.0],
+            bin_psi_centers: vec![-45.0],
+            default_bin: 0,
+            rotamers: vec![BinData {
+                probs: vec![1.0],
+                coords: vec![vec![[6.0, 8.0, 0.0]]],
+            }],
+        };
+        let empty_sc = AaEntry {
+            atom_names: vec!["CA".to_string(), "H".to_string()],
+            bin_phi_centers: vec![-60.0],
+            bin_psi_centers: vec![-45.0],
+            default_bin: 0,
+            rotamers: vec![BinData {
+                probs: vec![1.0],
+                coords: vec![vec![[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]],
+            }],
+        };
+        let nan_sc = AaEntry {
+            atom_names: vec!["CB".to_string()],
+            bin_phi_centers: vec![-60.0],
+            bin_psi_centers: vec![-45.0],
+            default_bin: 0,
+            rotamers: vec![BinData {
+                probs: vec![1.0],
+                coords: vec![vec![[f64::NAN, 0.0, 0.0]]],
+            }],
+        };
+
+        let mut entries = HashMap::new();
+        entries.insert("ALA".to_string(), pro_entry.clone());
+        entries.insert("PRO".to_string(), pro_entry);
+        entries.insert("CPR".to_string(), cpro_entry);
+        entries.insert("GLY".to_string(), empty_sc);
+        entries.insert("VAL".to_string(), nan_sc);
+        let lib = RotamerLibrary { entries };
+
+        // Backbone ("N") and hydrogen ("HB1") are ignored; CB at (3, 4, 0) has reach 5.0.
+        assert!((lib.max_sidechain_reach("ALA").unwrap() - 5.0).abs() < 1e-12);
+        // PRO also checks CPR (6, 8, 0) -> reach 10.0.
+        assert!((lib.max_sidechain_reach("PRO").unwrap() - 10.0).abs() < 1e-12);
+        // Unknown AA -> UnknownAa
+        assert!(matches!(
+            lib.max_sidechain_reach("UNK"),
+            Err(RotlibError::UnknownAa(_))
+        ));
+        // No sidechain atoms -> InvalidFormat
+        assert!(matches!(
+            lib.max_sidechain_reach("GLY"),
+            Err(RotlibError::InvalidFormat(_))
+        ));
+        // Non-finite sidechain coordinate -> InvalidFormat
+        assert!(matches!(
+            lib.max_sidechain_reach("VAL"),
+            Err(RotlibError::InvalidFormat(_))
+        ));
     }
 }

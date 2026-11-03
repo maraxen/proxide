@@ -27,7 +27,7 @@ pub const CONTACT_THRESHOLD: f64 = 0.02;
 /// Stores (residue_a, residue_b) contact pairs and their associated
 /// contact-degree values.  Pairs are stored in insertion order; use
 /// [`ordered_pairs`](ContactList::ordered_pairs) for a stable sorted view.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ContactList {
     /// Unordered contact pairs.  Each element corresponds to `degrees[i]`.
     pub pairs: Vec<(ResidueIndex, ResidueIndex)>,

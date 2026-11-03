@@ -150,6 +150,10 @@ fn invalid_values_fail_naming_option_and_value() {
     expect_failure(&["--dcut", "10"], &["--dcut", "required"]);
     expect_failure(&["--scope", "Z:1-3"], &["--scope", "Z:1-3"]);
     expect_failure(&["--scope", "A:x-3"], &["--scope", "A:x-3"]);
+    expect_failure(&["--scope", ""], &["--scope", "empty"]);
+    expect_failure(&["--cdcut", "nan"], &["--cdcut", "nan", "finite"]);
+    expect_failure(&["--incut", "inf"], &["--incut", "inf", "finite"]);
+    expect_failure(&["--threads", "0"], &["--threads", "0", "positive integer"]);
     expect_failure(&["--cbclash"], &["--cbclash", "missing value"]);
 }
 

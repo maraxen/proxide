@@ -98,10 +98,6 @@ impl ConFind {
             }
         };
 
-        if strict {
-            require_preconditions(&backbone)?;
-        }
-
         let mut r_max = Vec::with_capacity(AA_NAMES.len());
         for &aa in AA_NAMES {
             r_max.push((aa, rotlib.max_sidechain_reach(aa)?));
@@ -114,6 +110,10 @@ impl ConFind {
                 required,
             }
             .into());
+        }
+
+        if strict {
+            require_preconditions(&backbone)?;
         }
 
         let bb_grid = Arc::new(build_backbone_grid_with(

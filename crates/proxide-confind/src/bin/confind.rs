@@ -35,10 +35,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("loading PDB: {}", opts.pdb.display());
     let backbone = Arc::new(load_pdb_f64(&opts.pdb)?);
 
-    // orx-parallel doesn't have a global thread pool configuration;
-    // thread count is set per-call via .num_threads() on the par iterator.
-    if let Some(_n) = opts.threads {
-        log::info!("note: thread count is configured per-operation in orx-parallel");
+    if let Some(n) = opts.threads {
+        log::info!("configured parallel thread count: {n}");
     }
 
     // Resolve the freedom scope against the loaded structure.
@@ -71,8 +69,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Freedom is reported for selected residues inside the analysis scope.
     let freedom_residues: Vec<ResidueIndex> =
         residues.iter().copied().filter(|&ri| cf.in_scope(ri)).collect();
-    let freedom_list: Vec<(ResidueIndex, f64)> = freedom_residues
-        .into_par()
+    let par = freedom_residues.into_par();
+    let par = if let Some(n) = opts.threads {
+        par.num_threads(n)
+    } else {
+        par
+    };
+    let freedom_list: Vec<(ResidueIndex, f64)> = par
         .map(|ri| cf.freedom(ri).map(|f| (ri, f)))
         .collect::<Vec<Result<(ResidueIndex, f64), ConFindError>>>()
         .into_iter()
@@ -238,6 +241,9 @@ fn parse_selection(spec: &str, backbone: &ProteinBackbone) -> Result<Vec<Residue
             return Err(format!("residue token '{part}' matches no residue"));
         }
     }
+    if result.is_empty() {
+        return Err("selection is empty (expected at least one residue token)".to_string());
+    }
     result.sort_unstable();
     result.dedup();
     Ok(result)
@@ -329,13 +335,28 @@ fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
             "--rLib" => rlib = Some(PathBuf::from(value()?)),
             "--o" => out = Some(PathBuf::from(value()?)),
             "--sel" => sel = Some(value()?.to_string()),
-            "--cdcut" => cd_cut = number(flag, value()?)?,
-            "--incut" => in_cut = number(flag, value()?)?,
+            "--cdcut" => {
+                let raw = value()?;
+                let v = number(flag, raw)?;
+                if !v.is_finite() {
+                    return Err(format!("{flag}: invalid value '{raw}'; allowed: a finite number").into());
+                }
+                cd_cut = v;
+            }
+            "--incut" => {
+                let raw = value()?;
+                let v = number(flag, raw)?;
+                if !v.is_finite() {
+                    return Err(format!("{flag}: invalid value '{raw}'; allowed: a finite number").into());
+                }
+                in_cut = v;
+            }
             "--threads" => {
                 let v = value()?;
-                threads = Some(v.parse::<usize>().map_err(|_| {
-                    format!("--threads: invalid value '{v}'; allowed: a non-negative integer")
-                })?);
+                let n = v.parse::<usize>().ok().filter(|&n| n > 0).ok_or_else(|| {
+                    format!("--threads: invalid value '{v}'; allowed: a positive integer (>= 1)")
+                })?;
+                threads = Some(n);
             }
             "--cbclash" => {
                 cb_clash = value()?
