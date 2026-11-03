@@ -21,18 +21,18 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from proxide.chem.partial_charges import (
-    CHARGE_SOURCE_ESPALOMA_AM1BCC,
-    CHARGE_SOURCE_GASTEIGER,
-    assign_espaloma_charges_rdkit,
+  CHARGE_SOURCE_ESPALOMA_AM1BCC,
+  CHARGE_SOURCE_GASTEIGER,
+  assign_espaloma_charges_rdkit,
 )
 
 if TYPE_CHECKING:
-    from rdkit import Chem
+  from rdkit import Chem
 
 try:
-    from rdkit import Chem
+  from rdkit import Chem
 except ImportError:
-    Chem = None
+  Chem = None
 
 #: Numerical blow-up guard for RDKit Gasteiger partial charges (elementary
 #: charge units). This is NOT a calibrated physical bound -- no finite
@@ -55,21 +55,21 @@ _CHARGE_TOTAL_CONSERVATION_TOL = 1e-3
 #: recorded in parameterize_gaff_with_rdkit's result dict. No "auto" entry
 #: (debt #1900 decision d2).
 _CHARGE_METHOD_SOURCES = {
-    "espaloma": CHARGE_SOURCE_ESPALOMA_AM1BCC,
-    "gasteiger": CHARGE_SOURCE_GASTEIGER,
+  "espaloma": CHARGE_SOURCE_ESPALOMA_AM1BCC,
+  "gasteiger": CHARGE_SOURCE_GASTEIGER,
 }
 
 
 @dataclass
 class Gaff2WildAtomDef:
-    """WILDATOM definition for pattern matching.
+  """WILDATOM definition for pattern matching.
 
-    WILDATOM defines symbol shortcuts for sets of atom types that can be
-    used in rule matching (e.g., XX = C,N,O,S,P).
-    """
+  WILDATOM defines symbol shortcuts for sets of atom types that can be
+  used in rule matching (e.g., XX = C,N,O,S,P).
+  """
 
-    symbol: str
-    elements: list[str]
+  symbol: str
+  elements: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -89,53 +89,53 @@ _PROP_TOKEN_RE = re.compile(r"^(\d*)([A-Za-z]+\d*)$")
 
 @dataclass
 class PropToken:
-    word: str          # e.g. "RG3", "AR1", "SB", "sb", "NR", "DL"
-    count: int | None  # leading digit prefix, e.g. 2 in "2DL"; None = presence-only
+  word: str  # e.g. "RG3", "AR1", "SB", "sb", "NR", "DL"
+  count: int | None  # leading digit prefix, e.g. 2 in "2DL"; None = presence-only
 
 
 @dataclass
 class AtomicPropExpr:
-    op: str  # "AND" (comma) or "OR" (dot)
-    tokens: list[PropToken]
+  op: str  # "AND" (comma) or "OR" (dot)
+  tokens: list[PropToken]
 
 
 def _tokenize_prop_list(raw: str) -> tuple[str, list[str]]:
-    """Split a bracket body on its top-level separator, returning (op, raw_tokens)."""
-    raw = raw.strip()
-    if "." in raw:
-        return "OR", [t.strip() for t in raw.split(".") if t.strip()]
-    return "AND", [t.strip() for t in raw.split(",") if t.strip()]
+  """Split a bracket body on its top-level separator, returning (op, raw_tokens)."""
+  raw = raw.strip()
+  if "." in raw:
+    return "OR", [t.strip() for t in raw.split(".") if t.strip()]
+  return "AND", [t.strip() for t in raw.split(",") if t.strip()]
 
 
 def parse_atomic_prop(raw: str) -> AtomicPropExpr | None:
-    """Parse an f8 bracket body (without the surrounding `[...]`) into an AST.
+  """Parse an f8 bracket body (without the surrounding `[...]`) into an AST.
 
-    Raises:
-        ValueError: if a token does not match the property token regex (debt #2363),
-            or if raw_tokens contains any text that cannot be parsed.
-    """
-    raw = raw.strip()
-    if not raw or raw == "*":
-        return None
+  Raises:
+      ValueError: if a token does not match the property token regex (debt #2363),
+          or if raw_tokens contains any text that cannot be parsed.
+  """
+  raw = raw.strip()
+  if not raw or raw == "*":
+    return None
 
-    op, raw_tokens = _tokenize_prop_list(raw)
-    tokens: list[PropToken] = []
-    for raw_tok in raw_tokens:
-        m = _PROP_TOKEN_RE.match(raw_tok)
-        if not m:
-            raise ValueError(f"f8 token does not match property pattern: {raw_tok!r}")
-        count_str, word = m.group(1), m.group(2)
-        tokens.append(PropToken(word=word, count=int(count_str) if count_str else None))
-    return AtomicPropExpr(op=op, tokens=tokens) if tokens else None
+  op, raw_tokens = _tokenize_prop_list(raw)
+  tokens: list[PropToken] = []
+  for raw_tok in raw_tokens:
+    m = _PROP_TOKEN_RE.match(raw_tok)
+    if not m:
+      raise ValueError(f"f8 token does not match property pattern: {raw_tok!r}")
+    count_str, word = m.group(1), m.group(2)
+    tokens.append(PropToken(word=word, count=int(count_str) if count_str else None))
+  return AtomicPropExpr(op=op, tokens=tokens) if tokens else None
 
 
 def atomic_prop_matches(expr: AtomicPropExpr | None, facts: AtomBondFacts) -> bool:
-    """Evaluate a parsed f8 expression against one atom's precomputed bond/ring facts."""
-    if expr is None:
-        return True
+  """Evaluate a parsed f8 expression against one atom's precomputed bond/ring facts."""
+  if expr is None:
+    return True
 
-    results = [_prop_token_matches(tok, facts) for tok in expr.tokens]
-    return any(results) if expr.op == "OR" else all(results)
+  results = [_prop_token_matches(tok, facts) for tok in expr.tokens]
+  return any(results) if expr.op == "OR" else all(results)
 
 
 # ---------------------------------------------------------------------------
@@ -154,258 +154,258 @@ def atomic_prop_matches(expr: AtomicPropExpr | None, facts: AtomBondFacts) -> bo
 
 @dataclass
 class NeighborSpec:
-    elem_or_wild: str
-    attached_count: int | None = None
-    own_props: AtomicPropExpr | None = None
-    edge_bond_reqs: list[tuple[str, bool]] | None = None  # (bond_word, must_have)
-    nested: ChemEnvExpr | None = None
+  elem_or_wild: str
+  attached_count: int | None = None
+  own_props: AtomicPropExpr | None = None
+  edge_bond_reqs: list[tuple[str, bool]] | None = None  # (bond_word, must_have)
+  nested: ChemEnvExpr | None = None
 
 
 @dataclass
 class ChemEnvExpr:
-    neighbors: list[NeighborSpec]
+  neighbors: list[NeighborSpec]
 
 
 class _TokenStream:
-    def __init__(self, raw: str) -> None:
-        self.raw = raw
-        self.pos = 0
+  def __init__(self, raw: str) -> None:
+    self.raw = raw
+    self.pos = 0
 
-    def peek(self) -> str:
-        return self.raw[self.pos] if self.pos < len(self.raw) else ""
+  def peek(self) -> str:
+    return self.raw[self.pos] if self.pos < len(self.raw) else ""
 
-    def advance(self) -> str:
-        ch = self.peek()
-        self.pos += 1
-        return ch
+  def advance(self) -> str:
+    ch = self.peek()
+    self.pos += 1
+    return ch
 
-    def eof(self) -> bool:
-        return self.pos >= len(self.raw)
+  def eof(self) -> bool:
+    return self.pos >= len(self.raw)
 
 
 def parse_chem_env(raw: str) -> ChemEnvExpr | None:
-    """Parse an f9 pattern (including its outer parens) into an AST.
+  """Parse an f9 pattern (including its outer parens) into an AST.
 
-    Raises:
-        ValueError: if f9 starts with "(" but is unbalanced (debt #2363),
-            or if there is trailing non-whitespace text after the closing "()".
-    """
-    raw = raw.strip()
-    if not raw or raw == "*":
-        return None
-    if not raw.startswith("("):
-        return None
+  Raises:
+      ValueError: if f9 starts with "(" but is unbalanced (debt #2363),
+          or if there is trailing non-whitespace text after the closing "()".
+  """
+  raw = raw.strip()
+  if not raw or raw == "*":
+    return None
+  if not raw.startswith("("):
+    return None
 
-    stream = _TokenStream(raw)
-    expr = _parse_paren_group(stream)
+  stream = _TokenStream(raw)
+  expr = _parse_paren_group(stream)
 
-    # Check for trailing non-whitespace text after closing paren (debt #2363)
-    if not stream.eof():
-        remaining = stream.raw[stream.pos:].strip()
-        if remaining:
-            raise ValueError(f"f9 has trailing text after closing paren: {remaining!r}")
+  # Check for trailing non-whitespace text after closing paren (debt #2363)
+  if not stream.eof():
+    remaining = stream.raw[stream.pos :].strip()
+    if remaining:
+      raise ValueError(f"f9 has trailing text after closing paren: {remaining!r}")
 
-    return expr
+  return expr
 
 
 def _parse_paren_group(stream: _TokenStream) -> ChemEnvExpr | None:
-    if stream.peek() != "(":
-        return None
-    stream.advance()  # consume "("
+  if stream.peek() != "(":
+    return None
+  stream.advance()  # consume "("
 
-    neighbors: list[NeighborSpec | None] = []
-    current = []
-    depth = 0
-    found_closing_paren = False
-    while not stream.eof():
-        ch = stream.peek()
-        if ch == "(" or ch == "[":
-            depth += 1 if ch == "(" else 0
-            current.append(stream.advance())
-            if ch == "[":
-                # consume through matching "]" verbatim (no nesting of [] within [])
-                while not stream.eof() and stream.peek() != "]":
-                    current.append(stream.advance())
-                if not stream.eof():
-                    current.append(stream.advance())
-                else:
-                    # Hit EOF with unclosed "[" inside f9 (debt #2363)
-                    raise ValueError("f9 bracket opened but never closed")
-            continue
-        if ch == ")":
-            if depth == 0:
-                stream.advance()  # consume closing ")"
-                found_closing_paren = True
-                break
-            depth -= 1
-            current.append(stream.advance())
-            continue
-        if ch == "," and depth == 0:
-            neighbors.append(_parse_neighbor_spec("".join(current)))
-            current = []
-            stream.advance()
-            continue
-        current.append(stream.advance())
+  neighbors: list[NeighborSpec | None] = []
+  current = []
+  depth = 0
+  found_closing_paren = False
+  while not stream.eof():
+    ch = stream.peek()
+    if ch == "(" or ch == "[":
+      depth += 1 if ch == "(" else 0
+      current.append(stream.advance())
+      if ch == "[":
+        # consume through matching "]" verbatim (no nesting of [] within [])
+        while not stream.eof() and stream.peek() != "]":
+          current.append(stream.advance())
+        if not stream.eof():
+          current.append(stream.advance())
+        else:
+          # Hit EOF with unclosed "[" inside f9 (debt #2363)
+          raise ValueError("f9 bracket opened but never closed")
+      continue
+    if ch == ")":
+      if depth == 0:
+        stream.advance()  # consume closing ")"
+        found_closing_paren = True
+        break
+      depth -= 1
+      current.append(stream.advance())
+      continue
+    if ch == "," and depth == 0:
+      neighbors.append(_parse_neighbor_spec("".join(current)))
+      current = []
+      stream.advance()
+      continue
+    current.append(stream.advance())
 
-    # Check for unmatched opening parens (debt #2363)
-    if depth > 0:
-        raise ValueError("f9 has unmatched opening paren")
+  # Check for unmatched opening parens (debt #2363)
+  if depth > 0:
+    raise ValueError("f9 has unmatched opening paren")
 
-    # Check for missing top-level closing paren (debt #2363)
-    if not found_closing_paren:
-        raise ValueError("f9 has unmatched opening paren")
+  # Check for missing top-level closing paren (debt #2363)
+  if not found_closing_paren:
+    raise ValueError("f9 has unmatched opening paren")
 
-    if current:
-        neighbors.append(_parse_neighbor_spec("".join(current)))
+  if current:
+    neighbors.append(_parse_neighbor_spec("".join(current)))
 
-    resolved_neighbors = [n for n in neighbors if n is not None]
-    return ChemEnvExpr(neighbors=resolved_neighbors) if resolved_neighbors else None
+  resolved_neighbors = [n for n in neighbors if n is not None]
+  return ChemEnvExpr(neighbors=resolved_neighbors) if resolved_neighbors else None
 
 
 _NEIGHBOR_HEAD_RE = re.compile(r"^([A-Za-z]+)(\d*)")
 
 
 def _parse_neighbor_spec(raw: str) -> NeighborSpec | None:
-    raw = raw.strip()
-    if not raw:
-        return None
+  raw = raw.strip()
+  if not raw:
+    return None
 
-    m = _NEIGHBOR_HEAD_RE.match(raw)
-    if not m:
-        return None
-    elem_or_wild = m.group(1)
-    attached_count = int(m.group(2)) if m.group(2) else None
-    rest = raw[m.end():]
+  m = _NEIGHBOR_HEAD_RE.match(raw)
+  if not m:
+    return None
+  elem_or_wild = m.group(1)
+  attached_count = int(m.group(2)) if m.group(2) else None
+  rest = raw[m.end() :]
 
-    own_props: AtomicPropExpr | None = None
-    edge_bond_reqs: list[tuple[str, bool]] = []
-    nested: ChemEnvExpr | None = None
+  own_props: AtomicPropExpr | None = None
+  edge_bond_reqs: list[tuple[str, bool]] = []
+  nested: ChemEnvExpr | None = None
 
-    if rest.startswith("["):
-        close = rest.find("]")
-        if close != -1:
-            bracket_body = rest[1:close]
-            rest = rest[close + 1:]
-            # Bug found post-merge PARITY audit (260820): this used to do
-            # bracket_body.replace(".", ",").split(",") -- silently turning the
-            # DEF footer's own documented "." = OR ("the ring and aromatity
-            # descriptions") into an AND before parse_atomic_prop ever saw it.
-            # The only chem_env bracket in the whole DEF file that uses "."
-            # is (XX[AR1.AR2.AR3]) (nv/nm/nn's "attached to any aromatic-class
-            # neighbor" pattern, confirmed by grep -- no bracket in the file
-            # mixes "." with a comma-separated edge_bond_req, so a dot-bearing
-            # bracket is unambiguously a plain-token OR list, never a mix).
-            # AND(AR1, AR2, AR3) is unsatisfiable (an atom has exactly one
-            # aromaticity class), so nv/nm/nn could never fire and silently
-            # fell through to n8/np/nq -- e.g. aniline's N mistyped n8 instead
-            # of nv.
-            if "." in bracket_body:
-                own_props = parse_atomic_prop(bracket_body)
-            else:
-                plain_tokens = []
-                for raw_tok in bracket_body.split(","):
-                    raw_tok = raw_tok.strip()
-                    if not raw_tok:
-                        continue
-                    if raw_tok.endswith("''"):
-                        edge_bond_reqs.append((raw_tok[:-2], False))
-                    elif raw_tok.endswith("'"):
-                        edge_bond_reqs.append((raw_tok[:-1], True))
-                    else:
-                        plain_tokens.append(raw_tok)
-                if plain_tokens:
-                    own_props = parse_atomic_prop(",".join(plain_tokens))
+  if rest.startswith("["):
+    close = rest.find("]")
+    if close != -1:
+      bracket_body = rest[1:close]
+      rest = rest[close + 1 :]
+      # Bug found post-merge PARITY audit (260820): this used to do
+      # bracket_body.replace(".", ",").split(",") -- silently turning the
+      # DEF footer's own documented "." = OR ("the ring and aromatity
+      # descriptions") into an AND before parse_atomic_prop ever saw it.
+      # The only chem_env bracket in the whole DEF file that uses "."
+      # is (XX[AR1.AR2.AR3]) (nv/nm/nn's "attached to any aromatic-class
+      # neighbor" pattern, confirmed by grep -- no bracket in the file
+      # mixes "." with a comma-separated edge_bond_req, so a dot-bearing
+      # bracket is unambiguously a plain-token OR list, never a mix).
+      # AND(AR1, AR2, AR3) is unsatisfiable (an atom has exactly one
+      # aromaticity class), so nv/nm/nn could never fire and silently
+      # fell through to n8/np/nq -- e.g. aniline's N mistyped n8 instead
+      # of nv.
+      if "." in bracket_body:
+        own_props = parse_atomic_prop(bracket_body)
+      else:
+        plain_tokens = []
+        for raw_tok in bracket_body.split(","):
+          raw_tok = raw_tok.strip()
+          if not raw_tok:
+            continue
+          if raw_tok.endswith("''"):
+            edge_bond_reqs.append((raw_tok[:-2], False))
+          elif raw_tok.endswith("'"):
+            edge_bond_reqs.append((raw_tok[:-1], True))
+          else:
+            plain_tokens.append(raw_tok)
+        if plain_tokens:
+          own_props = parse_atomic_prop(",".join(plain_tokens))
 
-    if rest.startswith("("):
-        nested = _parse_paren_group(_TokenStream(rest))
+  if rest.startswith("("):
+    nested = _parse_paren_group(_TokenStream(rest))
 
-    return NeighborSpec(
-        elem_or_wild=elem_or_wild,
-        attached_count=attached_count,
-        own_props=own_props,
-        edge_bond_reqs=edge_bond_reqs or None,
-        nested=nested,
-    )
+  return NeighborSpec(
+    elem_or_wild=elem_or_wild,
+    attached_count=attached_count,
+    own_props=own_props,
+    edge_bond_reqs=edge_bond_reqs or None,
+    nested=nested,
+  )
 
 
 def _resolve_wildatom(token: str, wildatom_map: dict[str, list[str]]) -> list[str]:
-    return wildatom_map.get(token, [token])
+  return wildatom_map.get(token, [token])
 
 
 def chem_env_matches(
-    expr: ChemEnvExpr | None,
-    atom,
-    wildatom_map: dict[str, list[str]],
-    predecessor=None,
+  expr: ChemEnvExpr | None,
+  atom,
+  wildatom_map: dict[str, list[str]],
+  predecessor=None,
 ) -> bool:
-    """Check whether `atom`'s real neighbor graph satisfies a parsed f9 pattern.
+  """Check whether `atom`'s real neighbor graph satisfies a parsed f9 pattern.
 
-    Existential, pairwise-distinct matching: each entry in `expr.neighbors` must
-    bind to a different actual neighbor of `atom` (excluding `predecessor`
-    only for the purpose of *counting this atom itself* -- predecessor loop-back as a
-    neighbor candidate is permitted, matching how conjugated-ring patterns like
-    `cc`'s `(C3(C3))` are meant to walk back through a ring).
+  Existential, pairwise-distinct matching: each entry in `expr.neighbors` must
+  bind to a different actual neighbor of `atom` (excluding `predecessor`
+  only for the purpose of *counting this atom itself* -- predecessor loop-back as a
+  neighbor candidate is permitted, matching how conjugated-ring patterns like
+  `cc`'s `(C3(C3))` are meant to walk back through a ring).
 
-    Candidates include H neighbors, not just heavy atoms: `hw`'s pattern
-    `(O(H1))` is the only f9 pattern anywhere in ATOMTYPE_GFF2.DEF that
-    targets H as an explicit element (confirmed by grep), and it needs to see
-    H neighbors to match at all. This is safe for every other rule: no
-    WILDATOM macro (XX/XA/XB/XC/XD) or plain-element spec anywhere else
-    resolves to "H", so `_neighbor_matches`'s element gate
-    (`cand.GetSymbol() not in resolved`) already rejects an H candidate for
-    every spec except `hw`'s -- including H atoms in the candidate pool only
-    adds (harmless, small) extra iteration for those other rules.
-    """
-    if expr is None:
-        return True
+  Candidates include H neighbors, not just heavy atoms: `hw`'s pattern
+  `(O(H1))` is the only f9 pattern anywhere in ATOMTYPE_GFF2.DEF that
+  targets H as an explicit element (confirmed by grep), and it needs to see
+  H neighbors to match at all. This is safe for every other rule: no
+  WILDATOM macro (XX/XA/XB/XC/XD) or plain-element spec anywhere else
+  resolves to "H", so `_neighbor_matches`'s element gate
+  (`cand.GetSymbol() not in resolved`) already rejects an H candidate for
+  every spec except `hw`'s -- including H atoms in the candidate pool only
+  adds (harmless, small) extra iteration for those other rules.
+  """
+  if expr is None:
+    return True
 
-    candidates = list(atom.GetNeighbors())
-    return _match_neighbor_specs(expr.neighbors, candidates, atom, wildatom_map)
+  candidates = list(atom.GetNeighbors())
+  return _match_neighbor_specs(expr.neighbors, candidates, atom, wildatom_map)
 
 
 def _match_neighbor_specs(specs, candidates, predecessor, wildatom_map) -> bool:
-    if not specs:
+  if not specs:
+    return True
+  spec, rest = specs[0], specs[1:]
+  for i, cand in enumerate(candidates):
+    if _neighbor_matches(spec, cand, predecessor, wildatom_map):
+      remaining = candidates[:i] + candidates[i + 1 :]
+      if _match_neighbor_specs(rest, remaining, predecessor, wildatom_map):
         return True
-    spec, rest = specs[0], specs[1:]
-    for i, cand in enumerate(candidates):
-        if _neighbor_matches(spec, cand, predecessor, wildatom_map):
-            remaining = candidates[:i] + candidates[i + 1:]
-            if _match_neighbor_specs(rest, remaining, predecessor, wildatom_map):
-                return True
-    return False
+  return False
 
 
 def _neighbor_matches(
-    spec: NeighborSpec, cand, predecessor, wildatom_map: dict[str, list[str]]
+  spec: NeighborSpec, cand, predecessor, wildatom_map: dict[str, list[str]]
 ) -> bool:
-    resolved = _resolve_wildatom(spec.elem_or_wild, wildatom_map)
-    if cand.GetSymbol() not in resolved:
+  resolved = _resolve_wildatom(spec.elem_or_wild, wildatom_map)
+  if cand.GetSymbol() not in resolved:
+    return False
+
+  if spec.attached_count is not None:
+    if _attached_count(cand) != spec.attached_count:
+      return False
+
+  if spec.edge_bond_reqs:
+    bond = cand.GetOwningMol().GetBondBetweenAtoms(cand.GetIdx(), predecessor.GetIdx())
+    if bond is None:
+      return False
+    edge_facts = _bond_category_facts(bond)
+    for bond_word, must_have in spec.edge_bond_reqs:
+      has_it = edge_facts.get(bond_word, False)
+      if has_it != must_have:
         return False
 
-    if spec.attached_count is not None:
-        if _attached_count(cand) != spec.attached_count:
-            return False
+  if spec.own_props is not None:
+    cand_facts = _atom_bond_facts(cand)
+    if not atomic_prop_matches(spec.own_props, cand_facts):
+      return False
 
-    if spec.edge_bond_reqs:
-        bond = cand.GetOwningMol().GetBondBetweenAtoms(cand.GetIdx(), predecessor.GetIdx())
-        if bond is None:
-            return False
-        edge_facts = _bond_category_facts(bond)
-        for bond_word, must_have in spec.edge_bond_reqs:
-            has_it = edge_facts.get(bond_word, False)
-            if has_it != must_have:
-                return False
+  if spec.nested is not None:
+    if not chem_env_matches(spec.nested, cand, wildatom_map, predecessor=cand):
+      return False
 
-    if spec.own_props is not None:
-        cand_facts = _atom_bond_facts(cand)
-        if not atomic_prop_matches(spec.own_props, cand_facts):
-            return False
-
-    if spec.nested is not None:
-        if not chem_env_matches(spec.nested, cand, wildatom_map, predecessor=cand):
-            return False
-
-    return True
+  return True
 
 
 # ---------------------------------------------------------------------------
@@ -415,287 +415,285 @@ def _neighbor_matches(
 
 @dataclass
 class AtomBondFacts:
-    in_ring: bool
-    ring_counts_by_size: dict[int, int]
-    aromaticity_class: str | None  # "AR1"/"AR2"/"AR3"/"AR4"/"AR5", best-effort (see note)
-    bond_counts: dict[str, int]
+  in_ring: bool
+  ring_counts_by_size: dict[int, int]
+  aromaticity_class: str | None  # "AR1"/"AR2"/"AR3"/"AR4"/"AR5", best-effort (see note)
+  bond_counts: dict[str, int]
 
 
 def _attached_count(atom) -> int:
-    """H-inclusive attached-atom count (matches DEF f5 convention)."""
-    return atom.GetDegree() + atom.GetNumImplicitHs()
+  """H-inclusive attached-atom count (matches DEF f5 convention)."""
+  return atom.GetDegree() + atom.GetNumImplicitHs()
 
 
 def _bond_category_facts(bond) -> dict[str, bool]:
-    """Per-bond category flags, used both for tallying and for `'`/`''` edge checks.
+  """Per-bond category flags, used both for tallying and for `'`/`''` edge checks.
 
-    Requires `bond`'s owning molecule to have been Kekulized with
-    `clearAromaticFlags=False` (see `assign_gaff2_atom_types`) -- otherwise every
-    ring bond in an aromatic system reports `GetBondType() == AROMATIC` rather
-    than its true Kekule SINGLE/DOUBLE identity, and the sb/db distinction below
-    collapses to always-False for ring bonds.
+  Requires `bond`'s owning molecule to have been Kekulized with
+  `clearAromaticFlags=False` (see `assign_gaff2_atom_types`) -- otherwise every
+  ring bond in an aromatic system reports `GetBondType() == AROMATIC` rather
+  than its true Kekule SINGLE/DOUBLE identity, and the sb/db distinction below
+  collapses to always-False for ring bonds.
 
-    Per ATOMTYPE_GFF2.DEF's footer: SB/DB are *exact, non-aromatic* bond identity
-    ("Single bond" / "Double bond", no qualifier); sb/db are the *inclusive*
-    unions ("Single bond, including aromatic single..." / "Double bond, including
-    aromatic double"). With Kekulization applied, `bt.name` already reflects the
-    true per-bond Kekule single/double assignment regardless of aromaticity, so
-    sb/db read directly off it; SB/DB additionally require `not is_aromatic`.
+  Per ATOMTYPE_GFF2.DEF's footer: SB/DB are *exact, non-aromatic* bond identity
+  ("Single bond" / "Double bond", no qualifier); sb/db are the *inclusive*
+  unions ("Single bond, including aromatic single..." / "Double bond, including
+  aromatic double"). With Kekulization applied, `bt.name` already reflects the
+  true per-bond Kekule single/double assignment regardless of aromaticity, so
+  sb/db read directly off it; SB/DB additionally require `not is_aromatic`.
 
-    DL (delocalized) detection convention: a bond is treated as delocalized iff it
-    is aromatic. This is a deliberate, documented simplification (the DEF file's
-    "9 in AM1-BCC" delocalized bond-order code has no equivalent in RDKit's bond
-    model) -- it correctly covers ring-embedded delocalized systems (most aromatic
-    heterocycles) but will NOT flag isolated, non-ring resonance systems (e.g. an
-    acyclic amide or carboxylate) as delocalized. Those instead present as a plain
-    Kekule double bond and match the DEF's "[1DB,0DL]" variant, which is the
-    common case for isolated carbonyls.
-    """
-    is_aromatic = bond.GetIsAromatic()
-    bt = bond.GetBondType()
-    is_single = bt.name == "SINGLE"
-    is_double = bt.name == "DOUBLE"
-    is_triple = bt.name == "TRIPLE"
-    if is_aromatic and bt.name not in ("SINGLE", "DOUBLE"):
-        raise AssertionError(
-            f"_bond_category_facts precondition violated: an aromatic bond "
-            f"reports GetBondType()={bt.name!r}, not SINGLE/DOUBLE -- the "
-            f"owning molecule was not Kekulized with clearAromaticFlags=False "
-            f"before this call (see assign_gaff2_atom_types). sb/db would "
-            f"silently collapse to always-False for this bond."
-        )
-    return {
-        "SB": is_single and not is_aromatic,
-        "DB": is_double and not is_aromatic,
-        "TB": is_triple,
-        "AB": is_aromatic,
-        "DL": is_aromatic,
-        "sb": is_single,
-        "db": is_double,
-        "tb": is_triple,
-    }
+  DL (delocalized) detection convention: a bond is treated as delocalized iff it
+  is aromatic. This is a deliberate, documented simplification (the DEF file's
+  "9 in AM1-BCC" delocalized bond-order code has no equivalent in RDKit's bond
+  model) -- it correctly covers ring-embedded delocalized systems (most aromatic
+  heterocycles) but will NOT flag isolated, non-ring resonance systems (e.g. an
+  acyclic amide or carboxylate) as delocalized. Those instead present as a plain
+  Kekule double bond and match the DEF's "[1DB,0DL]" variant, which is the
+  common case for isolated carbonyls.
+  """
+  is_aromatic = bond.GetIsAromatic()
+  bt = bond.GetBondType()
+  is_single = bt.name == "SINGLE"
+  is_double = bt.name == "DOUBLE"
+  is_triple = bt.name == "TRIPLE"
+  if is_aromatic and bt.name not in ("SINGLE", "DOUBLE"):
+    raise AssertionError(
+      f"_bond_category_facts precondition violated: an aromatic bond "
+      f"reports GetBondType()={bt.name!r}, not SINGLE/DOUBLE -- the "
+      f"owning molecule was not Kekulized with clearAromaticFlags=False "
+      f"before this call (see assign_gaff2_atom_types). sb/db would "
+      f"silently collapse to always-False for this bond."
+    )
+  return {
+    "SB": is_single and not is_aromatic,
+    "DB": is_double and not is_aromatic,
+    "TB": is_triple,
+    "AB": is_aromatic,
+    "DL": is_aromatic,
+    "sb": is_single,
+    "db": is_double,
+    "tb": is_triple,
+  }
 
 
 def _ring_initarom_atom(atom) -> int:
-    """Per-atom contribution to a ring's aromaticity-classification sum --
-    direct port of `initarom[i]` in AmberTools' `aromatic()` (`ring.c`,
-    Amber-MD/AmberClassic). `connum` must count every real neighbor
-    including hydrogens, whether they're explicit graph atoms (the real
-    ligand/geostd convention -- see `Molecule._to_rdkit()`'s
-    `SetNoImplicit` handling) or RDKit implicit-H atoms on a heavy-atom-
-    only structure (e.g. this module's own hand-authored test molecules) --
-    `GetDegree() + GetNumImplicitHs()` covers both without double-counting,
-    since NoImplicit=True forces the implicit count to 0 exactly when the
-    hydrogens are already explicit.
-    """
-    z = atom.GetAtomicNum()
-    connum = atom.GetDegree() + atom.GetNumImplicitHs()
-    if z == 6:  # carbon
-        if connum == 3:
-            return 2
-        if connum == 4:
-            return -2
-        return 0
-    if z == 7:  # nitrogen
-        return 2 if connum <= 3 else 0
-    if z == 8:  # oxygen
-        return 1 if connum == 2 else 0
-    if z == 15:  # phosphorus
-        if connum == 2:
-            return 2
-        if connum == 3:
-            return 1
-        if connum >= 4:
-            return -1
-        return 0
-    if z == 16:  # sulfur
-        if connum == 2:
-            return 1
-        if connum >= 3:
-            return -1
-        return 0
+  """Per-atom contribution to a ring's aromaticity-classification sum --
+  direct port of `initarom[i]` in AmberTools' `aromatic()` (`ring.c`,
+  Amber-MD/AmberClassic). `connum` must count every real neighbor
+  including hydrogens, whether they're explicit graph atoms (the real
+  ligand/geostd convention -- see `Molecule._to_rdkit()`'s
+  `SetNoImplicit` handling) or RDKit implicit-H atoms on a heavy-atom-
+  only structure (e.g. this module's own hand-authored test molecules) --
+  `GetDegree() + GetNumImplicitHs()` covers both without double-counting,
+  since NoImplicit=True forces the implicit count to 0 exactly when the
+  hydrogens are already explicit.
+  """
+  z = atom.GetAtomicNum()
+  connum = atom.GetDegree() + atom.GetNumImplicitHs()
+  if z == 6:  # carbon
+    if connum == 3:
+      return 2
+    if connum == 4:
+      return -2
     return 0
+  if z == 7:  # nitrogen
+    return 2 if connum <= 3 else 0
+  if z == 8:  # oxygen
+    return 1 if connum == 2 else 0
+  if z == 15:  # phosphorus
+    if connum == 2:
+      return 2
+    if connum == 3:
+      return 1
+    if connum >= 4:
+      return -1
+    return 0
+  if z == 16:  # sulfur
+    if connum == 2:
+      return 1
+    if connum >= 3:
+      return -1
+    return 0
+  return 0
 
 
 def _classify_ring_aromaticity(mol: Chem.Mol, ring: tuple[int, ...]) -> str:
-    """Classify one ring as AR1/AR2/AR3/AR4/AR5 -- a direct, unconditional
-    port of AmberTools' real per-ring algorithm (`aromatic()`, `ring.c`,
-    Amber-MD/AmberClassic), NOT gated on RDKit's own `GetIsAromatic()`.
+  """Classify one ring as AR1/AR2/AR3/AR4/AR5 -- a direct, unconditional
+  port of AmberTools' real per-ring algorithm (`aromatic()`, `ring.c`,
+  Amber-MD/AmberClassic), NOT gated on RDKit's own `GetIsAromatic()`.
 
-    This distinction is load-bearing, confirmed 260821 against real geostd
-    ligand `679`: a genuinely non-aromatic (by RDKit's Huckel-based
-    perception) but planar, conjugated 5-ring -- e.g. a maleimide-like ring
-    with one internal C=C flanked by two exocyclic C=O groups -- is still
-    real antechamber's AR3, which the `cc`/`ce` DEF rules need to tell a
-    "ring" conjugated sp2 carbon (`cc`, requires AR2 or AR3) from a "chain"
-    one (`ce`, no AR requirement) -- gating this whole classification on
-    `GetIsAromatic()` (a materially different, stricter test) left such
-    rings with no AR class at all, silently falling through to `ce`/`cf`.
+  This distinction is load-bearing, confirmed 260821 against real geostd
+  ligand `679`: a genuinely non-aromatic (by RDKit's Huckel-based
+  perception) but planar, conjugated 5-ring -- e.g. a maleimide-like ring
+  with one internal C=C flanked by two exocyclic C=O groups -- is still
+  real antechamber's AR3, which the `cc`/`ce` DEF rules need to tell a
+  "ring" conjugated sp2 carbon (`cc`, requires AR2 or AR3) from a "chain"
+  one (`ce`, no AR requirement) -- gating this whole classification on
+  `GetIsAromatic()` (a materially different, stricter test) left such
+  rings with no AR class at all, silently falling through to `ce`/`cf`.
 
-    Algorithm (`ring.c::aromatic()`, condition order matters -- first match
-    wins, mirrored here as early returns):
-      1. `total = sum(_ring_initarom_atom(a) for a in ring)`.
-      2. `total == -2 * len(ring)` (every atom sp3 carbon): AR5, pure
-         aliphatic ring.
-      3. Any ring atom has a negative contribution (sp3 carbon, or
-         hypervalent P/S): AR4.
-      4. `len(ring) <= total <= 2 * len(ring)` (a "could be planar" range)
-         AND some ring atom has a post-Kekulization DOUBLE bond to a
-         neighbor with NO ring membership at all (`ring_info.NumAtomRings
-         (other) == 0` -- a fused-ring bridgehead's neighbor in its OTHER
-         ring still counts as ring-connected and must not trigger this):
-         AR3 ("planar ring formed by 'outside' double bonds").
-      5. `total == 12 and len(ring) == 6` AND no ring N/P atom lacks a
-         DOUBLE bond anywhere among ALL its bonds (checked molecule-wide,
-         not just the two bonds internal to `ring`, so a naphthalene-style
-         fused bridgehead whose Kekulization places its shared bond as
-         formally single isn't wrongly flagged -- it has a real double bond
-         in its OTHER ring): AR1, pure aromatic (benzene/pyridine-like). A
-         qualifying heteroatom with no double bond anywhere (e.g. a
-         pyrrole-type nitrogen contributing a lone pair, not a pi bond)
-         fails this and falls through instead.
-      6. `total >= len(ring) + 3`: AR2, other planar ring.
-      7. Otherwise: AR4 (fallback).
-    `mol` must already be Kekulized -- see `_atom_bond_facts`'s caller.
-    """
-    ring_info = mol.GetRingInfo()
-    n = len(ring)
-    total = sum(_ring_initarom_atom(mol.GetAtomWithIdx(idx)) for idx in ring)
+  Algorithm (`ring.c::aromatic()`, condition order matters -- first match
+  wins, mirrored here as early returns):
+    1. `total = sum(_ring_initarom_atom(a) for a in ring)`.
+    2. `total == -2 * len(ring)` (every atom sp3 carbon): AR5, pure
+       aliphatic ring.
+    3. Any ring atom has a negative contribution (sp3 carbon, or
+       hypervalent P/S): AR4.
+    4. `len(ring) <= total <= 2 * len(ring)` (a "could be planar" range)
+       AND some ring atom has a post-Kekulization DOUBLE bond to a
+       neighbor with NO ring membership at all (`ring_info.NumAtomRings
+       (other) == 0` -- a fused-ring bridgehead's neighbor in its OTHER
+       ring still counts as ring-connected and must not trigger this):
+       AR3 ("planar ring formed by 'outside' double bonds").
+    5. `total == 12 and len(ring) == 6` AND no ring N/P atom lacks a
+       DOUBLE bond anywhere among ALL its bonds (checked molecule-wide,
+       not just the two bonds internal to `ring`, so a naphthalene-style
+       fused bridgehead whose Kekulization places its shared bond as
+       formally single isn't wrongly flagged -- it has a real double bond
+       in its OTHER ring): AR1, pure aromatic (benzene/pyridine-like). A
+       qualifying heteroatom with no double bond anywhere (e.g. a
+       pyrrole-type nitrogen contributing a lone pair, not a pi bond)
+       fails this and falls through instead.
+    6. `total >= len(ring) + 3`: AR2, other planar ring.
+    7. Otherwise: AR4 (fallback).
+  `mol` must already be Kekulized -- see `_atom_bond_facts`'s caller.
+  """
+  ring_info = mol.GetRingInfo()
+  n = len(ring)
+  total = sum(_ring_initarom_atom(mol.GetAtomWithIdx(idx)) for idx in ring)
 
-    if total == -2 * n:
-        return "AR5"
-    if any(_ring_initarom_atom(mol.GetAtomWithIdx(idx)) < 0 for idx in ring):
-        return "AR4"
-
-    if n <= total <= 2 * n:
-        for ring_idx in ring:
-            for bond in mol.GetAtomWithIdx(ring_idx).GetBonds():
-                other = bond.GetOtherAtomIdx(ring_idx)
-                if ring_info.NumAtomRings(other) > 0:
-                    continue
-                if bond.GetBondType().name == "DOUBLE":
-                    return "AR3"
-
-    if total == 12 and n == 6:
-        has_lone_pair_donor = False
-        for ring_idx in ring:
-            atom = mol.GetAtomWithIdx(ring_idx)
-            if atom.GetAtomicNum() not in (7, 15):
-                continue
-            if not any(b.GetBondType().name == "DOUBLE" for b in atom.GetBonds()):
-                has_lone_pair_donor = True
-                break
-        if not has_lone_pair_donor:
-            return "AR1"
-
-    if total >= n + 3:
-        return "AR2"
+  if total == -2 * n:
+    return "AR5"
+  if any(_ring_initarom_atom(mol.GetAtomWithIdx(idx)) < 0 for idx in ring):
     return "AR4"
+
+  if n <= total <= 2 * n:
+    for ring_idx in ring:
+      for bond in mol.GetAtomWithIdx(ring_idx).GetBonds():
+        other = bond.GetOtherAtomIdx(ring_idx)
+        if ring_info.NumAtomRings(other) > 0:
+          continue
+        if bond.GetBondType().name == "DOUBLE":
+          return "AR3"
+
+  if total == 12 and n == 6:
+    has_lone_pair_donor = False
+    for ring_idx in ring:
+      atom = mol.GetAtomWithIdx(ring_idx)
+      if atom.GetAtomicNum() not in (7, 15):
+        continue
+      if not any(b.GetBondType().name == "DOUBLE" for b in atom.GetBonds()):
+        has_lone_pair_donor = True
+        break
+    if not has_lone_pair_donor:
+      return "AR1"
+
+  if total >= n + 3:
+    return "AR2"
+  return "AR4"
 
 
 def _atom_bond_facts(atom) -> AtomBondFacts:
-    mol = atom.GetOwningMol()
-    ring_info = mol.GetRingInfo()
-    idx = atom.GetIdx()
+  mol = atom.GetOwningMol()
+  ring_info = mol.GetRingInfo()
+  idx = atom.GetIdx()
 
-    ring_counts_by_size: dict[int, int] = {}
-    in_ring = False
-    for ring in ring_info.AtomRings():
-        if idx in ring:
-            in_ring = True
-            ring_counts_by_size[len(ring)] = ring_counts_by_size.get(len(ring), 0) + 1
+  ring_counts_by_size: dict[int, int] = {}
+  in_ring = False
+  for ring in ring_info.AtomRings():
+    if idx in ring:
+      in_ring = True
+      ring_counts_by_size[len(ring)] = ring_counts_by_size.get(len(ring), 0) + 1
 
-    # AR1-AR5 classification: a direct, UNCONDITIONAL port of AmberTools'
-    # real per-ring algorithm (`_classify_ring_aromaticity`, ported from
-    # `aromatic()` in `ring.c`) -- NOT gated on RDKit's own
-    # `GetIsAromatic()` (a materially different, stricter Huckel-based
-    # test). FIXED 260821: gating this on `GetIsAromatic()` (the prior
-    # implementation) left every genuinely non-aromatic-by-RDKit's-rules
-    # but still planar/conjugated ring (e.g. a maleimide-like 5-ring: one
-    # internal C=C flanked by two exocyclic C=O groups, confirmed against
-    # real geostd ligand 679) with no AR class at all, wrongly failing the
-    # `cc`/`ce` DEF rules' `[sb,db,AR2]`/`[sb,db,AR3]` requirement and
-    # falling through to the "chain" `ce`/`cf` rules instead of the correct
-    # "ring" `cc`/`cd`. Classify EVERY ring this atom belongs to (aromatic
-    # by RDKit's definition or not) and keep the real algorithm's
-    # per-ring, independent-counter semantics: AR1 fires if ANY ring gives
-    # AR1 (this atom_type's DEF rule always precedes the AR2/AR3-requiring
-    # one in file order for every case that needs this -- e.g. `ca`/`AR1`
-    # at DEF line 35 precedes `cc`/`AR2,AR3` at lines 37+ -- so checking
-    # AR1 first here matches what first-match rule precedence would do
-    # with fully independent per-ring counters anyway); else AR23 if ANY
-    # ring gives AR2 or AR3 (collapsed, as before: no current DEF rule
-    # distinguishes them); else AR5/AR4 if some ring gives that.
-    aromaticity_class: str | None = None
-    if in_ring:
-        ring_classes = {
-            _classify_ring_aromaticity(mol, ring)
-            for ring in ring_info.AtomRings()
-            if idx in ring
-        }
-        if "AR1" in ring_classes:
-            aromaticity_class = "AR1"
-        elif ring_classes & {"AR2", "AR3"}:
-            aromaticity_class = "AR23"
-        elif "AR5" in ring_classes:
-            aromaticity_class = "AR5"
-        elif "AR4" in ring_classes:
-            aromaticity_class = "AR4"
+  # AR1-AR5 classification: a direct, UNCONDITIONAL port of AmberTools'
+  # real per-ring algorithm (`_classify_ring_aromaticity`, ported from
+  # `aromatic()` in `ring.c`) -- NOT gated on RDKit's own
+  # `GetIsAromatic()` (a materially different, stricter Huckel-based
+  # test). FIXED 260821: gating this on `GetIsAromatic()` (the prior
+  # implementation) left every genuinely non-aromatic-by-RDKit's-rules
+  # but still planar/conjugated ring (e.g. a maleimide-like 5-ring: one
+  # internal C=C flanked by two exocyclic C=O groups, confirmed against
+  # real geostd ligand 679) with no AR class at all, wrongly failing the
+  # `cc`/`ce` DEF rules' `[sb,db,AR2]`/`[sb,db,AR3]` requirement and
+  # falling through to the "chain" `ce`/`cf` rules instead of the correct
+  # "ring" `cc`/`cd`. Classify EVERY ring this atom belongs to (aromatic
+  # by RDKit's definition or not) and keep the real algorithm's
+  # per-ring, independent-counter semantics: AR1 fires if ANY ring gives
+  # AR1 (this atom_type's DEF rule always precedes the AR2/AR3-requiring
+  # one in file order for every case that needs this -- e.g. `ca`/`AR1`
+  # at DEF line 35 precedes `cc`/`AR2,AR3` at lines 37+ -- so checking
+  # AR1 first here matches what first-match rule precedence would do
+  # with fully independent per-ring counters anyway); else AR23 if ANY
+  # ring gives AR2 or AR3 (collapsed, as before: no current DEF rule
+  # distinguishes them); else AR5/AR4 if some ring gives that.
+  aromaticity_class: str | None = None
+  if in_ring:
+    ring_classes = {
+      _classify_ring_aromaticity(mol, ring) for ring in ring_info.AtomRings() if idx in ring
+    }
+    if "AR1" in ring_classes:
+      aromaticity_class = "AR1"
+    elif ring_classes & {"AR2", "AR3"}:
+      aromaticity_class = "AR23"
+    elif "AR5" in ring_classes:
+      aromaticity_class = "AR5"
+    elif "AR4" in ring_classes:
+      aromaticity_class = "AR4"
 
-    # Bond-type tallies include bonds to hydrogen (unlike f9's neighbor-pattern
-    # matching, which is heavy-atom-only): a terminal alkyne carbon's only
-    # single bond is to H (cg's "[sb,tb]" requires it to be counted), and the
-    # DEF file gives no indication f8's bond-count facts should be H-exclusive.
-    bond_counts = {"SB": 0, "DB": 0, "TB": 0, "AB": 0, "DL": 0, "sb": 0, "db": 0, "tb": 0}
-    for bond in atom.GetBonds():
-        facts = _bond_category_facts(bond)
-        for key, present in facts.items():
-            if present:
-                bond_counts[key] += 1
+  # Bond-type tallies include bonds to hydrogen (unlike f9's neighbor-pattern
+  # matching, which is heavy-atom-only): a terminal alkyne carbon's only
+  # single bond is to H (cg's "[sb,tb]" requires it to be counted), and the
+  # DEF file gives no indication f8's bond-count facts should be H-exclusive.
+  bond_counts = {"SB": 0, "DB": 0, "TB": 0, "AB": 0, "DL": 0, "sb": 0, "db": 0, "tb": 0}
+  for bond in atom.GetBonds():
+    facts = _bond_category_facts(bond)
+    for key, present in facts.items():
+      if present:
+        bond_counts[key] += 1
 
-    return AtomBondFacts(
-        in_ring=in_ring,
-        ring_counts_by_size=ring_counts_by_size,
-        aromaticity_class=aromaticity_class,
-        bond_counts=bond_counts,
-    )
+  return AtomBondFacts(
+    in_ring=in_ring,
+    ring_counts_by_size=ring_counts_by_size,
+    aromaticity_class=aromaticity_class,
+    bond_counts=bond_counts,
+  )
 
 
 def _matches_aromaticity_token(word: str, aromaticity_class: str | None) -> bool:
-    if aromaticity_class is None:
-        return False
-    if word == "AR4" or word == "AR5":
-        return aromaticity_class == word
-    if word == "AR1":
-        return aromaticity_class == "AR1"
-    if word in ("AR2", "AR3"):
-        return aromaticity_class == "AR23"
+  if aromaticity_class is None:
     return False
+  if word == "AR4" or word == "AR5":
+    return aromaticity_class == word
+  if word == "AR1":
+    return aromaticity_class == "AR1"
+  if word in ("AR2", "AR3"):
+    return aromaticity_class == "AR23"
+  return False
 
 
 def _prop_token_matches(tok: PropToken, facts: AtomBondFacts) -> bool:
-    word = tok.word
+  word = tok.word
 
-    if word == "NR":
-        return not facts.in_ring
-    if word == "RG":
-        return facts.in_ring
-    if word.startswith("RG") and word[2:].isdigit():
-        size = int(word[2:])
-        count = facts.ring_counts_by_size.get(size, 0)
-        if tok.count is not None:
-            return count == tok.count
-        return count > 0
-    if word.startswith("AR") and word[2:].isdigit():
-        return _matches_aromaticity_token(word, facts.aromaticity_class)
+  if word == "NR":
+    return not facts.in_ring
+  if word == "RG":
+    return facts.in_ring
+  if word.startswith("RG") and word[2:].isdigit():
+    size = int(word[2:])
+    count = facts.ring_counts_by_size.get(size, 0)
+    if tok.count is not None:
+      return count == tok.count
+    return count > 0
+  if word.startswith("AR") and word[2:].isdigit():
+    return _matches_aromaticity_token(word, facts.aromaticity_class)
 
-    if word in facts.bond_counts:
-        count = facts.bond_counts[word]
-        if tok.count is not None:
-            return count == tok.count
-        return count > 0
+  if word in facts.bond_counts:
+    count = facts.bond_counts[word]
+    if tok.count is not None:
+      return count == tok.count
+    return count > 0
 
-    return False
+  return False
 
 
 # f7 (H-only electron-withdrawing-neighbor count) grammar note: ATOMTYPE_GFF2.DEF's
@@ -717,355 +715,356 @@ _EW_ATOMS = frozenset({"N", "O", "S", "F", "Cl", "Br", "I"})
 
 
 def _h_ew_neighbor_count(h_atom) -> int:
-    """Count electron-withdrawing atoms bonded to h_atom's own heavy attachment.
+  """Count electron-withdrawing atoms bonded to h_atom's own heavy attachment.
 
-    f7 is meaningful only for H atoms (per the DEF footer); an H atom has
-    exactly one real neighbor (its attachment atom), whose OTHER neighbors
-    (not the H itself) are what f7 counts.
-    """
-    neighbors = list(h_atom.GetNeighbors())
-    if len(neighbors) != 1:
-        return 0
-    attachment = neighbors[0]
-    return sum(
-        1
-        for nb in attachment.GetNeighbors()
-        if nb.GetIdx() != h_atom.GetIdx() and nb.GetSymbol() in _EW_ATOMS
-    )
+  f7 is meaningful only for H atoms (per the DEF footer); an H atom has
+  exactly one real neighbor (its attachment atom), whose OTHER neighbors
+  (not the H itself) are what f7 counts.
+  """
+  neighbors = list(h_atom.GetNeighbors())
+  if len(neighbors) != 1:
+    return 0
+  attachment = neighbors[0]
+  return sum(
+    1
+    for nb in attachment.GetNeighbors()
+    if nb.GetIdx() != h_atom.GetIdx() and nb.GetSymbol() in _EW_ATOMS
+  )
 
 
 @dataclass
 class Gaff2Rule:
-    """A single GAFF2 atom type assignment rule.
+  """A single GAFF2 atom type assignment rule.
 
-    Each rule maps molecular properties to a GAFF2 atom type.
-    Fields correspond to ATD line format (per ATOMTYPE_GFF2.DEF's own footer):
-    - f2: atom_type - the GAFF2 type to assign (e.g., c3, ca, n)
-    - f3: residue - residue name filter (* means any)
-    - f4: atomic_num - atomic number
-    - f5: num_attached - number of attached atoms (heavy + H, per the footer)
-    - f6: num_h - number of hydrogen attachments
-    - f7: h_ew_count - H-only electron-withdrawing-neighbor count (meaningful
-      only when atomic_num == 1; enforced via _h_ew_neighbor_count/_EW_ATOMS,
-      see that helper's docstring for the EW-element judgment call)
-    - f8: atomic_prop - bracketed atomic-property expression (ring/aromaticity/
-      bond-type-count facts about the atom itself)
-    - f9: chem_env - parenthesized chemical-environment neighbor pattern
-    """
+  Each rule maps molecular properties to a GAFF2 atom type.
+  Fields correspond to ATD line format (per ATOMTYPE_GFF2.DEF's own footer):
+  - f2: atom_type - the GAFF2 type to assign (e.g., c3, ca, n)
+  - f3: residue - residue name filter (* means any)
+  - f4: atomic_num - atomic number
+  - f5: num_attached - number of attached atoms (heavy + H, per the footer)
+  - f6: num_h - number of hydrogen attachments
+  - f7: h_ew_count - H-only electron-withdrawing-neighbor count (meaningful
+    only when atomic_num == 1; enforced via _h_ew_neighbor_count/_EW_ATOMS,
+    see that helper's docstring for the EW-element judgment call)
+  - f8: atomic_prop - bracketed atomic-property expression (ring/aromaticity/
+    bond-type-count facts about the atom itself)
+  - f9: chem_env - parenthesized chemical-environment neighbor pattern
+  """
 
-    atom_type: str
-    residue: str
-    atomic_num: int
-    num_attached: int | None
-    num_h: int | None
-    h_ew_count: int | None
-    atomic_prop: AtomicPropExpr | None
-    chem_env: ChemEnvExpr | None
+  atom_type: str
+  residue: str
+  atomic_num: int
+  num_attached: int | None
+  num_h: int | None
+  h_ew_count: int | None
+  atomic_prop: AtomicPropExpr | None
+  chem_env: ChemEnvExpr | None
 
-    def matches(self, atom, wildatom_map: dict[str, list[str]]) -> bool:
-        """Check if this rule matches the given RDKit atom."""
-        if self.atomic_num != atom.GetAtomicNum():
-            return False
+  def matches(self, atom, wildatom_map: dict[str, list[str]]) -> bool:
+    """Check if this rule matches the given RDKit atom."""
+    if self.atomic_num != atom.GetAtomicNum():
+      return False
 
-        if self.num_attached is not None and self.num_attached != _attached_count(atom):
-            return False
+    if self.num_attached is not None and self.num_attached != _attached_count(atom):
+      return False
 
-        # includeNeighbors=True: after AllChem.AddHs, H atoms are explicit graph
-        # nodes, so the default (implicit/explicit-count-only) form would return 0.
-        num_h = atom.GetTotalNumHs(includeNeighbors=True)
-        if self.num_h is not None and self.num_h != num_h:
-            return False
+    # includeNeighbors=True: after AllChem.AddHs, H atoms are explicit graph
+    # nodes, so the default (implicit/explicit-count-only) form would return 0.
+    num_h = atom.GetTotalNumHs(includeNeighbors=True)
+    if self.num_h is not None and self.num_h != num_h:
+      return False
 
-        if self.h_ew_count is not None and self.h_ew_count != _h_ew_neighbor_count(atom):
-            return False
+    if self.h_ew_count is not None and self.h_ew_count != _h_ew_neighbor_count(atom):
+      return False
 
-        if self.atomic_prop is not None:
-            facts = _atom_bond_facts(atom)
-            if not atomic_prop_matches(self.atomic_prop, facts):
-                return False
+    if self.atomic_prop is not None:
+      facts = _atom_bond_facts(atom)
+      if not atomic_prop_matches(self.atomic_prop, facts):
+        return False
 
-        if self.chem_env is not None:
-            if not chem_env_matches(self.chem_env, atom, wildatom_map):
-                return False
+    if self.chem_env is not None:
+      if not chem_env_matches(self.chem_env, atom, wildatom_map):
+        return False
 
-        return True
+    return True
 
 
 def parse_wildatom_defs(lines: list[str]) -> dict[str, list[str]]:
-    """Parse WILDATOM definitions from the rule file header.
+  """Parse WILDATOM definitions from the rule file header.
 
-    Lines are space-separated element lists, e.g. "WILDATOM XX C N O S P" ->
-    {"XX": ["C","N","O","S","P"]} -- not comma-joined, so a single `parts[2]`
-    with a comma-split previously silently captured only the first element.
-    """
-    wildatom_map: dict[str, list[str]] = {}
+  Lines are space-separated element lists, e.g. "WILDATOM XX C N O S P" ->
+  {"XX": ["C","N","O","S","P"]} -- not comma-joined, so a single `parts[2]`
+  with a comma-split previously silently captured only the first element.
+  """
+  wildatom_map: dict[str, list[str]] = {}
 
-    for line in lines:
-        line = line.strip()
-        if not line.startswith("WILDATOM"):
-            continue
+  for line in lines:
+    line = line.strip()
+    if not line.startswith("WILDATOM"):
+      continue
 
-        parts = line.split()
-        if len(parts) >= 3:
-            symbol = parts[1]
-            elements = parts[2:]
-            wildatom_map[symbol] = elements
+    parts = line.split()
+    if len(parts) >= 3:
+      symbol = parts[1]
+      elements = parts[2:]
+      wildatom_map[symbol] = elements
 
-    return wildatom_map
+  return wildatom_map
 
 
 def parse_gaff2_rules(def_path: str | Path) -> tuple[list[Gaff2Rule], dict[str, list[str]]]:
-    """Parse ATOMTYPE_GFF2.DEF file.
+  """Parse ATOMTYPE_GFF2.DEF file.
 
-    Args:
-        def_path: Path to ATOMTYPE_GFF2.DEF file
+  Args:
+      def_path: Path to ATOMTYPE_GFF2.DEF file
 
-    Returns:
-        Tuple of (list of Gaff2Rule objects, WILDATOM map)
+  Returns:
+      Tuple of (list of Gaff2Rule objects, WILDATOM map)
 
-    Raises:
-        Gaff2DefInvalidError: an ATD line inside the definition block is
-            malformed (no terminating "&", fewer than 3 fields, or a field
-            that does not parse). Such lines used to be skipped silently, so a
-            typo'd rule vanished and its atoms fell through to a less specific
-            rule (debt #2361). The one deliberate skip is antechamber's
-            catch-all ``ATD DU &`` (a type name and nothing else): proxide does
-            not implement the DU dummy type -- unmatched atoms go through its
-            own fallback typing instead (debt #1899).
-    """
-    path = Path(def_path)
-    content = path.read_text()
-    lines = content.split("\n")
+  Raises:
+      Gaff2DefInvalidError: an ATD line inside the definition block is
+          malformed (no terminating "&", fewer than 3 fields, or a field
+          that does not parse). Such lines used to be skipped silently, so a
+          typo'd rule vanished and its atoms fell through to a less specific
+          rule (debt #2361). The one deliberate skip is antechamber's
+          catch-all ``ATD DU &`` (a type name and nothing else): proxide does
+          not implement the DU dummy type -- unmatched atoms go through its
+          own fallback typing instead (debt #1899).
+  """
+  path = Path(def_path)
+  content = path.read_text()
+  lines = content.split("\n")
 
-    wildatom_map = parse_wildatom_defs(lines)
+  wildatom_map = parse_wildatom_defs(lines)
 
-    rules: list[Gaff2Rule] = []
-    malformed: list[tuple[int, str]] = []
-    in_definition = False
+  rules: list[Gaff2Rule] = []
+  malformed: list[tuple[int, str]] = []
+  in_definition = False
 
-    for lineno, raw_line in enumerate(lines, start=1):
-        line = raw_line.strip()
+  for lineno, raw_line in enumerate(lines, start=1):
+    line = raw_line.strip()
 
-        if "efination begin" in line.lower():
-            in_definition = True
-            continue
+    if "efination begin" in line.lower():
+      in_definition = True
+      continue
 
-        if not in_definition or not line.startswith("ATD"):
-            continue
+    if not in_definition or not line.startswith("ATD"):
+      continue
 
-        if "&" not in line:
-            malformed.append((lineno, raw_line))
-            continue
+    if "&" not in line:
+      malformed.append((lineno, raw_line))
+      continue
 
-        line = line.removesuffix("&").strip()
-        if line.startswith("ATD"):
-            line = line[3:].strip()
+    line = line.removesuffix("&").strip()
+    if line.startswith("ATD"):
+      line = line[3:].strip()
 
-        parts = line.split()
-        # Minimum valid row is "<atom_type> <residue> <atomic_num>" (3 tokens) --
-        # bare single-element rules like "ATD f * 9 &" have no further fields.
-        # (This was previously "< 4", which silently dropped every such rule --
-        # roughly half the file, mostly halogens/metals/late-periodic-table
-        # fallback types -- meaning those elements always fell through to the
-        # generic "x" placeholder instead of their real GAFF2 type.)
-        if parts == ["DU"]:
-            continue  # the "ATD DU &" catch-all, and only it; see Raises above
-        if len(parts) < 3:
-            malformed.append((lineno, raw_line))
-            continue
+    parts = line.split()
+    # Minimum valid row is "<atom_type> <residue> <atomic_num>" (3 tokens) --
+    # bare single-element rules like "ATD f * 9 &" have no further fields.
+    # (This was previously "< 4", which silently dropped every such rule --
+    # roughly half the file, mostly halogens/metals/late-periodic-table
+    # fallback types -- meaning those elements always fell through to the
+    # generic "x" placeholder instead of their real GAFF2 type.)
+    if parts == ["DU"]:
+      continue  # the "ATD DU &" catch-all, and only it; see Raises above
+    if len(parts) < 3:
+      malformed.append((lineno, raw_line))
+      continue
 
-        try:
-            atom_type = parts[0]
-            residue = parts[1] if parts[1] != "*" else "*"
-            atomic_num = int(parts[2])
+    try:
+      atom_type = parts[0]
+      residue = parts[1] if parts[1] != "*" else "*"
+      atomic_num = int(parts[2])
 
-            num_attached = None
-            num_h = None
-            h_ew_count = None
+      num_attached = None
+      num_h = None
+      h_ew_count = None
 
-            idx = 3
-            if idx < len(parts) and parts[idx] != "*":  # f5
-                num_attached = int(parts[idx])
-            idx += 1
+      idx = 3
+      if idx < len(parts) and parts[idx] != "*":  # f5
+        num_attached = int(parts[idx])
+      idx += 1
 
-            if idx < len(parts) and parts[idx] != "*":  # f6
-                num_h = int(parts[idx])
-            idx += 1
+      if idx < len(parts) and parts[idx] != "*":  # f6
+        num_h = int(parts[idx])
+      idx += 1
 
-            remaining = " ".join(parts[idx:]) if idx < len(parts) else ""
-            remaining = remaining.lstrip()
+      remaining = " ".join(parts[idx:]) if idx < len(parts) else ""
+      remaining = remaining.lstrip()
 
-            # f7: h_ew -- only meaningful for hydrogen rows (atomic_num == 1); a
-            # bare integer, or "*" for every non-H row. Consume exactly one token
-            # positionally rather than silently discarding it.
-            if remaining.startswith("*"):
-                remaining = remaining[1:].strip()
-            else:
-                f7_match = re.match(r"(\d+)", remaining)
-                if f7_match:
-                    h_ew_count = int(f7_match.group(1))
-                    remaining = remaining[f7_match.end():].strip()
+      # f7: h_ew -- only meaningful for hydrogen rows (atomic_num == 1); a
+      # bare integer, or "*" for every non-H row. Consume exactly one token
+      # positionally rather than silently discarding it.
+      if remaining.startswith("*"):
+        remaining = remaining[1:].strip()
+      else:
+        f7_match = re.match(r"(\d+)", remaining)
+        if f7_match:
+          h_ew_count = int(f7_match.group(1))
+          remaining = remaining[f7_match.end() :].strip()
 
-            # f8: bracketed atomic-property expression, "[...]" or "*" or absent.
-            # Unclosed "[" is a malformed line (debt #2363), not a silent skip.
-            atomic_prop: AtomicPropExpr | None = None
-            if remaining.startswith("["):
-                close = remaining.find("]")
-                if close == -1:
-                    raise ValueError(f"f8 bracket opened at position {idx} but never closed")
-                atomic_prop = parse_atomic_prop(remaining[1:close])
-                remaining = remaining[close + 1:].strip()
-            elif remaining.startswith("*"):
-                remaining = remaining[1:].strip()
+      # f8: bracketed atomic-property expression, "[...]" or "*" or absent.
+      # Unclosed "[" is a malformed line (debt #2363), not a silent skip.
+      atomic_prop: AtomicPropExpr | None = None
+      if remaining.startswith("["):
+        close = remaining.find("]")
+        if close == -1:
+          raise ValueError(f"f8 bracket opened at position {idx} but never closed")
+        atomic_prop = parse_atomic_prop(remaining[1:close])
+        remaining = remaining[close + 1 :].strip()
+      elif remaining.startswith("*"):
+        remaining = remaining[1:].strip()
 
-            # f9: parenthesized chemical-environment neighbor pattern, "(...)" or
-            # "*" or absent (end of line before "&"). There is no true f10 --
-            # anything left after this is a malformed line, not a further field (debt #2363).
-            chem_env: ChemEnvExpr | None = None
-            if remaining.startswith("("):
-                chem_env = parse_chem_env(remaining)
-                # parse_chem_env will raise ValueError if f9 is malformed
-                remaining = ""  # f9 consumes the rest of the line
-            elif remaining:
-                # Non-empty text that doesn't start with "(" is malformed (debt #2363)
-                raise ValueError(f"Unexpected text after f8 (no f9 pattern): {remaining!r}")
+      # f9: parenthesized chemical-environment neighbor pattern, "(...)" or
+      # "*" or absent (end of line before "&"). There is no true f10 --
+      # anything left after this is a malformed line, not a further field (debt #2363).
+      chem_env: ChemEnvExpr | None = None
+      if remaining.startswith("("):
+        chem_env = parse_chem_env(remaining)
+        # parse_chem_env will raise ValueError if f9 is malformed
+        remaining = ""  # f9 consumes the rest of the line
+      elif remaining:
+        # Non-empty text that doesn't start with "(" is malformed (debt #2363)
+        raise ValueError(f"Unexpected text after f8 (no f9 pattern): {remaining!r}")
 
-            rule = Gaff2Rule(
-                atom_type=atom_type,
-                residue=residue,
-                atomic_num=atomic_num,
-                num_attached=num_attached,
-                num_h=num_h,
-                h_ew_count=h_ew_count,
-                atomic_prop=atomic_prop,
-                chem_env=chem_env,
-            )
-            rules.append(rule)
+      rule = Gaff2Rule(
+        atom_type=atom_type,
+        residue=residue,
+        atomic_num=atomic_num,
+        num_attached=num_attached,
+        num_h=num_h,
+        h_ew_count=h_ew_count,
+        atomic_prop=atomic_prop,
+        chem_env=chem_env,
+      )
+      rules.append(rule)
 
-        except (ValueError, IndexError):
-            malformed.append((lineno, raw_line))
+    except (ValueError, IndexError):
+      malformed.append((lineno, raw_line))
 
-    if malformed:
-        shown = "; ".join(f"line {n}: {text.strip()!r}" for n, text in malformed[:5])
-        more = f" (+{len(malformed) - 5} more)" if len(malformed) > 5 else ""
-        raise Gaff2DefInvalidError(
-            f"{path}: {len(malformed)} malformed ATD rule line(s) -- {shown}{more}"
-        )
+  if malformed:
+    shown = "; ".join(f"line {n}: {text.strip()!r}" for n, text in malformed[:5])
+    more = f" (+{len(malformed) - 5} more)" if len(malformed) > 5 else ""
+    raise Gaff2DefInvalidError(
+      f"{path}: {len(malformed)} malformed ATD rule line(s) -- {shown}{more}"
+    )
 
-    return rules, wildatom_map
+  return rules, wildatom_map
 
 
 def extract_atom_features(
-    mol: Chem.Mol,
+  mol: Chem.Mol,
 ) -> list[dict]:
-    """Extract features from RDKit molecule needed for GAFF2 typing.
+  """Extract features from RDKit molecule needed for GAFF2 typing.
 
-    Args:
-        mol: RDKit molecule
+  Args:
+      mol: RDKit molecule
 
-    Returns:
-        List of dicts, one per atom with features for matching
-    """
-    if Chem is None:
-        raise ImportError("RDKit is required. Install with: pip install rdkit")
+  Returns:
+      List of dicts, one per atom with features for matching
+  """
+  if Chem is None:
+    raise ImportError("RDKit is required. Install with: pip install rdkit")
 
-    features: list[dict] = []
+  features: list[dict] = []
 
-    rings = mol.GetRingInfo()
+  rings = mol.GetRingInfo()
 
-    for atom in mol.GetAtoms():
-        atomic_num = atom.GetAtomicNum()
+  for atom in mol.GetAtoms():
+    atomic_num = atom.GetAtomicNum()
 
-        # Skip hydrogens for GAFF2 typing (they get typed based on their heavy atom neighbor)
-        if atomic_num == 1:
-            continue
+    # Skip hydrogens for GAFF2 typing (they get typed based on their heavy atom neighbor)
+    if atomic_num == 1:
+      continue
 
-        # After AllChem.AddHs, H atoms are explicit graph nodes, so
-        # GetNumExplicitHs() returns 0 (H is a real atom, not a valence annotation).
-        # Walk bonds to count actual H-atom neighbors; add GetNumImplicitHs for
-        # molecules that still carry implicit H (pre-AddHs path).
-        num_implicit_h = atom.GetNumImplicitHs()
-        num_h = (
-            sum(
-                1 for bond in atom.GetBonds()
-                if mol.GetAtomWithIdx(bond.GetOtherAtomIdx(atom.GetIdx())).GetAtomicNum() == 1
-            )
-            + num_implicit_h
-        )
+    # After AllChem.AddHs, H atoms are explicit graph nodes, so
+    # GetNumExplicitHs() returns 0 (H is a real atom, not a valence annotation).
+    # Walk bonds to count actual H-atom neighbors; add GetNumImplicitHs for
+    # molecules that still carry implicit H (pre-AddHs path).
+    num_implicit_h = atom.GetNumImplicitHs()
+    num_h = (
+      sum(
+        1
+        for bond in atom.GetBonds()
+        if mol.GetAtomWithIdx(bond.GetOtherAtomIdx(atom.GetIdx())).GetAtomicNum() == 1
+      )
+      + num_implicit_h
+    )
 
-        # Count non-hydrogen bonds (standard degree)
-        # Note: RDKit GetDegree() counts AROMATIC bonds as degree 1 each
-        # For benzene C: GetDegree() = 3 (2 aromatic bonds + 1 H), which matches GAFF "attached"
-        heavy_degree = atom.GetDegree()
+    # Count non-hydrogen bonds (standard degree)
+    # Note: RDKit GetDegree() counts AROMATIC bonds as degree 1 each
+    # For benzene C: GetDegree() = 3 (2 aromatic bonds + 1 H), which matches GAFF "attached"
+    heavy_degree = atom.GetDegree()
 
-        # Also compute effective degree including implicit hydrogens
-        # This is what GAFF "attached" field represents
-        attached_with_implicit_h = heavy_degree + num_implicit_h
+    # Also compute effective degree including implicit hydrogens
+    # This is what GAFF "attached" field represents
+    attached_with_implicit_h = heavy_degree + num_implicit_h
 
-        is_aromatic = atom.GetIsAromatic()
+    is_aromatic = atom.GetIsAromatic()
 
-        ring_info = atom.IsInRing()
-        ring_size = None
-        if ring_info:
-            for size in range(3, 10):
-                if rings.IsAtomInRingOfSize(atom.GetIdx(), size):
-                    ring_size = size
-                    break
+    ring_info = atom.IsInRing()
+    ring_size = None
+    if ring_info:
+      for size in range(3, 10):
+        if rings.IsAtomInRingOfSize(atom.GetIdx(), size):
+          ring_size = size
+          break
 
-        bond_types: list[tuple[int, str]] = []
-        neighbor_elements: list[str] = []
+    bond_types: list[tuple[int, str]] = []
+    neighbor_elements: list[str] = []
 
-        for bond in atom.GetBonds():
-            other_idx = bond.GetOtherAtomIdx(atom.GetIdx())
-            other_atom = mol.GetAtomWithIdx(other_idx)
+    for bond in atom.GetBonds():
+      other_idx = bond.GetOtherAtomIdx(atom.GetIdx())
+      other_atom = mol.GetAtomWithIdx(other_idx)
 
-            # Only consider bonds to non-hydrogen neighbors
-            if other_atom.GetAtomicNum() == 1:
-                continue
+      # Only consider bonds to non-hydrogen neighbors
+      if other_atom.GetAtomicNum() == 1:
+        continue
 
-            neighbor_elements.append(other_atom.GetSymbol())
+      neighbor_elements.append(other_atom.GetSymbol())
 
-            bt = bond.GetBondType()
-            if bt == 1:
-                bond_types.append((1, "SB"))
-            elif bt == 2:
-                bond_types.append((2, "DB"))
-            elif bt == 3:
-                bond_types.append((3, "TB"))
-            elif bt.name == "AROMATIC":
-                bond_types.append((1, "AR"))
+      bt = bond.GetBondType()
+      if bt == 1:
+        bond_types.append((1, "SB"))
+      elif bt == 2:
+        bond_types.append((2, "DB"))
+      elif bt == 3:
+        bond_types.append((3, "TB"))
+      elif bt.name == "AROMATIC":
+        bond_types.append((1, "AR"))
 
-        # Also compute total H count based on expected valency
-        # For C: 4 bonds total, N: 3 bonds, O: 2 bonds, etc.
-        expected_valence = {"C": 4, "N": 3, "O": 2, "S": 2, "P": 3}
-        elem = atom.GetSymbol()
-        expected = expected_valence.get(elem, 4)
-        # Count all bonds (including to H)
-        actual_bonds = atom.GetDegree() + atom.GetNumImplicitHs()
-        total_h = max(0, expected - actual_bonds)
+    # Also compute total H count based on expected valency
+    # For C: 4 bonds total, N: 3 bonds, O: 2 bonds, etc.
+    expected_valence = {"C": 4, "N": 3, "O": 2, "S": 2, "P": 3}
+    elem = atom.GetSymbol()
+    expected = expected_valence.get(elem, 4)
+    # Count all bonds (including to H)
+    actual_bonds = atom.GetDegree() + atom.GetNumImplicitHs()
+    total_h = max(0, expected - actual_bonds)
 
-        # Also compute total H count based on expected valency
-        # For C: 4 bonds total, N: 3 bonds, O: 2 bonds, etc.
-        expected_valence = {"C": 4, "N": 3, "O": 2, "S": 2, "P": 3}
-        elem = atom.GetSymbol()
-        expected = expected_valence.get(elem, 4)
-        actual_bonds = atom.GetDegree() + atom.GetNumImplicitHs()
-        total_h = max(0, expected - actual_bonds)
+    # Also compute total H count based on expected valency
+    # For C: 4 bonds total, N: 3 bonds, O: 2 bonds, etc.
+    expected_valence = {"C": 4, "N": 3, "O": 2, "S": 2, "P": 3}
+    elem = atom.GetSymbol()
+    expected = expected_valence.get(elem, 4)
+    actual_bonds = atom.GetDegree() + atom.GetNumImplicitHs()
+    total_h = max(0, expected - actual_bonds)
 
-        feature = {
-            "atomic_num": atomic_num,
-            "num_heavy_neighbors": heavy_degree,
-            "attached_with_implicit_h": attached_with_implicit_h,
-            "num_h": num_h,
-            "total_h": total_h,
-            "is_aromatic": is_aromatic,
-            "ring_size": ring_size,
-            "bond_types": bond_types,
-            "neighbor_elements": neighbor_elements,
-        }
-        features.append(feature)
+    feature = {
+      "atomic_num": atomic_num,
+      "num_heavy_neighbors": heavy_degree,
+      "attached_with_implicit_h": attached_with_implicit_h,
+      "num_h": num_h,
+      "total_h": total_h,
+      "is_aromatic": is_aromatic,
+      "ring_size": ring_size,
+      "bond_types": bond_types,
+      "neighbor_elements": neighbor_elements,
+    }
+    features.append(feature)
 
-    return features
+  return features
 
 
 # cc/cd (and analogous) ring/chain-alternation bookkeeping: AMBER's bonded-
@@ -1095,254 +1094,259 @@ def extract_atom_features(
 # `single_seed_only=True` on the cp/cq call below reproduces this real,
 # intentional asymmetry rather than treating both calls the same way.
 _CONJUGATED_ALTERNATION_PAIRS = {
-    "cc": "cd", "ce": "cf", "cg": "ch",
-    "pc": "pd", "pe": "pf", "nc": "nd", "ne": "nf",
+  "cc": "cd",
+  "ce": "cf",
+  "cg": "ch",
+  "pc": "pd",
+  "pe": "pf",
+  "nc": "nd",
+  "ne": "nf",
 }
 _BIPHENYL_ALTERNATION_PAIR = {"cp": "cq"}
 
 
 def _relabel_conjugated_alternation(
-    mol: Chem.Mol,
-    atom_types: list[str],
-    pairs: dict[str, str],
-    *,
-    single_seed_only: bool = False,
+  mol: Chem.Mol,
+  atom_types: list[str],
+  pairs: dict[str, str],
+  *,
+  single_seed_only: bool = False,
 ) -> None:
-    """Mutate `atom_types` in place: 2-color the family subgraph by Kekule
-    bond parity (single bond = same label, double/triple = flipped label),
-    relabeling flipped atoms to their paired ("primed") type.
+  """Mutate `atom_types` in place: 2-color the family subgraph by Kekule
+  bond parity (single bond = same label, double/triple = flipped label),
+  relabeling flipped atoms to their paired ("primed") type.
 
-    This is a line-for-line port of real AmberTools' `atadjust()`
-    (`src/antechamber/atomtype.c`, `Amber-MD/AmberClassic`) -- NOT a plain
-    per-component BFS 2-coloring, which is a materially different (and, for
-    disconnected multi-component molecules, WRONG) algorithm. Verified
-    260821 by compiling the real `atomtype`/`bondtype` C sources standalone
-    and running them on a real geostd ligand (V6X-derived fused-ring test
-    below): a naive BFS reproduces only the component containing the very
-    first family atom (by index) correctly. Real `atadjust()` uses a
-    GLOBAL, PASS-SCOPED reseed flag, not a per-component one:
+  This is a line-for-line port of real AmberTools' `atadjust()`
+  (`src/antechamber/atomtype.c`, `Amber-MD/AmberClassic`) -- NOT a plain
+  per-component BFS 2-coloring, which is a materially different (and, for
+  disconnected multi-component molecules, WRONG) algorithm. Verified
+  260821 by compiling the real `atomtype`/`bondtype` C sources standalone
+  and running them on a real geostd ligand (V6X-derived fused-ring test
+  below): a naive BFS reproduces only the component containing the very
+  first family atom (by index) correctly. Real `atadjust()` uses a
+  GLOBAL, PASS-SCOPED reseed flag, not a per-component one:
 
-    - One atom overall (the first family atom, by ascending atom index) is
-      unconditionally seeded with sign +1 before any bond is examined.
-    - The algorithm then runs UP TO `num_family_atoms - 1` outer passes.
-      Each pass does a single Gauss-Seidel-style sweep over every
-      family-family bond IN MOLECULE BOND ORDER (i.e. `mol.GetBonds()`
-      order, which mirrors the input file's bond order -- not sorted by
-      atom index), propagating sign to any atom whose bonded neighbor
-      already has one, using already-updated values from earlier in the
-      SAME pass.
-    - At most ONE new (still fully-unsigned) connected component may be
-      "reseeded" with sign +1 per pass -- this is gated by a single `flag`
-      that is reset only once at the top of each pass, not per bond or per
-      component. Concretely: the reseed fires on the first still-untouched
-      family-family bond encountered in bond order during a pass, and
-      immediately propagates across that one bond in the same iteration
-      (which sets the flag), blocking any further reseeding for the rest
-      of that pass.
-    - There is no cross-component consistency check: if a molecule's
-      family subgraph is NOT actually 2-colorable as one connected whole
-      (e.g. a genuinely ambiguous fused-ring system), real antechamber
-      does not detect or repair the resulting local contradiction -- it
-      just prints a "may be wrong" warning and keeps the result. This
-      function reproduces that same silently-approximate behavior; it does
-      not attempt to be "more correct" than the reference it ports.
+  - One atom overall (the first family atom, by ascending atom index) is
+    unconditionally seeded with sign +1 before any bond is examined.
+  - The algorithm then runs UP TO `num_family_atoms - 1` outer passes.
+    Each pass does a single Gauss-Seidel-style sweep over every
+    family-family bond IN MOLECULE BOND ORDER (i.e. `mol.GetBonds()`
+    order, which mirrors the input file's bond order -- not sorted by
+    atom index), propagating sign to any atom whose bonded neighbor
+    already has one, using already-updated values from earlier in the
+    SAME pass.
+  - At most ONE new (still fully-unsigned) connected component may be
+    "reseeded" with sign +1 per pass -- this is gated by a single `flag`
+    that is reset only once at the top of each pass, not per bond or per
+    component. Concretely: the reseed fires on the first still-untouched
+    family-family bond encountered in bond order during a pass, and
+    immediately propagates across that one bond in the same iteration
+    (which sets the flag), blocking any further reseeding for the rest
+    of that pass.
+  - There is no cross-component consistency check: if a molecule's
+    family subgraph is NOT actually 2-colorable as one connected whole
+    (e.g. a genuinely ambiguous fused-ring system), real antechamber
+    does not detect or repair the resulting local contradiction -- it
+    just prints a "may be wrong" warning and keeps the result. This
+    function reproduces that same silently-approximate behavior; it does
+    not attempt to be "more correct" than the reference it ports.
 
-    Net effect: for a molecule whose family atoms form more than one
-    connected component, WHICH atom seeds each later component (and hence
-    that component's overall same/primed orientation) depends on bond
-    file order, not just molecular topology -- reproducing this exactly
-    is why a naive independent-BFS-per-component implementation disagrees
-    with real antechamber on such molecules.
+  Net effect: for a molecule whose family atoms form more than one
+  connected component, WHICH atom seeds each later component (and hence
+  that component's overall same/primed orientation) depends on bond
+  file order, not just molecular topology -- reproducing this exactly
+  is why a naive independent-BFS-per-component implementation disagrees
+  with real antechamber on such molecules.
 
-    `mol` must already be Kekulized (see `assign_gaff2_atom_types`) -- an
-    un-Kekulized aromatic bond reports `AROMATIC`, which this function
-    treats as "not SINGLE" (a flip), silently corrupting the coloring for
-    ring systems exactly like the sb/db precondition this mirrors.
+  `mol` must already be Kekulized (see `assign_gaff2_atom_types`) -- an
+  un-Kekulized aromatic bond reports `AROMATIC`, which this function
+  treats as "not SINGLE" (a flip), silently corrupting the coloring for
+  ring systems exactly like the sb/db precondition this mirrors.
 
-    `single_seed_only`: real AmberTools' `cpadjust()` (see the
-    module-level comment above `_BIPHENYL_ALTERNATION_PAIR`) is the same
-    algorithm MINUS the reseed step entirely (no `flag`-gated reseed
-    exists in its source at all) -- only the one atom seeded before the
-    pass loop is ever colored; every other disconnected same-family
-    subgraph is left untouched. Passing `single_seed_only=True` disables
-    the reseed check on every pass (as if `flag` were permanently set) to
-    reproduce that.
-    """
-    n = mol.GetNumAtoms()
-    in_family = [atom_types[i] in pairs for i in range(n)]
-    sign = [0] * n
-    num = 0
-    seeded = False
-    for i in range(n):
-        if in_family[i]:
-            if not seeded:
-                sign[i] = 1
-                seeded = True
-            num += 1
-    if num == 0:
-        return
+  `single_seed_only`: real AmberTools' `cpadjust()` (see the
+  module-level comment above `_BIPHENYL_ALTERNATION_PAIR`) is the same
+  algorithm MINUS the reseed step entirely (no `flag`-gated reseed
+  exists in its source at all) -- only the one atom seeded before the
+  pass loop is ever colored; every other disconnected same-family
+  subgraph is left untouched. Passing `single_seed_only=True` disables
+  the reseed check on every pass (as if `flag` were permanently set) to
+  reproduce that.
+  """
+  n = mol.GetNumAtoms()
+  in_family = [atom_types[i] in pairs for i in range(n)]
+  sign = [0] * n
+  num = 0
+  seeded = False
+  for i in range(n):
+    if in_family[i]:
+      if not seeded:
+        sign[i] = 1
+        seeded = True
+      num += 1
+  if num == 0:
+    return
+  num -= 1
+
+  bonds = list(mol.GetBonds())
+  while num > 0:
     num -= 1
+    flag = single_seed_only
+    for bond in bonds:
+      bi = bond.GetBeginAtomIdx()
+      bj = bond.GetEndAtomIdx()
+      if not (in_family[bi] and in_family[bj]):
+        continue
+      if not flag and sign[bi] == 0 and sign[bj] == 0:
+        sign[bi] = 1
+      same = bond.GetBondType().name == "SINGLE"
+      if sign[bi] == 0 and sign[bj] != 0:
+        flag = True
+        sign[bi] = sign[bj] if same else -sign[bj]
+      if sign[bj] == 0 and sign[bi] != 0:
+        flag = True
+        sign[bj] = sign[bi] if same else -sign[bi]
 
-    bonds = list(mol.GetBonds())
-    while num > 0:
-        num -= 1
-        flag = single_seed_only
-        for bond in bonds:
-            bi = bond.GetBeginAtomIdx()
-            bj = bond.GetEndAtomIdx()
-            if not (in_family[bi] and in_family[bj]):
-                continue
-            if not flag and sign[bi] == 0 and sign[bj] == 0:
-                sign[bi] = 1
-            same = bond.GetBondType().name == "SINGLE"
-            if sign[bi] == 0 and sign[bj] != 0:
-                flag = True
-                sign[bi] = sign[bj] if same else -sign[bj]
-            if sign[bj] == 0 and sign[bi] != 0:
-                flag = True
-                sign[bj] = sign[bi] if same else -sign[bi]
-
-    for idx, s in enumerate(sign):
-        if s == -1:
-            atom_types[idx] = pairs[atom_types[idx]]
+  for idx, s in enumerate(sign):
+    if s == -1:
+      atom_types[idx] = pairs[atom_types[idx]]
 
 
 def assign_gaff2_atom_types(
-    mol: Chem.Mol,
-    rules: list[Gaff2Rule] | None = None,
-    wildatom_map: dict[str, list[str]] | None = None,
+  mol: Chem.Mol,
+  rules: list[Gaff2Rule] | None = None,
+  wildatom_map: dict[str, list[str]] | None = None,
 ) -> list[str]:
-    """Assign GAFF2 atom types to an RDKit molecule.
+  """Assign GAFF2 atom types to an RDKit molecule.
 
-    Args:
-        mol: RDKit molecule
-        rules: Pre-parsed GAFF2 rules (optional, will use default if not provided)
-        wildatom_map: Pre-parsed WILDATOM map
+  Args:
+      mol: RDKit molecule
+      rules: Pre-parsed GAFF2 rules (optional, will use default if not provided)
+      wildatom_map: Pre-parsed WILDATOM map
 
-    Returns:
-        List of GAFF2 atom type strings, ONE PER ATOM, in `mol.GetAtoms()` index
-        order -- including H atoms if `mol` has explicit hydrogens (e.g. after
-        `Chem.AddHs`). This is an intentional, index-aligned contract (changed
-        260820): previously H atoms were skipped entirely, so the returned list
-        was shorter than `mol.GetNumAtoms()` and callers had to reconstruct
-        index alignment themselves by re-walking `mol.GetAtoms()` and filtering
-        `GetAtomicNum() != 1` in lockstep -- see `build_gaff2_ffxml`, now
-        simplified to rely on this contract directly.
-    """
-    if Chem is None:
-        raise ImportError("RDKit is required. Install with: pip install rdkit")
+  Returns:
+      List of GAFF2 atom type strings, ONE PER ATOM, in `mol.GetAtoms()` index
+      order -- including H atoms if `mol` has explicit hydrogens (e.g. after
+      `Chem.AddHs`). This is an intentional, index-aligned contract (changed
+      260820): previously H atoms were skipped entirely, so the returned list
+      was shorter than `mol.GetNumAtoms()` and callers had to reconstruct
+      index alignment themselves by re-walking `mol.GetAtoms()` and filtering
+      `GetAtomicNum() != 1` in lockstep -- see `build_gaff2_ffxml`, now
+      simplified to rely on this contract directly.
+  """
+  if Chem is None:
+    raise ImportError("RDKit is required. Install with: pip install rdkit")
 
-    if rules is None:
-        rules, wildatom_map = _get_default_rules()
+  if rules is None:
+    rules, wildatom_map = _get_default_rules()
 
-    if wildatom_map is None:
-        wildatom_map = {}
+  if wildatom_map is None:
+    wildatom_map = {}
 
-    atom_types: list[str] = []
+  atom_types: list[str] = []
 
-    # Kekulize a local copy before matching: f8/f9's lowercase sb/db bond-category
-    # tokens require the true per-bond Kekule single/double identity (see
-    # _bond_category_facts), which RDKit only exposes once aromatic ring bonds
-    # are Kekulized -- by default they report GetBondType() == AROMATIC, not
-    # SINGLE/DOUBLE. clearAromaticFlags=False keeps GetIsAromatic() intact so AB/DL
-    # and aromaticity-class matching are unaffected. Never mutates the caller's
-    # mol. A molecule that has already passed Chem.SanitizeMol should always
-    # Kekulize successfully (sanitization Kekulizes internally to validate) --
-    # deliberately NOT silently falling back to the un-Kekulized molecule on
-    # failure: that would make every downstream sb/db-dependent match silently
-    # wrong for an aromatic bond (masked by _bond_category_facts's own
-    # precondition assertion firing at an unrelated call site instead, with a
-    # confusing stack trace far from the real cause). Fail loudly here instead,
-    # at the actual point of failure, with an explicit warning first.
-    mol_for_matching = Chem.Mol(mol)
-    try:
-        Chem.Kekulize(mol_for_matching, clearAromaticFlags=False)
-    except Chem.KekulizeException as exc:
-        import logging as _logging
+  # Kekulize a local copy before matching: f8/f9's lowercase sb/db bond-category
+  # tokens require the true per-bond Kekule single/double identity (see
+  # _bond_category_facts), which RDKit only exposes once aromatic ring bonds
+  # are Kekulized -- by default they report GetBondType() == AROMATIC, not
+  # SINGLE/DOUBLE. clearAromaticFlags=False keeps GetIsAromatic() intact so AB/DL
+  # and aromaticity-class matching are unaffected. Never mutates the caller's
+  # mol. A molecule that has already passed Chem.SanitizeMol should always
+  # Kekulize successfully (sanitization Kekulizes internally to validate) --
+  # deliberately NOT silently falling back to the un-Kekulized molecule on
+  # failure: that would make every downstream sb/db-dependent match silently
+  # wrong for an aromatic bond (masked by _bond_category_facts's own
+  # precondition assertion firing at an unrelated call site instead, with a
+  # confusing stack trace far from the real cause). Fail loudly here instead,
+  # at the actual point of failure, with an explicit warning first.
+  mol_for_matching = Chem.Mol(mol)
+  try:
+    Chem.Kekulize(mol_for_matching, clearAromaticFlags=False)
+  except Chem.KekulizeException as exc:
+    import logging as _logging
 
-        _logging.getLogger(__name__).warning(
-            "assign_gaff2_atom_types: Kekulize failed (%s); refusing to "
-            "silently degrade sb/db bond-category matching for this molecule",
-            exc,
-        )
-        raise
-
-    # Precedence: first-match-in-file-order (parse_gaff2_rules preserves DEF-file
-    # declaration order), per ATOMTYPE_GFF2.DEF's own "defination order is crucial"
-    # rule. H atoms go through the SAME rule loop as heavy atoms (260820 -- the 13
-    # H-rules, ATOMTYPE_GFF2.DEF lines 79-91, are parsed like any other ATD row;
-    # they just never ran before this fix).
-    for atom in mol_for_matching.GetAtoms():
-        assigned = False
-        for rule in rules:
-            if rule.matches(atom, wildatom_map):
-                atom_types.append(rule.atom_type)
-                assigned = True
-                break
-
-        if not assigned:
-            atomic_num = atom.GetAtomicNum()
-            if atomic_num == 1:
-                atom_types.append("ha")  # DEF line 91: unconstrained H catch-all
-            elif atomic_num == 6:
-                atom_types.append("c3")
-            elif atomic_num == 7:
-                atom_types.append("n3")
-            elif atomic_num == 8:
-                atom_types.append("oh")
-            elif atomic_num == 16:
-                atom_types.append("s")
-            else:
-                atom_types.append("x")
-
-    # cc/cd-family ring/chain-alternation bookkeeping (see the two constants'
-    # docstring comment above) -- two independent passes, matching
-    # AmberTools' real atadjust()/cpadjust() structure: cc/ce/cg/pc/pe/nc/ne
-    # and cp are disjoint families that must never cross-propagate through
-    # each other even if adjacent. single_seed_only=True on the cp/cq call
-    # reproduces cpadjust()'s real (and structurally different from
-    # atadjust()'s) single-component-only behavior -- see that constant's
-    # module-level comment.
-    _relabel_conjugated_alternation(mol_for_matching, atom_types, _CONJUGATED_ALTERNATION_PAIRS)
-    _relabel_conjugated_alternation(
-        mol_for_matching, atom_types, _BIPHENYL_ALTERNATION_PAIR, single_seed_only=True
+    _logging.getLogger(__name__).warning(
+      "assign_gaff2_atom_types: Kekulize failed (%s); refusing to "
+      "silently degrade sb/db bond-category matching for this molecule",
+      exc,
     )
+    raise
 
-    return atom_types
+  # Precedence: first-match-in-file-order (parse_gaff2_rules preserves DEF-file
+  # declaration order), per ATOMTYPE_GFF2.DEF's own "defination order is crucial"
+  # rule. H atoms go through the SAME rule loop as heavy atoms (260820 -- the 13
+  # H-rules, ATOMTYPE_GFF2.DEF lines 79-91, are parsed like any other ATD row;
+  # they just never ran before this fix).
+  for atom in mol_for_matching.GetAtoms():
+    assigned = False
+    for rule in rules:
+      if rule.matches(atom, wildatom_map):
+        atom_types.append(rule.atom_type)
+        assigned = True
+        break
+
+    if not assigned:
+      atomic_num = atom.GetAtomicNum()
+      if atomic_num == 1:
+        atom_types.append("ha")  # DEF line 91: unconstrained H catch-all
+      elif atomic_num == 6:
+        atom_types.append("c3")
+      elif atomic_num == 7:
+        atom_types.append("n3")
+      elif atomic_num == 8:
+        atom_types.append("oh")
+      elif atomic_num == 16:
+        atom_types.append("s")
+      else:
+        atom_types.append("x")
+
+  # cc/cd-family ring/chain-alternation bookkeeping (see the two constants'
+  # docstring comment above) -- two independent passes, matching
+  # AmberTools' real atadjust()/cpadjust() structure: cc/ce/cg/pc/pe/nc/ne
+  # and cp are disjoint families that must never cross-propagate through
+  # each other even if adjacent. single_seed_only=True on the cp/cq call
+  # reproduces cpadjust()'s real (and structurally different from
+  # atadjust()'s) single-component-only behavior -- see that constant's
+  # module-level comment.
+  _relabel_conjugated_alternation(mol_for_matching, atom_types, _CONJUGATED_ALTERNATION_PAIRS)
+  _relabel_conjugated_alternation(
+    mol_for_matching, atom_types, _BIPHENYL_ALTERNATION_PAIR, single_seed_only=True
+  )
+
+  return atom_types
 
 
 class Gaff2DefError(RuntimeError):
-    """Base class for ATOMTYPE_GFF2.DEF loading failures.
+  """Base class for ATOMTYPE_GFF2.DEF loading failures.
 
-    proxide never assigns GAFF2 atom types from a missing, altered, or
-    empty rule set -- see CLAUDE.md's fail-fast rule (no sentinel standing
-    in for "unknown"). Every such case raises one of this class's
-    subclasses at the point of determination instead of silently degrading
-    to an empty ruleset (which previously caused every atom to fall
-    through to the generic per-element placeholder types in
-    `assign_gaff2_atom_types`).
-    """
+  proxide never assigns GAFF2 atom types from a missing, altered, or
+  empty rule set -- see CLAUDE.md's fail-fast rule (no sentinel standing
+  in for "unknown"). Every such case raises one of this class's
+  subclasses at the point of determination instead of silently degrading
+  to an empty ruleset (which previously caused every atom to fall
+  through to the generic per-element placeholder types in
+  `assign_gaff2_atom_types`).
+  """
 
 
 class Gaff2DefMissingError(Gaff2DefError, FileNotFoundError):
-    """The resolved ATOMTYPE_GFF2.DEF path does not exist."""
+  """The resolved ATOMTYPE_GFF2.DEF path does not exist."""
 
 
 class Gaff2ParameterMissingError(ValueError):
-    """A GAFF2 force-field term has no parameters in the loaded .dat table.
+  """A GAFF2 force-field term has no parameters in the loaded .dat table.
 
-    Raised instead of filling a stand-in (0.0 force constants, a 1.50 A bond,
-    a 120 degree angle, carbon's mass): a made-up parameter integrates as if it
-    were real (debt #1905, #2368).
-    """
+  Raised instead of filling a stand-in (0.0 force constants, a 1.50 A bond,
+  a 120 degree angle, carbon's mass): a made-up parameter integrates as if it
+  were real (debt #1905, #2368).
+  """
 
 
 class Gaff2DefInvalidError(Gaff2DefError, ValueError):
-    """ATOMTYPE_GFF2.DEF exists but its content is wrong.
+  """ATOMTYPE_GFF2.DEF exists but its content is wrong.
 
-    Raised for a digest mismatch against the pin (the default/env-var
-    path only) or for a file that parses to zero rules (any path).
-    """
+  Raised for a digest mismatch against the pin (the default/env-var
+  path only) or for a file that parses to zero rules (any path).
+  """
 
 
 # Single source of truth for ATOMTYPE_GFF2.DEF's upstream location and
@@ -1353,22 +1357,22 @@ _PIN_PATH = Path(__file__).parent.parent / "assets" / "gaff" / "ATOMTYPE_GFF2.pi
 
 
 def _load_pin() -> dict:
-    """Read the ATOMTYPE_GFF2.DEF pin file."""
-    with _PIN_PATH.open("rb") as f:
-        return tomllib.load(f)
+  """Read the ATOMTYPE_GFF2.DEF pin file."""
+  with _PIN_PATH.open("rb") as f:
+    return tomllib.load(f)
 
 
 def _default_def_path() -> Path:
-    """Resolve the default ATOMTYPE_GFF2.DEF path.
+  """Resolve the default ATOMTYPE_GFF2.DEF path.
 
-    `PROXIDE_GAFF2_DEF`, if set, overrides the packaged location -- e.g.
-    for a dev checkout, a non-editable install whose wheel wasn't built
-    with the DEF present, or CI debugging.
-    """
-    env_path = os.environ.get("PROXIDE_GAFF2_DEF")
-    if env_path:
-        return Path(env_path)
-    return Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "ATOMTYPE_GFF2.DEF"
+  `PROXIDE_GAFF2_DEF`, if set, overrides the packaged location -- e.g.
+  for a dev checkout, a non-editable install whose wheel wasn't built
+  with the DEF present, or CI debugging.
+  """
+  env_path = os.environ.get("PROXIDE_GAFF2_DEF")
+  if env_path:
+    return Path(env_path)
+  return Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "ATOMTYPE_GFF2.DEF"
 
 
 _default_rules: list[Gaff2Rule] | None = None
@@ -1376,272 +1380,274 @@ _default_wildatom: dict[str, list[str]] | None = None
 
 
 def _get_default_rules() -> tuple[list[Gaff2Rule], dict[str, list[str]]]:
-    """Get default GAFF2 rules (cached).
+  """Get default GAFF2 rules (cached).
 
-    Never caches a failed load: the module-level cache is only assigned
-    after the resolved DEF has been found, digest-verified against the
-    pin file, and successfully parsed into at least one rule. A missing
-    or altered default DEF raises on every call until it's fixed -- it
-    never silently degrades to an empty ruleset.
-    """
-    global _default_rules, _default_wildatom
+  Never caches a failed load: the module-level cache is only assigned
+  after the resolved DEF has been found, digest-verified against the
+  pin file, and successfully parsed into at least one rule. A missing
+  or altered default DEF raises on every call until it's fixed -- it
+  never silently degrades to an empty ruleset.
+  """
+  global _default_rules, _default_wildatom
 
-    if _default_rules is None:
-        rules_path = _default_def_path()
-        pin = _load_pin()
+  if _default_rules is None:
+    rules_path = _default_def_path()
+    pin = _load_pin()
 
-        if not rules_path.exists():
-            raise Gaff2DefMissingError(
-                f"ATOMTYPE_GFF2.DEF not found at {rules_path}. "
-                f"{pin['license_note']} It is deliberately excluded from this "
-                "repository's git history. Fetch it from a source checkout "
-                "with `uv run python scripts/fetch_amber_assets.py` (run from "
-                "the repo root), or set the PROXIDE_GAFF2_DEF environment "
-                "variable to point at an already-fetched copy. "
-                f"Pinned source: {pin['url']} (sha256 {pin['sha256']})."
-            )
+    if not rules_path.exists():
+      raise Gaff2DefMissingError(
+        f"ATOMTYPE_GFF2.DEF not found at {rules_path}. "
+        f"{pin['license_note']} It is deliberately excluded from this "
+        "repository's git history. Fetch it from a source checkout "
+        "with `uv run python scripts/fetch_amber_assets.py` (run from "
+        "the repo root), or set the PROXIDE_GAFF2_DEF environment "
+        "variable to point at an already-fetched copy. "
+        f"Pinned source: {pin['url']} (sha256 {pin['sha256']})."
+      )
 
-        actual_digest = hashlib.sha256(rules_path.read_bytes()).hexdigest()
-        if actual_digest != pin["sha256"]:
-            raise Gaff2DefInvalidError(
-                f"ATOMTYPE_GFF2.DEF at {rules_path} does not match the pinned digest "
-                f"-- expected sha256 {pin['sha256']}, got {actual_digest}. The file "
-                "was altered, corrupted in transit, or is a different upstream "
-                "version than this proxide release expects. Re-fetch a verified copy "
-                "with `uv run python scripts/fetch_amber_assets.py`."
-            )
+    actual_digest = hashlib.sha256(rules_path.read_bytes()).hexdigest()
+    if actual_digest != pin["sha256"]:
+      raise Gaff2DefInvalidError(
+        f"ATOMTYPE_GFF2.DEF at {rules_path} does not match the pinned digest "
+        f"-- expected sha256 {pin['sha256']}, got {actual_digest}. The file "
+        "was altered, corrupted in transit, or is a different upstream "
+        "version than this proxide release expects. Re-fetch a verified copy "
+        "with `uv run python scripts/fetch_amber_assets.py`."
+      )
 
-        rules, wildatom = parse_gaff2_rules(rules_path)
-        if not rules:
-            raise Gaff2DefInvalidError(
-                f"ATOMTYPE_GFF2.DEF at {rules_path} matched its pinned digest but "
-                "parsed to zero rules. parse_gaff2_rules() raises on malformed ATD "
-                "lines, so a zero-rule result here means the file has no ATD rules "
-                "the parser recognizes at all without the digest changing, which "
-                "should be impossible -- treat this as a parser bug, not a missing "
-                "file."
-            )
+    rules, wildatom = parse_gaff2_rules(rules_path)
+    if not rules:
+      raise Gaff2DefInvalidError(
+        f"ATOMTYPE_GFF2.DEF at {rules_path} matched its pinned digest but "
+        "parsed to zero rules. parse_gaff2_rules() raises on malformed ATD "
+        "lines, so a zero-rule result here means the file has no ATD rules "
+        "the parser recognizes at all without the digest changing, which "
+        "should be impossible -- treat this as a parser bug, not a missing "
+        "file."
+      )
 
-        _default_rules, _default_wildatom = rules, wildatom
+    _default_rules, _default_wildatom = rules, wildatom
 
-    # The `if` block above either raises (never assigning the cache) or
-    # assigns both cache variables together, so both are guaranteed
-    # non-None here -- these asserts just make that guarantee legible to
-    # the type checker, which can't otherwise narrow a `global` this way.
-    assert _default_rules is not None
-    assert _default_wildatom is not None
-    return (_default_rules, _default_wildatom)
+  # The `if` block above either raises (never assigning the cache) or
+  # assigns both cache variables together, so both are guaranteed
+  # non-None here -- these asserts just make that guarantee legible to
+  # the type checker, which can't otherwise narrow a `global` this way.
+  assert _default_rules is not None
+  assert _default_wildatom is not None
+  return (_default_rules, _default_wildatom)
 
 
 def load_gaff2_rules(
-    def_path: str | Path | None = None,
+  def_path: str | Path | None = None,
 ) -> tuple[list[Gaff2Rule], dict[str, list[str]]]:
-    """Load GAFF2 rules from file.
+  """Load GAFF2 rules from file.
 
-    Args:
-        def_path: Path to ATOMTYPE_GFF2.DEF. If None, uses the packaged/
-            PROXIDE_GAFF2_DEF default, digest-verified against the pin
-            file (see `_get_default_rules`).
+  Args:
+      def_path: Path to ATOMTYPE_GFF2.DEF. If None, uses the packaged/
+          PROXIDE_GAFF2_DEF default, digest-verified against the pin
+          file (see `_get_default_rules`).
 
-    Returns:
-        Tuple of (rules list, wildatom map).
+  Returns:
+      Tuple of (rules list, wildatom map).
 
-    Raises:
-        Gaff2DefMissingError: the resolved DEF file does not exist.
-        Gaff2DefInvalidError: the DEF file exists but parses to zero
-            rules. (An explicit `def_path` skips the pin's digest check --
-            that check only applies to the default/env-var path -- but a
-            zero-rule result is always an error regardless of path: an
-            empty ruleset is never a legitimate "no rules" answer, it
-            means the file is empty, truncated, or not actually a GAFF2
-            DEF file.)
-    """
-    if def_path is None:
-        return _get_default_rules()
+  Raises:
+      Gaff2DefMissingError: the resolved DEF file does not exist.
+      Gaff2DefInvalidError: the DEF file exists but parses to zero
+          rules. (An explicit `def_path` skips the pin's digest check --
+          that check only applies to the default/env-var path -- but a
+          zero-rule result is always an error regardless of path: an
+          empty ruleset is never a legitimate "no rules" answer, it
+          means the file is empty, truncated, or not actually a GAFF2
+          DEF file.)
+  """
+  if def_path is None:
+    return _get_default_rules()
 
-    path = Path(def_path)
-    if not path.exists():
-        raise Gaff2DefMissingError(f"ATOMTYPE_GFF2.DEF not found at {path}.")
+  path = Path(def_path)
+  if not path.exists():
+    raise Gaff2DefMissingError(f"ATOMTYPE_GFF2.DEF not found at {path}.")
 
-    rules, wildatom = parse_gaff2_rules(path)
-    if not rules:
-        raise Gaff2DefInvalidError(
-            f"{path} parsed to zero GAFF2 rules: the file is empty, has no "
-            "definition block, or is not a valid ATOMTYPE_GFF2.DEF grammar."
-        )
-    return rules, wildatom
+  rules, wildatom = parse_gaff2_rules(path)
+  if not rules:
+    raise Gaff2DefInvalidError(
+      f"{path} parsed to zero GAFF2 rules: the file is empty, has no "
+      "definition block, or is not a valid ATOMTYPE_GFF2.DEF grammar."
+    )
+  return rules, wildatom
 
 
 def load_gaff2_parameters(dat_path: str | Path | None = None) -> dict:
-    """Load GAFF2 parameter tables from .dat file.
+  """Load GAFF2 parameter tables from .dat file.
 
-    Args:
-        dat_path: Path to GAFF2 .dat file (e.g., gaff-2.2.20.dat).
-                  If None, uses default bundled.
+  Args:
+      dat_path: Path to GAFF2 .dat file (e.g., gaff-2.2.20.dat).
+                If None, uses default bundled.
 
-    Returns:
-        Dict with 'masses', 'bonds', 'angles', 'torsions', 'impropers', 'vdw'.
-        'vdw' maps atom_type -> (rmin_half_angstrom, epsilon_kcal_mol).
-    """
-    if dat_path is None:
-        dat_path = Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "gaff-2.2.20.dat"
+  Returns:
+      Dict with 'masses', 'bonds', 'angles', 'torsions', 'impropers', 'vdw'.
+      'vdw' maps atom_type -> (rmin_half_angstrom, epsilon_kcal_mol).
+  """
+  if dat_path is None:
+    dat_path = Path(__file__).parent.parent / "assets" / "gaff" / "dat" / "gaff-2.2.20.dat"
 
-    params: dict = {
-        'masses': {},
-        'bonds': {},
-        'angles': {},
-        'torsions': {},
-        'impropers': {},
-        'vdw': {},
-    }
+  params: dict = {
+    "masses": {},
+    "bonds": {},
+    "angles": {},
+    "torsions": {},
+    "impropers": {},
+    "vdw": {},
+  }
 
-    lines = Path(dat_path).read_text().split('\n')
-    _parse_parm_dat(lines, params, str(dat_path))
-    return params
+  lines = Path(dat_path).read_text().split("\n")
+  _parse_parm_dat(lines, params, str(dat_path))
+  return params
 
 
 def _dat_types(line: str, n: int) -> tuple[str, ...]:
-    """The n atom types at the start of an AMBER parm.dat record.
+  """The n atom types at the start of an AMBER parm.dat record.
 
-    Types are fixed-width two-column fields joined by "-" (FORMAT
-    ``A2,1X,A2,...``), so a single-letter type keeps its padding space:
-    ``c3-c -c3``, ``X -c -c -X``. Splitting on whitespace mangles exactly
-    those rows -- the previous loader misread them as bonds and dropped 720
-    angle types and every generic ``X-..-X`` torsion (debt #2368).
-    """
-    types = tuple(line[3 * k : 3 * k + 2].strip() for k in range(n))
-    if not all(types) or any(line[3 * k + 2 : 3 * k + 3] != "-" for k in range(n - 1)):
-        raise ValueError(f"not a {n}-type parm.dat record: {line!r}")
-    return types
+  Types are fixed-width two-column fields joined by "-" (FORMAT
+  ``A2,1X,A2,...``), so a single-letter type keeps its padding space:
+  ``c3-c -c3``, ``X -c -c -X``. Splitting on whitespace mangles exactly
+  those rows -- the previous loader misread them as bonds and dropped 720
+  angle types and every generic ``X-..-X`` torsion (debt #2368).
+  """
+  types = tuple(line[3 * k : 3 * k + 2].strip() for k in range(n))
+  if not all(types) or any(line[3 * k + 2 : 3 * k + 3] != "-" for k in range(n - 1)):
+    raise ValueError(f"not a {n}-type parm.dat record: {line!r}")
+  return types
 
 
 def _dat_num(line: str, start: int, end: int) -> float:
-    """The number in fixed-width field ``line[start:end]`` (FORTRAN F-format).
+  """The number in fixed-width field ``line[start:end]`` (FORTRAN F-format).
 
-    The column is authoritative; only its first token is read, so trailing
-    comment text that runs into the field (gaff-1.8.dat has a tab after a PN
-    value) does not corrupt it. An empty field raises.
-    """
-    tokens = line[start:end].split()
-    if not tokens:
-        raise ValueError(f"empty numeric field at columns {start}-{end}")
-    return float(tokens[0])
+  The column is authoritative; only its first token is read, so trailing
+  comment text that runs into the field (gaff-1.8.dat has a tab after a PN
+  value) does not corrupt it. An empty field raises.
+  """
+  tokens = line[start:end].split()
+  if not tokens:
+    raise ValueError(f"empty numeric field at columns {start}-{end}")
+  return float(tokens[0])
 
 
 def _parse_parm_dat(lines: list[str], params: dict, source: str) -> None:
-    """Fill ``params`` from AMBER parm.dat-format lines, section by section.
+  """Fill ``params`` from AMBER parm.dat-format lines, section by section.
 
-    Format per the AmberTools Reference Manual's parm.dat description (the
-    same reading as ParmEd's ``AmberParameterSet``): title; MASS block;
-    hydrophilic-types line; BOND (``kb, r0``); ANGLE (``kt, theta0``); DIHE
-    (``IDIVF, PK, PHASE, PN``: barrier PK/IDIVF, periodicity |PN|, a negative
-    PN meaning another term for the same quartet follows); IMPROPER (``PK,
-    PHASE, PN`` -- no IDIVF); HBOND; equivalencing; ``MOD4 RE`` van der Waals
-    block up to ``END``. Each block ends at a blank line.
+  Format per the AmberTools Reference Manual's parm.dat description (the
+  same reading as ParmEd's ``AmberParameterSet``): title; MASS block;
+  hydrophilic-types line; BOND (``kb, r0``); ANGLE (``kt, theta0``); DIHE
+  (``IDIVF, PK, PHASE, PN``: barrier PK/IDIVF, periodicity |PN|, a negative
+  PN meaning another term for the same quartet follows); IMPROPER (``PK,
+  PHASE, PN`` -- no IDIVF); HBOND; equivalencing; ``MOD4 RE`` van der Waals
+  block up to ``END``. Each block ends at a blank line.
 
-    The previous loader read DIHE's IDIVF column as the periodicity (so
-    c3-c3-c3-c3 came out n=1 instead of n=3), never divided PK by IDIVF,
-    and dropped every IMPROPER row (``int("10.5")`` raised and was
-    swallowed). A row that does not fit its section now raises. Explicit zero
-    force constants in the file are kept: a source-given 0.0 is data, not a
-    missing parameter (the old ``k > 0`` filters made 18 such angles look
-    absent).
-    """
-    i = 1  # line 0 is the title
+  The previous loader read DIHE's IDIVF column as the periodicity (so
+  c3-c3-c3-c3 came out n=1 instead of n=3), never divided PK by IDIVF,
+  and dropped every IMPROPER row (``int("10.5")`` raised and was
+  swallowed). A row that does not fit its section now raises. Explicit zero
+  force constants in the file are kept: a source-given 0.0 is data, not a
+  missing parameter (the old ``k > 0`` filters made 18 such angles look
+  absent).
+  """
+  i = 1  # line 0 is the title
 
-    def block() -> list[tuple[int, str]]:
-        nonlocal i
-        rows = []
-        while i < len(lines) and lines[i].strip():
-            rows.append((i + 1, lines[i]))
-            i += 1
-        i += 1  # the terminating blank line
-        return rows
+  def block() -> list[tuple[int, str]]:
+    nonlocal i
+    rows = []
+    while i < len(lines) and lines[i].strip():
+      rows.append((i + 1, lines[i]))
+      i += 1
+    i += 1  # the terminating blank line
+    return rows
 
-    def fail(lineno: int, line: str, what: str, err: Exception) -> ValueError:
-        return ValueError(f"{source}:{lineno}: malformed {what} record {line!r}: {err}")
+  def fail(lineno: int, line: str, what: str, err: Exception) -> ValueError:
+    return ValueError(f"{source}:{lineno}: malformed {what} record {line!r}: {err}")
 
-    for lineno, line in block():  # MASS
-        try:
-            params['masses'][line[0:2].strip()] = float(line[2:].split()[0])
-        except (ValueError, IndexError) as e:
-            raise fail(lineno, line, "MASS", e) from e
-    i += 1  # hydrophilic atom-type list (one line), then BOND begins
+  for lineno, line in block():  # MASS
+    try:
+      params["masses"][line[0:2].strip()] = float(line[2:].split()[0])
+    except (ValueError, IndexError) as e:
+      raise fail(lineno, line, "MASS", e) from e
+  i += 1  # hydrophilic atom-type list (one line), then BOND begins
 
-    for lineno, line in block():  # BOND
-        try:
-            t1, t2 = _dat_types(line, 2)
-            kb, r0 = _dat_num(line, 5, 15), _dat_num(line, 15, 25)  # 2F10.2
-        except ValueError as e:
-            raise fail(lineno, line, "BOND", e) from e
-        params['bonds'][(t1, t2)] = (kb, r0)
+  for lineno, line in block():  # BOND
+    try:
+      t1, t2 = _dat_types(line, 2)
+      kb, r0 = _dat_num(line, 5, 15), _dat_num(line, 15, 25)  # 2F10.2
+    except ValueError as e:
+      raise fail(lineno, line, "BOND", e) from e
+    params["bonds"][(t1, t2)] = (kb, r0)
 
-    for lineno, line in block():  # ANGLE
-        try:
-            t1, t2, t3 = _dat_types(line, 3)
-            kt, t0 = _dat_num(line, 8, 18), _dat_num(line, 18, 28)  # 2F10.2
-        except ValueError as e:
-            raise fail(lineno, line, "ANGLE", e) from e
-        params['angles'][(t1, t2, t3)] = (kt, t0)
+  for lineno, line in block():  # ANGLE
+    try:
+      t1, t2, t3 = _dat_types(line, 3)
+      kt, t0 = _dat_num(line, 8, 18), _dat_num(line, 18, 28)  # 2F10.2
+    except ValueError as e:
+      raise fail(lineno, line, "ANGLE", e) from e
+    params["angles"][(t1, t2, t3)] = (kt, t0)
 
-    # A negative PN means the next row continues the SAME definition; a
-    # positive PN ends it. A later row with an already-defined key after the
-    # terminator is a REdefinition and replaces the earlier one (ParmEd's
-    # reading). gaff-2.2.20.dat does this for c3-c3-n-c (two fits, rows
-    # 12147-12152): appending across the terminator summed both fits.
-    open_key: tuple[str, ...] | None = None
-    redefined: list[str] = []
-    for lineno, line in block():  # DIHE
-        try:
-            key = _dat_types(line, 4)
-            # I4, 3F15.2
-            idivf = _dat_num(line, 11, 15)
-            pk, phase, pn = _dat_num(line, 15, 30), _dat_num(line, 30, 45), _dat_num(line, 45, 60)
-            if idivf == 0:
-                raise ValueError("IDIVF is 0")
-        except ValueError as e:
-            raise fail(lineno, line, "DIHE", e) from e
-        term = (int(abs(round(pn))), pk / idivf, phase)
-        if key == open_key:
-            params['torsions'][key].append(term)
-        else:
-            if key in params['torsions']:
-                redefined.append(f"{'-'.join(key)} (line {lineno})")
-            params['torsions'][key] = [term]
-        open_key = key if pn < 0 else None
-    if redefined:
-        import logging as _logging
+  # A negative PN means the next row continues the SAME definition; a
+  # positive PN ends it. A later row with an already-defined key after the
+  # terminator is a REdefinition and replaces the earlier one (ParmEd's
+  # reading). gaff-2.2.20.dat does this for c3-c3-n-c (two fits, rows
+  # 12147-12152): appending across the terminator summed both fits.
+  open_key: tuple[str, ...] | None = None
+  redefined: list[str] = []
+  for lineno, line in block():  # DIHE
+    try:
+      key = _dat_types(line, 4)
+      # I4, 3F15.2
+      idivf = _dat_num(line, 11, 15)
+      pk, phase, pn = _dat_num(line, 15, 30), _dat_num(line, 30, 45), _dat_num(line, 45, 60)
+      if idivf == 0:
+        raise ValueError("IDIVF is 0")
+    except ValueError as e:
+      raise fail(lineno, line, "DIHE", e) from e
+    term = (int(abs(round(pn))), pk / idivf, phase)
+    if key == open_key:
+      params["torsions"][key].append(term)
+    else:
+      if key in params["torsions"]:
+        redefined.append(f"{'-'.join(key)} (line {lineno})")
+      params["torsions"][key] = [term]
+    open_key = key if pn < 0 else None
+  if redefined:
+    import logging as _logging
 
-        _logging.getLogger(__name__).info(
-            "%s: %d torsion(s) redefined later in the file; the later definition is used: %s",
-            source, len(redefined), ", ".join(redefined),
-        )
+    _logging.getLogger(__name__).info(
+      "%s: %d torsion(s) redefined later in the file; the later definition is used: %s",
+      source,
+      len(redefined),
+      ", ".join(redefined),
+    )
 
-    for lineno, line in block():  # IMPROPER
-        try:
-            key = _dat_types(line, 4)
-            # IDIVF column (I4) is unused for impropers; then 3F15.2
-            pk, phase = _dat_num(line, 15, 30), _dat_num(line, 30, 45)
-        except ValueError as e:
-            raise fail(lineno, line, "IMPROPER", e) from e
-        params['impropers'][key] = (pk, phase)
+  for lineno, line in block():  # IMPROPER
+    try:
+      key = _dat_types(line, 4)
+      # IDIVF column (I4) is unused for impropers; then 3F15.2
+      pk, phase = _dat_num(line, 15, 30), _dat_num(line, 30, 45)
+    except ValueError as e:
+      raise fail(lineno, line, "IMPROPER", e) from e
+    params["impropers"][key] = (pk, phase)
 
-    while i < len(lines) and not lines[i].startswith('MOD4'):  # HBOND, equivalencing
-        i += 1
-    if i >= len(lines):
-        # A truncated file used to load with an empty vdW table.
-        raise ValueError(f"{source}: no 'MOD4 RE' van der Waals section (truncated .dat?)")
+  while i < len(lines) and not lines[i].startswith("MOD4"):  # HBOND, equivalencing
     i += 1
-    while i < len(lines) and lines[i].strip() != 'END':  # MOD4 RE
-        parts = lines[i].split()
-        if parts:
-            try:
-                params['vdw'][parts[0]] = (float(parts[1]), float(parts[2]))
-            except (ValueError, IndexError) as e:
-                raise fail(i + 1, lines[i], "MOD4 RE", e) from e
-        i += 1
-    if i >= len(lines):
-        raise ValueError(f"{source}: 'MOD4 RE' section has no terminating END (truncated .dat?)")
+  if i >= len(lines):
+    # A truncated file used to load with an empty vdW table.
+    raise ValueError(f"{source}: no 'MOD4 RE' van der Waals section (truncated .dat?)")
+  i += 1
+  while i < len(lines) and lines[i].strip() != "END":  # MOD4 RE
+    parts = lines[i].split()
+    if parts:
+      try:
+        params["vdw"][parts[0]] = (float(parts[1]), float(parts[2]))
+      except (ValueError, IndexError) as e:
+        raise fail(i + 1, lines[i], "MOD4 RE", e) from e
+    i += 1
+  if i >= len(lines):
+    raise ValueError(f"{source}: 'MOD4 RE' section has no terminating END (truncated .dat?)")
 
 
 # ---------------------------------------------------------------------------
@@ -1649,804 +1655,822 @@ def _parse_parm_dat(lines: list[str], params: dict, source: str) -> None:
 # ---------------------------------------------------------------------------
 
 _KCAL_TO_KJ = 4.184
-_BOND_K_CONV = 2.0 * _KCAL_TO_KJ / (0.1 ** 2)   # kcal/mol/Å² → kJ/mol/nm²
-_BOND_R_CONV = 0.1                                  # Å → nm
-_ANGLE_K_CONV = 2.0 * _KCAL_TO_KJ                  # kcal/mol/rad² → kJ/mol/rad²
-_ANGLE_T_CONV = _math.pi / 180.0                    # deg → rad
-_TORSION_K_CONV = _KCAL_TO_KJ                       # kcal/mol → kJ/mol
-_TORSION_P_CONV = _math.pi / 180.0                  # deg → rad
+_BOND_K_CONV = 2.0 * _KCAL_TO_KJ / (0.1**2)  # kcal/mol/Å² → kJ/mol/nm²
+_BOND_R_CONV = 0.1  # Å → nm
+_ANGLE_K_CONV = 2.0 * _KCAL_TO_KJ  # kcal/mol/rad² → kJ/mol/rad²
+_ANGLE_T_CONV = _math.pi / 180.0  # deg → rad
+_TORSION_K_CONV = _KCAL_TO_KJ  # kcal/mol → kJ/mol
+_TORSION_P_CONV = _math.pi / 180.0  # deg → rad
 _LJ_SIGMA_CONV = 2.0 * (2.0 ** (-1.0 / 6.0)) * 0.1  # Rmin/2 (Å) → σ (nm)
-_LJ_EPS_CONV = _KCAL_TO_KJ                          # kcal/mol → kJ/mol
+_LJ_EPS_CONV = _KCAL_TO_KJ  # kcal/mol → kJ/mol
 
 _BOND_TYPE_SUB = {
-    "cx": "c3", "cy": "c3", "c5": "c3", "c6": "c3",
-    "cs": "c2", "cz": "c2", "ca": "c2", "cc": "c2", "cd": "c2",
-    "ce": "c2", "cf": "c2", "cp": "c2", "cq": "c2",
-    "cg": "c1", "ch": "c1",
+  "cx": "c3",
+  "cy": "c3",
+  "c5": "c3",
+  "c6": "c3",
+  "cs": "c2",
+  "cz": "c2",
+  "ca": "c2",
+  "cc": "c2",
+  "cd": "c2",
+  "ce": "c2",
+  "cf": "c2",
+  "cp": "c2",
+  "cq": "c2",
+  "cg": "c1",
+  "ch": "c1",
 }
 
 
 def assign_pdb_atom_names(rdmol: Chem.Mol) -> list[str]:
-    """Assign unique PDB atom names to rdmol in-place and return them.
+  """Assign unique PDB atom names to rdmol in-place and return them.
 
-    If an atom already has a non-empty MonomerInfo name it is kept as-is.
-    New names are element+counter (e.g. C1, C2, O1, H1 …).
-    """
-    from rdkit.Chem import AtomPDBResidueInfo
+  If an atom already has a non-empty MonomerInfo name it is kept as-is.
+  New names are element+counter (e.g. C1, C2, O1, H1 …).
+  """
+  from rdkit.Chem import AtomPDBResidueInfo
 
-    counts: dict[str, int] = {}
-    names: list[str] = []
-    for atom in rdmol.GetAtoms():
-        mi = atom.GetMonomerInfo()
-        existing = mi.GetName().strip() if mi else ""
-        if existing:
-            names.append(existing)
-        else:
-            elem = atom.GetSymbol()
-            counts[elem] = counts.get(elem, 0) + 1
-            name = f"{elem}{counts[elem]}"
-            if mi is None:
-                mi = AtomPDBResidueInfo()
-            mi.SetName(f"{name:<4s}")
-            atom.SetMonomerInfo(mi)
-            names.append(name)
-    return names
+  counts: dict[str, int] = {}
+  names: list[str] = []
+  for atom in rdmol.GetAtoms():
+    mi = atom.GetMonomerInfo()
+    existing = mi.GetName().strip() if mi else ""
+    if existing:
+      names.append(existing)
+    else:
+      elem = atom.GetSymbol()
+      counts[elem] = counts.get(elem, 0) + 1
+      name = f"{elem}{counts[elem]}"
+      if mi is None:
+        mi = AtomPDBResidueInfo()
+      mi.SetName(f"{name:<4s}")
+      atom.SetMonomerInfo(mi)
+      names.append(name)
+  return names
 
 
 def _lookup_torsion_terms(
-    ti: str, tj: str, tk: str, tl: str, params: dict
+  ti: str, tj: str, tk: str, tl: str, params: dict
 ) -> list[tuple[int, float, float]]:
-    """Torsion terms for i-j-k-l in AMBER (tleap) precedence, or [] if none.
+  """Torsion terms for i-j-k-l in AMBER (tleap) precedence, or [] if none.
 
-    Specific quartet in either direction first, then the generic
-    ``X-j-k-X`` wildcard row in either direction. Generic rows were never
-    available before debt #2368 (the loader dropped them), so every torsion
-    without a specific row came back empty. Callers apply their own
-    type-substitution fallback after this, and record it.
-    """
-    for key in ((ti, tj, tk, tl), (tl, tk, tj, ti), ("X", tj, tk, "X"), ("X", tk, tj, "X")):
-        terms = params['torsions'].get(key)
-        if terms:
-            return terms
-    return []
+  Specific quartet in either direction first, then the generic
+  ``X-j-k-X`` wildcard row in either direction. Generic rows were never
+  available before debt #2368 (the loader dropped them), so every torsion
+  without a specific row came back empty. Callers apply their own
+  type-substitution fallback after this, and record it.
+  """
+  for key in ((ti, tj, tk, tl), (tl, tk, tj, ti), ("X", tj, tk, "X"), ("X", tk, tj, "X")):
+    terms = params["torsions"].get(key)
+    if terms:
+      return terms
+  return []
 
 
 def _lookup_bond_params(
-    ti: str, tj: str, params: dict, substitutions: list[dict] | None = None
+  ti: str, tj: str, params: dict, substitutions: list[dict] | None = None
 ) -> tuple[float, float]:
-    """Return (kb, r0) for a bond, trying substitutions on miss."""
-    for a, b in [(ti, tj), (tj, ti)]:
-        if (a, b) in params['bonds']:
-            return params['bonds'][(a, b)]
-    # substitution fallback
-    ti_s = _BOND_TYPE_SUB.get(ti, ti)
-    tj_s = _BOND_TYPE_SUB.get(tj, tj)
-    if (ti_s, tj_s) != (ti, tj):
-        for a, b in [(ti_s, tj_s), (tj_s, ti_s)]:
-            if (a, b) in params['bonds']:
-                if substitutions is not None:
-                    substitutions.append({
-                        "term": "bond",
-                        "from": [ti, tj],
-                        "to": [ti_s, tj_s],
-                    })
-                return params['bonds'][(a, b)]
-    raise Gaff2ParameterMissingError(f"no GAFF2 bond parameters for {ti}-{tj}")
+  """Return (kb, r0) for a bond, trying substitutions on miss."""
+  for a, b in [(ti, tj), (tj, ti)]:
+    if (a, b) in params["bonds"]:
+      return params["bonds"][(a, b)]
+  # substitution fallback
+  ti_s = _BOND_TYPE_SUB.get(ti, ti)
+  tj_s = _BOND_TYPE_SUB.get(tj, tj)
+  if (ti_s, tj_s) != (ti, tj):
+    for a, b in [(ti_s, tj_s), (tj_s, ti_s)]:
+      if (a, b) in params["bonds"]:
+        if substitutions is not None:
+          substitutions.append(
+            {
+              "term": "bond",
+              "from": [ti, tj],
+              "to": [ti_s, tj_s],
+            }
+          )
+        return params["bonds"][(a, b)]
+  raise Gaff2ParameterMissingError(f"no GAFF2 bond parameters for {ti}-{tj}")
 
 
 def _lookup_angle_params(
-    ti: str, tj: str, tk: str, params: dict, substitutions: list[dict] | None = None
+  ti: str, tj: str, tk: str, params: dict, substitutions: list[dict] | None = None
 ) -> tuple[float, float]:
-    """Return (kt, t0) for an angle, trying substitutions on miss."""
-    for a, b, c in [(ti, tj, tk), (tk, tj, ti)]:
-        if (a, b, c) in params['angles']:
-            return params['angles'][(a, b, c)]
-    ti_s = _BOND_TYPE_SUB.get(ti, ti)
-    tj_s = _BOND_TYPE_SUB.get(tj, tj)
-    tk_s = _BOND_TYPE_SUB.get(tk, tk)
-    if (ti_s, tj_s, tk_s) != (ti, tj, tk):
-        for a, b, c in [(ti_s, tj_s, tk_s), (tk_s, tj_s, ti_s)]:
-            if (a, b, c) in params['angles']:
-                if substitutions is not None:
-                    substitutions.append({
-                        "term": "angle",
-                        "from": [ti, tj, tk],
-                        "to": [ti_s, tj_s, tk_s],
-                    })
-                return params['angles'][(a, b, c)]
-    raise Gaff2ParameterMissingError(f"no GAFF2 angle parameters for {ti}-{tj}-{tk}")
+  """Return (kt, t0) for an angle, trying substitutions on miss."""
+  for a, b, c in [(ti, tj, tk), (tk, tj, ti)]:
+    if (a, b, c) in params["angles"]:
+      return params["angles"][(a, b, c)]
+  ti_s = _BOND_TYPE_SUB.get(ti, ti)
+  tj_s = _BOND_TYPE_SUB.get(tj, tj)
+  tk_s = _BOND_TYPE_SUB.get(tk, tk)
+  if (ti_s, tj_s, tk_s) != (ti, tj, tk):
+    for a, b, c in [(ti_s, tj_s, tk_s), (tk_s, tj_s, ti_s)]:
+      if (a, b, c) in params["angles"]:
+        if substitutions is not None:
+          substitutions.append(
+            {
+              "term": "angle",
+              "from": [ti, tj, tk],
+              "to": [ti_s, tj_s, tk_s],
+            }
+          )
+        return params["angles"][(a, b, c)]
+  raise Gaff2ParameterMissingError(f"no GAFF2 angle parameters for {ti}-{tj}-{tk}")
 
 
 def _lookup_improper_params(
-    t_center: str,
-    t_nb1: str,
-    t_nb2: str,
-    t_nb3: str,
-    params: dict,
-    substitutions: list[dict] | None = None,
-) -> tuple[float, float] | None:
-    """Return (pk, phase) for an improper torsion, trying substitutions on miss.
+  t_center: str,
+  t_nb1: str,
+  t_nb2: str,
+  t_nb3: str,
+  params: dict,
+) -> tuple[float, float, tuple[int, int, int]] | None:
+  """Return ``(pk, phase, (i_r1, i_r2, i_r4))`` for a parm.dat improper, or None.
 
-    In AMBER parm.dat, improper rules are stored as (r1, r2, r3, r4) where r3 is the
-    central atom. The three neighbors (t_nb1, t_nb2, t_nb3) can match (r1, r2, r4) in
-    any permutation. Wildcard 'X' can match any neighbor type. Rules with fewer wildcards
-    take precedence over rules with more wildcards (0 > 1 > 2).
-    """
-    improper_rules = params.get('impropers', {})
-    if not improper_rules:
-        return None
+  Rules are stored as ``(r1, r2, r3, r4)`` with ``r3`` the central atom. The
+  three neighbor types, in the order given, may match ``(r1, r2, r4)`` in any
+  permutation. The returned indices select that winning permutation: index 0
+  is ``t_nb1``, 1 is ``t_nb2``, 2 is ``t_nb3``. Wildcard ``X`` matches any
+  neighbor type. Fewer wildcards win (0 > 1 > 2); ties keep the earlier row.
 
-    import itertools
-
-    def _find_best_rule(c: str, n1: str, n2: str, n3: str) -> tuple[float, float] | None:
-        best_match = None
-        min_wildcards = 999
-        for (r1, r2, r3, r4), (pk, phase) in improper_rules.items():
-            if r3 != c:
-                continue
-            for p1, p2, p4 in itertools.permutations((n1, n2, n3)):
-                if (r1 == "X" or r1 == p1) and (r2 == "X" or r2 == p2) and (r4 == "X" or r4 == p4):
-                    wildcards = (1 if r1 == "X" else 0) + (1 if r2 == "X" else 0) + (1 if r4 == "X" else 0)
-                    if wildcards < min_wildcards:
-                        min_wildcards = wildcards
-                        best_match = (pk, phase)
-                    break
-        return best_match
-
-    # Direct match
-    res = _find_best_rule(t_center, t_nb1, t_nb2, t_nb3)
-    if res is not None:
-        return res
-
-    # Substitution fallback
-    c_s = _BOND_TYPE_SUB.get(t_center, t_center)
-    s1 = _BOND_TYPE_SUB.get(t_nb1, t_nb1)
-    s2 = _BOND_TYPE_SUB.get(t_nb2, t_nb2)
-    s3 = _BOND_TYPE_SUB.get(t_nb3, t_nb3)
-    if (c_s, s1, s2, s3) != (t_center, t_nb1, t_nb2, t_nb3):
-        res = _find_best_rule(c_s, s1, s2, s3)
-        if res is not None:
-            if substitutions is not None:
-                substitutions.append({
-                    "term": "improper",
-                    "from": [t_center, t_nb1, t_nb2, t_nb3],
-                    "to": [c_s, s1, s2, s3],
-                })
-            return res
+  There is no type-substitution fallback. gaff-2.2.20.dat has no equivalencing
+  block, and a center the IMPROPER table does not list gets no term.
+  """
+  improper_rules = params.get("impropers", {})
+  if not improper_rules:
     return None
+
+  import itertools
+
+  neighbor_types = (t_nb1, t_nb2, t_nb3)
+  best_match: tuple[float, float, tuple[int, int, int]] | None = None
+  min_wildcards = 999
+  for (r1, r2, r3, r4), (pk, phase) in improper_rules.items():
+    if r3 != t_center:
+      continue
+    wildcards = (r1 == "X") + (r2 == "X") + (r4 == "X")
+    if wildcards >= min_wildcards:
+      continue
+    for slots in itertools.permutations(range(3)):
+      s1, s2, s4 = slots
+      p1, p2, p4 = neighbor_types[s1], neighbor_types[s2], neighbor_types[s4]
+      if (r1 == "X" or r1 == p1) and (r2 == "X" or r2 == p2) and (r4 == "X" or r4 == p4):
+        min_wildcards = wildcards
+        best_match = (pk, phase, slots)
+        break
+  return best_match
 
 
 def build_gaff2_ffxml(
-    rdmol: Chem.Mol,
-    resname: str,
-    charges: list[float],
-    *,
-    gaff_version: str = "gaff-2.2.20",
-    missing_torsions: Literal["raise", "omit"] = "raise",
-    substitutions: list[dict] | None = None,
+  rdmol: Chem.Mol,
+  resname: str,
+  charges: list[float],
+  *,
+  gaff_version: str = "gaff-2.2.20",
+  missing_torsions: Literal["raise", "omit"] = "raise",
+  substitutions: list[dict] | None = None,
 ) -> str:
-    """Build a complete OpenMM FFXML string for a single small-molecule residue.
+  """Build a complete OpenMM FFXML string for a single small-molecule residue.
 
-    Args:
-        rdmol: RDKit Mol with explicit H atoms.
-        resname: PDB residue name (e.g. "OHP").
-        charges: Partial charges, one per atom in mol atom-index order (including H).
-        gaff_version: GAFF version string used to select the .dat file.
-        missing_torsions: what to do with a torsion quartet that has no
-            parameters after specific, generic ``X-b-c-X`` and substitution
-            lookup (e.g. GAFF2.2's amide ``nt`` has no torsion rows; AMBER's
-            parmchk2 would supply them). ``"raise"`` (default) raises
-            Gaff2ParameterMissingError; ``"omit"`` leaves the term out and
-            emits one UserWarning listing every omitted quartet. Omission
-            used to happen silently for every such torsion (debt #2368).
+  Args:
+      rdmol: RDKit Mol with explicit H atoms.
+      resname: PDB residue name (e.g. "OHP").
+      charges: Partial charges, one per atom in mol atom-index order (including H).
+      gaff_version: GAFF version string used to select the .dat file.
+      missing_torsions: what to do with a torsion quartet that has no
+          parameters after specific, generic ``X-b-c-X`` and substitution
+          lookup (e.g. GAFF2.2's amide ``nt`` has no torsion rows; AMBER's
+          parmchk2 would supply them). ``"raise"`` (default) raises
+          Gaff2ParameterMissingError; ``"omit"`` leaves the term out and
+          emits one UserWarning listing every omitted quartet. Omission
+          used to happen silently for every such torsion (debt #2368).
 
-    Returns:
-        FFXML string suitable for openmm.app.ForceField.loadFile(StringIO(xml)).
+  Returns:
+      FFXML string suitable for openmm.app.ForceField.loadFile(StringIO(xml)).
 
-    Raises:
-        Gaff2ParameterMissingError: a bond, angle or mass has no parameters,
-            or a torsion has none and ``missing_torsions="raise"``.
-    """
-    if Chem is None:
-        raise ImportError("RDKit is required.")
-    if missing_torsions not in ("raise", "omit"):
-        raise ValueError(f"missing_torsions must be 'raise' or 'omit', got {missing_torsions!r}")
-    omitted_torsions: list[str] = []
+  Raises:
+      Gaff2ParameterMissingError: a bond, angle or mass has no parameters,
+          or a torsion has none and ``missing_torsions="raise"``.
+  """
+  if Chem is None:
+    raise ImportError("RDKit is required.")
+  if missing_torsions not in ("raise", "omit"):
+    raise ValueError(f"missing_torsions must be 'raise' or 'omit', got {missing_torsions!r}")
+  omitted_torsions: list[str] = []
 
-    atom_names = assign_pdb_atom_names(rdmol)
-    n_atoms = rdmol.GetNumAtoms()
+  atom_names = assign_pdb_atom_names(rdmol)
+  n_atoms = rdmol.GetNumAtoms()
 
-    if len(charges) != n_atoms:
-        raise ValueError(
-            f"charges length {len(charges)} != mol atom count {n_atoms}"
-        )
+  if len(charges) != n_atoms:
+    raise ValueError(f"charges length {len(charges)} != mol atom count {n_atoms}")
 
-    # --- GAFF2 type assignment ---
-    # assign_gaff2_atom_types returns one type per atom index (including H,
-    # via the real DEF rule engine -- see its docstring for the 260820
-    # index-alignment contract change; this used to be a two-pass
-    # heavy-then-heuristic-H construction via a now-deleted
-    # _H_TYPE_BY_HEAVY/_H_TYPE_ELEMENT_DEFAULT lookup).
-    all_types = assign_gaff2_atom_types(rdmol)
-    idx_to_type: dict[int, str] = {
-        atom.GetIdx(): t for atom, t in zip(rdmol.GetAtoms(), all_types, strict=True)
-    }
+  # --- GAFF2 type assignment ---
+  # assign_gaff2_atom_types returns one type per atom index (including H,
+  # via the real DEF rule engine -- see its docstring for the 260820
+  # index-alignment contract change; this used to be a two-pass
+  # heavy-then-heuristic-H construction via a now-deleted
+  # _H_TYPE_BY_HEAVY/_H_TYPE_ELEMENT_DEFAULT lookup).
+  all_types = assign_gaff2_atom_types(rdmol)
+  idx_to_type: dict[int, str] = {
+    atom.GetIdx(): t for atom, t in zip(rdmol.GetAtoms(), all_types, strict=True)
+  }
 
-    params = load_gaff2_parameters(
-        Path(__file__).parent.parent / "assets" / "gaff" / "dat" / f"{gaff_version}.dat"
+  params = load_gaff2_parameters(
+    Path(__file__).parent.parent / "assets" / "gaff" / "dat" / f"{gaff_version}.dat"
+  )
+
+  lines: list[str] = ['<?xml version="1.0" encoding="utf-8"?>', "<ForceField>"]
+
+  # --- AtomTypes ---
+  lines.append("  <AtomTypes>")
+  for atom in rdmol.GetAtoms():
+    idx = atom.GetIdx()
+    gaff_type = idx_to_type[idx]
+    elem = atom.GetSymbol()
+    # DAT mass for the type, else the element's real mass; never a default.
+    # The type's own MASS entry; a type absent from the table is unknown,
+    # not "its element's mass" (review #5).
+    mass = params["masses"].get(gaff_type)
+    if mass is None:
+      raise Gaff2ParameterMissingError(f"no mass for GAFF2 type {gaff_type!r} (element {elem!r})")
+    lines.append(
+      f'    <Type name="{resname}_{idx}" class="{gaff_type}" element="{elem}" mass="{mass:.4f}"/>'
     )
+  lines.append("  </AtomTypes>")
 
-    lines: list[str] = ['<?xml version="1.0" encoding="utf-8"?>', "<ForceField>"]
+  # --- Residues ---
+  lines.append("  <Residues>")
+  lines.append(f'    <Residue name="{resname}">')
+  for atom in rdmol.GetAtoms():
+    idx = atom.GetIdx()
+    name = atom_names[idx]
+    q = charges[idx]
+    lines.append(f'      <Atom name="{name}" type="{resname}_{idx}" charge="{q:.6f}"/>')
+  for bond in rdmol.GetBonds():
+    i = bond.GetBeginAtomIdx()
+    j = bond.GetEndAtomIdx()
+    lines.append(f'      <Bond atomName1="{atom_names[i]}" atomName2="{atom_names[j]}"/>')
+  lines.append("    </Residue>")
+  lines.append("  </Residues>")
 
-    # --- AtomTypes ---
-    lines.append("  <AtomTypes>")
-    for atom in rdmol.GetAtoms():
-        idx = atom.GetIdx()
-        gaff_type = idx_to_type[idx]
-        elem = atom.GetSymbol()
-        # DAT mass for the type, else the element's real mass; never a default.
-        # The type's own MASS entry; a type absent from the table is unknown,
-        # not "its element's mass" (review #5).
-        mass = params['masses'].get(gaff_type)
-        if mass is None:
-            raise Gaff2ParameterMissingError(
-                f"no mass for GAFF2 type {gaff_type!r} (element {elem!r})"
-            )
-        lines.append(
-            f'    <Type name="{resname}_{idx}" class="{gaff_type}"'
-            f' element="{elem}" mass="{mass:.4f}"/>'
-        )
-    lines.append("  </AtomTypes>")
+  # --- HarmonicBondForce ---
+  lines.append("  <HarmonicBondForce>")
+  missing_bonds = 0
+  for bond in rdmol.GetBonds():
+    i = bond.GetBeginAtomIdx()
+    j = bond.GetEndAtomIdx()
+    ti = idx_to_type[i]
+    tj = idx_to_type[j]
+    kb, r0 = _lookup_bond_params(ti, tj, params, substitutions=substitutions)
+    if kb == 0.0:
+      missing_bonds += 1
+    r0_nm = r0 * _BOND_R_CONV
+    k_kj = kb * _BOND_K_CONV
+    lines.append(
+      f'    <Bond type1="{resname}_{i}" type2="{resname}_{j}" length="{r0_nm:.6f}" k="{k_kj:.2f}"/>'
+    )
+  if missing_bonds:
+    import logging as _logging
 
-    # --- Residues ---
-    lines.append("  <Residues>")
-    lines.append(f'    <Residue name="{resname}">')
-    for atom in rdmol.GetAtoms():
-        idx = atom.GetIdx()
-        name = atom_names[idx]
-        q = charges[idx]
-        lines.append(
-            f'      <Atom name="{name}" type="{resname}_{idx}" charge="{q:.6f}"/>'
-        )
-    for bond in rdmol.GetBonds():
-        i = bond.GetBeginAtomIdx()
-        j = bond.GetEndAtomIdx()
-        lines.append(
-            f'      <Bond atomName1="{atom_names[i]}" atomName2="{atom_names[j]}"/>'
-        )
-    lines.append("    </Residue>")
-    lines.append("  </Residues>")
+    _logging.getLogger(__name__).warning(
+      "build_gaff2_ffxml: %d bonds missing GAFF2 parameters (kb=0)", missing_bonds
+    )
+  lines.append("  </HarmonicBondForce>")
 
-    # --- HarmonicBondForce ---
-    lines.append("  <HarmonicBondForce>")
-    missing_bonds = 0
-    for bond in rdmol.GetBonds():
-        i = bond.GetBeginAtomIdx()
-        j = bond.GetEndAtomIdx()
+  # --- HarmonicAngleForce ---
+  lines.append("  <HarmonicAngleForce>")
+  for atom in rdmol.GetAtoms():
+    j = atom.GetIdx()
+    bonds_j = list(atom.GetBonds())
+    for b1_idx in range(len(bonds_j)):
+      i = bonds_j[b1_idx].GetOtherAtomIdx(j)
+      for b2_idx in range(b1_idx + 1, len(bonds_j)):
+        k = bonds_j[b2_idx].GetOtherAtomIdx(j)
         ti = idx_to_type[i]
         tj = idx_to_type[j]
-        kb, r0 = _lookup_bond_params(ti, tj, params, substitutions=substitutions)
-        if kb == 0.0:
-            missing_bonds += 1
-        r0_nm = r0 * _BOND_R_CONV
-        k_kj = kb * _BOND_K_CONV
+        tk = idx_to_type[k]
+        kt, t0 = _lookup_angle_params(ti, tj, tk, params, substitutions=substitutions)
+        t0_rad = t0 * _ANGLE_T_CONV
+        k_kj = kt * _ANGLE_K_CONV
         lines.append(
-            f'    <Bond type1="{resname}_{i}" type2="{resname}_{j}"'
-            f' length="{r0_nm:.6f}" k="{k_kj:.2f}"/>'
+          f'    <Angle type1="{resname}_{i}" type2="{resname}_{j}"'
+          f' type3="{resname}_{k}" angle="{t0_rad:.6f}" k="{k_kj:.2f}"/>'
         )
-    if missing_bonds:
-        import logging as _logging
-        _logging.getLogger(__name__).warning(
-            "build_gaff2_ffxml: %d bonds missing GAFF2 parameters (kb=0)", missing_bonds
-        )
-    lines.append("  </HarmonicBondForce>")
+  lines.append("  </HarmonicAngleForce>")
 
-    # --- HarmonicAngleForce ---
-    lines.append("  <HarmonicAngleForce>")
-    for atom in rdmol.GetAtoms():
-        j = atom.GetIdx()
-        bonds_j = list(atom.GetBonds())
-        for b1_idx in range(len(bonds_j)):
-            i = bonds_j[b1_idx].GetOtherAtomIdx(j)
-            for b2_idx in range(b1_idx + 1, len(bonds_j)):
-                k = bonds_j[b2_idx].GetOtherAtomIdx(j)
-                ti = idx_to_type[i]
-                tj = idx_to_type[j]
-                tk = idx_to_type[k]
-                kt, t0 = _lookup_angle_params(ti, tj, tk, params, substitutions=substitutions)
-                t0_rad = t0 * _ANGLE_T_CONV
-                k_kj = kt * _ANGLE_K_CONV
-                lines.append(
-                    f'    <Angle type1="{resname}_{i}" type2="{resname}_{j}"'
-                    f' type3="{resname}_{k}" angle="{t0_rad:.6f}" k="{k_kj:.2f}"/>'
+  # --- PeriodicTorsionForce ---
+  lines.append("  <PeriodicTorsionForce>")
+  seen_torsions: set[tuple] = set()
+  for bond in rdmol.GetBonds():
+    j = bond.GetBeginAtomIdx()
+    k = bond.GetEndAtomIdx()
+    atom_j = rdmol.GetAtomWithIdx(j)
+    atom_k = rdmol.GetAtomWithIdx(k)
+    for bond_i in atom_j.GetBonds():
+      i = bond_i.GetOtherAtomIdx(j)
+      if i == k:
+        continue
+      for bond_l in atom_k.GetBonds():
+        ll = bond_l.GetOtherAtomIdx(k)
+        if ll == j or ll == i:
+          continue
+        key = tuple(sorted([(i, j, k, ll), (ll, k, j, i)])[0])
+        if key in seen_torsions:
+          continue
+        seen_torsions.add(key)
+        ti = idx_to_type[i]
+        tj = idx_to_type[j]
+        tk_ = idx_to_type[k]
+        tl = idx_to_type[ll]
+        torsion_params = _lookup_torsion_terms(ti, tj, tk_, tl, params)
+        if not torsion_params:
+          ti_s = _BOND_TYPE_SUB.get(ti, ti)
+          tj_s = _BOND_TYPE_SUB.get(tj, tj)
+          tk_s = _BOND_TYPE_SUB.get(tk_, tk_)
+          tl_s = _BOND_TYPE_SUB.get(tl, tl)
+          for sub_key in [(ti_s, tj_s, tk_s, tl_s), (tl_s, tk_s, tj_s, ti_s)]:
+            torsion_params = params["torsions"].get(sub_key, [])
+            if torsion_params:
+              changed = (ti_s, tj_s, tk_s, tl_s) != (ti, tj, tk_, tl)
+              if substitutions is not None and changed:
+                substitutions.append(
+                  {
+                    "term": "torsion",
+                    "from": [ti, tj, tk_, tl],
+                    "to": [ti_s, tj_s, tk_s, tl_s],
+                  }
                 )
-    lines.append("  </HarmonicAngleForce>")
-
-    # --- PeriodicTorsionForce ---
-    lines.append("  <PeriodicTorsionForce>")
-    seen_torsions: set[tuple] = set()
-    for bond in rdmol.GetBonds():
-        j = bond.GetBeginAtomIdx()
-        k = bond.GetEndAtomIdx()
-        atom_j = rdmol.GetAtomWithIdx(j)
-        atom_k = rdmol.GetAtomWithIdx(k)
-        for bond_i in atom_j.GetBonds():
-            i = bond_i.GetOtherAtomIdx(j)
-            if i == k:
-                continue
-            for bond_l in atom_k.GetBonds():
-                ll = bond_l.GetOtherAtomIdx(k)
-                if ll == j or ll == i:
-                    continue
-                key = tuple(sorted([(i, j, k, ll), (ll, k, j, i)])[0])
-                if key in seen_torsions:
-                    continue
-                seen_torsions.add(key)
-                ti = idx_to_type[i]
-                tj = idx_to_type[j]
-                tk_ = idx_to_type[k]
-                tl = idx_to_type[ll]
-                torsion_params = _lookup_torsion_terms(ti, tj, tk_, tl, params)
-                if not torsion_params:
-                    ti_s = _BOND_TYPE_SUB.get(ti, ti)
-                    tj_s = _BOND_TYPE_SUB.get(tj, tj)
-                    tk_s = _BOND_TYPE_SUB.get(tk_, tk_)
-                    tl_s = _BOND_TYPE_SUB.get(tl, tl)
-                    for sub_key in [(ti_s, tj_s, tk_s, tl_s), (tl_s, tk_s, tj_s, ti_s)]:
-                        torsion_params = params['torsions'].get(sub_key, [])
-                        if torsion_params:
-                            if substitutions is not None and (ti_s, tj_s, tk_s, tl_s) != (ti, tj, tk_, tl):
-                                substitutions.append({
-                                    "term": "torsion",
-                                    "from": [ti, tj, tk_, tl],
-                                    "to": [ti_s, tj_s, tk_s, tl_s],
-                                })
-                            break
-                if not torsion_params:
-                    # Silently skipping the term used to drop the torsion from
-                    # the force field. With generic X-b-c-X rows loaded
-                    # (debt #2368), a quartet with no terms really has none.
-                    quartet = f"{ti}-{tj}-{tk_}-{tl}"
-                    if missing_torsions == "raise":
-                        raise Gaff2ParameterMissingError(
-                            f"no GAFF2 torsion parameters for {quartet} (pass "
-                            "missing_torsions='omit' to leave such terms out, with a warning)"
-                        )
-                    omitted_torsions.append(quartet)
-                    continue
-                attrs = (
-                    f'type1="{resname}_{i}" type2="{resname}_{j}"'
-                    f' type3="{resname}_{k}" type4="{resname}_{ll}"'
-                )
-                for term_idx, (n, kt, phase) in enumerate(torsion_params, 1):
-                    phase_rad = phase * _TORSION_P_CONV
-                    k_kj = kt * _TORSION_K_CONV
-                    attrs += (
-                        f' periodicity{term_idx}="{n}"'
-                        f' phase{term_idx}="{phase_rad:.6f}"'
-                        f' k{term_idx}="{k_kj:.4f}"'
-                    )
-                lines.append(f"    <Proper {attrs}/>")
-
-    for atom in rdmol.GetAtoms():
-        bonds_c = list(atom.GetBonds())
-        if len(bonds_c) != 3:
-            continue
-        center = atom.GetIdx()
-        nbs = sorted(b.GetOtherAtomIdx(center) for b in bonds_c)
-        nb1, nb2, nb3 = nbs
-        t_center = idx_to_type[center]
-        t1, t2, t3 = idx_to_type[nb1], idx_to_type[nb2], idx_to_type[nb3]
-        improper_params = _lookup_improper_params(
-            t_center, t1, t2, t3, params, substitutions=substitutions
-        )
-        if improper_params is not None:
-            pk, phase = improper_params
-            phase_rad = phase * _TORSION_P_CONV
-            k_kj = pk * _TORSION_K_CONV
-            lines.append(
-                f'    <Improper type1="{resname}_{center}" type2="{resname}_{nb1}"'
-                f' type3="{resname}_{nb2}" type4="{resname}_{nb3}"'
-                f' periodicity1="2" phase1="{phase_rad:.6f}" k1="{k_kj:.4f}"/>'
-            )
-    lines.append("  </PeriodicTorsionForce>")
-
-    # --- NonbondedForce ---
-    lines.append('  <NonbondedForce coulomb14scale="0.8333333333" lj14scale="0.5">')
-    for atom in rdmol.GetAtoms():
-        idx = atom.GetIdx()
-        gaff_type = idx_to_type[idx]
-        elem = atom.GetSymbol()
-        q = charges[idx]
-        if gaff_type not in params['vdw']:
-            # This used to fall back to an element default and finally to
-            # carbon's c3 LJ (1.9080, 0.0860) for anything else (review #5).
+              break
+        if not torsion_params:
+          # Silently skipping the term used to drop the torsion from
+          # the force field. With generic X-b-c-X rows loaded
+          # (debt #2368), a quartet with no terms really has none.
+          quartet = f"{ti}-{tj}-{tk_}-{tl}"
+          if missing_torsions == "raise":
             raise Gaff2ParameterMissingError(
-                f"no GAFF2 van der Waals parameters for type {gaff_type!r} (element {elem!r})"
+              f"no GAFF2 torsion parameters for {quartet} (pass "
+              "missing_torsions='omit' to leave such terms out, with a warning)"
             )
-        rmin_half, epsilon = params['vdw'][gaff_type]
-        sigma_nm = rmin_half * _LJ_SIGMA_CONV
-        eps_kj = epsilon * _LJ_EPS_CONV
-        lines.append(
-            f'    <Atom type="{resname}_{idx}" charge="{q:.6f}"'
-            f' sigma="{sigma_nm:.8f}" epsilon="{eps_kj:.6f}"/>'
+          omitted_torsions.append(quartet)
+          continue
+        attrs = (
+          f'type1="{resname}_{i}" type2="{resname}_{j}"'
+          f' type3="{resname}_{k}" type4="{resname}_{ll}"'
         )
-    lines.append("  </NonbondedForce>")
-    lines.append("</ForceField>")
-    if omitted_torsions:
-        import warnings
+        for term_idx, (n, kt, phase) in enumerate(torsion_params, 1):
+          phase_rad = phase * _TORSION_P_CONV
+          k_kj = kt * _TORSION_K_CONV
+          attrs += (
+            f' periodicity{term_idx}="{n}"'
+            f' phase{term_idx}="{phase_rad:.6f}"'
+            f' k{term_idx}="{k_kj:.4f}"'
+          )
+        lines.append(f"    <Proper {attrs}/>")
 
-        unique = sorted(set(omitted_torsions))
-        warnings.warn(
-            f"build_gaff2_ffxml: omitted {len(omitted_torsions)} torsion term(s) with no "
-            f"GAFF2 parameters ({len(unique)} type quartet(s)): {', '.join(unique)}",
-            UserWarning,
-            stacklevel=2,
-        )
-    return "\n".join(lines)
+  for atom in rdmol.GetAtoms():
+    bonds_c = list(atom.GetBonds())
+    if len(bonds_c) != 3:
+      continue
+    center = atom.GetIdx()
+    # Index order is only a stable input to the matcher. type4 is the
+    # parm.dat r4 atom of the winning row (oxygen for X-X-c-o), not the
+    # highest neighbor index. OpenMM's default improper ordering keeps
+    # the central atom in type1 and that r4 atom in type4.
+    nbs = sorted(b.GetOtherAtomIdx(center) for b in bonds_c)
+    t_center = idx_to_type[center]
+    improper_params = _lookup_improper_params(t_center, *(idx_to_type[nb] for nb in nbs), params)
+    if improper_params is not None:
+      pk, phase, (s1, s2, s4) = improper_params
+      r1, r2, r4 = nbs[s1], nbs[s2], nbs[s4]
+      phase_rad = phase * _TORSION_P_CONV
+      k_kj = pk * _TORSION_K_CONV
+      lines.append(
+        f'    <Improper type1="{resname}_{center}" type2="{resname}_{r1}"'
+        f' type3="{resname}_{r2}" type4="{resname}_{r4}"'
+        f' periodicity1="2" phase1="{phase_rad:.6f}" k1="{k_kj:.4f}"/>'
+      )
+  lines.append("  </PeriodicTorsionForce>")
+
+  # --- NonbondedForce ---
+  lines.append('  <NonbondedForce coulomb14scale="0.8333333333" lj14scale="0.5">')
+  for atom in rdmol.GetAtoms():
+    idx = atom.GetIdx()
+    gaff_type = idx_to_type[idx]
+    elem = atom.GetSymbol()
+    q = charges[idx]
+    if gaff_type not in params["vdw"]:
+      # This used to fall back to an element default and finally to
+      # carbon's c3 LJ (1.9080, 0.0860) for anything else (review #5).
+      raise Gaff2ParameterMissingError(
+        f"no GAFF2 van der Waals parameters for type {gaff_type!r} (element {elem!r})"
+      )
+    rmin_half, epsilon = params["vdw"][gaff_type]
+    sigma_nm = rmin_half * _LJ_SIGMA_CONV
+    eps_kj = epsilon * _LJ_EPS_CONV
+    lines.append(
+      f'    <Atom type="{resname}_{idx}" charge="{q:.6f}"'
+      f' sigma="{sigma_nm:.8f}" epsilon="{eps_kj:.6f}"/>'
+    )
+  lines.append("  </NonbondedForce>")
+  lines.append("</ForceField>")
+  if omitted_torsions:
+    import warnings
+
+    unique = sorted(set(omitted_torsions))
+    warnings.warn(
+      f"build_gaff2_ffxml: omitted {len(omitted_torsions)} torsion term(s) with no "
+      f"GAFF2 parameters ({len(unique)} type quartet(s)): {', '.join(unique)}",
+      UserWarning,
+      stacklevel=2,
+    )
+  return "\n".join(lines)
 
 
 def _check_gasteiger_blowup(atom_idx: int, atom_symbol: str, q: float) -> None:
-    """Raise if a single Gasteiger charge trips :data:`GASTEIGER_BLOWUP_GUARD`.
+  """Raise if a single Gasteiger charge trips :data:`GASTEIGER_BLOWUP_GUARD`.
 
-    Pulled out of :func:`_assign_gaff2_charges` so this guard is unit-testable
-    without RDKit's Gasteiger computation itself (no real molecule needed --
-    just a candidate charge value).
-    """
-    if not np.isfinite(q) or abs(q) > GASTEIGER_BLOWUP_GUARD:
-        raise ValueError(
-            f"Gasteiger charge blow-up guard tripped at atom index {atom_idx} "
-            f"({atom_symbol}): q={q!r} exceeds +/-{GASTEIGER_BLOWUP_GUARD} "
-            "(a numerical blow-up guard, not a calibrated physical bound)"
-        )
+  Pulled out of :func:`_assign_gaff2_charges` so this guard is unit-testable
+  without RDKit's Gasteiger computation itself (no real molecule needed --
+  just a candidate charge value).
+  """
+  if not np.isfinite(q) or abs(q) > GASTEIGER_BLOWUP_GUARD:
+    raise ValueError(
+      f"Gasteiger charge blow-up guard tripped at atom index {atom_idx} "
+      f"({atom_symbol}): q={q!r} exceeds +/-{GASTEIGER_BLOWUP_GUARD} "
+      "(a numerical blow-up guard, not a calibrated physical bound)"
+    )
 
 
 def _validate_gaff2_charges(charges, mol: Chem.Mol, charge_method: str) -> np.ndarray:
-    """Validate a partial-charge assignment for GAFF2 parameterisation.
+  """Validate a partial-charge assignment for GAFF2 parameterisation.
 
-    Applied to the output of every ``charge_method`` branch. Checks: every
-    value finite, the length matches the atom count, and the total charge
-    conserves the molecule's formal charge within
-    :data:`_CHARGE_TOTAL_CONSERVATION_TOL`.
+  Applied to the output of every ``charge_method`` branch. Checks: every
+  value finite, the length matches the atom count, and the total charge
+  conserves the molecule's formal charge within
+  :data:`_CHARGE_TOTAL_CONSERVATION_TOL`.
 
-    Raises:
-        ValueError: any of the above checks fails.
-    """
-    arr = np.asarray(charges, dtype=np.float64)
-    n_atoms = mol.GetNumAtoms()
-    if arr.shape != (n_atoms,):
-        raise ValueError(
-            f"{charge_method} charges have shape {arr.shape}, expected "
-            f"({n_atoms},) (mol atom count)"
-        )
-    if not np.all(np.isfinite(arr)):
-        bad = [i for i, q in enumerate(arr) if not np.isfinite(q)]
-        raise ValueError(
-            f"{charge_method} produced non-finite charge(s) at atom index(es) {bad}"
-        )
-    formal_total = float(sum(a.GetFormalCharge() for a in mol.GetAtoms()))
-    actual_total = float(arr.sum())
-    if abs(actual_total - formal_total) > _CHARGE_TOTAL_CONSERVATION_TOL:
-        raise ValueError(
-            f"{charge_method} charges sum to {actual_total:.6f}, expected "
-            f"{formal_total:.6f} (sum of formal charges) within "
-            f"{_CHARGE_TOTAL_CONSERVATION_TOL}; likely implicit-hydrogen "
-            "input or a broken charge model -- see debt #1900"
-        )
-    return arr
+  Raises:
+      ValueError: any of the above checks fails.
+  """
+  arr = np.asarray(charges, dtype=np.float64)
+  n_atoms = mol.GetNumAtoms()
+  if arr.shape != (n_atoms,):
+    raise ValueError(
+      f"{charge_method} charges have shape {arr.shape}, expected ({n_atoms},) (mol atom count)"
+    )
+  if not np.all(np.isfinite(arr)):
+    bad = [i for i, q in enumerate(arr) if not np.isfinite(q)]
+    raise ValueError(f"{charge_method} produced non-finite charge(s) at atom index(es) {bad}")
+  formal_total = float(sum(a.GetFormalCharge() for a in mol.GetAtoms()))
+  actual_total = float(arr.sum())
+  if abs(actual_total - formal_total) > _CHARGE_TOTAL_CONSERVATION_TOL:
+    raise ValueError(
+      f"{charge_method} charges sum to {actual_total:.6f}, expected "
+      f"{formal_total:.6f} (sum of formal charges) within "
+      f"{_CHARGE_TOTAL_CONSERVATION_TOL}; likely implicit-hydrogen "
+      "input or a broken charge model -- see debt #1900"
+    )
+  return arr
 
 
 def _assign_gaff2_charges(mol: Chem.Mol, charge_method: str = "espaloma") -> np.ndarray:
-    """Assign GAFF2 partial charges via an explicit, validated method.
+  """Assign GAFF2 partial charges via an explicit, validated method.
 
-    No silent fallback and no "auto": GAFF2 is parameterised for
-    AM1-BCC-class charges, and Gasteiger is a different charge model, not a
-    lower-accuracy substitute for it -- silently swapping models changes the
-    physics without saying so (debt #1900, sprint-22 decision d2).
+  No silent fallback and no "auto": GAFF2 is parameterised for
+  AM1-BCC-class charges, and Gasteiger is a different charge model, not a
+  lower-accuracy substitute for it -- silently swapping models changes the
+  physics without saying so (debt #1900, sprint-22 decision d2).
 
-    Args:
-        mol: RDKit molecule (explicit hydrogens expected).
-        charge_method: "espaloma" (default) -- calls
-            :func:`~proxide.chem.partial_charges.assign_espaloma_charges_rdkit`
-            (backend="rust"); its errors (e.g. missing expaloma) propagate
-            uncaught. "gasteiger" -- RDKit's Gasteiger/PEOE charges via
-            ``rdPartialCharges.ComputeGasteigerCharges(throwOnParamFailure=True)``,
-            explicit opt-in only.
+  Args:
+      mol: RDKit molecule (explicit hydrogens expected).
+      charge_method: "espaloma" (default) -- calls
+          :func:`~proxide.chem.partial_charges.assign_espaloma_charges_rdkit`
+          (backend="rust"); its errors (e.g. missing expaloma) propagate
+          uncaught. "gasteiger" -- RDKit's Gasteiger/PEOE charges via
+          ``rdPartialCharges.ComputeGasteigerCharges(throwOnParamFailure=True)``,
+          explicit opt-in only.
 
-    Returns:
-        Partial charges (n_atoms,), atom-index order matching ``mol``.
+  Returns:
+      Partial charges (n_atoms,), atom-index order matching ``mol``.
 
-    Raises:
-        ValueError: ``charge_method`` is not "espaloma" or "gasteiger", a
-            Gasteiger charge exceeds :data:`GASTEIGER_BLOWUP_GUARD` in
-            magnitude, or the resulting charges fail
-            :func:`_validate_gaff2_charges`.
-        ImportError: espaloma's backend dependencies are missing (propagated
-            from ``assign_espaloma_charges_rdkit``, not caught here).
-    """
-    if charge_method not in _CHARGE_METHOD_SOURCES:
-        # Validated before touching RDKit at all, so an unknown method is
-        # rejected even when RDKit/the input mol aren't usable yet.
-        raise ValueError(
-            f"Unknown charge_method {charge_method!r}; expected 'espaloma' or "
-            "'gasteiger' (no 'auto' -- see debt #1900 decision d2)"
-        )
+  Raises:
+      ValueError: ``charge_method`` is not "espaloma" or "gasteiger", a
+          Gasteiger charge exceeds :data:`GASTEIGER_BLOWUP_GUARD` in
+          magnitude, or the resulting charges fail
+          :func:`_validate_gaff2_charges`.
+      ImportError: espaloma's backend dependencies are missing (propagated
+          from ``assign_espaloma_charges_rdkit``, not caught here).
+  """
+  if charge_method not in _CHARGE_METHOD_SOURCES:
+    # Validated before touching RDKit at all, so an unknown method is
+    # rejected even when RDKit/the input mol aren't usable yet.
+    raise ValueError(
+      f"Unknown charge_method {charge_method!r}; expected 'espaloma' or "
+      "'gasteiger' (no 'auto' -- see debt #1900 decision d2)"
+    )
 
-    from rdkit import Chem as _Chem
+  from rdkit import Chem as _Chem
 
-    mol_copy = _Chem.Mol(mol)
-    _Chem.SanitizeMol(mol_copy)
+  mol_copy = _Chem.Mol(mol)
+  _Chem.SanitizeMol(mol_copy)
 
-    if charge_method == "espaloma":
-        charges = assign_espaloma_charges_rdkit(mol_copy, backend="rust")
-    else:  # "gasteiger"
-        from rdkit.Chem import rdPartialCharges
+  if charge_method == "espaloma":
+    charges = assign_espaloma_charges_rdkit(mol_copy, backend="rust")
+  else:  # "gasteiger"
+    from rdkit.Chem import rdPartialCharges
 
-        rdPartialCharges.ComputeGasteigerCharges(mol_copy, throwOnParamFailure=True)
-        raw_charges = [
-            atom.GetDoubleProp("_GasteigerCharge") for atom in mol_copy.GetAtoms()
-        ]
-        for idx, (atom, q) in enumerate(zip(mol_copy.GetAtoms(), raw_charges, strict=True)):
-            _check_gasteiger_blowup(idx, atom.GetSymbol(), q)
-        charges = raw_charges
+    rdPartialCharges.ComputeGasteigerCharges(mol_copy, throwOnParamFailure=True)
+    raw_charges = [atom.GetDoubleProp("_GasteigerCharge") for atom in mol_copy.GetAtoms()]
+    for idx, (atom, q) in enumerate(zip(mol_copy.GetAtoms(), raw_charges, strict=True)):
+      _check_gasteiger_blowup(idx, atom.GetSymbol(), q)
+    charges = raw_charges
 
-    return _validate_gaff2_charges(charges, mol_copy, charge_method)
+  return _validate_gaff2_charges(charges, mol_copy, charge_method)
 
 
 def parameterize_gaff_with_rdkit(
-    mol: Chem.Mol,
-    gaff_version: str = "gaff-2.2.20",
-    charge_method: str = "espaloma",
-    missing_torsions: Literal["raise", "omit"] = "raise",
+  mol: Chem.Mol,
+  gaff_version: str = "gaff-2.2.20",
+  charge_method: str = "espaloma",
+  missing_torsions: Literal["raise", "omit"] = "raise",
 ) -> dict:
-    """Assign GAFF2 parameters to an RDKit molecule.
+  """Assign GAFF2 parameters to an RDKit molecule.
 
-    ``missing_torsions`` works as in :func:`build_gaff2_ffxml`: a torsion
-    with no GAFF2 parameters raises by default; ``"omit"`` leaves it out of
-    ``torsions`` with one UserWarning naming every omitted quartet (e.g.
-    thioacetone's hc-c3-cs-s, which gaff-2.2.20.dat does not define).
+  ``missing_torsions`` works as in :func:`build_gaff2_ffxml`: a torsion
+  with no GAFF2 parameters raises by default; ``"omit"`` leaves it out of
+  ``torsions`` with one UserWarning naming every omitted quartet (e.g.
+  thioacetone's hc-c3-cs-s, which gaff-2.2.20.dat does not define).
 
-    This function assigns GAFF2 atom types and looks up force field parameters
-    without requiring AmberTools.
+  This function assigns GAFF2 atom types and looks up force field parameters
+  without requiring AmberTools.
 
-    Args:
-        mol: RDKit molecule (should have explicit hydrogens)
-        gaff_version: GAFF version string (default: gaff-2.2.20)
-        charge_method: "espaloma" (default, strict) or "gasteiger" (explicit
-            opt-in). No "auto" -- see :func:`_assign_gaff2_charges` and debt
-            #1900 decision d2. Raises ``ValueError`` for any other value.
+  Args:
+      mol: RDKit molecule (should have explicit hydrogens)
+      gaff_version: GAFF version string (default: gaff-2.2.20)
+      charge_method: "espaloma" (default, strict) or "gasteiger" (explicit
+          opt-in). No "auto" -- see :func:`_assign_gaff2_charges` and debt
+          #1900 decision d2. Raises ``ValueError`` for any other value.
 
-    Returns:
-        Dict with keys:
-        - atom_types: list of atom type strings
-        - charges: list of partial charges (n_atoms,), atom-index order
-        - charge_method: the charge source, one of
-          ``proxide.chem.partial_charges.CHARGE_SOURCE_ESPALOMA_AM1BCC`` or
-          ``CHARGE_SOURCE_GASTEIGER`` -- always present, never inferred
-        - masses: dict of atom type -> mass
-        - bonds: dict of (type1, type2) -> (kb, r0)
-        - angles: dict of (type1, type2, type3) -> (kt, t0)
-        - torsions: list of torsion parameters
-        - substitutions: list of {"term": "torsion", "from": [...], "to": [...]}
-          for torsion type substitutions applied (cx->c3, etc.) (debt #1905)
+  Returns:
+      Dict with keys:
+      - atom_types: list of atom type strings
+      - charges: list of partial charges (n_atoms,), atom-index order
+      - charge_method: the charge source, one of
+        ``proxide.chem.partial_charges.CHARGE_SOURCE_ESPALOMA_AM1BCC`` or
+        ``CHARGE_SOURCE_GASTEIGER`` -- always present, never inferred
+      - masses: dict of atom type -> mass
+      - bonds: dict of (type1, type2) -> (kb, r0)
+      - angles: dict of (type1, type2, type3) -> (kt, t0)
+      - torsions: list of torsion parameters
+      - substitutions: list of {"term", "from", "to"} records for bond,
+        angle, and torsion type substitutions (cx->c3 and the other
+        recorded fallbacks; debt #1905, #2375). Improper terms are not
+        substituted: a center matches a parm.dat row or the term is omitted.
 
-    Raises:
-        Gaff2ParameterMissingError: any mass, bond, angle or torsion has no
-            parameters in the .dat table (after either-orientation and, for
-            torsions, generic ``X-b-c-X`` and recorded-substitution lookup).
-            These used to be filled with 0.0 (debt #1905).
-    """
-    if Chem is None:
-        raise ImportError("RDKit is required. Install with: pip install rdkit")
+  Raises:
+      Gaff2ParameterMissingError: any mass, bond, angle or torsion has no
+          parameters in the .dat table (after either-orientation and, for
+          torsions, generic ``X-b-c-X`` and recorded-substitution lookup).
+          These used to be filled with 0.0 (debt #1905).
+  """
+  if Chem is None:
+    raise ImportError("RDKit is required. Install with: pip install rdkit")
 
-    # Load parameters
-    params = load_gaff2_parameters()
+  # Load parameters
+  params = load_gaff2_parameters()
 
-    # Assign atom types
-    atom_types = assign_gaff2_atom_types(mol)
+  # Assign atom types
+  atom_types = assign_gaff2_atom_types(mol)
 
-    # Extract molecule topology
-    n_atoms = mol.GetNumAtoms()
-    if len(atom_types) != n_atoms:
-        # Atoms beyond the type list used to be typed "x" (and their torsions
-        # looked up as "hc") -- placeholder types, not assignments.
-        raise ValueError(f"{len(atom_types)} GAFF2 atom types for {n_atoms} atoms")
+  # Extract molecule topology
+  n_atoms = mol.GetNumAtoms()
+  if len(atom_types) != n_atoms:
+    # Atoms beyond the type list used to be typed "x" (and their torsions
+    # looked up as "hc") -- placeholder types, not assignments.
+    raise ValueError(f"{len(atom_types)} GAFF2 atom types for {n_atoms} atoms")
 
-    # Build bond list
-    bonds = []
-    for bond in mol.GetBonds():
-        i = bond.GetBeginAtomIdx()
-        j = bond.GetOtherAtomIdx(i)
-        t_i, t_j = atom_types[i], atom_types[j]
+  # Build bond list
+  bonds = []
+  for bond in mol.GetBonds():
+    i = bond.GetBeginAtomIdx()
+    j = bond.GetOtherAtomIdx(i)
+    t_i, t_j = atom_types[i], atom_types[j]
 
-        # Get bond order
-        bo = bond.GetBondTypeAsDouble()
+    # Get bond order
+    bo = bond.GetBondTypeAsDouble()
 
-        # Determine bond type string
-        if bo >= 1.9:
-            bond_type = "tb"  # triple
-        elif bo >= 1.4:
-            bond_type = "db"  # double
-        else:
-            bond_type = "sb"  # single
+    # Determine bond type string
+    if bo >= 1.9:
+      bond_type = "tb"  # triple
+    elif bo >= 1.4:
+      bond_type = "db"  # double
+    else:
+      bond_type = "sb"  # single
 
-        bonds.append({
-            'i': i,
-            'j': j,
-            'type': bond_type,
-            'order': bo,
-            'gaff_type_i': t_i,
-            'gaff_type_j': t_j,
-        })
+    bonds.append(
+      {
+        "i": i,
+        "j": j,
+        "type": bond_type,
+        "order": bo,
+        "gaff_type_i": t_i,
+        "gaff_type_j": t_j,
+      }
+    )
 
-    # Build angle list: every pair of neighbours of every centre atom. This
-    # used to require i < j < k, so any angle whose centre was not the middle
-    # index was never generated (acetone: O-C-C missing), and the
-    # missing-parameter check below only ever saw that subset.
-    neighbors = [
-        sorted(nb.GetIdx() for nb in mol.GetAtomWithIdx(a).GetNeighbors()) for a in range(n_atoms)
-    ]
-    angles = []
-    for j in range(n_atoms):
-        nbs = neighbors[j]
-        for x, i in enumerate(nbs):
-            for k in nbs[x + 1:]:
-                angles.append({
-                    'i': i, 'j': j, 'k': k,
-                    'types': (atom_types[i], atom_types[j], atom_types[k]),
-                })
-
-    charges = _assign_gaff2_charges(mol, charge_method)
-    # _assign_gaff2_charges already rejected any charge_method not in this
-    # map, so the lookup below is safe.
-    charge_source = _CHARGE_METHOD_SOURCES[charge_method]
-
-    used_types = set(atom_types)
-    # Every term must have real parameters: anything absent from the .dat
-    # table is collected and raised together, never filled with 0.0 (debt
-    # #1905). Before debt #2368 fixed the loader, acetone's c3-c-c3 angle and
-    # 720 other angle types hit the 0.0 fill.
-    missing: list[str] = sorted(f"mass {at}" for at in used_types if at not in params['masses'])
-    masses = {at: params['masses'][at] for at in used_types if at in params['masses']}
-
-    # Track type substitutions for observability (debt #1905, #2375)
-    substitutions: list[dict] = []
-
-    # Bonds: lookup with _BOND_TYPE_SUB fallback, recording substitutions.
-    for b in bonds:
-        t1, t2 = b['gaff_type_i'], b['gaff_type_j']
-        try:
-            b['kb'], b['r0'] = _lookup_bond_params(t1, t2, params, substitutions=substitutions)
-        except Gaff2ParameterMissingError:
-            missing.append(f"bond {t1}-{t2}")
-
-    # Angles: lookup with _BOND_TYPE_SUB fallback, recording substitutions.
-    for a in angles:
-        t1, t2, t3 = a['types']  # ty: ignore[not-iterable]
-        try:
-            a['kt'], a['t0'] = _lookup_angle_params(t1, t2, t3, params, substitutions=substitutions)
-        except Gaff2ParameterMissingError:
-            missing.append(f"angle {t1}-{t2}-{t3}")
-
-    # Build improper torsion list (planar trivalent centers)
-    impropers = []
-    for atom in mol.GetAtoms():
-        center = atom.GetIdx()
-        nbs = neighbors[center]
-        if len(nbs) != 3:
-            continue
-        nb1, nb2, nb3 = sorted(nbs)
-        t_center = atom_types[center]
-        t1, t2, t3 = atom_types[nb1], atom_types[nb2], atom_types[nb3]
-        improper_params = _lookup_improper_params(
-            t_center, t1, t2, t3, params, substitutions=substitutions
-        )
-        if improper_params is not None:
-            pk, phase = improper_params
-            impropers.append({
-                'center': center,
-                'neighbors': (nb1, nb2, nb3),
-                'i': center,
-                'j': nb1,
-                'k': nb2,
-                'l': nb3,
-                'types': (t_center, t1, t2, t3),
-                'params': (pk, phase),
-                'terms': [(2, pk, phase)],
-                'pk': pk,
-                'phase': phase,
-                'periodicity': 2,
-            })
-
-    # Build torsion list (1-2-3-4 connections)
-    torsions = []
-    if missing_torsions not in ("raise", "omit"):
-        raise ValueError(f"missing_torsions must be 'raise' or 'omit', got {missing_torsions!r}")
-    omitted_torsions: list[str] = []
-
-    # Substitutions for atom type looking (cx->c3, etc.)
-    type_substitutions = {
-        'cx': 'c3', 'cy': 'c3', 'c5': 'c3', 'c6': 'c3',
-        'n7': 'n3', 'n8': 'n3', 'nx': 'n3',
-        'ny': 'n3', 'ni': 'n', 'nu': 'n3', 'nv': 'n3',
-    }
-
-    def _substitute_type(t: str) -> str:
-        # The untyped placeholder "x" used to be looked up as "hc" (a
-        # hydrogen's parameters for an atom nobody typed); it now has no
-        # substitute, so its terms are reported missing.
-        return type_substitutions.get(t, t)
-
-    # Every i-j-k-l across every bond j-k (each bond once). This used to
-    # require i < j < k < l, which skipped most real torsions (ethane: all
-    # nine H-C-C-H).
-    for bond in mol.GetBonds():
-        j, k = sorted((bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()))
-        for i in neighbors[j]:
-            if i == k:
-                continue
-            for l_idx in neighbors[k]:
-                if l_idx == j or l_idx == i:
-                    continue
-                t_i, t_j, t_k, t_l = (atom_types[a] for a in (i, j, k, l_idx))
-
-                key = (t_i, t_j, t_k, t_l)
-
-                # Specific / generic rows first (either direction), then
-                # with substitutions (cx->c3, etc.), recorded.
-                torsion_params = _lookup_torsion_terms(t_i, t_j, t_k, t_l, params)
-                if not torsion_params:
-                    key_sub = (
-                        _substitute_type(t_i), _substitute_type(t_j),
-                        _substitute_type(t_k), _substitute_type(t_l),
-                    )
-                    sub_terms = _lookup_torsion_terms(*key_sub, params)
-                    if key != key_sub and sub_terms:
-                        torsion_params = sub_terms
-                        substitutions.append({
-                            "term": "torsion",
-                            "from": list(key),
-                            "to": list(key_sub),
-                        })
-                if not torsion_params:
-                    if missing_torsions == "raise":
-                        missing.append("torsion " + "-".join(key))
-                    else:
-                        omitted_torsions.append("-".join(key))
-                    continue
-
-                torsions.append({
-                    'i': i, 'j': j, 'k': k, 'l': l_idx,
-                    'types': key,
-                    'params': torsion_params,
-                })
-
-    if omitted_torsions:
-        import warnings
-
-        unique = sorted(set(omitted_torsions))
-        warnings.warn(
-            f"parameterize_gaff_with_rdkit: omitted {len(omitted_torsions)} torsion term(s) "
-            f"with no GAFF2 parameters ({len(unique)} type quartet(s)): {', '.join(unique)}",
-            UserWarning,
-            stacklevel=2,
+  # Build angle list: every pair of neighbours of every centre atom. This
+  # used to require i < j < k, so any angle whose centre was not the middle
+  # index was never generated (acetone: O-C-C missing), and the
+  # missing-parameter check below only ever saw that subset.
+  neighbors = [
+    sorted(nb.GetIdx() for nb in mol.GetAtomWithIdx(a).GetNeighbors()) for a in range(n_atoms)
+  ]
+  angles = []
+  for j in range(n_atoms):
+    nbs = neighbors[j]
+    for x, i in enumerate(nbs):
+      for k in nbs[x + 1 :]:
+        angles.append(
+          {
+            "i": i,
+            "j": j,
+            "k": k,
+            "types": (atom_types[i], atom_types[j], atom_types[k]),
+          }
         )
 
-    if missing:
-        raise Gaff2ParameterMissingError(
-            f"{len(missing)} GAFF2 term(s) have no parameters in the .dat table: "
-            + ", ".join(missing[:10])
-            + (f" (+{len(missing) - 10} more)" if len(missing) > 10 else "")
+  charges = _assign_gaff2_charges(mol, charge_method)
+  # _assign_gaff2_charges already rejected any charge_method not in this
+  # map, so the lookup below is safe.
+  charge_source = _CHARGE_METHOD_SOURCES[charge_method]
+
+  used_types = set(atom_types)
+  # Every term must have real parameters: anything absent from the .dat
+  # table is collected and raised together, never filled with 0.0 (debt
+  # #1905). Before debt #2368 fixed the loader, acetone's c3-c-c3 angle and
+  # 720 other angle types hit the 0.0 fill.
+  missing: list[str] = sorted(f"mass {at}" for at in used_types if at not in params["masses"])
+  masses = {at: params["masses"][at] for at in used_types if at in params["masses"]}
+
+  # Track type substitutions for observability (debt #1905, #2375)
+  substitutions: list[dict] = []
+
+  # Bonds: lookup with _BOND_TYPE_SUB fallback, recording substitutions.
+  for b in bonds:
+    t1, t2 = b["gaff_type_i"], b["gaff_type_j"]
+    try:
+      b["kb"], b["r0"] = _lookup_bond_params(t1, t2, params, substitutions=substitutions)
+    except Gaff2ParameterMissingError:
+      missing.append(f"bond {t1}-{t2}")
+
+  # Angles: lookup with _BOND_TYPE_SUB fallback, recording substitutions.
+  for a in angles:
+    t1, t2, t3 = a["types"]  # ty: ignore[not-iterable]
+    try:
+      a["kt"], a["t0"] = _lookup_angle_params(t1, t2, t3, params, substitutions=substitutions)
+    except Gaff2ParameterMissingError:
+      missing.append(f"angle {t1}-{t2}-{t3}")
+
+  # Build improper torsion list (planar trivalent centers)
+  impropers = []
+  for atom in mol.GetAtoms():
+    center = atom.GetIdx()
+    nbs = neighbors[center]
+    if len(nbs) != 3:
+      continue
+    ordered = tuple(sorted(nbs))
+    t_center = atom_types[center]
+    t_nbs = tuple(atom_types[nb] for nb in ordered)
+    improper_params = _lookup_improper_params(t_center, *t_nbs, params)
+    if improper_params is not None:
+      pk, phase, (s1, s2, s4) = improper_params
+      # i-j-k-l is the dihedral order a PeriodicTorsionForce expects:
+      # k is the central atom, l is the parm.dat r4 atom. `center` stays
+      # available for callers that want the trivalent atom by itself.
+      i, j, l_atom = ordered[s1], ordered[s2], ordered[s4]
+      impropers.append(
+        {
+          "center": center,
+          "neighbors": ordered,
+          "i": i,
+          "j": j,
+          "k": center,
+          "l": l_atom,
+          "types": (atom_types[i], atom_types[j], atom_types[center], atom_types[l_atom]),
+          "params": (pk, phase),
+          "terms": [(2, pk, phase)],
+          "pk": pk,
+          "phase": phase,
+          "periodicity": 2,
+        }
+      )
+
+  # Build torsion list (1-2-3-4 connections)
+  torsions = []
+  if missing_torsions not in ("raise", "omit"):
+    raise ValueError(f"missing_torsions must be 'raise' or 'omit', got {missing_torsions!r}")
+  omitted_torsions: list[str] = []
+
+  # Substitutions for atom type looking (cx->c3, etc.)
+  type_substitutions = {
+    "cx": "c3",
+    "cy": "c3",
+    "c5": "c3",
+    "c6": "c3",
+    "n7": "n3",
+    "n8": "n3",
+    "nx": "n3",
+    "ny": "n3",
+    "ni": "n",
+    "nu": "n3",
+    "nv": "n3",
+  }
+
+  def _substitute_type(t: str) -> str:
+    # The untyped placeholder "x" used to be looked up as "hc" (a
+    # hydrogen's parameters for an atom nobody typed); it now has no
+    # substitute, so its terms are reported missing.
+    return type_substitutions.get(t, t)
+
+  # Every i-j-k-l across every bond j-k (each bond once). This used to
+  # require i < j < k < l, which skipped most real torsions (ethane: all
+  # nine H-C-C-H).
+  for bond in mol.GetBonds():
+    j, k = sorted((bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()))
+    for i in neighbors[j]:
+      if i == k:
+        continue
+      for l_idx in neighbors[k]:
+        if l_idx == j or l_idx == i:
+          continue
+        t_i, t_j, t_k, t_l = (atom_types[a] for a in (i, j, k, l_idx))
+
+        key = (t_i, t_j, t_k, t_l)
+
+        # Specific / generic rows first (either direction), then
+        # with substitutions (cx->c3, etc.), recorded.
+        torsion_params = _lookup_torsion_terms(t_i, t_j, t_k, t_l, params)
+        if not torsion_params:
+          key_sub = (
+            _substitute_type(t_i),
+            _substitute_type(t_j),
+            _substitute_type(t_k),
+            _substitute_type(t_l),
+          )
+          sub_terms = _lookup_torsion_terms(*key_sub, params)
+          if key != key_sub and sub_terms:
+            torsion_params = sub_terms
+            substitutions.append(
+              {
+                "term": "torsion",
+                "from": list(key),
+                "to": list(key_sub),
+              }
+            )
+        if not torsion_params:
+          if missing_torsions == "raise":
+            missing.append("torsion " + "-".join(key))
+          else:
+            omitted_torsions.append("-".join(key))
+          continue
+
+        torsions.append(
+          {
+            "i": i,
+            "j": j,
+            "k": k,
+            "l": l_idx,
+            "types": key,
+            "params": torsion_params,
+          }
         )
 
-    return {
-        'atom_types': atom_types,
-        'charges': charges,
-        'charge_method': charge_source,
-        'masses': masses,
-        'bonds': bonds,
-        'angles': angles,
-        'torsions': torsions,
-        'impropers': impropers,
-        'substitutions': substitutions,
-    }
+  if omitted_torsions:
+    import warnings
+
+    unique = sorted(set(omitted_torsions))
+    warnings.warn(
+      f"parameterize_gaff_with_rdkit: omitted {len(omitted_torsions)} torsion term(s) "
+      f"with no GAFF2 parameters ({len(unique)} type quartet(s)): {', '.join(unique)}",
+      UserWarning,
+      stacklevel=2,
+    )
+
+  if missing:
+    raise Gaff2ParameterMissingError(
+      f"{len(missing)} GAFF2 term(s) have no parameters in the .dat table: "
+      + ", ".join(missing[:10])
+      + (f" (+{len(missing) - 10} more)" if len(missing) > 10 else "")
+    )
+
+  return {
+    "atom_types": atom_types,
+    "charges": charges,
+    "charge_method": charge_source,
+    "masses": masses,
+    "bonds": bonds,
+    "angles": angles,
+    "torsions": torsions,
+    "impropers": impropers,
+    "substitutions": substitutions,
+  }

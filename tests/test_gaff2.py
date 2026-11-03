@@ -484,3 +484,184 @@ def test_build_gaff2_ffxml_substitutions_argument():
     xml = build_gaff2_ffxml(mol, "ACE", charges, substitutions=subs)
     assert "<Improper" in xml
     assert isinstance(subs, list)
+
+
+def _improper_line(xml: str) -> str:
+    lines = [line.strip() for line in xml.splitlines() if "<Improper" in line]
+    assert len(lines) == 1, lines
+    return lines[0]
+
+
+def test_acetone_improper_ffxml_type4_is_carbonyl_oxygen():
+    """OpenMM default improper ordering keeps the central atom in type1 and the
+    parm.dat r4 atom in type4. GAFF's X-X-c-o row puts the oxygen in r4.
+    CC(=O)C numbers that oxygen before the second methyl, so index-sorting the
+    three neighbors writes a methyl as type4 and the two acetone SMILES do not
+    apply the planarity term to the same atom.
+    """
+    from proxide.chem.gaff2 import build_gaff2_ffxml
+
+    for smiles in ("CC(=O)C", "CC(C)=O"):
+        mol = prepare_mol(smiles)
+        oxygen = next(a.GetIdx() for a in mol.GetAtoms() if a.GetSymbol() == "O")
+        carbonyl = next(
+            a.GetIdx()
+            for a in mol.GetAtoms()
+            if a.GetSymbol() == "C" and any(n.GetSymbol() == "O" for n in a.GetNeighbors())
+        )
+        xml = build_gaff2_ffxml(mol, "ACE", [0.0] * mol.GetNumAtoms())
+        line = _improper_line(xml)
+        assert f'type1="ACE_{carbonyl}"' in line
+        assert f'type4="ACE_{oxygen}"' in line, (smiles, line)
+
+
+def test_acetone_improper_quartet_central_atom_is_k_and_oxygen_is_l():
+    """parameterize stores proper torsions as i-j-k-l along the dihedral.
+    An improper passed to PeriodicTorsionForce.addTorsion the same way must
+    use k = central atom and l = the parm.dat r4 atom (the carbonyl oxygen
+    for X-X-c-o), not the central atom in i and the highest neighbor index in l.
+    """
+    for smiles in ("CC(=O)C", "CC(C)=O"):
+        mol = prepare_mol(smiles)
+        oxygen = next(a.GetIdx() for a in mol.GetAtoms() if a.GetSymbol() == "O")
+        carbonyl = next(
+            a.GetIdx()
+            for a in mol.GetAtoms()
+            if a.GetSymbol() == "C" and any(n.GetSymbol() == "O" for n in a.GetNeighbors())
+        )
+        res = parameterize_gaff_with_rdkit(mol, charge_method="gasteiger")
+        assert len(res["impropers"]) == 1
+        impr = res["impropers"][0]
+        assert impr["center"] == carbonyl
+        assert impr["k"] == carbonyl
+        assert impr["l"] == oxygen
+        assert {impr["i"], impr["j"]} == {n.GetIdx() for n in mol.GetAtomWithIdx(carbonyl).GetNeighbors()} - {oxygen}
+
+
+def test_improper_miss_does_not_borrow_bond_type_substitution(monkeypatch):
+    """gaff-2.2.20.dat has no equivalencing block (the only line between the
+    IMPROPER blank and MOD4 RE is the HBOND water flag). tleap assigns an
+    improper only when a row matches. ca with neighbors ca, n2, c3 is the
+    real row c3-ca-ca-n2 and must stay. A center the table does not list
+    must not be rewritten through _BOND_TYPE_SUB: ca with neighbors c2, c3, n2
+    matches no ca row, and c2 with neighbors c2, cx, hc matches no c2 row,
+    but cx→c3 / ca→c2 borrows c3-c2-c2-n2 or c2-c3-c2-hc (both pk=1.1).
+    """
+    from pathlib import Path
+
+    from proxide.chem.gaff2 import _lookup_improper_params, build_gaff2_ffxml
+    from proxide.chem import gaff2
+
+    dat_path = Path(gaff2.__file__).resolve().parents[1] / "assets" / "gaff" / "dat" / "gaff-2.2.20.dat"
+    lines = dat_path.read_text().splitlines()
+    mod4 = next(i for i, line in enumerate(lines) if line.startswith("MOD4"))
+    between = [line.strip() for line in lines[mod4 - 6 : mod4] if line.strip()]
+    assert between == ["hw  ow  0000.     0000.                                4.  flag for fast water"] or any(
+        line.startswith("hw") and "ow" in line for line in between
+    )
+    assert not any(line.startswith(("EQUI", "equi")) or "equivalen" in line.lower() for line in lines)
+    assert any(line.startswith("c3-c2-c2-n2") and line.split()[1] == "1.1" for line in lines)
+    assert any(line.startswith("c3-ca-ca-n2") and line.split()[1] == "1.1" for line in lines)
+    assert any(line.startswith("c2-c3-c2-hc") and line.split()[1] == "1.1" for line in lines)
+
+    params = load_gaff2_parameters()
+    # The review's quartet is a direct ca-centered row, not a borrowed c2 row.
+    direct = _lookup_improper_params("ca", "ca", "n2", "c3", params)
+    assert direct is not None and direct[0] == pytest.approx(1.1)
+
+    borrowed = _lookup_improper_params("ca", "c2", "c3", "n2", params)
+    assert borrowed is None
+
+    mol = prepare_mol("C=CC1CC1")
+    base = gaff2.assign_gaff2_atom_types(mol)
+    mapped = list(base)
+    for atom in mol.GetAtoms():
+        if base[atom.GetIdx()] == "c2" and any(base[n.GetIdx()] == "cx" for n in atom.GetNeighbors()):
+            for nbr in atom.GetNeighbors():
+                if base[nbr.GetIdx()] == "ha":
+                    mapped[nbr.GetIdx()] = "hc"
+    monkeypatch.setattr(gaff2, "assign_gaff2_atom_types", lambda m, *a, **k: list(mapped))
+
+    res = parameterize_gaff_with_rdkit(mol, charge_method="gasteiger", missing_torsions="omit")
+    assert res["impropers"] == []
+    assert all(entry["term"] != "improper" for entry in res["substitutions"])
+    xml = build_gaff2_ffxml(
+        mol, "VCY", [0.0] * mol.GetNumAtoms(), missing_torsions="omit"
+    )
+    assert "<Improper" not in xml
+
+
+def test_public_api_records_bond_angle_and_torsion_substitutions(monkeypatch):
+    """build_gaff2_ffxml and parameterize_gaff_with_rdkit must record the
+    from/to of every bond, angle, and torsion substitution. An empty list
+    fails. cx-o is a bond miss (c3-o), cx-c2-hc is an angle miss (c3-c2-hc),
+    and methylcyclopropane's hc-c3-cx-* torsions miss until cx→c3.
+    """
+    from proxide.chem.gaff2 import build_gaff2_ffxml
+    from proxide.chem import gaff2
+
+    def _records(subs: list[dict]) -> set[tuple]:
+        return {(s["term"], tuple(s["from"]), tuple(s["to"])) for s in subs}
+
+    # Torsion fallback on a molecule the typer already labels with cx.
+    mol = prepare_mol("CC1CC1")
+    charges = [0.0] * mol.GetNumAtoms()
+    ff_subs: list[dict] = []
+    build_gaff2_ffxml(mol, "MCP", charges, substitutions=ff_subs)
+    param = parameterize_gaff_with_rdkit(mol, charge_method="gasteiger")
+    torsion_rows = {
+        ("torsion", ("hc", "c3", "cx", "hc"), ("hc", "c3", "c3", "hc")),
+        ("torsion", ("hc", "c3", "cx", "cx"), ("hc", "c3", "c3", "c3")),
+    }
+    assert torsion_rows <= _records(ff_subs)
+    assert torsion_rows <= _records(param["substitutions"])
+    assert ff_subs and param["substitutions"]
+
+    # Bond cx-o: cyclopropanone's carbonyl carbon relabeled c→cx. The o-cx
+    # bond is not in the table; c3-o is.
+    mol = prepare_mol("O=C1CC1")
+    base = gaff2.assign_gaff2_atom_types(mol)
+    mapped = list(base)
+    for atom in mol.GetAtoms():
+        if atom.GetSymbol() == "C" and any(n.GetSymbol() == "O" for n in atom.GetNeighbors()):
+            mapped[atom.GetIdx()] = "cx"
+    monkeypatch.setattr(gaff2, "assign_gaff2_atom_types", lambda m, *a, **k: list(mapped))
+    bond_row = ("bond", ("o", "cx"), ("o", "c3"))
+    ff_subs = []
+    build_gaff2_ffxml(mol, "CPN", [0.0] * mol.GetNumAtoms(), substitutions=ff_subs)
+    param = parameterize_gaff_with_rdkit(mol, charge_method="gasteiger")
+    assert bond_row in _records(ff_subs)
+    assert bond_row in _records(param["substitutions"])
+
+    # Angle cx-c2-hc: vinylcyclopropane's ring-attached alkene hydrogen
+    # relabeled ha→hc. That angle is not in the table; c3-c2-hc is.
+    monkeypatch.undo()
+    mol = prepare_mol("C=CC1CC1")
+    base = gaff2.assign_gaff2_atom_types(mol)
+    mapped = list(base)
+    for atom in mol.GetAtoms():
+        if base[atom.GetIdx()] == "c2" and any(base[n.GetIdx()] == "cx" for n in atom.GetNeighbors()):
+            for nbr in atom.GetNeighbors():
+                if base[nbr.GetIdx()] == "ha":
+                    mapped[nbr.GetIdx()] = "hc"
+    monkeypatch.setattr(gaff2, "assign_gaff2_atom_types", lambda m, *a, **k: list(mapped))
+    angle_row = ("angle", ("cx", "c2", "hc"), ("c3", "c2", "hc"))
+    ff_subs = []
+    build_gaff2_ffxml(
+        mol, "VCY", [0.0] * mol.GetNumAtoms(), substitutions=ff_subs, missing_torsions="omit"
+    )
+    param = parameterize_gaff_with_rdkit(mol, charge_method="gasteiger", missing_torsions="omit")
+    assert angle_row in _records(ff_subs)
+    assert angle_row in _records(param["substitutions"])
+
+
+def test_parameterize_docstring_lists_bond_angle_and_torsion_substitutions():
+    """The substitutions list records bond, angle, and torsion from/to pairs,
+    not torsion rows alone.
+    """
+    doc = parameterize_gaff_with_rdkit.__doc__ or ""
+    bullet = "\n".join(line for line in doc.splitlines() if "substitution" in line.lower())
+    assert "bond" in bullet
+    assert "angle" in bullet
+    assert "torsion" in bullet
+    assert '{"term": "torsion"' not in bullet
