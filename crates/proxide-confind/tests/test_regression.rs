@@ -5,7 +5,6 @@ use proxide_confind::coords::ResidueIndex;
 use proxide_confind::ConFind;
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn crowdedness_isolated_residue_near_zero() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -17,7 +16,7 @@ fn crowdedness_isolated_residue_near_zero() {
 
     // 5 residues at 30 Å spacing (isolated)
     let backbone = make_synthetic_backbone(5, 30.0);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // Cache the middle residue
     let ri = ResidueIndex(2);
@@ -29,7 +28,6 @@ fn crowdedness_isolated_residue_near_zero() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn crowdedness_compact_higher_than_isolated() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -41,7 +39,7 @@ fn crowdedness_compact_higher_than_isolated() {
 
     // Compact 5-residue backbone at 3.8 Å spacing
     let backbone = make_synthetic_backbone(5, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // Cache all
     let result = confind.cache_all();
@@ -52,7 +50,6 @@ fn crowdedness_compact_higher_than_isolated() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn freedom_fully_isolated_is_near_1() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -64,7 +61,7 @@ fn freedom_fully_isolated_is_near_1() {
 
     // Single residue, fully isolated
     let backbone = make_synthetic_backbone(1, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0)];
     let result = confind.contacts(&residues, 0.0);
@@ -78,7 +75,6 @@ fn freedom_fully_isolated_is_near_1() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn contact_degree_symmetry() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -89,7 +85,7 @@ fn contact_degree_symmetry() {
     };
 
     let backbone = make_synthetic_backbone(3, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let all_residues = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];
     let result = confind.contacts(&all_residues, 0.0);

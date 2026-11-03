@@ -26,6 +26,9 @@ pub enum RepackError {
         res_id: i32,
         insertion_code: char,
     },
+
+    #[error("atom name {atom_name} determines no element")]
+    UnknownElement { atom_name: String },
 }
 
 /// Enum for selecting which residues to repack.
@@ -76,11 +79,14 @@ fn get_element_radius(element: &str) -> f32 {
 
 /// Calculate the clash penalty for a rotamer candidate against already-placed atoms.
 /// Uses soft repulsion: penalty accumulates for any pair where distance < r_i + r_j.
-fn calculate_clash_penalty(candidate_atoms: &[(String, [f32; 3])], placed_atoms: &[Atom]) -> f64 {
+fn calculate_clash_penalty(
+    candidate_atoms: &[(String, [f32; 3])],
+    placed_atoms: &[Atom],
+) -> Result<f64, RepackError> {
     let mut penalty: f64 = 0.0;
 
     for (cand_name, cand_coords) in candidate_atoms {
-        let cand_element = extract_element(cand_name);
+        let cand_element = extract_element(cand_name)?;
         let cand_radius = get_element_radius(&cand_element) as f64;
 
         for placed_atom in placed_atoms {
@@ -102,70 +108,50 @@ fn calculate_clash_penalty(candidate_atoms: &[(String, [f32; 3])], placed_atoms:
         }
     }
 
-    penalty
+    Ok(penalty)
 }
 
-/// Extract element symbol from atom name (first letter, or first two letters for multi-char).
-fn extract_element(atom_name: &str) -> String {
-    let name = atom_name.trim();
-    if name.is_empty() {
-        return "C".to_string();
-    }
+/// Element symbol determined by a PDB atom name.
+///
+/// An empty name, a digit-only name, or a name whose letters are not an element
+/// is an error. It is not recorded as carbon.
+pub(crate) fn element_from_atom_name(atom_name: &str) -> Result<String, String> {
+    proxide_core::chem::masses::infer_element(atom_name)
+        .map(str::to_string)
+        .ok_or_else(|| format!("atom name {atom_name:?} determines no element"))
+}
 
-    // Remove leading digits and positions (common in PDB atom names)
-    let trimmed = name.trim_start_matches(char::is_numeric);
-    if trimmed.is_empty() {
-        return "C".to_string();
-    }
-
-    // Delegate to proxide_core's two-letter-aware inference. This value only
-    // picks a steric radius during repacking in this experimental crate. The
-    // carbon stand-in for an unknown name is a known violation of the unknown-
-    // value rule, as are the two empty-name returns above; tracked in the debt
-    // store under task 261102_proxide-stable-hardening.
-    proxide_core::chem::masses::infer_element(trimmed)
-        .unwrap_or("C")
-        .to_string()
+/// Extract element symbol from atom name.
+fn extract_element(atom_name: &str) -> Result<String, RepackError> {
+    element_from_atom_name(atom_name).map_err(|_| RepackError::UnknownElement {
+        atom_name: atom_name.to_string(),
+    })
 }
 
 /// Derive φ (phi) and ψ (psi) angles from backbone N, CA, C atoms of a residue and its neighbors.
-/// Returns (phi, psi) where 9999.0 indicates missing angle (e.g., at termini).
+/// Returns (phi, psi) where None indicates missing angle (e.g., at termini or missing atoms).
 fn derive_backbone_angles(
     prev_residue: Option<&Residue>,
     current_residue: &Residue,
     next_residue: Option<&Residue>,
-) -> (f64, f64) {
+) -> (Option<f64>, Option<f64>) {
     // phi = angle(prev_C, N, CA, C)
-    let phi = if let Some(prev) = prev_residue {
-        if let (Some(prev_c), Some(curr_n), Some(curr_ca), Some(curr_c)) = (
-            find_atom(prev, "C"),
-            find_atom(current_residue, "N"),
-            find_atom(current_residue, "CA"),
-            find_atom(current_residue, "C"),
-        ) {
-            dihedral_angle(prev_c, curr_n, curr_ca, curr_c)
-        } else {
-            9999.0
-        }
-    } else {
-        9999.0 // N-terminus
-    };
+    let phi = prev_residue.and_then(|prev| {
+        let prev_c = find_atom(prev, "C")?;
+        let curr_n = find_atom(current_residue, "N")?;
+        let curr_ca = find_atom(current_residue, "CA")?;
+        let curr_c = find_atom(current_residue, "C")?;
+        dihedral_angle(prev_c, curr_n, curr_ca, curr_c)
+    });
 
     // psi = angle(N, CA, C, next_N)
-    let psi = if let Some(next) = next_residue {
-        if let (Some(curr_n), Some(curr_ca), Some(curr_c), Some(next_n)) = (
-            find_atom(current_residue, "N"),
-            find_atom(current_residue, "CA"),
-            find_atom(current_residue, "C"),
-            find_atom(next, "N"),
-        ) {
-            dihedral_angle(curr_n, curr_ca, curr_c, next_n)
-        } else {
-            9999.0
-        }
-    } else {
-        9999.0 // C-terminus
-    };
+    let psi = next_residue.and_then(|next| {
+        let curr_n = find_atom(current_residue, "N")?;
+        let curr_ca = find_atom(current_residue, "CA")?;
+        let curr_c = find_atom(current_residue, "C")?;
+        let next_n = find_atom(next, "N")?;
+        dihedral_angle(curr_n, curr_ca, curr_c, next_n)
+    });
 
     (phi, psi)
 }
@@ -180,7 +166,8 @@ fn find_atom(residue: &Residue, name: &str) -> Option<[f32; 3]> {
 }
 
 /// Calculate a dihedral angle from four points (in degrees).
-fn dihedral_angle(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> f64 {
+/// Returns `None` if the points are collinear or degenerate (normal length < 1e-6).
+fn dihedral_angle(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> Option<f64> {
     // Vector from p2 to p1
     let v1 = [p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]];
     // Vector from p2 to p3
@@ -198,7 +185,7 @@ fn dihedral_angle(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> f64
     let len_n2 = (n2[0] * n2[0] + n2[1] * n2[1] + n2[2] * n2[2]).sqrt();
 
     if len_n1 < 1e-6 || len_n2 < 1e-6 {
-        return 9999.0;
+        return None;
     }
 
     let cos_angle = (dot / (len_n1 * len_n2)).clamp(-1.0, 1.0);
@@ -213,7 +200,7 @@ fn dihedral_angle(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> f64
         angle_deg = -angle_deg;
     }
 
-    angle_deg
+    Some(angle_deg)
 }
 
 /// Compute cross product of two 3D vectors.
@@ -331,58 +318,61 @@ impl<'a> SidechainRepacker<'a> {
         chain_idx: usize,
         res_idx: usize,
         target_aa: &str,
-        phi: f64,
-        psi: f64,
-    ) -> Option<Vec<Atom>> {
+        phi: Option<f64>,
+        psi: Option<f64>,
+    ) -> Result<Option<Vec<Atom>>, RepackError> {
         let chain = &self.topology.chains[chain_idx];
         let residue = &chain.residues[res_idx];
 
         // Get backbone atom coordinates
-        let n = find_atom(residue, "N")?;
-        let ca = find_atom(residue, "CA")?;
-        let c = find_atom(residue, "C")?;
+        let Some(n) = find_atom(residue, "N") else {
+            return Ok(None);
+        };
+        let Some(ca) = find_atom(residue, "CA") else {
+            return Ok(None);
+        };
+        let Some(c) = find_atom(residue, "C") else {
+            return Ok(None);
+        };
 
         // Place rotamer from library using first rotamer (greedy; can improve later)
-        let nr = self.lib.num_rotamers(target_aa, phi, psi, false).ok()?;
+        let Ok(nr) = self.lib.num_rotamers(target_aa, phi, psi, false) else {
+            return Ok(None);
+        };
         if nr == 0 {
-            return None;
+            return Ok(None);
         }
 
         // Use rotamer 0 as default (can be improved with clash calculation)
-        let placed_rot = self
-            .lib
-            .place_rotamer(
-                target_aa,
-                phi,
-                psi,
-                0,
-                false,
-                [n[0] as f64, n[1] as f64, n[2] as f64],
-                [ca[0] as f64, ca[1] as f64, ca[2] as f64],
-                [c[0] as f64, c[1] as f64, c[2] as f64],
-            )
-            .ok()?;
+        let Ok(placed_rot) = self.lib.place_rotamer(
+            target_aa,
+            phi,
+            psi,
+            0,
+            false,
+            [n[0] as f64, n[1] as f64, n[2] as f64],
+            [ca[0] as f64, ca[1] as f64, ca[2] as f64],
+            [c[0] as f64, c[1] as f64, c[2] as f64],
+        ) else {
+            return Ok(None);
+        };
 
         // Convert placed atoms to our Atom type
-        let atoms = placed_rot
-            .atoms
-            .iter()
-            .map(|a| {
-                let element = extract_element(&a.name);
-                Atom {
-                    name: a.name.clone(),
-                    element,
-                    coords: [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32],
-                    alt_loc: ' ',
-                    serial: 0, // Will be fixed up later
-                    b_factor: 0.0,
-                    occupancy: 1.0,
-                    is_hetatm: false,
-                }
-            })
-            .collect();
+        let mut atoms = Vec::with_capacity(placed_rot.atoms.len());
+        for a in &placed_rot.atoms {
+            atoms.push(Atom {
+                name: a.name.clone(),
+                element: extract_element(&a.name)?,
+                coords: [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32],
+                alt_loc: ' ',
+                serial: 0, // Will be fixed up later
+                b_factor: 0.0,
+                occupancy: 1.0,
+                is_hetatm: false,
+            });
+        }
 
-        Some(atoms)
+        Ok(Some(atoms))
     }
 
     /// Rebuild a single residue sidechain from rotlib with ForceRebuild mode.
@@ -457,7 +447,8 @@ impl<'a> SidechainRepacker<'a> {
         self.strip_sidechain(chain_idx, res_idx, &aa);
 
         // Rebuild from rotamer library
-        if let Some(placed_atoms_new) = self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)
+        if let Some(placed_atoms_new) =
+            self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)?
         {
             // Update serial numbers and place atoms
             let chain = &mut self.topology.chains[chain_idx];
@@ -465,14 +456,10 @@ impl<'a> SidechainRepacker<'a> {
             let max_serial = residue.atoms.iter().map(|a| a.serial).max().unwrap_or(0);
 
             for (i, placed_atom) in placed_atoms_new.iter().enumerate() {
-                // Check if this atom already exists (e.g., backbone atoms)
-                if let Some(pos) = residue
-                    .atoms
-                    .iter()
-                    .position(|a| a.name == placed_atom.name)
-                {
-                    // Update coordinates only
-                    residue.atoms[pos].coords = placed_atom.coords;
+                // Check if this atom already exists (e.g., CB kept by strip_sidechain)
+                if residue.atoms.iter().any(|a| a.name == placed_atom.name) {
+                    // Keep existing atom coordinates (e.g., preserved CB)
+                    continue;
                 } else {
                     // Add new atom with updated serial
                     let mut atom = placed_atom.clone();
@@ -484,7 +471,7 @@ impl<'a> SidechainRepacker<'a> {
             Ok(())
         } else {
             warn!(
-                "Failed to rebuild sidechain for {chain_id}:{res_id} {aa} at ({phi:.1}, {psi:.1})",
+                "Failed to rebuild sidechain for {chain_id}:{res_id} {aa} at (phi={phi:?}, psi={psi:?})",
                 chain_id = chain_id,
                 res_id = res_id,
                 aa = aa,
@@ -647,7 +634,7 @@ impl<'a> SidechainRepacker<'a> {
                 Ok(n) => n,
                 Err(_) => {
                     warn!(
-                        "No rotamers available for {chain_id}:{res_id} {aa} at ({phi:.1}, {psi:.1})",
+                        "No rotamers available for {chain_id}:{res_id} {aa} at (phi={phi:?}, psi={psi:?})",
                         chain_id = chain_id,
                         res_id = res_id,
                         aa = aa,
@@ -680,7 +667,7 @@ impl<'a> SidechainRepacker<'a> {
 
             for rot_idx in 0..nr {
                 // Get rotamer probability
-                if let Ok(prob) = self.lib.rotamer_probability(&aa, rot_idx, phi, psi) {
+                if let Ok(prob) = self.lib.rotamer_probability(&aa, phi, psi, false, rot_idx) {
                     // Place the rotamer
                     if let Ok(placed_rot) = self.lib.place_rotamer(
                         &aa,
@@ -705,7 +692,7 @@ impl<'a> SidechainRepacker<'a> {
                             .collect();
 
                         // Calculate clash penalty
-                        let clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms);
+                        let clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms)?;
 
                         // Score = probability - lambda * clash
                         let lambda = 1.0; // Weight of clash penalty
@@ -748,7 +735,7 @@ impl<'a> SidechainRepacker<'a> {
                         ];
                     } else {
                         // Add new atom
-                        let element = extract_element(&placed_atom.name);
+                        let element = extract_element(&placed_atom.name)?;
                         residue.atoms.push(Atom {
                             name: placed_atom.name.clone(),
                             element,
@@ -783,7 +770,7 @@ impl<'a> SidechainRepacker<'a> {
         let burial_order = calculate_burial_order(&self.topology.chains);
 
         // Pre-compute angles for all residues to avoid borrowing issues
-        let mut angles_map: HashMap<(usize, usize), (f64, f64)> = HashMap::new();
+        let mut angles_map: HashMap<(usize, usize), (Option<f64>, Option<f64>)> = HashMap::new();
         for (chain_idx, res_idx, _) in &burial_order {
             let chain = &self.topology.chains[*chain_idx];
             let prev_res = if *res_idx > 0 {
@@ -863,7 +850,7 @@ impl<'a> SidechainRepacker<'a> {
             let (phi, psi) = angles_map
                 .get(&(chain_idx, res_idx))
                 .copied()
-                .unwrap_or((9999.0, 9999.0));
+                .unwrap_or((None, None));
 
             // Handle ForceRebuild mode: strip sidechain and rebuild from rotlib
             if matches!(mode, RepackMode::ForceRebuild) {
@@ -872,7 +859,7 @@ impl<'a> SidechainRepacker<'a> {
 
                 // Rebuild from rotamer library
                 if let Some(placed_atoms) =
-                    self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)
+                    self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)?
                 {
                     // Update serial numbers and place atoms
                     let chain = &mut self.topology.chains[chain_idx];
@@ -880,14 +867,10 @@ impl<'a> SidechainRepacker<'a> {
                     let max_serial = residue.atoms.iter().map(|a| a.serial).max().unwrap_or(0);
 
                     for (i, placed_atom) in placed_atoms.iter().enumerate() {
-                        // Check if this atom already exists (e.g., backbone atoms)
-                        if let Some(pos) = residue
-                            .atoms
-                            .iter()
-                            .position(|a| a.name == placed_atom.name)
-                        {
-                            // Update coordinates only
-                            residue.atoms[pos].coords = placed_atom.coords;
+                        // Check if this atom already exists (e.g., CB kept by strip_sidechain)
+                        if residue.atoms.iter().any(|a| a.name == placed_atom.name) {
+                            // Keep existing atom coordinates (e.g., preserved CB)
+                            continue;
                         } else {
                             // Add new atom with updated serial
                             let mut atom = placed_atom.clone();
@@ -900,7 +883,7 @@ impl<'a> SidechainRepacker<'a> {
                     report.residue_details.push((chain_id, res_id, aa, 0, 0.0));
                 } else {
                     warn!(
-                        "Failed to rebuild sidechain for {chain_id}:{res_id} {aa} at ({phi:.1}, {psi:.1})",
+                        "Failed to rebuild sidechain for {chain_id}:{res_id} {aa} at (phi={phi:?}, psi={psi:?})",
                         chain_id = chain_id,
                         res_id = res_id,
                         aa = aa,
@@ -915,7 +898,7 @@ impl<'a> SidechainRepacker<'a> {
             let nr = self.lib.num_rotamers(&aa, phi, psi, false)?;
             if nr == 0 {
                 warn!(
-                    "No rotamers available for {chain_id}:{res_id} {aa} at ({phi:.1}, {psi:.1})",
+                    "No rotamers available for {chain_id}:{res_id} {aa} at (phi={phi:?}, psi={psi:?})",
                     chain_id = chain_id,
                     res_id = res_id,
                     aa = aa,
@@ -943,7 +926,9 @@ impl<'a> SidechainRepacker<'a> {
 
             for rot_idx in 0..nr {
                 // Get rotamer probability
-                let prob = self.lib.rotamer_probability(&aa, rot_idx, phi, psi)?;
+                let prob = self
+                    .lib
+                    .rotamer_probability(&aa, phi, psi, false, rot_idx)?;
 
                 // Place the rotamer
                 let placed_rot = self.lib.place_rotamer(
@@ -970,7 +955,7 @@ impl<'a> SidechainRepacker<'a> {
                     .collect();
 
                 // Calculate clash penalty
-                let clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms);
+                let clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms)?;
 
                 // Score = probability - lambda * clash
                 let lambda = 1.0; // Weight of clash penalty
@@ -1005,7 +990,7 @@ impl<'a> SidechainRepacker<'a> {
                     )
                 })
                 .collect();
-            let final_clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms);
+            let final_clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms)?;
 
             // Now get mutable residue and update atoms with the placed sidechain
             let chain = &mut self.topology.chains[chain_idx];
@@ -1025,7 +1010,7 @@ impl<'a> SidechainRepacker<'a> {
                     ];
                 } else {
                     // Add new atom
-                    let element = extract_element(&placed_atom.name);
+                    let element = extract_element(&placed_atom.name)?;
                     residue.atoms.push(Atom {
                         name: placed_atom.name.clone(),
                         element,
@@ -1093,36 +1078,62 @@ mod tests {
         }
     }
 
-    fn load_rotlib() -> Option<RotamerLibrary> {
-        // Try to load from the project's rotlib path.
-        // If a candidate path exists, we PANIC on failure to load (debt #1891);
-        // an absent rotlib may still skip.
-        let rotlib_paths = [
-            "/home/marielle/projects/proxide/testfiles/rotlib.pb.zst",
-            "testfiles/rotlib.pb.zst",
+    #[derive(Debug)]
+    pub enum RotlibLoadResult {
+        Loaded(RotamerLibrary),
+        NotConfigured(String),
+        Failed(String),
+    }
+
+    fn load_rotlib() -> RotlibLoadResult {
+        let candidate_paths = [
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst"),
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../data/rotlibs/proxide-rotlib-bbdep2010.pb.zst"),
+            std::path::PathBuf::from("data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst"),
+            std::path::PathBuf::from("data/rotlibs/proxide-rotlib-bbdep2010.pb.zst"),
+            std::path::PathBuf::from("../data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst"),
+            std::path::PathBuf::from("../data/rotlibs/proxide-rotlib-bbdep2010.pb.zst"),
         ];
 
-        for path_str in &rotlib_paths {
-            let path = Path::new(path_str);
+        for path in &candidate_paths {
             if path.exists() {
-                return Some(
-                    RotamerLibrary::load_pb(path)
-                        .unwrap_or_else(|e| panic!("Failed to load rotlib from {:?}: {}", path, e)),
-                );
+                match RotamerLibrary::load_pb_zst(path) {
+                    Ok(lib) => return RotlibLoadResult::Loaded(lib),
+                    Err(e) => {
+                        return RotlibLoadResult::Failed(format!(
+                            "Failed to load rotlib from {:?}: {}",
+                            path, e
+                        ))
+                    }
+                }
             }
         }
 
-        None
+        if std::env::var("CI").is_ok() {
+            panic!(
+                "CI environment detected but rotamer library asset not found at candidate paths"
+            );
+        }
+
+        RotlibLoadResult::NotConfigured(
+            "data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst not found".to_string(),
+        )
     }
 
     #[test]
     fn test_truncated_lys_completion() {
         let lib = match load_rotlib() {
-            Some(l) => l,
-            None => {
-                eprintln!("Skipping test: rotamer library not found");
+            RotlibLoadResult::Loaded(l) => l,
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {}", msg);
+                }
+                tracing::warn!("Skipping test: {}", msg);
                 return;
             }
+            RotlibLoadResult::Failed(err) => panic!("CORRUPT ROTAMER LIBRARY ASSET: {}", err),
         };
 
         let mut topology = load_test_topology("truncated_sidechain.pdb");
@@ -1198,28 +1209,43 @@ mod tests {
             is_hetatm: false,
         }];
 
-        let penalty = calculate_clash_penalty(&candidate, &placed);
+        let penalty = calculate_clash_penalty(&candidate, &placed).unwrap();
         assert!(penalty > 0.0, "Penalty should be positive for a clash");
     }
 
     #[test]
+    fn unknown_atom_name_is_not_carbon() {
+        assert!(
+            extract_element("QQ").is_err(),
+            "QQ determines no element and must not be recorded as carbon"
+        );
+        assert!(extract_element("").is_err());
+        assert!(extract_element("1").is_err());
+        assert_eq!(extract_element("CA").unwrap(), "C");
+    }
+
+    #[test]
     fn test_element_extraction() {
-        assert_eq!(extract_element("CA"), "C");
-        assert_eq!(extract_element("CB"), "C");
-        assert_eq!(extract_element("N"), "N");
-        assert_eq!(extract_element("OG"), "O");
-        assert_eq!(extract_element("2HD"), "H");
-        assert_eq!(extract_element("SG"), "S");
+        assert_eq!(extract_element("CA").unwrap(), "C");
+        assert_eq!(extract_element("CB").unwrap(), "C");
+        assert_eq!(extract_element("N").unwrap(), "N");
+        assert_eq!(extract_element("OG").unwrap(), "O");
+        assert_eq!(extract_element("2HD").unwrap(), "H");
+        assert_eq!(extract_element("SG").unwrap(), "S");
     }
 
     #[test]
     fn test_is_incomplete() {
         let lib = match load_rotlib() {
-            Some(l) => l,
-            None => {
-                eprintln!("Skipping test: rotamer library not found");
+            RotlibLoadResult::Loaded(l) => l,
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {}", msg);
+                }
+                tracing::warn!("Skipping test: {}", msg);
                 return;
             }
+            RotlibLoadResult::Failed(err) => panic!("CORRUPT ROTAMER LIBRARY ASSET: {}", err),
         };
 
         // LYS with only backbone atoms should be incomplete
@@ -1282,11 +1308,15 @@ mod tests {
     #[test]
     fn force_rebuild_strips_sidechain_and_rebuilds() {
         let lib = match load_rotlib() {
-            Some(l) => l,
-            None => {
-                eprintln!("Skipping test: rotamer library not found");
+            RotlibLoadResult::Loaded(l) => l,
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {}", msg);
+                }
+                tracing::warn!("Skipping test: {}", msg);
                 return;
             }
+            RotlibLoadResult::Failed(err) => panic!("CORRUPT ROTAMER LIBRARY ASSET: {}", err),
         };
 
         let mut topology = load_test_topology("truncated_sidechain.pdb");
@@ -1343,11 +1373,15 @@ mod tests {
     #[test]
     fn force_rebuild_maintains_backbone_bond_lengths() {
         let lib = match load_rotlib() {
-            Some(l) => l,
-            None => {
-                eprintln!("Skipping test: rotamer library not found");
+            RotlibLoadResult::Loaded(l) => l,
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {}", msg);
+                }
+                tracing::warn!("Skipping test: {}", msg);
                 return;
             }
+            RotlibLoadResult::Failed(err) => panic!("CORRUPT ROTAMER LIBRARY ASSET: {}", err),
         };
 
         let mut topology = load_test_topology("truncated_sidechain.pdb");
@@ -1406,11 +1440,15 @@ mod tests {
     #[test]
     fn force_rebuild_does_not_process_gly() {
         let lib = match load_rotlib() {
-            Some(l) => l,
-            None => {
-                eprintln!("Skipping test: rotamer library not found");
+            RotlibLoadResult::Loaded(l) => l,
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {}", msg);
+                }
+                tracing::warn!("Skipping test: {}", msg);
                 return;
             }
+            RotlibLoadResult::Failed(err) => panic!("CORRUPT ROTAMER LIBRARY ASSET: {}", err),
         };
 
         // Create a minimal GLY residue
@@ -1482,11 +1520,15 @@ mod tests {
     #[test]
     fn rebuild_residue_calls_force_rebuild() {
         let lib = match load_rotlib() {
-            Some(l) => l,
-            None => {
-                eprintln!("Skipping test: rotamer library not found");
+            RotlibLoadResult::Loaded(l) => l,
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {}", msg);
+                }
+                tracing::warn!("Skipping test: {}", msg);
                 return;
             }
+            RotlibLoadResult::Failed(err) => panic!("CORRUPT ROTAMER LIBRARY ASSET: {}", err),
         };
 
         let mut topology = load_test_topology("truncated_sidechain.pdb");
@@ -1536,11 +1578,15 @@ mod tests {
     #[test]
     fn rebuild_residue_returns_error_for_missing_residue() {
         let lib = match load_rotlib() {
-            Some(l) => l,
-            None => {
-                eprintln!("Skipping test: rotamer library not found");
+            RotlibLoadResult::Loaded(l) => l,
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {}", msg);
+                }
+                tracing::warn!("Skipping test: {}", msg);
                 return;
             }
+            RotlibLoadResult::Failed(err) => panic!("CORRUPT ROTAMER LIBRARY ASSET: {}", err),
         };
 
         let mut topology = load_test_topology("truncated_sidechain.pdb");
@@ -1570,11 +1616,15 @@ mod tests {
     #[test]
     fn repack_neighbourhood_empty_targets() {
         let lib = match load_rotlib() {
-            Some(l) => l,
-            None => {
-                eprintln!("Skipping test: rotamer library not found");
+            RotlibLoadResult::Loaded(l) => l,
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {}", msg);
+                }
+                tracing::warn!("Skipping test: {}", msg);
                 return;
             }
+            RotlibLoadResult::Failed(err) => panic!("CORRUPT ROTAMER LIBRARY ASSET: {}", err),
         };
 
         let mut topology = load_test_topology("truncated_sidechain.pdb");
@@ -1593,11 +1643,15 @@ mod tests {
     #[ignore] // Requires real rotlib and appropriate topology for local burial test
     fn repack_neighbourhood_local_burial_order() {
         let lib = match load_rotlib() {
-            Some(l) => l,
-            None => {
-                eprintln!("Skipping test: rotamer library not found");
+            RotlibLoadResult::Loaded(l) => l,
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {}", msg);
+                }
+                tracing::warn!("Skipping test: {}", msg);
                 return;
             }
+            RotlibLoadResult::Failed(err) => panic!("CORRUPT ROTAMER LIBRARY ASSET: {}", err),
         };
 
         // Create a minimal 3-residue topology with specific CA distances
@@ -1768,15 +1822,15 @@ mod tests {
         // Regression test: "CL" (all uppercase) should resolve to "Cl" (chlorine),
         // not "C" (carbon). This is a known bug fix for two-letter element inference.
         // PDB convention uses uppercase element names, so we test uppercase and mixed-case.
-        assert_eq!(extract_element("CL"), "Cl");
-        assert_eq!(extract_element("Cl"), "Cl");
+        assert_eq!(extract_element("CL").unwrap(), "Cl");
+        assert_eq!(extract_element("Cl").unwrap(), "Cl");
         // Also test with leading digits (common in PDB)
-        assert_eq!(extract_element("1CL"), "Cl");
-        assert_eq!(extract_element("2Cl"), "Cl");
+        assert_eq!(extract_element("1CL").unwrap(), "Cl");
+        assert_eq!(extract_element("2Cl").unwrap(), "Cl");
         // Test other two-letter elements
-        assert_eq!(extract_element("BR"), "Br");
-        assert_eq!(extract_element("NA"), "Na");
-        assert_eq!(extract_element("FE"), "Fe");
+        assert_eq!(extract_element("BR").unwrap(), "Br");
+        assert_eq!(extract_element("NA").unwrap(), "Na");
+        assert_eq!(extract_element("FE").unwrap(), "Fe");
     }
 
     #[test]

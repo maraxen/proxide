@@ -189,14 +189,14 @@ fn test_c1_missing_atoms() {
         result
     );
 
-    // debt #1890: under the new default {Bridge, PerDihedral} policy, SER3's phi
+    // debt #1890 / #1897: under the default {Bridge, PerDihedral} policy, SER3's phi
     // is undefined (GLY2's C, its true immediate predecessor, is missing) and its
     // omega is undefined too (needs GLY2's CA and C); GLY2's own omega remains
     // defined (it only needs ALA1's CA/C and GLY2's own N/CA, none of which are
     // missing).
-    assert_eq!(
-        backbone.bb[2].phi, 9999.0,
-        "debt #1890: SER3 phi should be 9999.0 under PerDihedral (no bridging over GLY2's missing C)"
+    assert!(
+        backbone.bb[2].phi.is_none(),
+        "debt #1890: SER3 phi should be None under PerDihedral (no bridging over GLY2's missing C)"
     );
     assert!(
         backbone.bb[2].omega.is_none(),
@@ -217,38 +217,30 @@ fn test_c1_missing_atoms() {
 
 #[test]
 fn test_c1_missing_atoms_legacy_compact_matches_golden() {
-    // debt #1890: MissingAtomPolicy::LegacyCompact reproduces base 316d1ab's
-    // dense-bridging output bit-for-bit — see
-    // crates/proxide-confind/tests/data/dihedral_golden_316d1ab.json,
-    // fixtures."missing_atoms.pdb".extract_f64_backbone (phi_bits/psi_bits are
-    // the IEEE-754 bit patterns of -180.0 and 9999.0; omega_bits 0 is 0.0).
-    // This test replaces the old #1890 canary that asserted this same bridging
-    // was ConFind's only (non-opt-in) behaviour.
+    // debt #1890 / #1897: MissingAtomPolicy::LegacyCompact reproduces dense-bridging
+    // behavior with Option<f64> dihedrals (None for undefined angles, bridged values
+    // for adjacent residues across excluded incomplete residues).
     let processed = load_processed("missing_atoms.pdb");
-    let opts = BackboneOptions::default().with_missing_atoms(MissingAtomPolicy::LegacyCompact);
+    let opts = BackboneOptions::default()
+        .with_chain_breaks(ChainBreakPolicy::Bridge)
+        .with_missing_atoms(MissingAtomPolicy::LegacyCompact);
     let backbone = extract_f64_backbone_with_options(&processed, &opts)
         .expect("LegacyCompact extract should not error");
 
+    assert!(backbone.bb[0].phi.is_none(), "ALA1 phi (chain-first)");
     assert_eq!(
-        backbone.bb[0].phi.to_bits(),
-        9999.0f64.to_bits(),
-        "ALA1 phi"
-    );
-    assert_eq!(
-        backbone.bb[0].psi.to_bits(),
-        (-180.0f64).to_bits(),
+        backbone.bb[0].psi.map(f64::to_bits),
+        Some((-180.0f64).to_bits()),
         "ALA1 psi (bridged)"
     );
     assert!(backbone.bb[0].omega.is_none(), "ALA1 omega (chain-first)");
 
-    assert_eq!(
-        backbone.bb[1].phi.to_bits(),
-        9999.0f64.to_bits(),
+    assert!(
+        backbone.bb[1].phi.is_none(),
         "GLY2 phi (untouched, excluded from dense array)"
     );
-    assert_eq!(
-        backbone.bb[1].psi.to_bits(),
-        9999.0f64.to_bits(),
+    assert!(
+        backbone.bb[1].psi.is_none(),
         "GLY2 psi (untouched, excluded from dense array)"
     );
     assert!(
@@ -257,18 +249,13 @@ fn test_c1_missing_atoms_legacy_compact_matches_golden() {
     );
 
     assert_eq!(
-        backbone.bb[2].phi.to_bits(),
-        (-180.0f64).to_bits(),
+        backbone.bb[2].phi.map(f64::to_bits),
+        Some((-180.0f64).to_bits()),
         "SER3 phi (bridged)"
     );
-    assert_eq!(
-        backbone.bb[2].psi.to_bits(),
-        9999.0f64.to_bits(),
-        "SER3 psi (chain-last)"
-    );
-    assert_eq!(
-        backbone.bb[2].omega.map(f64::to_bits),
-        Some(0.0f64.to_bits()),
+    assert!(backbone.bb[2].psi.is_none(), "SER3 psi (chain-last)");
+    assert!(
+        (backbone.bb[2].omega.expect("SER3 omega (bridged)")).abs() < 1e-12,
         "SER3 omega (bridged)"
     );
     assert!(
@@ -391,12 +378,12 @@ fn test_c1_chain_break_split() {
     let backbone = extract_f64_backbone_with_options(&processed, &opts)
         .expect("Split extract should not error");
 
-    assert_eq!(
-        backbone.bb[1].psi, 9999.0,
+    assert!(
+        backbone.bb[1].psi.is_none(),
         "GLY2 psi should be severed by the Split policy"
     );
-    assert_eq!(
-        backbone.bb[2].phi, 9999.0,
+    assert!(
+        backbone.bb[2].phi.is_none(),
         "SER3 phi should be severed by the Split policy"
     );
     assert!(

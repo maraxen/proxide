@@ -16,14 +16,46 @@ use std::fs;
 use std::path::Path;
 use tracing::{debug, warn};
 
+/// Fallback parameter kind for stereochemical fallbacks (Debt #1933).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FallbackKind {
+    BondLength,
+    ValenceAngle,
+}
+
+/// Provenance record for non-silent stereochemical fallbacks (Debt #1933).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeometryFallback {
+    pub component: String,
+    pub atom_names: Vec<String>,
+    pub parameter_kind: FallbackKind,
+    pub fallback_value: f64,
+    pub citation: &'static str,
+}
+
+impl From<&GeometryFallback> for crate::pb::proxide::rotlib::v1::GeometryFallback {
+    fn from(f: &GeometryFallback) -> Self {
+        Self {
+            component: f.component.clone(),
+            atom_names: f.atom_names.clone(),
+            parameter_kind: match f.parameter_kind {
+                FallbackKind::BondLength => 0,
+                FallbackKind::ValenceAngle => 1,
+            },
+            fallback_value: f.fallback_value,
+            citation: f.citation.to_string(),
+        }
+    }
+}
+
 /// A simple CIF parser for extracting bond and angle records.
-struct CifParser {
+pub struct CifParser {
     lines: Vec<String>,
     pos: usize,
 }
 
 impl CifParser {
-    fn new(content: &str) -> Self {
+    pub fn new(content: &str) -> Self {
         let lines: Vec<String> = content
             .lines()
             .map(|l| l.trim().to_string())
@@ -34,19 +66,29 @@ impl CifParser {
 
     /// Parse a loop block that starts with field names and is followed by data rows.
     /// Returns a map of field_name -> Vec<values> for all fields in the loop.
-    fn parse_loop(&mut self) -> HashMap<String, Vec<String>> {
+    ///
+    /// # Errors
+    /// Returns `RotlibError::InvalidFormat` if a row contains extra or missing tokens
+    /// relative to the declared field definitions (Debt #1933 strict token validation).
+    pub fn parse_loop(&mut self) -> Result<HashMap<String, Vec<String>>, RotlibError> {
         let mut fields = Vec::new();
         let mut result = HashMap::new();
 
         // Read field names (all lines starting with _)
         while self.pos < self.lines.len() {
-            let line = &self.lines[self.pos];
+            let line = self.lines[self.pos].trim();
             if line.starts_with('_') {
-                fields.push(line.clone());
+                fields.push(line.to_string());
                 self.pos += 1;
             } else {
                 break;
             }
+        }
+
+        if fields.is_empty() {
+            return Err(RotlibError::InvalidFormat(
+                "loop_ encountered without any field definitions".to_string(),
+            ));
         }
 
         // Initialize result map
@@ -57,43 +99,51 @@ impl CifParser {
         // Read data rows
         let mut current_row = Vec::new();
         while self.pos < self.lines.len() {
-            let line = &self.lines[self.pos];
+            let line = self.lines[self.pos].trim();
             if line.starts_with('_') || line.starts_with("loop_") || line.starts_with("data_") {
                 // Next section starts
                 break;
             }
+            if line.is_empty() || line.starts_with('#') {
+                self.pos += 1;
+                continue;
+            }
+
             // Parse tokens (quoted strings or space-separated)
             let tokens = self.tokenize(line);
             current_row.extend(tokens);
 
-            // If we have a full row, add to result
-            if current_row.len() >= fields.len() {
+            if current_row.len() == fields.len() {
                 for (i, field) in fields.iter().enumerate() {
-                    if i < current_row.len() {
-                        result.get_mut(field).unwrap().push(current_row[i].clone());
-                    }
+                    result.get_mut(field).unwrap().push(current_row[i].clone());
                 }
                 current_row.clear();
                 self.pos += 1;
-
-                // Check if we have collected all fields for this row
-                let next_line = self.lines.get(self.pos).map(|s| s.as_str()).unwrap_or("");
-                if next_line.starts_with('_')
-                    || next_line.starts_with("loop_")
-                    || next_line.starts_with("data_")
-                {
-                    break;
-                }
+            } else if current_row.len() > fields.len() {
+                return Err(RotlibError::InvalidFormat(format!(
+                    "CIF table row has {} tokens, expected exact field count {}",
+                    current_row.len(),
+                    fields.len()
+                )));
             } else {
+                // Partial row spanning multiple lines
                 self.pos += 1;
             }
         }
 
-        result
+        if !current_row.is_empty() {
+            return Err(RotlibError::InvalidFormat(format!(
+                "CIF table has incomplete row with {} tokens, expected exact field count {}",
+                current_row.len(),
+                fields.len()
+            )));
+        }
+
+        Ok(result)
     }
 
     /// Tokenize a CIF data line, handling quoted strings and spaces.
-    fn tokenize(&self, line: &str) -> Vec<String> {
+    pub fn tokenize(&self, line: &str) -> Vec<String> {
         let mut tokens = Vec::new();
         let mut current = String::new();
         let mut in_quotes = false;
@@ -131,7 +181,7 @@ type BondMap = HashMap<(String, String), f32>;
 type AngleMap = HashMap<(String, String, String), f32>;
 
 /// Parse a CIF file and extract bond and angle ideal values.
-fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
+pub fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
     let content = fs::read_to_string(path).map_err(|e| {
         RotlibError::InvalidFormat(format!("Failed to read CIF file {}: {}", path.display(), e))
     })?;
@@ -145,7 +195,7 @@ fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
 
         if line.starts_with("loop_") {
             parser.pos += 1;
-            let block = parser.parse_loop();
+            let block = parser.parse_loop()?;
 
             // Check if this is a _chem_comp_bond block
             if let (Some(atom_id_1), Some(atom_id_2), Some(dist_ideal)) = (
@@ -156,11 +206,13 @@ fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
                 for i in 0..atom_id_1.len() {
                     let a1 = &atom_id_1[i];
                     let a2 = &atom_id_2[i];
-                    let d: f32 = dist_ideal[i].parse().map_err(|_| {
-                        RotlibError::InvalidFormat(format!(
-                            "Invalid bond distance: {}",
-                            dist_ideal[i]
-                        ))
+                    let val_str = &dist_ideal[i];
+                    // CIF null/unmeasured handling (Debt #1933)
+                    if val_str == "?" || val_str == "." {
+                        continue;
+                    }
+                    let d: f32 = val_str.parse().map_err(|_| {
+                        RotlibError::InvalidFormat(format!("Invalid bond distance: {}", val_str))
                     })?;
                     let key = if a1 <= a2 {
                         (a1.clone(), a2.clone())
@@ -182,8 +234,13 @@ fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
                     let a1 = &atom_id_1[i];
                     let a2 = &atom_id_2[i];
                     let a3 = &atom_id_3[i];
-                    let ang: f32 = angle_ideal[i].parse().map_err(|_| {
-                        RotlibError::InvalidFormat(format!("Invalid angle: {}", angle_ideal[i]))
+                    let val_str = &angle_ideal[i];
+                    // CIF null/unmeasured handling (Debt #1933)
+                    if val_str == "?" || val_str == "." {
+                        continue;
+                    }
+                    let ang: f32 = val_str.parse().map_err(|_| {
+                        RotlibError::InvalidFormat(format!("Invalid angle: {}", val_str))
                     })?;
                     angles.insert((a1.clone(), a2.clone(), a3.clone()), ang);
                 }
@@ -198,14 +255,14 @@ fn parse_cif_file(path: &Path) -> Result<(BondMap, AngleMap), RotlibError> {
 
 /// Parse all CCD CIF files in a directory and return a ResidueGeometryTable (proto).
 ///
-/// Wraps [`parse_ccd_ic_table_raw`] and converts local IcRecord to proto IcRecord.
+/// Wraps [`parse_ccd_ic_table_raw`] and converts local IcRecord and GeometryFallback to proto.
 pub fn parse_ccd_ic_table(
     ccd_dir: &str,
 ) -> Result<crate::pb::proxide::rotlib::v1::ResidueGeometryTable, RotlibError> {
     use crate::pb::proxide::rotlib::v1::{
         IcRecord as ProtoIcRecord, ResidueGeometry, ResidueGeometryTable,
     };
-    let raw = parse_ccd_ic_table_raw(ccd_dir)?;
+    let (raw, fallbacks) = parse_ccd_ic_table_raw(ccd_dir)?;
     let residues = raw
         .into_iter()
         .map(|(name, records)| ResidueGeometry {
@@ -227,17 +284,22 @@ pub fn parse_ccd_ic_table(
                 .collect(),
         })
         .collect();
+    let proto_fallbacks = fallbacks.iter().map(Into::into).collect();
     Ok(ResidueGeometryTable {
         source: "pdb_ccd".to_string(),
         version: "pdb_ccd_2024".to_string(),
         license: "CC0".to_string(),
         citation: "doi:10.1093/nar/gku1178".to_string(),
         residues,
+        fallbacks: proto_fallbacks,
     })
 }
 
-/// Parse all CCD CIF files in a directory and return raw IC records (internal use).
-pub fn parse_ccd_ic_table_raw(ccd_dir: &str) -> Result<Vec<(String, Vec<IcRecord>)>, RotlibError> {
+/// Parsed raw CCD IC records and recorded fallbacks.
+pub type ParsedCcdRecords = (Vec<(String, Vec<IcRecord>)>, Vec<GeometryFallback>);
+
+/// Parse all CCD CIF files in a directory and return raw IC records and recorded fallbacks.
+pub fn parse_ccd_ic_table_raw(ccd_dir: &str) -> Result<ParsedCcdRecords, RotlibError> {
     let path = Path::new(ccd_dir);
     if !path.is_dir() {
         return Err(RotlibError::InvalidFormat(format!(
@@ -247,6 +309,7 @@ pub fn parse_ccd_ic_table_raw(ccd_dir: &str) -> Result<Vec<(String, Vec<IcRecord
     }
 
     let mut result = Vec::new();
+    let mut all_fallbacks = Vec::new();
 
     // Standard amino acids (3-letter codes)
     let standard_aas = vec![
@@ -264,7 +327,8 @@ pub fn parse_ccd_ic_table_raw(ccd_dir: &str) -> Result<Vec<(String, Vec<IcRecord
         match parse_cif_file(&cif_path) {
             Ok((bonds, angles)) => {
                 // Build IC records from the bonds and angles
-                let ic_records = build_ic_records_for_residue(aa_code, &bonds, &angles)?;
+                let ic_records =
+                    build_ic_records_for_residue(aa_code, &bonds, &angles, &mut all_fallbacks)?;
                 result.push((aa_code.to_string(), ic_records));
                 debug!(
                     "Parsed CCD for {}: {} bonds, {} angles, {} IC records",
@@ -274,13 +338,11 @@ pub fn parse_ccd_ic_table_raw(ccd_dir: &str) -> Result<Vec<(String, Vec<IcRecord
                     result.last().unwrap().1.len()
                 );
             }
-            Err(e) => {
-                warn!("Failed to parse CCD for {}: {}", aa_code, e);
-            }
+            Err(e) => return Err(e),
         }
     }
 
-    Ok(result)
+    Ok((result, all_fallbacks))
 }
 
 /// Represents one IC record (NERF placement: i, j, k, l with geometry).
@@ -293,8 +355,10 @@ pub struct IcRecord {
     pub branch: bool,
     pub b_ij: f32,
     pub theta_ijk: f32,
-    pub phi_ijkl: f32,
-    pub theta_jkl: f32,
+    /// Dihedral i–j–k–l. `None` when the source has no chi (CCD bonds and angles only).
+    pub phi_ijkl: Option<f32>,
+    /// Valence angle j–k–l. `None` when `atom_l` is absent, so the angle does not exist.
+    pub theta_jkl: Option<f32>,
     pub b_kl: f32,
 }
 
@@ -303,6 +367,7 @@ fn build_ic_records_for_residue(
     aa_code: &str,
     bonds: &HashMap<(String, String), f32>,
     angles: &HashMap<(String, String, String), f32>,
+    fallbacks: &mut Vec<GeometryFallback>,
 ) -> Result<Vec<IcRecord>, RotlibError> {
     use super::template::standard_residue_template;
 
@@ -324,16 +389,20 @@ fn build_ic_records_for_residue(
             let atom_j_check = &template.atom_names[b_idx];
 
             // Find a child of atom_k for the L atom (or use a sibling)
-            let (atom_l, b_kl, _theta_jkl) = find_atom_l(&template, atom_idx, bonds, angles);
+            let (atom_l, b_kl, _theta_jkl) =
+                find_atom_l(&template, atom_idx, bonds, angles, aa_code, fallbacks);
 
             // Look up b(i-j), theta(i-j-k), theta(j-k-l), b(k-l) from CCD
-            let b_ij = lookup_bond(bonds, atom_i, atom_j_check);
-            let theta_ijk = lookup_angle(angles, atom_i, atom_j, atom_k);
-            let phi_ijkl = 0.0; // CCD does not provide dihedral; chi placement from Dunbrack
+            let b_ij = lookup_bond(aa_code, bonds, atom_i, atom_j_check, fallbacks);
+            let theta_ijk = lookup_angle(aa_code, angles, atom_i, atom_j, atom_k, fallbacks);
+            // CCD tabulates bonds and valence angles, not chi. Absence is not 0°.
+            let phi_ijkl = None;
             let theta_jkl = if !atom_l.is_empty() {
-                lookup_angle(angles, atom_j, atom_k, &atom_l)
+                Some(lookup_angle(
+                    aa_code, angles, atom_j, atom_k, &atom_l, fallbacks,
+                ))
             } else {
-                0.0
+                None
             };
 
             let record = IcRecord {
@@ -385,6 +454,8 @@ fn find_atom_l(
     atom_k_idx: usize,
     bonds: &HashMap<(String, String), f32>,
     _angles: &HashMap<(String, String, String), f32>,
+    component: &str,
+    fallbacks: &mut Vec<GeometryFallback>,
 ) -> (String, f32, f32) {
     // Look for the first child of atom_k in the template
     for (idx, bond_def) in template.bonds.iter().enumerate() {
@@ -392,7 +463,7 @@ fn find_atom_l(
             if bd.parent_idx == atom_k_idx {
                 let atom_l = template.atom_names[idx].clone();
                 let atom_k = &template.atom_names[atom_k_idx];
-                let b_kl = lookup_bond(bonds, atom_k, &atom_l);
+                let b_kl = lookup_bond(component, bonds, atom_k, &atom_l, fallbacks);
                 return (atom_l, b_kl, 0.0);
             }
         }
@@ -402,28 +473,77 @@ fn find_atom_l(
     ("".to_string(), 0.0, 0.0)
 }
 
-/// Look up bond length from CCD data. Returns a default (1.5 Å) if not found.
-fn lookup_bond(bonds: &HashMap<(String, String), f32>, atom_a: &str, atom_b: &str) -> f32 {
+/// Look up bond length from CCD data. Records fallback and emits tracing::warn! if not found (Debt #1933).
+fn lookup_bond(
+    component: &str,
+    bonds: &HashMap<(String, String), f32>,
+    atom_a: &str,
+    atom_b: &str,
+    fallbacks: &mut Vec<GeometryFallback>,
+) -> f32 {
     let key = if atom_a <= atom_b {
         (atom_a.to_string(), atom_b.to_string())
     } else {
         (atom_b.to_string(), atom_a.to_string())
     };
-    bonds.get(&key).copied().unwrap_or(1.5)
+    if let Some(&d) = bonds.get(&key) {
+        d
+    } else {
+        let fallback_val = 1.50;
+        let citation = "Engh & Huber 1991";
+        tracing::warn!(
+            component = %component,
+            atom_a = %atom_a,
+            atom_b = %atom_b,
+            fallback = fallback_val,
+            citation = citation,
+            "CCD missing ideal bond length; recording Engh & Huber 1991 fallback"
+        );
+        fallbacks.push(GeometryFallback {
+            component: component.to_string(),
+            atom_names: vec![atom_a.to_string(), atom_b.to_string()],
+            parameter_kind: FallbackKind::BondLength,
+            fallback_value: fallback_val,
+            citation,
+        });
+        fallback_val as f32
+    }
 }
 
-/// Look up bond angle from CCD data. Returns a default (109.5°) if not found.
+/// Look up bond angle from CCD data. Records fallback and emits tracing::warn! if not found (Debt #1933).
 fn lookup_angle(
+    component: &str,
     angles: &HashMap<(String, String, String), f32>,
     a1: &str,
     center: &str,
     a3: &str,
+    fallbacks: &mut Vec<GeometryFallback>,
 ) -> f32 {
-    angles
-        .get(&(a1.to_string(), center.to_string(), a3.to_string()))
-        .or_else(|| angles.get(&(a3.to_string(), center.to_string(), a1.to_string())))
-        .copied()
-        .unwrap_or(109.5)
+    if let Some(&ang) = angles.get(&(a1.to_string(), center.to_string(), a3.to_string())) {
+        return ang;
+    }
+    if let Some(&ang) = angles.get(&(a3.to_string(), center.to_string(), a1.to_string())) {
+        return ang;
+    }
+    let fallback_val = 109.47;
+    let citation = "Ideal tetrahedral sp3 valence angle arccos(-1/3)";
+    tracing::warn!(
+        component = %component,
+        atom_1 = %a1,
+        center = %center,
+        atom_3 = %a3,
+        fallback = fallback_val,
+        citation = citation,
+        "CCD missing ideal valence angle; recording ideal tetrahedral fallback"
+    );
+    fallbacks.push(GeometryFallback {
+        component: component.to_string(),
+        atom_names: vec![a1.to_string(), center.to_string(), a3.to_string()],
+        parameter_kind: FallbackKind::ValenceAngle,
+        fallback_value: fallback_val,
+        citation,
+    });
+    fallback_val as f32
 }
 
 #[cfg(test)]
@@ -433,16 +553,33 @@ mod tests {
     #[test]
     fn test_parse_ccd_ic_table() {
         // Try relative paths from different locations
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
         let ccd_paths = vec![
-            "crates/proxide-rotlib/tests/data/ccd",
-            "tests/data/ccd",
-            "./tests/data/ccd",
+            format!("{}/tests/data/ccd", manifest_dir),
+            "crates/proxide-rotlib/tests/data/ccd".to_string(),
+            "tests/data/ccd".to_string(),
+            "./tests/data/ccd".to_string(),
         ];
 
-        let result = ccd_paths.iter().find_map(|p| parse_ccd_ic_table(p).ok());
-
-        // At minimum, the function should work with a path that exists
-        assert!(result.is_some() || true, "Should handle paths gracefully");
+        let mut last_err = None;
+        let mut result = None;
+        for p in &ccd_paths {
+            match parse_ccd_ic_table(p) {
+                Ok(t) => {
+                    result = Some(t);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            }
+        }
+        if result.is_none() {
+            panic!(
+                "Should parse test CCD data directory, last error: {:?}",
+                last_err
+            );
+        }
     }
 
     #[test]
@@ -457,5 +594,147 @@ mod tests {
         let parser = CifParser::new("");
         let tokens = parser.tokenize("'quoted string' unquoted 'another'");
         assert_eq!(tokens.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_loop_strict_token_count_extra_token_errors() {
+        let cif = "\
+loop_
+_chem_comp_bond.atom_id_1
+_chem_comp_bond.atom_id_2
+_chem_comp_bond.value_dist_ideal
+N CA 1.458 EXTRA_TOKEN
+";
+        let mut parser = CifParser::new(cif);
+        parser.pos = 1; // skip loop_ line
+        let res = parser.parse_loop();
+        assert!(
+            res.is_err(),
+            "Extra token must trigger RotlibError::InvalidFormat"
+        );
+        if let Err(RotlibError::InvalidFormat(msg)) = res {
+            assert!(msg.contains("CIF table row has 4 tokens, expected exact field count 3"));
+        } else {
+            panic!("Expected InvalidFormat error");
+        }
+    }
+
+    #[test]
+    fn test_parse_loop_strict_token_count_missing_token_errors() {
+        let cif = "\
+loop_
+_chem_comp_bond.atom_id_1
+_chem_comp_bond.atom_id_2
+_chem_comp_bond.value_dist_ideal
+N CA
+";
+        let mut parser = CifParser::new(cif);
+        parser.pos = 1; // skip loop_ line
+        let res = parser.parse_loop();
+        assert!(
+            res.is_err(),
+            "Incomplete row must trigger RotlibError::InvalidFormat"
+        );
+        if let Err(RotlibError::InvalidFormat(msg)) = res {
+            assert!(msg.contains("incomplete row with 2 tokens"));
+        } else {
+            panic!("Expected InvalidFormat error");
+        }
+    }
+
+    #[test]
+    fn test_cif_null_tokens_treated_as_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let cif_content = "\
+data_ALA
+#
+loop_
+_chem_comp_bond.atom_id_1
+_chem_comp_bond.atom_id_2
+_chem_comp_bond.value_dist_ideal
+N CA ?
+CA C .
+CA CB 1.540
+#
+loop_
+_chem_comp_angle.atom_id_1
+_chem_comp_angle.atom_id_2
+_chem_comp_angle.atom_id_3
+_chem_comp_angle.value_angle_ideal
+N CA C ?
+N CA CB 110.5
+";
+        let cif_file = dir.path().join("ALA.cif");
+        fs::write(&cif_file, cif_content).unwrap();
+
+        let parsed = parse_cif_file(&cif_file);
+        assert!(
+            parsed.is_ok(),
+            "CIF with '?' and '.' null tokens must parse successfully"
+        );
+        let (bonds, angles) = parsed.unwrap();
+        // CA-CB should be present
+        assert_eq!(
+            bonds.get(&("CA".to_string(), "CB".to_string())),
+            Some(&1.540)
+        );
+        // N-CA was '?', so absent
+        assert!(!bonds.contains_key(&("CA".to_string(), "N".to_string())));
+        // N-CA-CB was 110.5, so present
+        assert_eq!(
+            angles.get(&("N".to_string(), "CA".to_string(), "CB".to_string())),
+            Some(&110.5)
+        );
+    }
+
+    #[test]
+    fn test_fallback_recording_and_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        // Minimal ALA where CB bond and angle are omitted
+        let cif_content = "\
+data_ALA
+#
+loop_
+_chem_comp_bond.atom_id_1
+_chem_comp_bond.atom_id_2
+_chem_comp_bond.value_dist_ideal
+N CA 1.458
+#
+loop_
+_chem_comp_angle.atom_id_1
+_chem_comp_angle.atom_id_2
+_chem_comp_angle.atom_id_3
+_chem_comp_angle.value_angle_ideal
+N CA C 111.0
+";
+        let cif_file = dir.path().join("ALA.cif");
+        fs::write(&cif_file, cif_content).unwrap();
+
+        let (records, fallbacks) = parse_ccd_ic_table_raw(dir.path().to_str().unwrap()).unwrap();
+        assert!(!records.is_empty());
+        assert!(
+            !fallbacks.is_empty(),
+            "Missing bond/angle in CCD must record fallbacks"
+        );
+
+        // Verify fallback citations and kinds
+        let bond_fb = fallbacks
+            .iter()
+            .find(|f| f.parameter_kind == FallbackKind::BondLength);
+        assert!(bond_fb.is_some());
+        let b = bond_fb.unwrap();
+        assert_eq!(b.citation, "Engh & Huber 1991");
+        assert_eq!(b.fallback_value, 1.50);
+
+        let angle_fb = fallbacks
+            .iter()
+            .find(|f| f.parameter_kind == FallbackKind::ValenceAngle);
+        assert!(angle_fb.is_some());
+        let a = angle_fb.unwrap();
+        assert_eq!(
+            a.citation,
+            "Ideal tetrahedral sp3 valence angle arccos(-1/3)"
+        );
+        assert_eq!(a.fallback_value, 109.47);
     }
 }

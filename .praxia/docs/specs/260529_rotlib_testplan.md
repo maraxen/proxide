@@ -8,7 +8,7 @@ metadata:
 # Test Plan: `proxide-rotlib`
 
 **task_id**: `260529_confind_rotlib`
-**Spec oracle PASS**: `260529_rotlib.md @ 268e002`
+**Spec oracle PASS**: `260529_rotlib.md @ 268e002` (removed in PR #91; superseded by the 261102 clean-room spec; the file is in git history)
 **Real fixture**: `/home/marielle/repos/mosaist/testfiles/rotlib.bin` (check path below)
 **AA_NAMES** (18): ALA ARG ASN ASP CYS GLN GLU HIS ILE LEU LYS MET PHE SER THR TRP TYR VAL
 

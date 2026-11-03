@@ -5,7 +5,6 @@ use proxide_confind::coords::ResidueIndex;
 use proxide_confind::ConFind;
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn parallel_determinism_contacts() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -16,7 +15,7 @@ fn parallel_determinism_contacts() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let all_residues: Vec<ResidueIndex> = (0..4).map(ResidueIndex).collect();
 
@@ -50,7 +49,6 @@ fn parallel_determinism_contacts() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn parallel_determinism_freedom() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -61,7 +59,7 @@ fn parallel_determinism_freedom() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let all_residues: Vec<ResidueIndex> = (0..4).map(ResidueIndex).collect();
 
@@ -74,7 +72,6 @@ fn parallel_determinism_freedom() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn parallel_cache_all_idempotent() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -85,7 +82,7 @@ fn parallel_cache_all_idempotent() {
     };
 
     let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // Call cache_all twice
     let result1 = confind.cache_all();
@@ -98,7 +95,6 @@ fn parallel_cache_all_idempotent() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn parallel_contacts_subset_vs_all() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -109,7 +105,7 @@ fn parallel_contacts_subset_vs_all() {
     };
 
     let backbone = make_synthetic_backbone(5, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     // Call contacts on [0,1,2] then on [1,2,3]
     let subset1: Vec<ResidueIndex> = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];

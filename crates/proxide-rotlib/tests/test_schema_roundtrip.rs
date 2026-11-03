@@ -177,14 +177,15 @@ fn minimal_geometry_table() -> ResidueGeometryTable {
                         atom_l: "CE".to_string(),
                         branch: false,
                         b_ij: 1.5460,
-                        theta_ijk: 110.2800,
-                        phi_ijkl: 180.0000,
-                        theta_jkl: 98.9400,
+                        theta_ijk: 110.28,
+                        phi_ijkl: Some(180.0000),
+                        theta_jkl: Some(98.9400),
                         b_kl: 1.8206,
                     },
                 ],
             },
         ],
+        fallbacks: vec![],
     }
 }
 
@@ -219,15 +220,15 @@ fn test_residue_geometry_table_roundtrip_prost() {
         "bond length i-j round-trip failed"
     );
     assert!(
-        (ic.theta_ijk - 110.2800).abs() < 1e-4,
+        (ic.theta_ijk - 110.28).abs() < 1e-4,
         "angle i-j-k round-trip failed"
     );
     assert!(
-        (ic.phi_ijkl - 180.0).abs() < 1e-4,
+        (ic.phi_ijkl.expect("dihedral present") - 180.0).abs() < 1e-4,
         "dihedral round-trip failed"
     );
     assert!(
-        (ic.theta_jkl - 98.9400).abs() < 1e-4,
+        (ic.theta_jkl.expect("valence angle present") - 98.9400).abs() < 1e-4,
         "angle j-k-l round-trip failed"
     );
     assert!(

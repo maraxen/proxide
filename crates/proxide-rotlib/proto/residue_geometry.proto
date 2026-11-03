@@ -9,6 +9,16 @@ message ResidueGeometryTable {
   string license  = 3;  // SPDX id or prose: "NOT-OSI: MacKerell lab academic only" | "CC0"
   string citation = 4;  // DOI or BibTeX key for the source publication
   repeated ResidueGeometry residues = 5;
+  repeated GeometryFallback fallbacks = 6;
+}
+
+// Stereochemical fallback provenance record (Debt #1933).
+message GeometryFallback {
+  string component = 1;
+  repeated string atom_names = 2;
+  int32 parameter_kind = 3; // 0 = BondLength, 1 = ValenceAngle
+  double fallback_value = 4;
+  string citation = 5;
 }
 
 // IC build tree for one amino acid residue.
@@ -27,7 +37,7 @@ message IcRecord {
   bool   branch    = 5;  // true = asterisk in RTF (atom_k is a branch point)
   float  b_ij      = 6;  // bond length i–j, Å
   float  theta_ijk = 7;  // valence angle i–j–k, degrees
-  float  phi_ijkl  = 8;  // dihedral i–j–k–l, degrees
-  float  theta_jkl = 9;  // valence angle j–k–l, degrees
+  optional float phi_ijkl  = 8;  // dihedral i–j–k–l, degrees; unset when the source has no chi
+  optional float theta_jkl = 9;  // valence angle j–k–l, degrees; unset when atom_l is absent
   float  b_kl      = 10; // bond length k–l, Å
 }

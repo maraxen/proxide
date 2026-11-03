@@ -1,23 +1,16 @@
 mod common;
 
-use common::{load_rotlib_or_skip, make_synthetic_backbone};
+use common::{dummy_rotlib, make_synthetic_backbone};
 use proxide_confind::coords::ResidueIndex;
 use proxide_confind::ConFind;
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn bb_interaction_adjacent_same_chain_ignored() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     // 3 residues, spacing 3.8 Å, ignore_flanking=1, dcut_bb=10.0
     let backbone = make_synthetic_backbone(3, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];
     let result = confind.bb_interaction(&residues, 10.0, 1);
@@ -38,18 +31,11 @@ fn bb_interaction_adjacent_same_chain_ignored() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn bb_interaction_adjacent_same_chain_zero_ignore() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     let backbone = make_synthetic_backbone(3, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];
     // ignore_flanking=0 means no flanking skipping
@@ -64,18 +50,11 @@ fn bb_interaction_adjacent_same_chain_zero_ignore() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn bb_interaction_different_chains_no_flanking_skip() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     let backbone = common::make_two_chain_backbone(1, 3.8, [0.0, 0.0, 0.0]);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0), ResidueIndex(1)];
     let result = confind.bb_interaction(&residues, 10.0, 1);
@@ -92,19 +71,12 @@ fn bb_interaction_different_chains_no_flanking_skip() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn bb_interaction_far_apart_not_reported() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     // Residues 30 Å apart, dcut_bb=10.0
     let backbone = make_synthetic_backbone(2, 30.0);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0), ResidueIndex(1)];
     let result = confind.bb_interaction(&residues, 10.0, 0);
@@ -120,19 +92,12 @@ fn bb_interaction_far_apart_not_reported() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn bb_interaction_exactly_at_cutoff() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     // Residues at spacing where min distance should be near cutoff
     let backbone = make_synthetic_backbone(2, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0), ResidueIndex(1)];
     // dcut_bb slightly above minimum possible distance
@@ -143,18 +108,11 @@ fn bb_interaction_exactly_at_cutoff() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn bb_interaction_one_residue() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     let backbone = make_synthetic_backbone(1, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false);
+    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
 
     let residues = vec![ResidueIndex(0)];
     let result = confind.bb_interaction(&residues, 10.0, 0);

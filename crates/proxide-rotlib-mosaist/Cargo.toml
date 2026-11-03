@@ -1,0 +1,23 @@
+[package]
+name = "proxide-rotlib-mosaist"
+version.workspace = true
+edition.workspace = true
+license = "CC-BY-NC-SA-4.0"
+publish = false
+description = "Mosaist binary rotlib.bin format reader and Protobuf converter (Non-Commercial)"
+
+[dependencies]
+proxide-rotlib = { path = "../proxide-rotlib", version = "0.1.1-dev.0" }
+prost = "0.13"
+zstd = "0.13"
+clap = { version = "4.4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+thiserror = { workspace = true }
+
+[[bin]]
+name = "parse_master"
+path = "src/bin/parse_master.rs"
+
+[dev-dependencies]
+tempfile = "3"

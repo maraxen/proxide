@@ -2,18 +2,18 @@
 mod helpers;
 
 use helpers::{real_rotlib_path, write_minimal_lib, BinSpec, RotSpec};
-use proxide_rotlib::RotamerLibrary;
+use proxide_rotlib_mosaist::RotamerLibrary;
 
 /// Test that parse_master binary can be found and runs with --help
 #[test]
 fn test_parse_master_binary_exists() {
-    // Just verify the binary would be compiled
-    // Actual invocation tested via integration test below
-    assert!(true, "parse_master binary should be built with cargo build");
+    assert!(
+        std::path::Path::new(env!("CARGO_BIN_EXE_parse_master")).exists(),
+        "parse_master binary should exist"
+    );
 }
 
 /// Test round-trip: load MASTER binary → convert to proto → load proto.
-/// This test requires ROTLIB_PATH env var or /home/marielle/repos/mosaist/testfiles/rotlib.bin
 #[test]
 #[ignore] // Run only when Mosaist is available
 fn test_parse_master_roundtrip_small_pdb() {
@@ -26,22 +26,17 @@ fn test_parse_master_roundtrip_small_pdb() {
         return;
     }
 
-    // Load the original MASTER binary
     let master_lib = RotamerLibrary::load(&rotlib_path).expect("Failed to load MASTER library");
-
-    // Verify we have at least 18 AA residues (all 20 standard)
     let n_residues = master_lib.residue_codes().len();
     assert!(
         n_residues >= 18,
         "Expected at least 18 residue types; got {}",
         n_residues
     );
-
-    // Minimal check: MET should exist and have reasonable coordinates
     assert!(master_lib.contains_aa("MET"), "MET not in library");
 
     let n_met_rotamers = master_lib
-        .num_rotamers("MET", -60.0, -40.0, false)
+        .num_rotamers("MET", Some(-60.0), Some(-40.0), false)
         .expect("Failed to get MET rotamers");
     assert!(n_met_rotamers > 0, "MET has no rotamers at (-60, -40)");
 }
@@ -49,7 +44,6 @@ fn test_parse_master_roundtrip_small_pdb() {
 /// Test that minimal MASTER binary round-trips through proto correctly.
 #[test]
 fn test_parse_master_minimal_roundtrip() {
-    // Create a minimal MASTER binary with one residue and 2×2 rectangular grid
     let tmp_master = write_minimal_lib(
         "TST",
         &["CB", "CG"],
@@ -87,13 +81,11 @@ fn test_parse_master_minimal_roundtrip() {
         ],
     );
 
-    // Load MASTER binary
     let master_lib =
         RotamerLibrary::load(tmp_master.path()).expect("Failed to load minimal MASTER library");
 
     assert!(master_lib.contains_aa("TST"), "TST not found in library");
 
-    // Verify atom names
     let atom_names = master_lib
         .sidechain_atom_names("TST")
         .expect("Failed to get atom names");
@@ -104,7 +96,6 @@ fn test_parse_master_minimal_roundtrip() {
         atom_names.len()
     );
 
-    // Verify we can convert to protobuf
     let pb = master_lib.to_protobuf("test".to_string(), "test".to_string());
     assert_eq!(pb.residues.len(), 1, "Expected 1 residue in proto");
     assert_eq!(pb.residues[0].code, "TST");

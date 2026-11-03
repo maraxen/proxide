@@ -1,15 +1,14 @@
-/// True for backbone atoms (N, CA, C, O, H) and hydrogens (name starts with 'H').
+/// True for peptide backbone heavy atoms and hydrogens.
 pub fn is_backbone_or_hydrogen(name: &str) -> bool {
     matches!(name, "N" | "CA" | "C" | "O" | "H") || name.starts_with('H')
 }
 
-/// True iff `atom_name` counts as a sidechain atom in ConFind-style clash detection.
+/// Determines whether an atom contributes to sidechain-sidechain contact calculations.
 ///
-/// CB is excluded from sidechain atom classification for all amino acids except ALA
-/// (doNotCountCB semantics). GLY has no rotamers (na=0 in the Dunbrack library) and
-/// place_rotamer will return zero sidechain atoms for GLY.
-///
-/// See also: GLY and ALA edge-case notes on [`RotamerLibrary::backbone_bin`].
+/// In standard residue topologies, Cβ is bonded to Cα and shares the rigid residue
+/// backbone frame. For Alanine, Cβ is the sole sidechain heavy atom and is retained;
+/// for all other amino acids, Cβ is excluded to prevent rigid backbone-level contacts
+/// from artificially inflating rotamer contact degree.
 pub fn counts_as_sidechain(atom_name: &str, aa: &str) -> bool {
     if is_backbone_or_hydrogen(atom_name) {
         return false;

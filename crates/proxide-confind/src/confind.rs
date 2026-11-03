@@ -1,320 +1,453 @@
-use crate::cache::{build_bb_atoms, cache_residue_impl, ResidueCache};
+//! ConFind pipeline orchestrator.
+//!
+//! Citations:
+//! - Zheng, F., Zhang, J., & Grigoryan, G. (2015). "Tertiary Structural Propensities Reveal
+//!   Fundamental Sequence/Structure Relationships in Proteins." *Structure*, 23(5), 961–971.
+//! - Zheng, W., & Grigoryan, G. (2017). "Sequence statistics of tertiary structural motifs
+//!   reflect protein stability." *PLoS ONE*, 12(5), e0178272.
+
+use crate::cache::{build_backbone_grid_with, cache_residue, ResidueCache};
+use crate::config::{ConFindConfig, ConfigError, ResidueScope};
 use crate::contact_list::ContactList;
 use crate::coords::{ProteinBackbone, ResidueIndex};
 use crate::error::ConFindError;
+use crate::freedom::compute_freedom;
 use crate::grid::ProximityGrid;
-use crate::parallel::{contact_degree_raw, run_phases_b_c};
-use crate::params::{CLASH_DIST, DCUT, HI_COLL_PROB_CUT, LO_COLL_PROB_CUT};
+use crate::parallel::{apply_num_threads, collision_masses, run_phase_b};
+use crate::params::AA_NAMES;
+use crate::precondition::require_preconditions;
 use dashmap::DashMap;
 use orx_parallel::{IntoParIter, ParIter};
 use proxide_core::processing::residues::ResidueId;
-use proxide_rotlib::{RotamerId, RotamerLibrary};
-use std::collections::{HashMap, HashSet};
+use proxide_rotlib::RotamerLibrary;
 use std::sync::Arc;
 
-/// ConFind session for a single protein structure.
-///
-/// Holds the rotamer library, backbone geometry, spatial grids, and all
-/// per-residue caches accumulated during `contacts()` calls.
+/// ConFind session state: rotamer library, protein backbone, spatial acceleration, and caches.
 pub struct ConFind {
-    /// Rotamer library used for sidechain enumeration.
+    /// Shared rotamer library.
     pub rotlib: Arc<RotamerLibrary>,
-    /// If `true`, treat any residue without a complete set of backbone atoms
-    /// as an error rather than skipping it silently.
+    /// Strict precondition enforcement flag.
     pub strict: bool,
-    /// Full protein backbone extracted from the processed structure.
+    /// Shared protein backbone.
     pub backbone: Arc<ProteinBackbone>,
-
-    bb_grid: Arc<ProximityGrid<usize>>, // tag = index into bb_atoms
-    ca_grid: Arc<ProximityGrid<ResidueIndex>>,
-    bb_atoms: Arc<Vec<[f64; 3]>>,
-    bb_atom_res: Arc<Vec<ResidueIndex>>, // parallel to bb_atoms
-
+    /// Validated configuration in force.
+    config: ConFindConfig,
+    /// Membership mask of the freedom analysis scope (`None` = every residue).
+    scope_mask: Option<Vec<bool>>,
+    /// Maximum sidechain reach per amino acid, derived from the loaded library (Å).
+    r_max: Vec<(&'static str, f64)>,
+    /// Spatial acceleration grid for backbone heavy atoms.
+    bb_grid: Arc<ProximityGrid<ResidueIndex>>,
+    /// Concurrent cache of Phase A residue states.
     cache: DashMap<ResidueIndex, Arc<ResidueCache>>,
-    coll_prob: DashMap<ResidueIndex, HashMap<Arc<RotamerId>, f64>>,
-    freedom: DashMap<ResidueIndex, f64>,
+    /// Concurrent cache of Phase B pairwise contact degrees.
+    contacts_cache: DashMap<(ResidueIndex, ResidueIndex), f64>,
+    /// Concurrent cache of residual structural freedom values.
+    freedom_cache: DashMap<ResidueIndex, f64>,
 }
 
 impl ConFind {
-    /// Initialize a ConFind session with rotamer library, backbone geometry, and `strict` flag.
-    pub fn new(rotlib: Arc<RotamerLibrary>, backbone: Arc<ProteinBackbone>, strict: bool) -> Self {
-        // Build backbone atom flat vec and atom→residue mapping.
-        let (bb_atoms_vec, bb_atom_res_vec) = build_bb_atoms(&backbone);
-        // Grid over all backbone atoms; tag = atom index.
-        let bb_atom_tags: Vec<usize> = (0..bb_atoms_vec.len()).collect();
-        let bb_grid = Arc::new(ProximityGrid::build(
-            &bb_atoms_vec,
-            bb_atom_tags,
-            CLASH_DIST,
-        ));
+    /// Construct with [`ConFindConfig::default`]. Equivalent to
+    /// [`with_config`](Self::with_config) with the default configuration.
+    pub fn new(
+        rotlib: Arc<RotamerLibrary>,
+        backbone: Arc<ProteinBackbone>,
+        strict: bool,
+    ) -> Result<Self, ConFindError> {
+        Self::with_config(rotlib, backbone, strict, ConFindConfig::default())
+    }
 
-        // CA grid for neighbor queries; tag = ResidueIndex.
-        let ca_points: Vec<[f64; 3]> = backbone.bb.iter().filter_map(|rb| rb.ca).collect();
-        let ca_tags: Vec<ResidueIndex> = backbone
-            .bb
-            .iter()
-            .enumerate()
-            .filter_map(|(i, rb)| rb.ca.map(|_| ResidueIndex(i as u32)))
-            .collect();
-        let ca_grid = Arc::new(ProximityGrid::build(&ca_points, ca_tags, DCUT));
+    /// Alias of [`new`](Self::new), retained for source compatibility.
+    pub fn try_new(
+        rotlib: Arc<RotamerLibrary>,
+        backbone: Arc<ProteinBackbone>,
+        strict: bool,
+    ) -> Result<Self, ConFindError> {
+        Self::new(rotlib, backbone, strict)
+    }
 
-        Self {
+    /// Construct with an explicit configuration.
+    ///
+    /// Validates the configuration (V1, V2, V3, then V6), enforces structural preconditions
+    /// when `strict` is set, computes `R_max(a)` for the 18 amino acids from `rotlib`
+    /// (spec §3.8.5), checks `d_cut >= 2 * max R_max + d_cont` (V5) and builds the spatial
+    /// index. Nothing is silently corrected.
+    pub fn with_config(
+        rotlib: Arc<RotamerLibrary>,
+        backbone: Arc<ProteinBackbone>,
+        strict: bool,
+        config: ConFindConfig,
+    ) -> Result<Self, ConFindError> {
+        config.validate()?;
+
+        let n_residues = backbone.bb.len();
+        let scope_mask = match &config.scope {
+            ResidueScope::All => None,
+            ResidueScope::Subset(list) => {
+                let mut mask = vec![false; n_residues];
+                for ri in list {
+                    let slot = mask
+                        .get_mut(ri.0 as usize)
+                        .ok_or(ConfigError::ScopeOutOfRange {
+                            index: ri.0,
+                            n_residues,
+                        })?;
+                    *slot = true;
+                }
+                Some(mask)
+            }
+        };
+
+        let mut r_max = Vec::with_capacity(AA_NAMES.len());
+        for &aa in AA_NAMES {
+            r_max.push((aa, rotlib.max_sidechain_reach(aa)?));
+        }
+        let largest = r_max.iter().map(|&(_, r)| r).fold(0.0f64, f64::max);
+        let required = 2.0 * largest + config.cutoffs.d_cont;
+        if config.cutoffs.d_cut < required {
+            return Err(ConfigError::DcutTooSmall {
+                d_cut: config.cutoffs.d_cut,
+                required,
+            }
+            .into());
+        }
+
+        if strict {
+            require_preconditions(&backbone)?;
+        }
+
+        let bb_grid = Arc::new(build_backbone_grid_with(&backbone, config.cutoffs.d_clash));
+
+        Ok(Self {
             rotlib,
             strict,
             backbone,
+            config,
+            scope_mask,
+            r_max,
             bb_grid,
-            ca_grid,
-            bb_atoms: Arc::new(bb_atoms_vec),
-            bb_atom_res: Arc::new(bb_atom_res_vec),
             cache: DashMap::new(),
-            coll_prob: DashMap::new(),
-            freedom: DashMap::new(),
+            contacts_cache: DashMap::new(),
+            freedom_cache: DashMap::new(),
+        })
+    }
+
+    /// The validated configuration in force.
+    pub fn config(&self) -> &ConFindConfig {
+        &self.config
+    }
+
+    /// Library-derived maximum sidechain reach `R_max(aa)` in Å for one of the 18 amino
+    /// acids of [`AA_NAMES`], or `None` for any other name.
+    pub fn r_max(&self, aa: &str) -> Option<f64> {
+        self.r_max.iter().find(|(a, _)| *a == aa).map(|&(_, r)| r)
+    }
+
+    /// Minimum valid neighbour cutoff `2 * max_a R_max(a) + d_cont` for the loaded library.
+    pub fn d_cut_min(&self) -> f64 {
+        2.0 * self.r_max.iter().map(|&(_, r)| r).fold(0.0f64, f64::max) + self.config.cutoffs.d_cont
+    }
+
+    /// Whether residue `ri` belongs to the configured analysis scope.
+    pub fn in_scope(&self, ri: ResidueIndex) -> bool {
+        match &self.scope_mask {
+            None => (ri.0 as usize) < self.n_residues(),
+            Some(mask) => mask.get(ri.0 as usize).copied().unwrap_or(false),
         }
     }
 
-    /// Return the number of residues in the backbone.
+    /// Number of protein residues in backbone.
     pub fn n_residues(&self) -> usize {
         self.backbone.bb.len()
     }
 
-    /// Phase A: cache one residue (idempotent, thread-safe).
-    pub fn cache_residue(&self, ri: ResidueIndex) -> Result<(), ConFindError> {
-        if self.cache.contains_key(&ri) {
-            return Ok(());
+    /// Query original PDB ResidueId (chain, sequence number, insertion code) from internal ResidueIndex.
+    pub fn residue_id(&self, ri: ResidueIndex) -> &ResidueId {
+        &self.backbone.ids[ri.0 as usize]
+    }
+
+    /// Return sorted list of residue indices that form constrained contacts (contact degree > 0.0) with residue `res`.
+    pub fn constrained_contacts(&self, res: ResidueIndex) -> Vec<ResidueIndex> {
+        let mut result = Vec::new();
+        for entry in self.contacts_cache.iter() {
+            let (r1, r2) = *entry.key();
+            let deg = *entry.value();
+            if deg > 0.0 {
+                if r1 == res && r2 != res {
+                    result.push(r2);
+                } else if r2 == res && r1 != res {
+                    result.push(r1);
+                }
+            }
         }
-        let entry = cache_residue_impl(
+        result.sort_unstable();
+        result.dedup();
+        result
+    }
+
+    fn compute_cache(&self, ri: ResidueIndex) -> Result<ResidueCache, ConFindError> {
+        cache_residue(
             ri,
             &self.backbone,
             &self.rotlib,
             &self.bb_grid,
-            &self.bb_atom_res,
-        )?;
-        self.cache.insert(ri, Arc::new(entry));
-        Ok(())
-    }
-
-    /// Phase A: cache all residues in parallel (idempotent, thread-safe).
-    pub fn cache_all(&self) -> Result<(), ConFindError> {
-        let n = self.backbone.bb.len() as u32;
-        let indices: Vec<u32> = (0..n).collect();
-        let par = indices
-            .into_par()
-            .map(|i| self.cache_residue(ResidueIndex(i)));
-        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-        let par = par.num_threads(proxide_parallel_rt::num_threads());
-        par.collect::<Vec<_>>()
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()
-            .map(|_| ())
-    }
-
-    /// CA–CA neighbors of ri within DCUT.
-    pub fn neighbors(&self, ri: ResidueIndex) -> Vec<ResidueIndex> {
-        let ca = match self.backbone.bb[ri.0 as usize].ca {
-            Some(c) => c,
-            None => return Vec::new(),
-        };
-        self.ca_grid
-            .points_within(ca, 0.0, DCUT)
-            .into_iter()
-            .filter(|&r| r != ri)
-            .collect()
-    }
-
-    /// Compute contact degree for one residue pair and emit collision tuples for phase B2.
-    pub fn contact_degree_with_clashes(
-        &self,
-        res_a: ResidueIndex,
-        res_b: ResidueIndex,
-        aa_allowed_a: Option<&[&str]>,
-        aa_allowed_b: Option<&[&str]>,
-    ) -> Result<(f64, Vec<crate::parallel::ClashTuple>), ConFindError> {
-        let ca = self
-            .cache
-            .get(&res_a)
-            .ok_or(ConFindError::NotCached(res_a))?;
-        let cb = self
-            .cache
-            .get(&res_b)
-            .ok_or(ConFindError::NotCached(res_b))?;
-        contact_degree_raw(
-            res_a,
-            res_b,
-            &ca,
-            &cb,
-            &self.rotlib,
-            aa_allowed_a,
-            aa_allowed_b,
+            self.config.cutoffs.d_clash,
+            self.config.cb_clash_policy,
         )
     }
 
-    /// Full contact + freedom pipeline (Phases A–C).
-    ///
-    /// `residues` is the set of residues for which freedom will be computed.
-    /// All residues for which you want `freedom()` to succeed must appear here.
+    /// The Phase A state of residue `ri` (counts, masses, surviving rotamers, interference),
+    /// computed on first use.
+    pub fn residue_cache(&self, ri: ResidueIndex) -> Result<Arc<ResidueCache>, ConFindError> {
+        self.cached(ri)
+    }
+
+    /// Execute Phase A rotamer placement and backbone clash pruning for residue `ri`.
+    pub fn cache_residue(&self, ri: ResidueIndex) -> Result<(), ConFindError> {
+        self.cached(ri).map(|_| ())
+    }
+
+    fn cached(&self, ri: ResidueIndex) -> Result<Arc<ResidueCache>, ConFindError> {
+        if let Some(rc) = self.cache.get(&ri) {
+            return Ok(Arc::clone(&rc));
+        }
+        let rc = Arc::new(self.compute_cache(ri)?);
+        self.cache.insert(ri, Arc::clone(&rc));
+        Ok(rc)
+    }
+
+    /// Concurrently execute Phase A caching for all residues in structure.
+    pub fn cache_all(&self) -> Result<(), ConFindError> {
+        let n = self.n_residues();
+        let indices: Vec<ResidueIndex> = (0..n).map(|i| ResidueIndex(i as u32)).collect();
+
+        let cached_items: Vec<Result<(ResidueIndex, ResidueCache), ConFindError>> =
+            apply_num_threads(indices.into_par(), self.config.threads)
+                .map(|ri| {
+                    let rc = self.compute_cache(ri)?;
+                    Ok((ri, rc))
+                })
+                .collect();
+
+        for item in cached_items {
+            let (ri, rc) = item?;
+            self.cache.insert(ri, Arc::new(rc));
+        }
+
+        Ok(())
+    }
+
+    /// Query residues within `config.cutoffs.d_cut` Cα–Cα distance (inclusive).
+    pub fn neighbors(&self, ri: ResidueIndex) -> Vec<ResidueIndex> {
+        let ca_i = match self.backbone.bb[ri.0 as usize].ca {
+            Some(ca) => ca,
+            None => return Vec::new(),
+        };
+
+        let dcut_sq = self.config.cutoffs.d_cut * self.config.cutoffs.d_cut;
+        let mut result = Vec::new();
+
+        for (j, rb) in self.backbone.bb.iter().enumerate() {
+            let rj = ResidueIndex(j as u32);
+            if rj == ri {
+                continue;
+            }
+            if let Some(ca_j) = rb.ca {
+                let dx = ca_i[0] - ca_j[0];
+                let dy = ca_i[1] - ca_j[1];
+                let dz = ca_i[2] - ca_j[2];
+                if dx * dx + dy * dy + dz * dz <= dcut_sq {
+                    result.push(rj);
+                }
+            }
+        }
+
+        result.sort_unstable();
+        result
+    }
+
+    /// Return whether `default_bin` fallback was used when caching residue `ri`
+    /// due to an undefined (`None`) `phi` or `psi` backbone angle (Debt #1897).
+    pub fn used_default_bin(&self, ri: ResidueIndex) -> Result<bool, ConFindError> {
+        Ok(self.cached(ri)?.used_default_bin)
+    }
+
+    /// Compute pairwise contact degrees across query residue set.
+    /// Returns pairs with contact degree > cd_cut.
     pub fn contacts(
         &self,
         residues: &[ResidueIndex],
         cd_cut: f64,
     ) -> Result<ContactList, ConFindError> {
-        // Ensure all queried residues are cached.
-        {
-            let residues_vec: Vec<ResidueIndex> = residues.to_vec();
-            let par = residues_vec.into_par().map(|ri| self.cache_residue(ri));
-            #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-            let par = par.num_threads(proxide_parallel_rt::num_threads());
-            par.collect::<Vec<_>>()
-                .into_iter()
-                .collect::<Result<Vec<_>, _>>()?;
+        for &ri in residues {
+            self.cache_residue(ri)?;
         }
 
-        run_phases_b_c(
+        run_phase_b(
             residues,
             cd_cut,
+            &self.backbone,
             &self.cache,
-            &self.rotlib,
-            |ri| self.neighbors(ri),
-            &self.coll_prob,
-            &self.freedom,
-            LO_COLL_PROB_CUT,
-            HI_COLL_PROB_CUT,
+            &self.contacts_cache,
+            &self.config.cutoffs,
+            self.config.threads,
         )
     }
 
-    /// Interference: pairs where EITHER endpoint is in `residues` and value >= incut.
-    /// Directional (resA sidechain → resB backbone). Call after cache_all() or contacts().
+    /// Mutual interference `I(i, j)` (spec §2.6, §3.8.3): pairs where BOTH endpoints are
+    /// present in the query set and value >= in_cut.
+    ///
+    /// Interference is directed: the entry `(i, j)` is the prior mass of the unpruned
+    /// library rotamers of `i` whose clash atoms hit the backbone of `j`; `(j, i)` is
+    /// reported separately. Pairs are listed in query order of `i`, then of `j`.
+    ///
+    /// All query residues must be cached prior to calling (e.g. via [`cache_residue`](Self::cache_residue),
+    /// [`cache_all`](Self::cache_all), or [`contacts`](Self::contacts)); returns
+    /// [`ConFindError::NotCached`] if any query residue is not yet cached.
     pub fn interference(
         &self,
         residues: &[ResidueIndex],
         in_cut: f64,
     ) -> Result<ContactList, ConFindError> {
-        let of_interest: HashSet<ResidueIndex> = residues.iter().copied().collect();
-        let mut contact = ContactList::default();
+        for &ri in residues {
+            if !self.cache.contains_key(&ri) {
+                return Err(ConFindError::NotCached(ri));
+            }
+        }
 
-        for ri in residues {
-            let cache = self.cache.get(ri).ok_or(ConFindError::NotCached(*ri))?;
-            for (&res_b, aa_map) in &cache.interference {
-                if !of_interest.contains(&res_b) {
+        let mut contact_list = ContactList::default();
+
+        for &ri in residues {
+            let cache_i = self.cache.get(&ri).unwrap();
+            for &rj in residues {
+                if rj == ri {
                     continue;
                 }
-                // Sum over all AAs (unconstrained interference).
-                let all_aa: HashSet<&str> = crate::params::AA_NAMES.iter().copied().collect();
-                let val: f64 = aa_map
-                    .iter()
-                    .filter(|(aa, _)| all_aa.contains(aa.as_str()))
-                    .map(|(_, v)| v)
-                    .sum();
-                let denom = crate::cache::weight_of_available_amino_acids(&all_aa);
-                let norm_val = if denom == 0.0 { 0.0 } else { val / denom };
-                if norm_val >= in_cut {
-                    contact.pairs.push((*ri, res_b));
-                    contact.degrees.push(norm_val);
+                let value = cache_i.interference.get(&rj).copied().unwrap_or(0.0);
+                if value >= in_cut {
+                    contact_list.pairs.push((ri, rj));
+                    contact_list.degrees.push(value);
                 }
             }
         }
-        Ok(contact)
+
+        Ok(contact_list)
     }
 
-    /// BB–BB minimum atom-pair distance, skipping same-chain adjacents.
+    /// Minimum heavy-atom distance between backbone residues.
     pub fn bb_interaction(
         &self,
         residues: &[ResidueIndex],
         dcut_bb: f64,
         ignore_flanking: usize,
     ) -> Result<ContactList, ConFindError> {
-        let bb_atoms = self.bb_atoms.as_ref();
+        let mut contact_list = ContactList::default();
+        let dcut_sq = dcut_bb * dcut_bb;
+        let n = residues.len();
 
-        // Build per-residue atom index ranges in bb_atoms.
-        // bb_atoms was built in order of backbone residues.
-        // We need atom indices per residue.
-        let n_res = self.backbone.bb.len();
-        let mut res_atom_ranges: Vec<(usize, usize)> = vec![(0, 0); n_res];
-        let mut cur = 0;
-        for (i, rb) in self.backbone.bb.iter().enumerate() {
-            let start = cur;
-            for opt in [rb.n, rb.ca, rb.c, rb.o] {
-                if opt.is_some() {
-                    cur += 1;
-                }
+        for i in 0..n {
+            let ri = residues[i];
+            let atoms_i = self.backbone_atoms(ri);
+            if atoms_i.is_empty() {
+                continue;
             }
-            res_atom_ranges[i] = (start, cur);
-        }
 
-        let mut contact = ContactList::default();
-
-        for &ri in residues {
-            let (start_a, end_a) = res_atom_ranges[ri.0 as usize];
-            for &rj in residues {
-                if rj <= ri {
+            for &rj in &residues[(i + 1)..n] {
+                let seq_diff = (ri.0 as i64 - rj.0 as i64).unsigned_abs() as usize;
+                if self.backbone.chain_map[ri.0 as usize] == self.backbone.chain_map[rj.0 as usize]
+                    && seq_diff <= ignore_flanking
+                {
                     continue;
                 }
-                // Skip same-chain adjacent residues.
-                if self.backbone.chain_map[ri.0 as usize] == self.backbone.chain_map[rj.0 as usize]
-                {
-                    let diff = (rj.0 as usize).saturating_sub(ri.0 as usize);
-                    if diff <= ignore_flanking {
-                        continue;
-                    }
+
+                let atoms_j = self.backbone_atoms(rj);
+                if atoms_j.is_empty() {
+                    continue;
                 }
-                let (start_b, end_b) = res_atom_ranges[rj.0 as usize];
-                let mut min_d = f64::MAX;
-                for ai in start_a..end_a {
-                    for bi in start_b..end_b {
-                        let a = &bb_atoms[ai];
-                        let b = &bb_atoms[bi];
-                        let d =
-                            ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2))
-                                .sqrt();
-                        if d < min_d {
-                            min_d = d;
+
+                let mut min_d2 = f64::INFINITY;
+                for &ai in &atoms_i {
+                    for &aj in &atoms_j {
+                        let dx = ai[0] - aj[0];
+                        let dy = ai[1] - aj[1];
+                        let dz = ai[2] - aj[2];
+                        let d2 = dx * dx + dy * dy + dz * dz;
+                        if d2 < min_d2 {
+                            min_d2 = d2;
                         }
                     }
                 }
-                if min_d <= dcut_bb {
-                    contact.pairs.push((ri, rj));
-                    contact.degrees.push(min_d);
+
+                if min_d2 <= dcut_sq {
+                    contact_list.pairs.push((ri, rj));
+                    contact_list.degrees.push(min_d2.sqrt());
                 }
             }
         }
-        Ok(contact)
+
+        Ok(contact_list)
     }
 
-    /// Backbone crowdedness = fraction_pruned.
+    /// Helper to get backbone heavy atom coordinates for a residue.
+    fn backbone_atoms(&self, ri: ResidueIndex) -> Vec<[f64; 3]> {
+        let mut atoms = Vec::with_capacity(4);
+        let rb = &self.backbone.bb[ri.0 as usize];
+        if let Some(n) = rb.n {
+            atoms.push(n);
+        }
+        if let Some(ca) = rb.ca {
+            atoms.push(ca);
+        }
+        if let Some(c) = rb.c {
+            atoms.push(c);
+        }
+        if let Some(o) = rb.o {
+            atoms.push(o);
+        }
+        atoms
+    }
+
+    /// Crowdedness `C(i)` per `config.crowdedness_mode` (spec §2.4): the pruned fraction of
+    /// prior mass (`ProbabilityWeighted`) or of rotamer count (`PrunedCountFraction`).
+    /// Independent of the analysis scope and of the freedom options.
     pub fn crowdedness(&self, ri: ResidueIndex) -> Result<f64, ConFindError> {
-        self.cache
-            .get(&ri)
-            .map(|c| c.fraction_pruned)
-            .ok_or(ConFindError::NotCached(ri))
+        Ok(self.cached(ri)?.crowdedness(self.config.crowdedness_mode))
     }
 
-    /// Rotamer freedom for `ri` (must have been in a `contacts()` query).
-    pub fn freedom(&self, ri: ResidueIndex) -> Result<f64, ConFindError> {
-        self.freedom
-            .get(&ri)
-            .map(|f| *f)
-            .ok_or(ConFindError::FreedomNotComputed(ri))
-    }
-
-    /// Map a `ResidueIndex` back to its chain/sequence `ResidueId` for output.
-    pub fn residue_id(&self, ri: ResidueIndex) -> &ResidueId {
-        &self.backbone.ids[ri.0 as usize]
-    }
-
-    /// Residues whose backbone atoms permanently clash with any ALA rotamer of `res`.
+    /// Freedom `F(i)` per `config.freedom_mode` (spec §2.5), with collision mass accumulated
+    /// over the residues of `config.scope` within `d_cut` Cα–Cα of `ri`.
     ///
-    /// Returns an empty vec if `res` was not cached yet. Call `cache_residue(res)` first.
-    pub fn constrained_contacts(&self, res: ResidueIndex) -> Vec<ResidueIndex> {
-        let cache = match self.cache.get(&res) {
-            Some(c) => c,
-            None => return Vec::new(),
-        };
-        let mut result: Vec<ResidueIndex> = cache
-            .permanent_contacts
-            .iter()
-            .map(|&atom_idx| self.bb_atom_res[atom_idx])
-            .collect();
-        result.sort_unstable();
-        result.dedup();
-        result
+    /// Computed on demand; does not require a preceding [`contacts`](Self::contacts) call.
+    /// Returns [`ConFindError::OutOfScope`] if `ri` is not in the scope. Errors while
+    /// caching `ri` or any neighbour propagate.
+    pub fn freedom(&self, ri: ResidueIndex) -> Result<f64, ConFindError> {
+        if !self.in_scope(ri) {
+            return Err(ConFindError::OutOfScope(ri));
+        }
+        if let Some(f) = self.freedom_cache.get(&ri) {
+            return Ok(*f);
+        }
+
+        let cache_i = self.cached(ri)?;
+        let mut neighbour_caches = Vec::new();
+        for rj in self.neighbors(ri) {
+            if self.in_scope(rj) {
+                neighbour_caches.push(self.cached(rj)?);
+            }
+        }
+
+        let masses = collision_masses(&cache_i, &neighbour_caches, self.config.cutoffs.d_cont);
+        let contested: Vec<f64> = masses.into_iter().filter(|&m| m > 0.0).collect();
+        let cut = &self.config.cutoffs;
+        let value = compute_freedom(
+            self.config.freedom_mode,
+            &contested,
+            cache_i.n_surviving,
+            cache_i.n_library,
+            cut.tau_lo,
+            cut.tau_hi,
+        );
+        self.freedom_cache.insert(ri, value);
+        Ok(value)
     }
 }

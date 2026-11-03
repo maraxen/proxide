@@ -45,8 +45,8 @@ fn test_frame_new_normalizes_all_axes() {
 
 #[test]
 fn test_transform_identity_apply() {
-    let result = Transform::identity().apply([3.14, -2.71, 0.0]);
-    assert_near(result, [3.14, -2.71, 0.0], 1e-15, "identity apply");
+    let result = Transform::identity().apply([3.5, -2.71, 0.0]);
+    assert_near(result, [3.5, -2.71, 0.0], 1e-15, "identity apply");
 }
 
 #[test]

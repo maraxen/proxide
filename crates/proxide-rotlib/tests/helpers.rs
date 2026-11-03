@@ -3,6 +3,10 @@
 // appear unused here. Suppress so `cargo check --all-targets` stays warning-free.
 #![allow(dead_code, unused_imports)]
 
+use prost::Message;
+use proxide_rotlib::pb::rotlib_v1::{
+    Bin, GeometryMode, ResidueEntry, Rotamer, RotamerLibrary as PbRotamerLibrary, Vec3,
+};
 use proxide_rotlib::RotlibError;
 use std::io::Write;
 
@@ -19,98 +23,128 @@ pub struct RotSpec {
     pub coords: Vec<[f32; 3]>,
 }
 
-/// Write a minimal single-AA binary rotamer library for testing.
-/// Defaults to na=1, atom_names=["CB"], nc=0 (no chi angles).
+/// Write a minimal single-AA Protobuf rotamer library for testing.
 pub fn write_minimal_lib(
     aa: &str,
     atom_names: &[&str],
     bins: &[BinSpec],
     rotamers_per_bin: &[RotSpec],
 ) -> tempfile::NamedTempFile {
-    let mut f = tempfile::NamedTempFile::new().unwrap();
+    let mut phi_centers: Vec<f64> = bins.iter().map(|b| b.phi as f64).collect();
+    phi_centers.sort_by(f64::total_cmp);
+    phi_centers.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
 
-    let na = atom_names.len() as i32;
-    let nc = 0i32; // no chi angles
-    let nb = bins.len() as i32;
-    let nr = rotamers_per_bin.len() as i32;
+    let mut psi_centers: Vec<f64> = bins.iter().map(|b| b.psi as f64).collect();
+    psi_centers.sort_by(f64::total_cmp);
+    psi_centers.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
 
-    // AA name
-    f.write_all(aa.as_bytes()).unwrap();
-    f.write_all(&[0u8]).unwrap();
-
-    // nc, na, nb
-    f.write_all(&nc.to_le_bytes()).unwrap();
-    f.write_all(&na.to_le_bytes()).unwrap();
-    f.write_all(&nb.to_le_bytes()).unwrap();
-
-    // sidechain atom names
-    for name in atom_names {
-        f.write_all(name.as_bytes()).unwrap();
-        f.write_all(&[0u8]).unwrap();
-    }
-
-    // bin descriptors
-    for bin in bins {
-        f.write_all(&bin.phi.to_le_bytes()).unwrap();
-        f.write_all(&bin.psi.to_le_bytes()).unwrap();
-        f.write_all(&bin.freq.to_le_bytes()).unwrap();
-    }
-
-    // rotamer data
-    for _bin_idx in 0..nb {
-        f.write_all(&nr.to_le_bytes()).unwrap();
-        for rot in rotamers_per_bin {
-            f.write_all(&rot.prob.to_le_bytes()).unwrap();
-            // no chi values (nc=0)
-            for &xyz in &rot.coords {
-                for v in xyz {
-                    f.write_all(&v.to_le_bytes()).unwrap();
-                }
-            }
+    // Find default bin (highest freq, first on tie)
+    let mut best_idx = 0;
+    let mut best_freq = f32::NEG_INFINITY;
+    for (i, b) in bins.iter().enumerate() {
+        if b.freq > best_freq {
+            best_freq = b.freq;
+            best_idx = i;
         }
     }
+    let default_bin = best_idx as u32;
 
+    let pb = PbRotamerLibrary {
+        version: 1,
+        provenance: "test".to_string(),
+        attribution:
+            "Contains information from the 2010 Backbone-Dependent Rotamer Library \
+            (http://dunbrack.fccc.edu/bbdep2010), made available under the ODC Attribution License."
+                .to_string(),
+        data_license: "ODC-BY-1.0".to_string(),
+        geometry_mode: GeometryMode::Precomputed as i32,
+        residues: vec![ResidueEntry {
+            code: aa.to_string(),
+            atom_names: atom_names.iter().map(|s| s.to_string()).collect(),
+            num_chi: 0,
+            phi_centers,
+            psi_centers,
+            default_bin,
+            bins: bins
+                .iter()
+                .map(|b| Bin {
+                    phi: b.phi as f64,
+                    psi: b.psi as f64,
+                    freq: b.freq as f64,
+                    rotamers: rotamers_per_bin
+                        .iter()
+                        .map(|r| Rotamer {
+                            prob: r.prob,
+                            chi: vec![],
+                            coords: r
+                                .coords
+                                .iter()
+                                .map(|c| Vec3 {
+                                    x: c[0],
+                                    y: c[1],
+                                    z: c[2],
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }],
+        geometry_source: String::new(),
+        geometry_license: String::new(),
+    };
+
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    let buf = pb.encode_to_vec();
+    f.write_all(&buf).unwrap();
     f.flush().unwrap();
     f
 }
 
+/// Load the committed open asset rotlib.
+pub fn committed_rotlib_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst")
+}
+
 /// Load the real rotlib for integration tests.
-/// Uses ROTLIB_PATH env var if set, else `/home/marielle/repos/mosaist/testfiles/rotlib.bin`.
 pub fn real_rotlib_path() -> std::path::PathBuf {
     if let Ok(p) = std::env::var("ROTLIB_PATH") {
         std::path::PathBuf::from(p)
     } else {
-        std::path::PathBuf::from("/home/marielle/repos/mosaist/testfiles/rotlib.bin")
+        committed_rotlib_path()
     }
 }
 
-/// Load the small PDB fixture for integration tests.
-/// Uses PDB_PATH env var if set, else mosaist's `small.pdb`.
+/// Load the committed 1CRN PDB fixture for integration tests.
+/// Uses PDB_PATH env var if set, else committed `1CRN.pdb`.
 pub fn real_pdb_path() -> std::path::PathBuf {
     if let Ok(p) = std::env::var("PDB_PATH") {
         std::path::PathBuf::from(p)
     } else {
-        std::path::PathBuf::from("/home/marielle/repos/mosaist/testfiles/small.pdb")
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../proxide-io/tests/data/1CRN.pdb")
     }
 }
 
-/// Load the 1DC7 PDB fixture (124-residue protein, contains GLY and PRO).
-/// Uses DC7_PDB_PATH env var if set, else mosaist's `1DC7.pdb`.
+/// Load the committed ubiquitin 1UBQ PDB fixture (76-residue protein).
+/// Uses DC7_PDB_PATH env var if set, else committed `ubiquitin_1ubq_A.pdb`.
 pub fn real_pdb_path_1dc7() -> std::path::PathBuf {
     if let Ok(p) = std::env::var("DC7_PDB_PATH") {
         std::path::PathBuf::from(p)
     } else {
-        std::path::PathBuf::from("/home/marielle/repos/mosaist/testfiles/1DC7.pdb")
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../proxide-tmalign/tests/data/ubiquitin_1ubq_A.pdb")
     }
 }
 
-/// Load the 2ZTA PDB fixture (GCN4 leucine zipper, 31 residues chain A, 14 unique AAs).
-/// Uses PDB_2ZTA_PATH env var if set, else mosaist's `2ZTA.pdb`.
+/// Load the committed ubiquitin 1UBQ PDB fixture (76 residues chain A).
+/// Uses PDB_2ZTA_PATH env var if set, else committed `ubiquitin_1ubq_A.pdb`.
 pub fn real_pdb_path_2zta() -> std::path::PathBuf {
     if let Ok(p) = std::env::var("PDB_2ZTA_PATH") {
         std::path::PathBuf::from(p)
     } else {
-        std::path::PathBuf::from("/home/marielle/repos/mosaist/testfiles/2ZTA.pdb")
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../proxide-tmalign/tests/data/ubiquitin_1ubq_A.pdb")
     }
 }
 
@@ -140,9 +174,7 @@ pub struct BackboneResidue {
 /// sentinel -- ledger A1) for x/y/z. It now panics, naming the source file,
 /// line number, and field, on any of those instead -- this is a test helper,
 /// not library code, so a panic (not a `Result`) is the appropriate fail-loud
-/// signal; every existing caller is `#[ignore]`d (reads real files from
-/// `/home/marielle/repos/mosaist`), so this file's own non-ignored tests
-/// below are the only thing that actually exercises this function in CI.
+/// signal; every caller exercises committed repository fixtures in CI.
 pub fn parse_pdb_backbone(path: &std::path::Path) -> Vec<BackboneResidue> {
     use std::collections::BTreeMap;
     use std::io::{BufRead, BufReader};

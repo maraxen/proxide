@@ -17,7 +17,6 @@ use criterion::{criterion_group, criterion_main, Criterion};
 /// - Grid lookup performance during collision detection
 ///
 /// For now, we provide a simple no-op benchmark that ensures compilation.
-
 fn bench_cache_noop(c: &mut Criterion) {
     c.bench_function("cache_noop", |b| {
         b.iter(|| {

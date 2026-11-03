@@ -221,7 +221,7 @@ mod tests {
         let dmax = 4.0;
 
         let mut grid_res = g.points_within(center, dmin, dmax);
-        let mut brute_res = brute_force_within(&pts, &tags, center, dmin, dmax);
+        let brute_res = brute_force_within(&pts, &tags, center, dmin, dmax);
         grid_res.sort_unstable();
         assert_eq!(grid_res, brute_res);
 

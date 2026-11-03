@@ -2908,6 +2908,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "proxide-rotlib-mosaist"
+version = "0.1.1-dev.0"
+dependencies = [
+ "clap",
+ "prost",
+ "proxide-rotlib",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+ "zstd",
+]
+
+[[package]]
 name = "proxide-tmalign"
 version = "0.1.1-dev.0"
 dependencies = [
@@ -2963,6 +2977,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

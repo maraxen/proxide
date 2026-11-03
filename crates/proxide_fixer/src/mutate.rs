@@ -1,7 +1,6 @@
 use thiserror::Error;
 
-// Import the canonical AA list from proxide-confind (now a normal dependency)
-use proxide_confind::precondition::CANONICAL_AA_NAMES;
+use crate::models::CANONICAL_AA_NAMES;
 use proxide_rotlib::RotamerLibrary;
 
 use crate::models::Topology;
@@ -393,15 +392,90 @@ mod tests {
         }
     }
 
+    fn candidate_rotlib_paths() -> Vec<std::path::PathBuf> {
+        vec![
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst"),
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../data/rotlibs/proxide-rotlib-bbdep2010.pb.zst"),
+        ]
+    }
+
+    #[derive(Debug)]
+    enum RotlibLoadResult {
+        Loaded(RotamerLibrary),
+        NotConfigured(String),
+        Failed(String),
+    }
+
+    fn classify_rotlib_load(paths: &[std::path::PathBuf]) -> RotlibLoadResult {
+        for path in paths {
+            if path.exists() {
+                return match RotamerLibrary::load_pb_zst(path) {
+                    Ok(lib) => RotlibLoadResult::Loaded(lib),
+                    Err(err) => RotlibLoadResult::Failed(format!(
+                        "Failed to load rotlib from {}: {err}",
+                        path.display()
+                    )),
+                };
+            }
+        }
+        RotlibLoadResult::NotConfigured(
+            "data/rotlibs/proxide-rotlib-bbdep2010.pb.zst not found".to_string(),
+        )
+    }
+
+    fn test_rotlib() -> Option<RotamerLibrary> {
+        match classify_rotlib_load(&candidate_rotlib_paths()) {
+            RotlibLoadResult::Loaded(lib) => Some(lib),
+            RotlibLoadResult::NotConfigured(msg) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Rotamer library not configured in CI: {msg}");
+                }
+                tracing::warn!("Skipping test: {msg}");
+                None
+            }
+            RotlibLoadResult::Failed(err) => {
+                panic!("CORRUPT ROTAMER LIBRARY ASSET: {err}")
+            }
+        }
+    }
+
+    #[test]
+    fn corrupt_rotlib_archive_is_failed_not_skipped() {
+        let dir = std::env::temp_dir().join(format!(
+            "proxide-f6-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let corrupt = dir.join("corrupt.pb.zst");
+        std::fs::write(&corrupt, b"this is not a zstd frame").unwrap();
+        let missing = dir.join("missing.pb.zst");
+        let corrupt_result = classify_rotlib_load(std::slice::from_ref(&corrupt));
+        let missing_result = classify_rotlib_load(std::slice::from_ref(&missing));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            matches!(missing_result, RotlibLoadResult::NotConfigured(_)),
+            "a missing archive is NotConfigured, got {missing_result:?}"
+        );
+        assert!(
+            matches!(corrupt_result, RotlibLoadResult::Failed(_)),
+            "a corrupt archive must be Failed, not a skip, got {corrupt_result:?}"
+        );
+    }
+
     #[test]
     #[ignore] // Requires rotlib to be loaded
     fn apply_empty_returns_ok() {
         let mut topology = make_test_topology();
-        let rotlib_path =
-            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
-                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
-            }));
-        let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
+        let lib = match test_rotlib() {
+            Some(l) => l,
+            None => return,
+        };
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![];
         let result = mutator.apply(&requests);
@@ -416,11 +490,10 @@ mod tests {
     #[ignore] // Requires rotlib to be loaded
     fn apply_invalid_target_aa_returns_error() {
         let mut topology = make_test_topology();
-        let rotlib_path =
-            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
-                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
-            }));
-        let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
+        let lib = match test_rotlib() {
+            Some(l) => l,
+            None => return,
+        };
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![MutationRequest {
             chain_id: "A".to_string(),
@@ -441,11 +514,10 @@ mod tests {
     #[ignore] // Requires rotlib to be loaded
     fn apply_missing_residue_returns_error() {
         let mut topology = make_test_topology();
-        let rotlib_path =
-            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
-                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
-            }));
-        let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
+        let lib = match test_rotlib() {
+            Some(l) => l,
+            None => return,
+        };
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![MutationRequest {
             chain_id: "A".to_string(),
@@ -508,11 +580,10 @@ mod tests {
                 }],
             }],
         };
-        let rotlib_path =
-            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
-                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
-            }));
-        let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
+        let lib = match test_rotlib() {
+            Some(l) => l,
+            None => return,
+        };
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![MutationRequest {
             chain_id: "A".to_string(),
@@ -540,11 +611,10 @@ mod tests {
     #[ignore] // Requires full rotlib + topology rebuild; integration test
     fn apply_ala_to_leu_rebuilds_sidechain() {
         let mut topology = make_test_topology();
-        let rotlib_path =
-            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
-                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
-            }));
-        let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
+        let lib = match test_rotlib() {
+            Some(l) => l,
+            None => return,
+        };
         let mut mutator = Mutator::new(&mut topology, &lib);
         let requests = vec![MutationRequest {
             chain_id: "A".to_string(),
@@ -704,11 +774,10 @@ mod tests {
             }],
         };
 
-        let rotlib_path =
-            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
-                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
-            }));
-        let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
+        let lib = match test_rotlib() {
+            Some(l) => l,
+            None => return,
+        };
         let mut mutator = Mutator::new(&mut topology, &lib);
         let count = mutator.reevaluate_disulfides();
 
@@ -845,11 +914,10 @@ mod tests {
             }],
         };
 
-        let rotlib_path =
-            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
-                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
-            }));
-        let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
+        let lib = match test_rotlib() {
+            Some(l) => l,
+            None => return,
+        };
         let mut mutator = Mutator::new(&mut topology, &lib);
         let count = mutator.reevaluate_disulfides();
 
@@ -927,11 +995,10 @@ mod tests {
             }],
         };
 
-        let rotlib_path =
-            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
-                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
-            }));
-        let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
+        let lib = match test_rotlib() {
+            Some(l) => l,
+            None => return,
+        };
         let mut mutator = Mutator::new(&mut topology, &lib);
         let count = mutator.reevaluate_disulfides();
 
@@ -999,11 +1066,10 @@ mod tests {
             }],
         };
 
-        let rotlib_path =
-            std::path::PathBuf::from(std::env::var("ROTLIB_PATH").unwrap_or_else(|_| {
-                "/home/marielle/repos/mosaist/testfiles/rotlib.bin".to_string()
-            }));
-        let lib = RotamerLibrary::load(&rotlib_path).expect("rotlib load");
+        let lib = match test_rotlib() {
+            Some(l) => l,
+            None => return,
+        };
         let mut mutator = Mutator::new(&mut topology, &lib);
         let count = mutator.reevaluate_disulfides();
 

@@ -57,12 +57,12 @@ impl Transform {
     }
 
     /// Build the transform that maps points from `from`-frame to `to`-frame.
-    /// Algorithm (MSL TransformFactory::switchFrames, msttransforms.cpp:530–546):
-    ///   T1 = 3×3 with columns [from.x | from.y | from.z]
-    ///   T2 = 3×3 with columns [to.x   | to.y   | to.z  ]
-    ///   For orthonormal T2: T2⁻¹ = T2ᵀ
-    ///   R = T2ᵀ · T1
-    ///   t = T2ᵀ · (from.origin - to.origin)
+    ///
+    /// For orthonormal coordinate frames with orthogonal rotation matrices:
+    ///   T1 = [from.x | from.y | from.z]
+    ///   T2 = [to.x   | to.y   | to.z  ]
+    ///   R  = T2ᵀ · T1
+    ///   t  = T2ᵀ · (from.origin - to.origin)
     pub fn switch_frames(from: &Frame, to: &Frame) -> Self {
         // T1[row][col] where cols are from.x, from.y, from.z
         let t1 = [
@@ -110,12 +110,15 @@ impl Transform {
     }
 }
 
-/// Construct the backbone coordinate frame from N, CA, C positions (lab frame).
-/// Matches MSL placeRotamer lines 182–194.
-///   x = CA − N  (N→CA direction)
-///   z = x × (C − CA)
-///   y = z × x
+/// Construct the standard right-handed orthonormal coordinate frame at Cα from
+/// backbone atoms N, CA, C via Gram-Schmidt orthonormalization (Dunbrack & Cohen 1997;
+/// Shapovalov & Dunbrack 2011).
+///
+/// Axes:
 ///   origin = CA
+///   x = (CA − N) / ||CA − N||
+///   z = (x × (C − CA)) / ||x × (C − CA)||
+///   y = z × x
 pub fn backbone_frame(n: [f64; 3], ca: [f64; 3], c: [f64; 3]) -> Frame {
     let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     let cross = |a: [f64; 3], b: [f64; 3]| {

@@ -18,7 +18,6 @@ use criterion::{criterion_group, criterion_main, Criterion};
 /// - Memory usage during parallel phases
 ///
 /// For now, we provide a simple no-op benchmark that ensures compilation.
-
 fn bench_contacts_noop(c: &mut Criterion) {
     c.bench_function("contacts_noop", |b| {
         b.iter(|| {

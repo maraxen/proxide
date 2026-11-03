@@ -1,7 +1,5 @@
 # proxide-rotlib
 
-> **Licence notice.** This crate is derived from, or depends on code derived from, [Mosaist](https://github.com/Grigoryanlab/Mosaist), which is licensed CC BY-NC-SA 4.0. This is unresolved. Do not assume MIT terms cover it, and do not use it for commercial purposes. See [NOTICE](NOTICE).
-
 > **Alpha — experimental, no API stability guarantees.** This crate is part of an active research project; APIs may change without notice between versions. Not recommended for production use.
 
 Backbone-dependent rotamer library for protein sidechain placement.
@@ -72,10 +70,9 @@ Shapovalov MV, Dunbrack RL Jr. "A smoothed backbone-dependent rotamer library fo
 
 ## Usage
 
-The crate supports two loader paths:
+The crate loads rotamers through the Protobuf path:
 
-- **Protobuf path** (preferred): `RotamerLibrary::load_pb()` — loads precomputed rotamer coordinates from the Dunbrack BBDEP2010 protobuf artifact.
-- **MSL binary path** (legacy): `RotamerLibrary::load()` — loads the MSL binary format for backward compatibility.
+- **Protobuf path**: `RotamerLibrary::load_pb()` / `RotamerLibrary::load_pb_zst()` — loads precomputed rotamer coordinates from the Dunbrack BBDEP2010 protobuf artifact. (The legacy non-commercial binary reader has been moved to `proxide-rotlib-mosaist`.)
 
 To regenerate the protobuf artifact from the Dunbrack text library, use the `convert_rotlib` binary.
 

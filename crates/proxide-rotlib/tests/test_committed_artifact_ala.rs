@@ -58,8 +58,8 @@ fn test_committed_artifact_has_synthetic_ala() {
     let placed = lib
         .place_rotamer(
             "ALA",
-            -60.0,
-            -45.0,
+            Some(-60.0),
+            Some(-45.0),
             0,
             false,
             [-1.458, 0.0, 0.0],

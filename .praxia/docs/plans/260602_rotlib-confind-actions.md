@@ -55,7 +55,7 @@ Dunbrack (2002) *Curr Opin Struct Biol* 12:431–440.
 amino-acid-specific branching. Debt #67 elevates cis-proline handling from cosmetic to
 required. Write a concrete spec and commit it as a **new file**
 `.praxia/docs/specs/260529_rotlib.md` (the `specs/` subdirectory does not yet exist in
-the worktree; create it). The spec doc must cover:
+the worktree; create it). The spec was removed in PR #91 (superseded by the 261102 clean-room spec) and is in git history. The spec doc must cover:
 
 1. **New parameter:** `backbone_bin(aa: &str, phi: f64, psi: f64, cis_proline: bool)`.
    `cis_proline` is only meaningful when `aa == "PRO"`; it is ignored (with no cost) for
@@ -106,7 +106,7 @@ Source: Dunbrack & Karplus (1994) *J Mol Biol* 230:543–574; Richardson et al. 
 **Success criteria.**
 - `.praxia/docs/specs/` directory created (if absent) and `.praxia/docs/specs/260529_rotlib.md`
   created as a **new file** containing the cis-PRO section. (This file does not pre-exist
-  in the worktree; the fixer must create it, not update it.)
+  in the worktree; the fixer must create it, not update it.) The spec was removed in PR #91 (superseded by the 261102 clean-room spec) and is in git history.
 - `.praxia/docs/INDEX.md` updated to list the new spec under the `## Specs` section.
 - Debt #67 tracking record updated to `status: planned`.
 - No code changes in this action; spec only.
@@ -544,7 +544,7 @@ dTERMen; Zhou et al. (2015) *Structure* 23:2376 for MASTER.
 
 **What.** The RotlibRegistry abstraction is definitively deferred. Add a note to the
 Debt #67 spec doc created in A2 (`.praxia/docs/specs/260529_rotlib.md`, which A2 creates
-as a new file) stating:
+as a new file; that spec was removed in PR #91, superseded by the 261102 clean-room spec, and is in git history) stating:
 
 ```
 ## RotlibRegistry architecture — closed
@@ -621,4 +621,4 @@ Two new backlog items are produced by this synthesis:
 | B3 | proxide-confind | cache.rs:69                         | doc        | P2       |
 | B4 | proxide-confind | parallel.rs (contact_degree_raw)    | comment    | P2       |
 | B5 | backlog         | —                                   | backlog    | P2       |
-| B6 | proxide-rotlib  | specs/260529_rotlib.md (new, via A2) + debt #67 | doc | P2 |
+| B6 | proxide-rotlib  | specs/260529_rotlib.md (new, via A2; removed in PR #91, superseded by the 261102 clean-room spec, in git history) + debt #67 | doc | P2 |

@@ -48,12 +48,12 @@ fn bb_atoms_two_residues_ordering() {
     assert_eq!(atom_res.len(), 8, "atom_res should match atoms length");
 
     // First 4 atoms belong to ResidueIndex(0)
-    for i in 0..4 {
-        assert_eq!(atom_res[i], ResidueIndex(0));
+    for &ri in &atom_res[..4] {
+        assert_eq!(ri, ResidueIndex(0));
     }
     // Next 4 atoms belong to ResidueIndex(1)
-    for i in 4..8 {
-        assert_eq!(atom_res[i], ResidueIndex(1));
+    for &ri in &atom_res[4..8] {
+        assert_eq!(ri, ResidueIndex(1));
     }
 }
 

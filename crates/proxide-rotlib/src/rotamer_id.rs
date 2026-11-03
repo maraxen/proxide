@@ -11,6 +11,8 @@ pub struct RotamerId {
 #[derive(Clone, Debug)]
 pub struct PlacedRotamer {
     pub id: RotamerId,
+    /// Whether `default_bin` was used because `phi` or `psi` was undefined (`None`, Debt #1897).
+    pub used_default_bin: bool,
     /// All sidechain heavy atoms in library atom order. Includes CB.
     /// Does NOT include backbone atoms N, CA, C, O.
     pub atoms: Vec<PlacedAtom>,

@@ -92,6 +92,7 @@ pub fn parse_rtf_ic_table(rtf_path: &str) -> Result<ResidueGeometryTable, Rotlib
         license: "NOT-OSI: MacKerell lab academic use only; see https://mackerell.umaryland.edu/charmm_ff.shtml".to_string(),
         citation: "doi:10.1021/jp973084f".to_string(),
         residues,
+        fallbacks: vec![],
     })
 }
 
@@ -150,8 +151,8 @@ fn parse_ic_line(line: &str) -> Result<IcRecord, RotlibError> {
         branch,
         b_ij,
         theta_ijk,
-        phi_ijkl,
-        theta_jkl,
+        phi_ijkl: Some(phi_ijkl),
+        theta_jkl: Some(theta_jkl),
         b_kl,
     })
 }
@@ -224,10 +225,11 @@ mod tests {
             "CE bond: expected ~1.8206 Å, got {}",
             ic.b_kl
         );
+        let theta_jkl = ic.theta_jkl.expect("RTF IC records a j-k-l angle");
         assert!(
-            (ic.theta_jkl - 98.94).abs() < 0.1,
+            (theta_jkl - 98.94).abs() < 0.1,
             "CE angle: expected ~98.94°, got {}",
-            ic.theta_jkl
+            theta_jkl
         );
     }
 

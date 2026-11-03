@@ -349,7 +349,7 @@ mod tests {
         assert!(!ala_bins.is_empty());
 
         let first_bin = &ala_bins[0];
-        assert!(first_bin.rotamers.len() > 0, "Expected rotamers in bin");
+        assert!(!first_bin.rotamers.is_empty(), "Expected rotamers in bin");
 
         // Verify each rotamer has valid structure
         for rot in &first_bin.rotamers {

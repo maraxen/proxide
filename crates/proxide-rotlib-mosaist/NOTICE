@@ -1,0 +1,16 @@
+proxide-rotlib-mosaist
+Copyright (c) 2026 Proxide Contributors
+
+This crate implements file format specifications and readers for the proprietary
+binary rotamer library format (`rotlib.bin`) of the Mosaist / MASTER protein design
+suite (Grigoryan lab, Dartmouth College; https://grigoryanlab.org/mosaist/).
+
+This crate is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike
+4.0 International License (CC BY-NC-SA 4.0).
+
+NON-COMMERCIAL RESEARCH USE ONLY.
+Under the terms of CC BY-NC-SA 4.0:
+- This software and any data generated from Mosaist binary files must NOT be used
+  for commercial purposes.
+- This crate is not for commercial distribution and is marked `publish = false`.
+- Any redistribution must carry this notice and be licensed under CC BY-NC-SA 4.0.

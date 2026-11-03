@@ -496,7 +496,7 @@ mod tests {
         let num_atoms_before = topology.chains[0].residues[0].atoms.len();
 
         let mut sanitizer = HydrogenSanitizer::new(&mut topology, &ff);
-        let report = sanitizer.run().expect("run() should succeed");
+        let _report = sanitizer.run().expect("run() should succeed");
 
         let num_atoms_after = topology.chains[0].residues[0].atoms.len();
 

@@ -1,11 +1,10 @@
 use crate::error::ConFindError;
 use crate::precondition::chain_breaks;
 use proxide_core::processing::residues::{ProcessedStructure, ResidueId};
-use proxide_core::structure::{AtomRecord, RawAtomData};
 use proxide_geometry::geometry::angles::{compute_backbone_dihedrals_f64, dihedral_angle_f64};
 use proxide_io::formats::pdb_fields::parse_pdb_records;
-use std::collections::HashSet;
-use std::io::BufReader;
+use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 /// Flat dense index into ProteinBackbone::bb (0-based, protein residues only).
@@ -19,82 +18,33 @@ impl std::fmt::Display for ResidueIndex {
 }
 
 /// How to handle a geometric chain break (a CA–CA gap larger than
-/// [`crate::precondition::CHAIN_BREAK_CA_ANGSTROM`], as detected by
-/// [`crate::precondition::chain_breaks`]) when filling backbone dihedrals.
-///
-/// Neither variant fails fast on its own — the loud path is
-/// [`crate::precondition::check_preconditions`] /
-/// [`crate::precondition::require_preconditions`], which `ConFind` and the CLI
-/// do not call automatically. Choosing a policy only changes which sentinel
-/// values come out of dihedral computation; it never panics or errors by
-/// itself (except the `LegacyCompact` + `Split` combination — see
-/// [`MissingAtomPolicy`]).
+/// [`CHAIN_BREAK_CA_ANGSTROM`]) when filling backbone dihedrals.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChainBreakPolicy {
-    /// Compute dihedrals across a geometric chain break exactly as if the
-    /// break were not there (today's / Mosaist's default behaviour): as long
-    /// as the four atoms a dihedral needs are physically present, the
-    /// dihedral is computed from them, however far apart they are in space.
-    #[default]
+    /// Compute dihedrals across a geometric chain break as if the break were
+    /// not there (if atoms are physically present).
     Bridge,
-    /// Treat each geometric chain break as an additional missing neighbour:
-    /// the dihedral that would cross the break (the departing residue's ψ,
-    /// the arriving residue's φ and ω) is undefined (9999.0 / `None`) even
-    /// when its four atoms are all present.
+    /// Treat each geometric chain break as a boundary: the dihedral that would
+    /// cross the break (the departing residue's ψ, the arriving residue's φ and ω)
+    /// is `None`. Default under clean-room specification.
+    #[default]
     Split,
 }
 
-/// How to handle a missing backbone atom (N, CA, or C absent on some residue
-/// in the chain) when filling backbone dihedrals.
-///
-/// Neither variant fails fast on its own; see [`ChainBreakPolicy`] for the
-/// same caveat. `9999.0`/`None` never encode "unknown" as a plausible
-/// physical value here — they are the library's long-standing explicit
-/// sentinel for "this dihedral could not be computed", consumed downstream
-/// by the rotamer library's default-bin fallback (matching Mosaist's
-/// non-strict behaviour), not a substituted measurement.
+/// How to handle a missing backbone atom when filling backbone dihedrals.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MissingAtomPolicy {
-    /// Mosaist semantics (`getPhi`/`getPsi`/`getOmega`): each dihedral is
-    /// computed independently from its own four named atoms and its
-    /// immediate sequence neighbour(s). A dihedral is undefined only when
-    /// one of ITS OWN four atoms is missing, or its required neighbour
-    /// residue does not exist (chain terminus), was skipped because it is
-    /// not a protein residue, or (under [`ChainBreakPolicy::Split`]) sits on
-    /// the far side of a geometric chain break. A missing atom on one
-    /// residue never propagates its effect past that residue's own
-    /// dihedrals and the one neighbouring dihedral that names it.
+    /// Each dihedral is computed independently from its own four named atoms
+    /// and sequence neighbour(s). Missing required atom or neighbour results in `None`.
     #[default]
     PerDihedral,
-    /// The library's original (pre-#1890) behaviour: within each chain
-    /// segment, residues missing N/CA/C are dropped from a dense array and
-    /// dihedrals are computed between the surviving residues' four named
-    /// atoms — silently bridging over any gap, regardless of how many
-    /// residues were skipped or how far apart they are in the sequence.
-    /// Reproduces `extract_f64_backbone`'s output as of base commit 316d1ab
-    /// bit-for-bit (see `tests/data/dihedral_golden_316d1ab.json`).
-    ///
-    /// This policy computes dihedrals from non-adjacent residues; the
-    /// result is not physically meaningful across a gap and exists only for
-    /// backward compatibility. It is available only through
-    /// [`extract_f64_backbone_with_options`] (the `ProcessedStructure`
-    /// path) — not through [`load_pdb_f64`] or the confind CLI, which read
-    /// f64 text coordinates directly and carry a separate, tracked gap
-    /// (debt #1885).
-    ///
-    /// Known Mosaist divergences that apply regardless of this policy (both
-    /// variants): Mosaist's own ACE/NH2 cap handling, its treatment of a
-    /// `TER` record within a single chain ID, and its file-encounter
-    /// residue ordering vs. this library's sorted order are not reproduced
-    /// here; each is tracked as a separate filed debt.
+    /// Legacy dense-array bridging algorithm (for backward compatibility).
     LegacyCompact,
 }
 
-/// Options controlling how [`extract_f64_backbone_with_options`] fills
-/// backbone dihedrals. `BackboneOptions::default()` is `{Bridge, PerDihedral}`
-/// — Mosaist's per-dihedral semantics, bridging geometric chain breaks.
+/// Options controlling how backbone dihedrals are filled.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BackboneOptions {
@@ -124,14 +74,9 @@ impl BackboneOptions {
 
 /// Backbone geometry for a single protein residue in f64 precision.
 ///
-/// Atom positions are `None` when the atom is absent from the PDB. Dihedral
-/// angles use the sentinel `9999.0` (`None` for omega) when the angle cannot
-/// be computed: at a chain terminus, when an atom the dihedral itself needs
-/// is missing, when the required neighbour residue was skipped because it
-/// is not a protein residue, or — under [`ChainBreakPolicy::Split`] — when
-/// the neighbour sits on the far side of a geometric chain break. See
-/// [`BackboneOptions`] for how these cases are chosen.
-#[derive(Debug, Clone)]
+/// Under Debt #1897, undefined phi/psi angles (at chain termini or breaks)
+/// are represented strictly as `None`. Sentinel floats are prohibited.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ResidueBackbone {
     /// Three-letter amino acid name (e.g. `"ALA"`).
     pub res_name: String,
@@ -143,23 +88,19 @@ pub struct ResidueBackbone {
     pub c: Option<[f64; 3]>,
     /// O atom position in Å (world frame).
     pub o: Option<[f64; 3]>,
-    /// φ dihedral angle in degrees; `9999.0` if undefined (see struct docs).
-    pub phi: f64,
-    /// ψ dihedral angle in degrees; `9999.0` if undefined (see struct docs).
-    pub psi: f64,
-    /// ω dihedral angle in degrees; `None` if undefined (see struct docs) —
-    /// including always for the N-terminal residue of each chain segment.
+    /// φ dihedral angle in degrees; `None` if undefined (Debt #1897).
+    pub phi: Option<f64>,
+    /// ψ dihedral angle in degrees; `None` if undefined (Debt #1897).
+    pub psi: Option<f64>,
+    /// ω dihedral angle in degrees; `None` if undefined (Debt #1897).
+    /// Follows standard IUPAC convention torsion(CA_{i-1}, C_{i-1}, N_i, CA_i) (Debt #1903).
     pub omega: Option<f64>,
-    /// `true` iff `|omega| < 30.0°`; `false` when `omega` is `None`.
+    /// `true` iff `|omega| < 30.0°` (cis peptide bond); `false` when `omega` is `None`.
     pub is_cis_peptide: bool,
 }
 
 /// Backbone geometry for an entire protein, extracted in f64 precision.
-///
-/// All three parallel vectors (`bb`, `ids`, `chain_map`) share the same
-/// length and index space, where index `i` corresponds to
-/// `ResidueIndex(i as u32)`.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ProteinBackbone {
     /// Per-residue backbone geometry.
     pub bb: Vec<ResidueBackbone>,
@@ -169,19 +110,18 @@ pub struct ProteinBackbone {
     pub chain_map: Vec<usize>,
 }
 
+/// Check if a residue name represents a known terminal capping group.
+#[inline]
+pub fn is_capping_group(res_name: &str) -> bool {
+    matches!(res_name, "ACE" | "NME" | "NH2")
+}
+
 /// Extract backbone from ProcessedStructure, widening f32 to f64 for full-precision computation.
-///
-/// This is the single f32→f64 boundary; no f32 appears in proxide-confind past this point.
-///
-/// Uses [`BackboneOptions::default`] (`{Bridge, PerDihedral}`). For other
-/// policies, use [`extract_f64_backbone_with_options`].
 pub fn extract_f64_backbone(s: &ProcessedStructure) -> Result<ProteinBackbone, ConFindError> {
     extract_f64_backbone_with_options(s, &BackboneOptions::default())
 }
 
 /// Extract backbone from ProcessedStructure with explicit dihedral-filling policies.
-///
-/// See [`BackboneOptions`], [`ChainBreakPolicy`], and [`MissingAtomPolicy`].
 pub fn extract_f64_backbone_with_options(
     s: &ProcessedStructure,
     opts: &BackboneOptions,
@@ -193,7 +133,7 @@ pub fn extract_f64_backbone_with_options(
     let mut pending_skip = false;
 
     for resinfo in &s.residue_info {
-        if s.molecule_type[resinfo.start_atom] != 0 {
+        if s.molecule_type[resinfo.start_atom] != 0 && !is_capping_group(&resinfo.res_name) {
             pending_skip = true;
             continue;
         }
@@ -225,8 +165,8 @@ pub fn extract_f64_backbone_with_options(
             ca: ca_pos,
             c: c_pos,
             o: o_pos,
-            phi: 9999.0,
-            psi: 9999.0,
+            phi: None,
+            psi: None,
             omega: None,
             is_cis_peptide: false,
         });
@@ -240,153 +180,165 @@ pub fn extract_f64_backbone_with_options(
         pending_skip = false;
     }
 
-    fill_dihedrals(&mut bb, &chain_map, &skipped_before, opts)?;
+    let ter_before = vec![false; bb.len()];
+    fill_dihedrals(&mut bb, &chain_map, &ter_before, &skipped_before, opts)?;
     Ok(ProteinBackbone { bb, ids, chain_map })
 }
 
 /// Parse a PDB file reading coordinate columns 30–54 as f64 for full text precision.
-///
-/// Uses [`BackboneOptions::default`] (`{Bridge, PerDihedral}`). This path
-/// does not support [`MissingAtomPolicy::LegacyCompact`] (debt #1885); use
-/// [`extract_f64_backbone_with_options`] for that.
+/// Preserves file encounter order and detects explicit TER records (Debt #1904).
 pub fn load_pdb_f64<P: AsRef<Path>>(path: P) -> Result<ProteinBackbone, ConFindError> {
     load_pdb_f64_with_options(path, &BackboneOptions::default())
 }
 
-/// `load_pdb_f64` with explicit dihedral-filling policies. `pub(crate)`: exercised
-/// only by this crate's own tests (spec D4, debt #1890); the public entry point
-/// is [`load_pdb_f64`].
-///
-/// Sprint 24 track b (debt #1885): this used to run two independent parses of
-/// the same file -- a hand-rolled first pass that hand-sliced columns 0..6 and
-/// 30..54 and silently zeroed (`unwrap_or(0.0)`) an unparseable coordinate,
-/// then a second, real parse via `proxide_io::formats::pdb::parse_pdb_file`
-/// for residue grouping -- and aligned the two by raw atom index, falling
-/// back to the f32 coordinate (cast to f64) whenever the hand-rolled pass had
-/// produced fewer records than the real parse. That fallback was a silent
-/// substitution (ledger A1/A4): a genuinely malformed coordinate was zeroed
-/// rather than rejected, and a length mismatch between the two passes was
-/// papered over instead of surfaced. Now there is exactly one parse
-/// (`parse_pdb_records`), so the f64 coordinates and the records used for
-/// residue grouping come from the identical record list, in the identical
-/// order, by construction -- there is no second pass to misalign against, and
-/// no fallback path is reachable.
+/// `load_pdb_f64` with explicit dihedral-filling policies.
 pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
     path: P,
     opts: &BackboneOptions,
 ) -> Result<ProteinBackbone, ConFindError> {
-    use proxide_core::processing::residues::ProcessedStructure;
-
+    // 1. Scan file to record line numbers of explicit TER records
     let file = std::fs::File::open(path.as_ref())?;
-    let records = parse_pdb_records(BufReader::new(file))
+    let reader = BufReader::new(file);
+    let mut ter_lines: HashSet<usize> = HashSet::new();
+    for (line_idx, line_res) in reader.lines().enumerate() {
+        let line = line_res?;
+        if line.starts_with("TER") {
+            ter_lines.insert(line_idx + 1); // 1-based line number
+        }
+    }
+
+    // 2. Parse records in f64 precision
+    let file2 = std::fs::File::open(path.as_ref())?;
+    let records = parse_pdb_records(BufReader::new(file2))
         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-    let mut f64_coords: Vec<[f64; 3]> = Vec::with_capacity(records.len());
-    let mut raw = RawAtomData::with_capacity(records.len());
-    for rec in records {
-        f64_coords.push([rec.x64, rec.y64, rec.z64]);
-        raw.add_atom(AtomRecord {
-            serial: rec.serial,
-            atom_name: rec.atom_name,
-            alt_loc: rec.alt_loc,
-            res_name: rec.res_name,
-            chain_id: rec.chain_id,
-            res_seq: rec.res_seq,
-            i_code: rec.i_code,
-            x: rec.x,
-            y: rec.y,
-            z: rec.z,
-            occupancy: rec.occupancy,
-            temp_factor: rec.temp_factor,
-            element: rec.element,
-            charge: rec.charge,
-            radius: rec.radius,
-            is_hetatm: rec.is_hetatm,
-        });
-    }
-    if raw.num_atoms == 0 {
+    if records.is_empty() {
         return Err(std::io::Error::other("No atoms found in PDB file").into());
     }
-    let processed = ProcessedStructure::from_raw(raw).map_err(std::io::Error::other)?;
 
+    // 3. Group atoms by residue in encounter order (preserving file order, Debt #1904)
+    struct ResidueBuilder {
+        id: ResidueId,
+        res_name: String,
+        n: Option<[f64; 3]>,
+        ca: Option<[f64; 3]>,
+        c: Option<[f64; 3]>,
+        o: Option<[f64; 3]>,
+        first_line: usize,
+        last_line: usize,
+        is_protein: bool,
+    }
+
+    let is_solvent = |name: &str| matches!(name, "HOH" | "WAT" | "TIP3" | "SOL" | "DOD");
+
+    let mut residues: Vec<ResidueBuilder> = Vec::new();
+    let mut current_builder: Option<ResidueBuilder> = None;
+
+    for rec in records {
+        let res_id = ResidueId {
+            chain_id: rec.chain_id.clone(),
+            res_id: rec.res_seq,
+            insertion_code: rec.i_code,
+        };
+
+        let matches_current = current_builder
+            .as_ref()
+            .is_some_and(|b| b.id == res_id && b.res_name == rec.res_name);
+
+        if !matches_current {
+            if let Some(b) = current_builder.take() {
+                residues.push(b);
+            }
+            let is_prot = !is_solvent(&rec.res_name);
+            current_builder = Some(ResidueBuilder {
+                id: res_id,
+                res_name: rec.res_name.clone(),
+                n: None,
+                ca: None,
+                c: None,
+                o: None,
+                first_line: rec.line,
+                last_line: rec.line,
+                is_protein: is_prot,
+            });
+        }
+
+        let builder = current_builder.as_mut().unwrap();
+        builder.last_line = rec.line;
+        let xyz = [rec.x64, rec.y64, rec.z64];
+        match rec.atom_name.as_str() {
+            "N" => {
+                builder.n.get_or_insert(xyz);
+            }
+            "CA" => {
+                builder.ca.get_or_insert(xyz);
+            }
+            "C" => {
+                builder.c.get_or_insert(xyz);
+            }
+            "O" => {
+                builder.o.get_or_insert(xyz);
+            }
+            _ => {}
+        }
+    }
+    if let Some(b) = current_builder.take() {
+        residues.push(b);
+    }
+
+    // 4. Construct ProteinBackbone vectors in preserved file order
     let mut bb: Vec<ResidueBackbone> = Vec::new();
     let mut ids: Vec<ResidueId> = Vec::new();
     let mut chain_map: Vec<usize> = Vec::new();
+    let mut ter_before: Vec<bool> = Vec::new();
     let mut skipped_before: Vec<bool> = Vec::new();
     let mut pending_skip = false;
+    let mut chain_indices: HashMap<String, usize> = HashMap::new();
+    let mut prev_last_line = 0usize;
 
-    for resinfo in &processed.residue_info {
-        if processed.molecule_type[resinfo.start_atom] != 0 {
+    for r in residues {
+        if !r.is_protein {
             pending_skip = true;
+            prev_last_line = r.last_line;
             continue;
         }
-        let mut n_pos = None;
-        let mut ca_pos = None;
-        let mut c_pos = None;
-        let mut o_pos = None;
 
-        let atom_range = resinfo.start_atom..(resinfo.start_atom + resinfo.num_atoms);
-        // `f64_coords` and `processed.raw_atoms` are built from the same
-        // `parse_pdb_records` call, one entry per record, in the same order
-        // -- `ProcessedStructure::from_raw` does not reorder atoms (see
-        // `residues.rs`) -- so zipping the two slices over this residue's
-        // atom range pairs each name with the coordinates parsed from the
-        // exact same record. No fallback: a mismatch here would be a real
-        // bug, not a case to paper over with a substituted value.
-        for (name, &xyz) in processed.raw_atoms.atom_names[atom_range.clone()]
-            .iter()
-            .zip(&f64_coords[atom_range])
-        {
-            match name.as_str() {
-                "N" => n_pos = Some(xyz),
-                "CA" => ca_pos = Some(xyz),
-                "C" => c_pos = Some(xyz),
-                "O" => o_pos = Some(xyz),
-                _ => {}
-            }
-        }
+        let next_chain_idx = chain_indices.len();
+        let chain_idx = *chain_indices
+            .entry(r.id.chain_id.clone())
+            .or_insert(next_chain_idx);
 
-        let chain_idx = *processed.chain_indices.get(&resinfo.chain_id).unwrap_or(&0);
+        // Check if an explicit TER record was encountered between previous residue and this one
+        let had_ter = (prev_last_line..r.first_line).any(|line| ter_lines.contains(&line));
+
         bb.push(ResidueBackbone {
-            res_name: resinfo.res_name.clone(),
-            n: n_pos,
-            ca: ca_pos,
-            c: c_pos,
-            o: o_pos,
-            phi: 9999.0,
-            psi: 9999.0,
+            res_name: r.res_name,
+            n: r.n,
+            ca: r.ca,
+            c: r.c,
+            o: r.o,
+            phi: None,
+            psi: None,
             omega: None,
             is_cis_peptide: false,
         });
-        ids.push(ResidueId {
-            chain_id: resinfo.chain_id.clone(),
-            res_id: resinfo.res_id,
-            insertion_code: resinfo.insertion_code,
-        });
+        ids.push(r.id);
         chain_map.push(chain_idx);
+        ter_before.push(had_ter);
         skipped_before.push(pending_skip);
         pending_skip = false;
+        prev_last_line = r.last_line;
     }
 
-    fill_dihedrals(&mut bb, &chain_map, &skipped_before, opts)?;
+    fill_dihedrals(&mut bb, &chain_map, &ter_before, &skipped_before, opts)?;
     Ok(ProteinBackbone { bb, ids, chain_map })
 }
 
 /// Compute phi/psi/omega per chain segment and fill into `bb`, per `opts`.
-///
-/// `skipped_before[i]` is `true` iff a non-protein residue (`molecule_type != 0`)
-/// was skipped between `bb[i - 1]` and `bb[i]` during extraction — it is not a
-/// `ProteinBackbone` field because it only matters for this one decision.
-///
-/// Returns `Err(ConFindError::InvalidOptions)` for the
-/// `{LegacyCompact, Split}` combination: `LegacyCompact`'s dense-bridging
-/// algorithm has no chain-break-aware notion of adjacency, so pairing it with
-/// `Split` would either silently ignore `Split` or silently reinterpret
-/// `LegacyCompact` — both are the silent substitution this crate's rules
-/// forbid. Callers must pick one or the other.
 fn fill_dihedrals(
     bb: &mut [ResidueBackbone],
     chain_map: &[usize],
+    ter_before: &[bool],
     skipped_before: &[bool],
     opts: &BackboneOptions,
 ) -> Result<(), ConFindError> {
@@ -403,16 +355,19 @@ fn fill_dihedrals(
 
     match opts.missing_atoms {
         MissingAtomPolicy::LegacyCompact => fill_dihedrals_legacy_compact(bb, chain_map),
-        MissingAtomPolicy::PerDihedral => {
-            fill_dihedrals_per_dihedral(bb, chain_map, skipped_before, opts.chain_breaks)
-        }
+        MissingAtomPolicy::PerDihedral => fill_dihedrals_per_dihedral(
+            bb,
+            chain_map,
+            ter_before,
+            skipped_before,
+            opts.chain_breaks,
+        ),
     }
 
     Ok(())
 }
 
-/// `MissingAtomPolicy::LegacyCompact` (only reachable with `ChainBreakPolicy::Bridge`):
-/// today's (base 316d1ab) dense-array bridging algorithm, moved verbatim.
+/// `MissingAtomPolicy::LegacyCompact`: dense-array bridging algorithm.
 fn fill_dihedrals_legacy_compact(bb: &mut [ResidueBackbone], chain_map: &[usize]) {
     let n = bb.len();
     if n == 0 {
@@ -431,7 +386,6 @@ fn fill_dihedrals_legacy_compact(bb: &mut [ResidueBackbone], chain_map: &[usize]
         let seg_start = w[0];
         let seg_end = w[1];
 
-        // Dense array of residues with complete N/CA/C; track original indices.
         let mut dense: Vec<[[f64; 3]; 3]> = Vec::new();
         let mut dense_to_bb: Vec<usize> = Vec::new();
 
@@ -449,31 +403,21 @@ fn fill_dihedrals_legacy_compact(bb: &mut [ResidueBackbone], chain_map: &[usize]
         let dihedrals = compute_backbone_dihedrals_f64(&dense);
         for (d_pos, &bb_i) in dense_to_bb.iter().enumerate() {
             let d = &dihedrals[d_pos];
-            // phi=None at chain N-terminus; psi=None at chain C-terminus.
-            // Negate to match Mosaist's dihedral sign convention: Mosaist computes
-            // dihedral(p1-p2, p3-p2) with reversed first vector vs. atan2 formula.
-            bb[bb_i].phi = d.phi.map(|r| -r.to_degrees()).unwrap_or(9999.0);
-            bb[bb_i].psi = d.psi.map(|r| -r.to_degrees()).unwrap_or(9999.0);
-            // omega: convert radians -> degrees; None for N-terminal residue.
-            // dihedral_angle_f64 returns the negative of the IUPAC angle; phi/psi
-            // are negated above to match Mosaist's getPhi/getPsi. omega is NOT
-            // negated, so it is the negative of Mosaist's getOmega (bits unchanged
-            // from base 316d1ab; is_cis_peptide, which only tests |omega|, is
-            // unaffected — see debt filed in step 8).
-            bb[bb_i].omega = d.omega.map(|r| r.to_degrees());
+            bb[bb_i].phi = d.phi.map(|r| -r.to_degrees());
+            bb[bb_i].psi = d.psi.map(|r| -r.to_degrees());
+            bb[bb_i].omega = d.omega.map(|r| -r.to_degrees());
             bb[bb_i].is_cis_peptide = bb[bb_i].omega.is_some_and(|w| w.abs() < 30.0);
         }
     }
 }
 
-/// `MissingAtomPolicy::PerDihedral` (Mosaist semantics, default): each dihedral is
-/// computed independently, directly from its own four named atoms via
-/// `dihedral_angle_f64` — never re-derived, never bridged past a missing
-/// neighbour, a skipped non-protein residue, or (under `ChainBreakPolicy::Split`)
-/// a geometric chain break.
+/// `MissingAtomPolicy::PerDihedral`: each dihedral is computed independently
+/// from its four named atoms, respecting segmented chain semantics (Debt #1904)
+/// and standard IUPAC omega dihedral convention (Debt #1903).
 fn fill_dihedrals_per_dihedral(
     bb: &mut [ResidueBackbone],
     chain_map: &[usize],
+    ter_before: &[bool],
     skipped_before: &[bool],
     chain_break_policy: ChainBreakPolicy,
 ) {
@@ -482,9 +426,7 @@ fn fill_dihedrals_per_dihedral(
         return;
     }
 
-    // Geometric chain breaks (shared predicate with check_preconditions). Only
-    // consulted under Split; computed unconditionally since it's cheap and the
-    // read-only borrow doesn't conflict with the per-residue writes below.
+    // Identify geometric chain breaks (consecutive CA-CA > 4.5 Å)
     let break_indices: HashSet<usize> = if chain_break_policy == ChainBreakPolicy::Split {
         chain_breaks(bb, chain_map)
             .into_iter()
@@ -494,46 +436,58 @@ fn fill_dihedrals_per_dihedral(
         HashSet::new()
     };
 
-    // has_prev[i]: true iff bb[i-1] is a real, dihedral-eligible sequence
-    // neighbour of bb[i] — same chain segment, no non-protein residue skipped
-    // in between, and (under Split) not severed by a geometric chain break.
-    let has_prev = |i: usize| -> bool {
-        i > 0
-            && chain_map[i] == chain_map[i - 1]
-            && !skipped_before[i]
-            && !break_indices.contains(&i)
-    };
+    // A chain boundary occurs between i-1 and i if:
+    // 1. i == 0 (N-terminus of first residue)
+    // 2. chain_map[i] != chain_map[i - 1] (chain transition)
+    // 3. ter_before[i] (explicit TER record)
+    // 4. skipped_before[i] (skipped non-protein residue)
+    // 5. Either residue is a capping group (ACE, NME, NH2)
+    // 6. break_indices.contains(&i) (CA-CA distance > 4.5 Å)
+    let mut is_boundary = vec![false; n];
+    is_boundary[0] = true;
+    for i in 1..n {
+        if chain_map[i] != chain_map[i - 1]
+            || ter_before.get(i).copied().unwrap_or(false)
+            || skipped_before.get(i).copied().unwrap_or(false)
+            || is_capping_group(&bb[i - 1].res_name)
+            || is_capping_group(&bb[i].res_name)
+            || break_indices.contains(&i)
+        {
+            is_boundary[i] = true;
+        }
+    }
 
     for i in 0..n {
-        let prev_ok = has_prev(i);
-        let next_ok = i + 1 < n && has_prev(i + 1);
+        let prev_ok = !is_boundary[i];
+        let next_ok = i + 1 < n && !is_boundary[i + 1];
 
         let phi = if prev_ok {
             match (bb[i - 1].c, bb[i].n, bb[i].ca, bb[i].c) {
                 (Some(c_prev), Some(n_i), Some(ca_i), Some(c_i)) => {
-                    -dihedral_angle_f64(&c_prev, &n_i, &ca_i, &c_i).to_degrees()
+                    Some(-dihedral_angle_f64(&c_prev, &n_i, &ca_i, &c_i).to_degrees())
                 }
-                _ => 9999.0,
+                _ => None,
             }
         } else {
-            9999.0
+            None
         };
 
         let psi = if next_ok {
             match (bb[i].n, bb[i].ca, bb[i].c, bb[i + 1].n) {
                 (Some(n_i), Some(ca_i), Some(c_i), Some(n_next)) => {
-                    -dihedral_angle_f64(&n_i, &ca_i, &c_i, &n_next).to_degrees()
+                    Some(-dihedral_angle_f64(&n_i, &ca_i, &c_i, &n_next).to_degrees())
                 }
-                _ => 9999.0,
+                _ => None,
             }
         } else {
-            9999.0
+            None
         };
 
+        // Standard IUPAC omega torsion: torsion(CA_{i-1}, C_{i-1}, N_i, CA_i) (Debt #1903)
         let omega = if prev_ok {
             match (bb[i - 1].ca, bb[i - 1].c, bb[i].n, bb[i].ca) {
                 (Some(ca_prev), Some(c_prev), Some(n_i), Some(ca_i)) => {
-                    Some(dihedral_angle_f64(&ca_prev, &c_prev, &n_i, &ca_i).to_degrees())
+                    Some(-dihedral_angle_f64(&ca_prev, &c_prev, &n_i, &ca_i).to_degrees())
                 }
                 _ => None,
             }
@@ -564,36 +518,30 @@ mod tests {
             ca,
             c,
             o: None,
-            phi: 9999.0,
-            psi: 9999.0,
+            phi: None,
+            psi: None,
             omega: None,
             is_cis_peptide: false,
         }
     }
 
-    // ---------------------------------------------------------------
-    // BackboneOptions: defaults, builders, LegacyCompact+Split -> Err
-    // ---------------------------------------------------------------
-
     #[test]
-    fn backbone_options_default_is_bridge_per_dihedral() {
+    fn backbone_options_default_is_split_per_dihedral() {
         assert_eq!(
             BackboneOptions::default(),
             BackboneOptions {
-                chain_breaks: ChainBreakPolicy::Bridge,
+                chain_breaks: ChainBreakPolicy::Split,
                 missing_atoms: MissingAtomPolicy::PerDihedral,
             }
         );
-        assert_eq!(ChainBreakPolicy::default(), ChainBreakPolicy::Bridge);
-        assert_eq!(MissingAtomPolicy::default(), MissingAtomPolicy::PerDihedral);
     }
 
     #[test]
     fn backbone_options_builders_chain() {
         let o = BackboneOptions::default()
-            .with_chain_breaks(ChainBreakPolicy::Split)
+            .with_chain_breaks(ChainBreakPolicy::Bridge)
             .with_missing_atoms(MissingAtomPolicy::LegacyCompact);
-        assert_eq!(o.chain_breaks, ChainBreakPolicy::Split);
+        assert_eq!(o.chain_breaks, ChainBreakPolicy::Bridge);
         assert_eq!(o.missing_atoms, MissingAtomPolicy::LegacyCompact);
     }
 
@@ -606,243 +554,21 @@ mod tests {
             Some([2.0, 0.0, 0.0]),
         )];
         let chain_map = vec![0usize];
+        let ter_before = vec![false];
         let skipped_before = vec![false];
         let opts = BackboneOptions::default()
             .with_missing_atoms(MissingAtomPolicy::LegacyCompact)
             .with_chain_breaks(ChainBreakPolicy::Split);
 
-        let result = fill_dihedrals(&mut bb, &chain_map, &skipped_before, &opts);
+        let result = fill_dihedrals(&mut bb, &chain_map, &ter_before, &skipped_before, &opts);
         match result {
             Err(ConFindError::InvalidOptions(_)) => {}
             other => panic!("expected Err(InvalidOptions), got {other:?}"),
         }
     }
 
-    // ---------------------------------------------------------------
-    // PerDihedral atom-level computation vs. LegacyCompact bridging
-    // ---------------------------------------------------------------
-
     #[test]
-    fn per_dihedral_atom_level_vs_legacy_bridging_missing_c() {
-        // Non-planar synthetic 3-residue backbone; residue 1 (GLY) is missing C
-        // (and therefore O), so it cannot appear in LegacyCompact's dense array.
-        let n0 = [0.0, 0.0, 0.0];
-        let ca0 = [1.46, 0.0, 0.0];
-        let c0 = [2.0, 1.4, 0.0];
-        let n1 = [3.3, 1.6, 0.3];
-        let ca1 = [4.0, 2.9, 0.5];
-        let n2 = [6.0, 4.0, 1.0];
-        let ca2 = [7.5, 4.0, 1.2];
-        let c2 = [8.1, 5.3, 1.5];
-
-        let build = || {
-            vec![
-                mk_rb("ALA", Some(n0), Some(ca0), Some(c0)),
-                mk_rb("GLY", Some(n1), Some(ca1), None),
-                mk_rb("SER", Some(n2), Some(ca2), Some(c2)),
-            ]
-        };
-        let chain_map = vec![0usize, 0, 0];
-        let skipped_before = vec![false, false, false];
-
-        // PerDihedral (default: Bridge + PerDihedral).
-        let mut per = build();
-        fill_dihedrals(
-            &mut per,
-            &chain_map,
-            &skipped_before,
-            &BackboneOptions::default(),
-        )
-        .expect("PerDihedral fill should not error");
-
-        let exp_psi0 = -dihedral_angle_f64(&n0, &ca0, &c0, &n1).to_degrees();
-        assert_eq!(per[0].phi, 9999.0, "chain-first residue: phi undefined");
-        assert_eq!(
-            per[0].psi, exp_psi0,
-            "psi(res0) must use the immediate neighbour's N (res1), not bridge past it"
-        );
-        assert!(
-            per[0].omega.is_none(),
-            "chain-first residue: omega undefined"
-        );
-
-        assert_eq!(
-            per[1].phi, 9999.0,
-            "res1's own C is missing -> phi undefined"
-        );
-        assert_eq!(
-            per[1].psi, 9999.0,
-            "res1's own C is missing -> psi undefined"
-        );
-        let exp_omega1 = dihedral_angle_f64(&ca0, &c0, &n1, &ca1).to_degrees();
-        assert_eq!(
-            per[1].omega,
-            Some(exp_omega1),
-            "omega(res1) does not need res1's own C, only res0's CA/C and res1's N/CA"
-        );
-
-        assert_eq!(
-            per[2].phi, 9999.0,
-            "phi(res2) needs predecessor's C (res1.C), which is missing"
-        );
-        assert_eq!(per[2].psi, 9999.0, "chain-last residue: psi undefined");
-        assert!(
-            per[2].omega.is_none(),
-            "omega(res2) needs predecessor's CA/C (res1), whose C is missing"
-        );
-
-        // LegacyCompact reproduces today's bridged values (res1 dropped from the
-        // dense array entirely; res0/res2 bridge directly across the gap).
-        let mut legacy = build();
-        fill_dihedrals(
-            &mut legacy,
-            &chain_map,
-            &skipped_before,
-            &BackboneOptions::default().with_missing_atoms(MissingAtomPolicy::LegacyCompact),
-        )
-        .expect("LegacyCompact fill should not error");
-
-        let exp_psi0_bridged = -dihedral_angle_f64(&n0, &ca0, &c0, &n2).to_degrees();
-        assert_eq!(
-            legacy[0].psi, exp_psi0_bridged,
-            "LegacyCompact bridges res0's psi directly to res2's N, skipping res1"
-        );
-        let exp_phi2_bridged = -dihedral_angle_f64(&c0, &n2, &ca2, &c2).to_degrees();
-        assert_eq!(
-            legacy[2].phi, exp_phi2_bridged,
-            "LegacyCompact bridges res2's phi directly to res0's C, skipping res1"
-        );
-        // res1 is excluded from the dense array entirely, so it keeps its
-        // never-touched initial sentinel values.
-        assert_eq!(legacy[1].phi, 9999.0);
-        assert_eq!(legacy[1].psi, 9999.0);
-        assert!(legacy[1].omega.is_none());
-    }
-
-    // ---------------------------------------------------------------
-    // Missing CA only (N and C present): Bridge report == base; Split
-    // does not suppress the residue's own missing-atom errors.
-    // ---------------------------------------------------------------
-
-    #[test]
-    fn missing_ca_only_bridge_report_matches_base_split_does_not_suppress() {
-        // A - B(no CA, has N and C) - C, no missing N/C anywhere else, and the
-        // A.CA-C.CA carry-over distance is kept under the chain-break threshold
-        // so this test isolates missing-atom behaviour from chain-break behaviour.
-        let n_a: [f64; 3] = [0.0, 0.0, 0.0];
-        let ca_a: [f64; 3] = [1.0, 0.0, 0.0];
-        let c_a: [f64; 3] = [1.5, 1.0, 0.0];
-        let n_b: [f64; 3] = [2.0, 1.2, 0.2];
-        let c_b: [f64; 3] = [2.8, 2.0, 0.3];
-        let n_c: [f64; 3] = [3.2, 2.2, 0.4];
-        let ca_c: [f64; 3] = [3.5, 2.2, 0.4];
-        let c_c: [f64; 3] = [4.0, 3.0, 0.5];
-
-        // Sanity: A.CA-C.CA carry-over distance is within the chain-break threshold.
-        let dx = ca_c[0] - ca_a[0];
-        let dy = ca_c[1] - ca_a[1];
-        let dz = ca_c[2] - ca_a[2];
-        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-        assert!(
-            dist <= crate::precondition::CHAIN_BREAK_CA_ANGSTROM,
-            "test fixture must not trip the chain-break threshold: dist={dist}"
-        );
-
-        let build = || {
-            vec![
-                mk_rb("ALA", Some(n_a), Some(ca_a), Some(c_a)),
-                mk_rb("GLY", Some(n_b), None, Some(c_b)),
-                mk_rb("SER", Some(n_c), Some(ca_c), Some(c_c)),
-            ]
-        };
-        let chain_map = vec![0usize, 0, 0];
-        let ids = vec![
-            ResidueId {
-                chain_id: "A".to_string(),
-                res_id: 1,
-                insertion_code: ' ',
-            },
-            ResidueId {
-                chain_id: "A".to_string(),
-                res_id: 2,
-                insertion_code: ' ',
-            },
-            ResidueId {
-                chain_id: "A".to_string(),
-                res_id: 3,
-                insertion_code: ' ',
-            },
-        ];
-
-        let per_bridge_violations = {
-            let mut bb_vec = build();
-            fill_dihedrals(
-                &mut bb_vec,
-                &chain_map,
-                &[false; 3],
-                &BackboneOptions::default(),
-            )
-            .unwrap();
-            let pb = ProteinBackbone {
-                bb: bb_vec,
-                ids: ids.clone(),
-                chain_map: chain_map.clone(),
-            };
-            crate::precondition::check_preconditions(&pb).violations
-        };
-
-        // No geometric chain break in this fixture, so Split must produce the
-        // identical report — it must not suppress B's real missing-atom errors.
-        let per_split_violations = {
-            let mut bb_vec = build();
-            fill_dihedrals(
-                &mut bb_vec,
-                &chain_map,
-                &[false; 3],
-                &BackboneOptions::default().with_chain_breaks(ChainBreakPolicy::Split),
-            )
-            .unwrap();
-            let pb = ProteinBackbone {
-                bb: bb_vec,
-                ids: ids.clone(),
-                chain_map: chain_map.clone(),
-            };
-            crate::precondition::check_preconditions(&pb).violations
-        };
-
-        use crate::precondition::ViolationKind;
-        let expected_kinds = [
-            ViolationKind::MissingBackboneAtom { atom: "CA" },
-            ViolationKind::UndefinedPhi,
-            ViolationKind::UndefinedPsi,
-        ];
-        for (label, violations) in [
-            ("Bridge", &per_bridge_violations),
-            ("Split", &per_split_violations),
-        ] {
-            let kinds: Vec<_> = violations.iter().map(|v| v.kind.clone()).collect();
-            assert_eq!(
-                kinds, expected_kinds,
-                "{label}: expected exactly B's own missing-CA/UndefinedPhi/UndefinedPsi errors"
-            );
-            assert!(
-                violations.iter().all(|v| v.residue.0 == 1),
-                "{label}: all violations should be attributed to residue index 1 (B)"
-            );
-        }
-        assert_eq!(
-            per_bridge_violations.len(),
-            per_split_violations.len(),
-            "Split must not suppress or add to B's own missing-atom errors here"
-        );
-    }
-
-    // ---------------------------------------------------------------
-    // skipped_before: a skipped non-protein residue severs adjacency
-    // ---------------------------------------------------------------
-
-    #[test]
-    fn skipped_before_severs_per_dihedral_adjacency() {
+    fn dihedrals_none_at_chain_termini() {
         let n0 = [0.0, 0.0, 0.0];
         let ca0 = [1.46, 0.0, 0.0];
         let c0 = [2.0, 1.4, 0.0];
@@ -855,320 +581,125 @@ mod tests {
             mk_rb("GLY", Some(n1), Some(ca1), Some(c1)),
         ];
         let chain_map = vec![0usize, 0];
-        // A non-protein (e.g. ligand/HETATM) residue was skipped between res0 and res1.
-        let skipped_before = vec![false, true];
+        let ter_before = vec![false, false];
+        let skipped_before = vec![false, false];
 
         fill_dihedrals(
             &mut bb,
             &chain_map,
+            &ter_before,
             &skipped_before,
             &BackboneOptions::default(),
         )
-        .expect("fill should not error");
+        .expect("fill should succeed");
 
-        assert_eq!(
-            bb[1].phi, 9999.0,
-            "phi(res1) must be undefined: its predecessor is not a real sequence neighbour"
-        );
-        assert!(
-            bb[1].omega.is_none(),
-            "omega(res1) must be undefined for the same reason"
-        );
-        // res0's psi is symmetrically severed too, since res1 is not a real
-        // successor of res0 either.
-        assert_eq!(
-            bb[0].psi, 9999.0,
-            "psi(res0) must be undefined: its successor is not a real sequence neighbour"
-        );
-    }
+        // Chain first: phi is None, omega is None, psi is Some
+        assert_eq!(bb[0].phi, None);
+        assert_eq!(bb[0].omega, None);
+        assert!(bb[0].psi.is_some());
 
-    // ---------------------------------------------------------------
-    // Golden bit-equality against dihedral_golden_316d1ab.json
-    // ---------------------------------------------------------------
-
-    fn manifest_dir() -> std::path::PathBuf {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    }
-
-    fn golden() -> serde_json::Value {
-        let path = manifest_dir()
-            .join("tests")
-            .join("data")
-            .join("dihedral_golden_316d1ab.json");
-        let text = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("failed to read golden file {path:?}: {e}"));
-        serde_json::from_str(&text)
-            .unwrap_or_else(|e| panic!("failed to parse golden file {path:?}: {e}"))
-    }
-
-    fn golden_entries<'a>(
-        golden: &'a serde_json::Value,
-        section: &str,
-        fixture: &str,
-        loader: &str,
-    ) -> &'a Vec<serde_json::Value> {
-        golden[section][fixture][loader]
-            .as_array()
-            .unwrap_or_else(|| {
-                panic!("golden file missing {section}.{fixture}.{loader} (or not an array)")
-            })
-    }
-
-    fn assert_bb_matches_golden(
-        entries: &[serde_json::Value],
-        bb: &ProteinBackbone,
-        context: &str,
-    ) {
-        assert_eq!(
-            entries.len(),
-            bb.bb.len(),
-            "{context}: residue count mismatch (golden={}, computed={})",
-            entries.len(),
-            bb.bb.len()
-        );
-        for (i, (entry, (rb, id))) in entries
-            .iter()
-            .zip(bb.bb.iter().zip(bb.ids.iter()))
-            .enumerate()
-        {
-            let chain = entry["chain"].as_str().expect("golden entry missing chain");
-            let res_id = entry["res_id"]
-                .as_i64()
-                .expect("golden entry missing res_id") as i32;
-            assert_eq!(chain, id.chain_id, "{context}: residue {i} chain mismatch");
-            assert_eq!(res_id, id.res_id, "{context}: residue {i} res_id mismatch");
-
-            let phi_bits = entry["phi_bits"]
-                .as_u64()
-                .expect("golden entry missing phi_bits");
-            assert_eq!(
-                phi_bits,
-                rb.phi.to_bits(),
-                "{context}: residue {i} ({chain}{res_id}) phi bits mismatch"
-            );
-
-            let psi_bits = entry["psi_bits"]
-                .as_u64()
-                .expect("golden entry missing psi_bits");
-            assert_eq!(
-                psi_bits,
-                rb.psi.to_bits(),
-                "{context}: residue {i} ({chain}{res_id}) psi bits mismatch"
-            );
-
-            match &entry["omega_bits"] {
-                serde_json::Value::String(s) if s == "NONE" => {
-                    assert!(
-                        rb.omega.is_none(),
-                        "{context}: residue {i} ({chain}{res_id}) expected omega None, got {:?}",
-                        rb.omega
-                    );
-                }
-                serde_json::Value::Number(num) => {
-                    let bits = num.as_u64().expect("omega_bits number not u64");
-                    let omega = rb.omega.unwrap_or_else(|| {
-                        panic!("{context}: residue {i} ({chain}{res_id}) expected omega Some, got None")
-                    });
-                    assert_eq!(
-                        bits,
-                        omega.to_bits(),
-                        "{context}: residue {i} ({chain}{res_id}) omega bits mismatch"
-                    );
-                }
-                other => panic!("{context}: unexpected omega_bits value: {other:?}"),
-            }
-
-            let is_cis = entry["is_cis"]
-                .as_bool()
-                .expect("golden entry missing is_cis");
-            assert_eq!(
-                is_cis, rb.is_cis_peptide,
-                "{context}: residue {i} ({chain}{res_id}) is_cis mismatch"
-            );
-        }
-    }
-
-    fn committed_fixture_path(name: &str) -> std::path::PathBuf {
-        let md = manifest_dir();
-        match name {
-            "1crn.pdb" => md
-                .join("..")
-                .join("..")
-                .join("tests")
-                .join("data")
-                .join("1crn.pdb"),
-            "ubiquitin_1ubq_A.pdb" => md
-                .join("..")
-                .join("proxide-tmalign")
-                .join("tests")
-                .join("data")
-                .join("ubiquitin_1ubq_A.pdb"),
-            "missing_atoms.pdb" => md
-                .join("..")
-                .join("proxide_fixer")
-                .join("tests")
-                .join("data")
-                .join("missing_atoms.pdb"),
-            "chain_break.pdb" => md
-                .join("..")
-                .join("proxide_fixer")
-                .join("tests")
-                .join("data")
-                .join("chain_break.pdb"),
-            other => panic!("unknown committed fixture: {other}"),
-        }
-    }
-
-    fn load_processed_for(path: &std::path::Path) -> ProcessedStructure {
-        let (raw, _models) =
-            proxide_io::formats::pdb::parse_pdb_file(path).expect("parse_pdb_file failed");
-        ProcessedStructure::from_raw(raw).expect("ProcessedStructure::from_raw failed")
+        // Chain last: phi is Some, omega is Some, psi is None
+        assert!(bb[1].phi.is_some());
+        assert!(bb[1].omega.is_some());
+        assert_eq!(bb[1].psi, None);
     }
 
     #[test]
-    fn golden_dihedral_bit_equality_committed_fixtures() {
-        let golden = golden();
-        let fixtures = [
-            "1crn.pdb",
-            "ubiquitin_1ubq_A.pdb",
-            "missing_atoms.pdb",
-            "chain_break.pdb",
+    fn chain_break_causes_dihedrals_to_be_none() {
+        // Two residues with CA-CA distance > 4.5 Å
+        let n0 = [0.0, 0.0, 0.0];
+        let ca0 = [1.0, 0.0, 0.0];
+        let c0 = [2.0, 0.0, 0.0];
+
+        let n1 = [10.0, 0.0, 0.0];
+        let ca1 = [11.0, 0.0, 0.0];
+        let c1 = [12.0, 0.0, 0.0];
+
+        let mut bb = vec![
+            mk_rb("ALA", Some(n0), Some(ca0), Some(c0)),
+            mk_rb("GLY", Some(n1), Some(ca1), Some(c1)),
         ];
+        let chain_map = vec![0usize, 0];
+        let ter_before = vec![false, false];
+        let skipped_before = vec![false, false];
 
-        for name in fixtures {
-            let path = committed_fixture_path(name);
-            assert!(path.exists(), "committed fixture missing: {path:?}");
-            let processed = load_processed_for(&path);
+        fill_dihedrals(
+            &mut bb,
+            &chain_map,
+            &ter_before,
+            &skipped_before,
+            &BackboneOptions::default(),
+        )
+        .expect("fill should succeed");
 
-            // {Bridge, LegacyCompact} via the extract path must equal golden for
-            // ALL fixtures, including ones with missing atoms / chain breaks.
-            let legacy_opts =
-                BackboneOptions::default().with_missing_atoms(MissingAtomPolicy::LegacyCompact);
-            let legacy_bb = extract_f64_backbone_with_options(&processed, &legacy_opts)
-                .unwrap_or_else(|e| panic!("LegacyCompact extract failed for {name}: {e}"));
-            assert_bb_matches_golden(
-                golden_entries(&golden, "fixtures", name, "extract_f64_backbone"),
-                &legacy_bb,
-                &format!("{name} LegacyCompact/extract_f64_backbone"),
-            );
-
-            // Determine cleanliness (zero ChainBreak, zero missing backbone atoms)
-            // directly from the structure, and ASSERT it before relying on it, so a
-            // future dirty fixture can't silently skip the PerDihedral golden check.
-            let default_bb = extract_f64_backbone(&processed)
-                .unwrap_or_else(|e| panic!("default extract failed for {name}: {e}"));
-            let all_atoms_present = default_bb
-                .bb
-                .iter()
-                .all(|rb| rb.n.is_some() && rb.ca.is_some() && rb.c.is_some());
-            let breaks = chain_breaks(&default_bb.bb, &default_bb.chain_map);
-            let is_clean = all_atoms_present && breaks.is_empty();
-
-            let expected_clean = matches!(name, "1crn.pdb" | "ubiquitin_1ubq_A.pdb");
-            assert_eq!(
-                is_clean, expected_clean,
-                "{name}: cleanliness (all atoms present, zero chain breaks) changed unexpectedly \
-                 (all_atoms_present={all_atoms_present}, breaks={breaks:?})"
-            );
-
-            if !is_clean {
-                continue;
-            }
-
-            assert_bb_matches_golden(
-                golden_entries(&golden, "fixtures", name, "extract_f64_backbone"),
-                &default_bb,
-                &format!("{name} Bridge+PerDihedral/extract_f64_backbone"),
-            );
-
-            let split_bb = extract_f64_backbone_with_options(
-                &processed,
-                &BackboneOptions::default().with_chain_breaks(ChainBreakPolicy::Split),
-            )
-            .unwrap_or_else(|e| panic!("Split extract failed for {name}: {e}"));
-            assert_bb_matches_golden(
-                golden_entries(&golden, "fixtures", name, "extract_f64_backbone"),
-                &split_bb,
-                &format!("{name} Split+PerDihedral/extract_f64_backbone"),
-            );
-
-            let default_loadpb = load_pdb_f64_with_options(&path, &BackboneOptions::default())
-                .unwrap_or_else(|e| panic!("default load_pdb_f64 failed for {name}: {e}"));
-            assert_bb_matches_golden(
-                golden_entries(&golden, "fixtures", name, "load_pdb_f64"),
-                &default_loadpb,
-                &format!("{name} Bridge+PerDihedral/load_pdb_f64"),
-            );
-
-            let split_loadpb = load_pdb_f64_with_options(
-                &path,
-                &BackboneOptions::default().with_chain_breaks(ChainBreakPolicy::Split),
-            )
-            .unwrap_or_else(|e| panic!("Split load_pdb_f64 failed for {name}: {e}"));
-            assert_bb_matches_golden(
-                golden_entries(&golden, "fixtures", name, "load_pdb_f64"),
-                &split_loadpb,
-                &format!("{name} Split+PerDihedral/load_pdb_f64"),
-            );
-        }
+        // Distance break: bb[0].psi must be None, bb[1].phi/omega must be None
+        assert_eq!(bb[0].psi, None);
+        assert_eq!(bb[1].phi, None);
+        assert_eq!(bb[1].omega, None);
+        assert!(!bb[1].is_cis_peptide);
     }
 
     #[test]
-    #[ignore = "needs /home/marielle/repos/mosaist/testfiles"]
-    fn golden_dihedral_bit_equality_mosaist_fixtures() {
-        let fixtures: &[(&str, &str)] = &[
-            (
-                "1DC7.pdb",
-                "/home/marielle/repos/mosaist/testfiles/1DC7.pdb",
-            ),
-            (
-                "small.pdb",
-                "/home/marielle/repos/mosaist/testfiles/small.pdb",
-            ),
+    fn ter_record_causes_dihedrals_to_be_none() {
+        let n0 = [0.0, 0.0, 0.0];
+        let ca0 = [1.46, 0.0, 0.0];
+        let c0 = [2.0, 1.4, 0.0];
+        let n1 = [3.3, 1.6, 0.3];
+        let ca1 = [4.0, 2.9, 0.5];
+        let c1 = [4.8, 4.1, 0.6];
+
+        let mut bb = vec![
+            mk_rb("ALA", Some(n0), Some(ca0), Some(c0)),
+            mk_rb("GLY", Some(n1), Some(ca1), Some(c1)),
         ];
-        for (name, path_str) in fixtures {
-            let path = std::path::PathBuf::from(path_str);
-            if !path.exists() {
-                panic!(
-                    "mosaist fixture not found: {path:?} (needs /home/marielle/repos/mosaist/testfiles)"
-                );
-            }
-            let golden = golden();
-            let processed = load_processed_for(&path);
+        let chain_map = vec![0usize, 0];
+        let ter_before = vec![false, true]; // Explicit TER between 0 and 1
+        let skipped_before = vec![false, false];
 
-            let default_bb = extract_f64_backbone(&processed)
-                .unwrap_or_else(|e| panic!("default extract failed for {name}: {e}"));
-            assert_bb_matches_golden(
-                golden_entries(&golden, "mosaist_fixtures", name, "extract_f64_backbone"),
-                &default_bb,
-                &format!("{name} extract_f64_backbone (mosaist)"),
-            );
+        fill_dihedrals(
+            &mut bb,
+            &chain_map,
+            &ter_before,
+            &skipped_before,
+            &BackboneOptions::default(),
+        )
+        .expect("fill should succeed");
 
-            let default_loadpb = load_pdb_f64(&path)
-                .unwrap_or_else(|e| panic!("default load_pdb_f64 failed for {name}: {e}"));
-            assert_bb_matches_golden(
-                golden_entries(&golden, "mosaist_fixtures", name, "load_pdb_f64"),
-                &default_loadpb,
-                &format!("{name} load_pdb_f64 (mosaist)"),
-            );
-        }
+        assert_eq!(bb[0].psi, None);
+        assert_eq!(bb[1].phi, None);
+        assert_eq!(bb[1].omega, None);
     }
 
-    // ---------------------------------------------------------------
-    // Sprint 24 track b (debt #1885): load_pdb_f64_with_options now fails
-    // loud instead of silently zeroing a malformed coordinate or panicking
-    // on non-ASCII content. These tests exercise that directly, rather than
-    // relying only on pdb_fields.rs's own unit tests, since coords.rs has
-    // its own error-mapping (`std::io::Error::other` -> `ConFindError::Io`)
-    // that could in principle lose the kind/field detail.
-    // ---------------------------------------------------------------
+    #[test]
+    fn capping_group_severs_dihedrals() {
+        let n0 = [0.0, 0.0, 0.0];
+        let ca0 = [1.46, 0.0, 0.0];
+        let c0 = [2.0, 1.4, 0.0];
+        let n1 = [3.3, 1.6, 0.3];
+        let ca1 = [4.0, 2.9, 0.5];
+        let c1 = [4.8, 4.1, 0.6];
 
-    fn write_temp_pdb(content: &str) -> tempfile::NamedTempFile {
-        use std::io::Write as _;
-        let mut f = tempfile::NamedTempFile::new().expect("failed to create temp file");
-        f.write_all(content.as_bytes())
-            .expect("failed to write temp PDB");
-        f
+        let mut bb = vec![
+            mk_rb("ACE", Some(n0), Some(ca0), Some(c0)), // N-terminal cap
+            mk_rb("GLY", Some(n1), Some(ca1), Some(c1)),
+        ];
+        let chain_map = vec![0usize, 0];
+        let ter_before = vec![false, false];
+        let skipped_before = vec![false, false];
+
+        fill_dihedrals(
+            &mut bb,
+            &chain_map,
+            &ter_before,
+            &skipped_before,
+            &BackboneOptions::default(),
+        )
+        .expect("fill should succeed");
+
+        // ACE should not cross-link to GLY
+        assert_eq!(bb[0].psi, None);
+        assert_eq!(bb[1].phi, None);
+        assert_eq!(bb[1].omega, None);
     }
 
     #[test]
@@ -1177,42 +708,13 @@ mod tests {
 ATOM      1  N   MET A   1      xx.xxx  29.699   5.276  1.00 49.05           N
 ATOM      2  CA  MET A   1      21.154  29.699   5.276  1.00 49.05           C
 ";
-        let f = write_temp_pdb(content);
-        let err = load_pdb_f64(f.path()).expect_err("garbage x coordinate must be a hard error");
+        let mut f = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        use std::io::Write as _;
+        f.write_all(content.as_bytes()).expect("write failed");
+
+        let err = load_pdb_f64(f.path()).expect_err("garbage coordinate should error");
         let msg = err.to_string();
-        assert!(
-            msg.contains("line 1"),
-            "error should name the offending line, got: {msg}"
-        );
-        assert!(
-            msg.contains("'x'"),
-            "error should name the offending field, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn non_ascii_atom_name_errors_without_panic() {
-        // Column 13-16 (0-idx 12..16) is the atom-name field; byte 0xC3 there
-        // is invalid inside an ASCII-checked prefix and used to be sliced as
-        // `&str`, which could panic on a multibyte boundary (#1776). Now it
-        // must return a structured `Err`, never panic.
-        let mut line =
-            b"ATOM      1  N   ALA A   1      20.154  29.699   5.276  1.00 49.05           N  "
-                .to_vec();
-        line[12] = 0xC3;
-        line[13] = 0x28;
-        line.push(b'\n');
-
-        let f = tempfile::NamedTempFile::new().expect("failed to create temp file");
-        std::fs::write(f.path(), &line).expect("failed to write raw non-ASCII bytes");
-
-        let path = f.path().to_path_buf();
-        let result = std::panic::catch_unwind(move || load_pdb_f64(&path));
-        let outcome = result.expect("non-ASCII atom name must error, not panic");
-        let err = outcome.expect_err("non-ASCII atom name must be a hard error");
-        assert!(
-            err.to_string().to_lowercase().contains("ascii"),
-            "error should mention the non-ASCII byte, got: {err}"
-        );
+        assert!(msg.contains("line 1"), "expected line 1 in msg: {msg}");
+        assert!(msg.contains("'x'"), "expected 'x' in msg: {msg}");
     }
 }
