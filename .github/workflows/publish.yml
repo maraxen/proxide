@@ -120,7 +120,7 @@ jobs:
           set -e
           bad=$(cargo metadata --no-deps --format-version 1 | jq -r '
             .packages[] |
-            select(.name | IN("proxide_py", "proxide-wasm") | not) |
+            select(.publish == null) |
             select(.description == null or .license == null or .repository == null) |
             .name + ": missing description, license, or repository"
           ')
@@ -155,12 +155,13 @@ jobs:
       - name: Copy README into each crate directory
         run: |
           for crate in proxide-units proxide-core proxide-parallel-rt proxide-geometry \
-                       proxide-gaff proxide-io proxide-rotlib proxide-frag \
-                       proxide-physics proxide-confind proxide_rs proxide_fixer; do
+                       proxide-gaff proxide-io proxide-frag proxide-physics proxide_rs; do
             cp -n README.md crates/$crate/README.md
           done
       - name: Publish crates in topological order
-        # proxide_py and proxide-wasm are intentionally absent: publish = false
+        # proxide_py and proxide-wasm are intentionally absent: publish = false.
+        # proxide-confind, proxide-rotlib and proxide_fixer are absent for licensing
+        # (debt #1420). proxide-frag was reviewed and is independent of Mosaist.
         # pub() is idempotent: skips crates already on crates.io so reruns are safe.
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -186,22 +187,18 @@ jobs:
           # Tier 2
           pub proxide-geometry
           sleep 30
-          # Tier 3 — gaff/io/rotlib/frag all depend on core + geometry
+          # Tier 3 — gaff/io depend on core + geometry; frag has no proxide deps
           pub proxide-gaff
           sleep 30
           pub proxide-io
-          pub proxide-rotlib
           pub proxide-frag
           sleep 30
           # Tier 4
           pub proxide-physics
-          pub proxide-confind
           sleep 30
           # Tier 5
           pub proxide_rs
           sleep 30
-          # Tier 6
-          pub proxide_fixer
 
   release:
     name: Release
