@@ -1,11 +1,12 @@
 mod common;
 
-use common::{load_rotlib_or_skip, make_synthetic_backbone};
+use common::{
+    load_rotlib_or_skip, make_synthetic_backbone, make_two_chain_backbone, require_rotlib,
+};
 use proxide_confind::coords::ResidueIndex;
 use proxide_confind::ConFind;
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn cache_all_no_panic() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -23,7 +24,6 @@ fn cache_all_no_panic() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn contacts_returns_contact_list() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -46,7 +46,6 @@ fn contacts_returns_contact_list() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn freedom_in_range_after_contacts() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -67,7 +66,6 @@ fn freedom_in_range_after_contacts() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn crowdedness_in_range_after_cache() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -86,7 +84,6 @@ fn crowdedness_in_range_after_cache() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn neighbors_excludes_self() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -107,7 +104,6 @@ fn neighbors_excludes_self() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn neighbors_respects_dcut() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -134,7 +130,6 @@ fn neighbors_respects_dcut() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn freedom_not_available_before_contacts() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -155,7 +150,6 @@ fn freedom_not_available_before_contacts() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn n_residues_matches_backbone() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -176,41 +170,49 @@ fn n_residues_matches_backbone() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn constrained_contacts_returns_vec() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = require_rotlib();
 
-    let backbone = make_synthetic_backbone(4, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
+    // Residues 0 and 1 are 6 Å apart (inside D_cut, sidechains can meet). Residue 2 is
+    // the same geometry translated by 40 Å, so its Cα is beyond D_cut = 25 Å of both.
+    let close = make_two_chain_backbone(1, 3.8, [0.0, 6.0, 0.0]);
+    let mut owned = (*close).clone();
+    let mut far = owned.bb[0].clone();
+    let shift = 40.0;
+    far.n = far.n.map(|p| [p[0] + shift, p[1], p[2]]);
+    far.ca = far.ca.map(|p| [p[0] + shift, p[1], p[2]]);
+    far.c = far.c.map(|p| [p[0] + shift, p[1], p[2]]);
+    far.o = far.o.map(|p| [p[0] + shift, p[1], p[2]]);
+    owned.bb.push(far);
+    let mut far_id = owned.ids[0].clone();
+    far_id.chain_id = "C".to_string();
+    owned.ids.push(far_id);
+    owned.chain_map.push(2);
+    let backbone = std::sync::Arc::new(owned);
 
-    let ri = ResidueIndex(0);
-    confind.cache_residue(ri).ok();
+    let confind = ConFind::new(rotlib, backbone, false).unwrap();
+    let query = vec![ResidueIndex(0), ResidueIndex(1), ResidueIndex(2)];
+    // constrained_contacts reads the contact-degree cache that `contacts` fills.
+    confind.contacts(&query, 0.0).unwrap();
 
-    // constrained_contacts should return a Vec<ResidueIndex>
-    let contacts = confind.constrained_contacts(ri);
-
-    // Result should be a sorted vec with no duplicates
-    assert!(contacts.is_empty() || !contacts.is_empty());
-
-    // Verify the vec is sorted
-    if contacts.len() > 1 {
-        for i in 0..contacts.len() - 1 {
-            assert!(
-                contacts[i] < contacts[i + 1],
-                "constrained_contacts should return sorted results"
-            );
-        }
+    let contacts = confind.constrained_contacts(ResidueIndex(0));
+    assert!(
+        contacts.contains(&ResidueIndex(1)),
+        "a close pair must be present in constrained_contacts, got {contacts:?}"
+    );
+    assert!(
+        !contacts.contains(&ResidueIndex(2)),
+        "a pair beyond D_cut must be absent from constrained_contacts, got {contacts:?}"
+    );
+    for i in 1..contacts.len() {
+        assert!(
+            contacts[i - 1] < contacts[i],
+            "constrained_contacts should return sorted results"
+        );
     }
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn constrained_contacts_uncached_returns_empty() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,

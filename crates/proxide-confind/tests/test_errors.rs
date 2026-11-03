@@ -1,13 +1,12 @@
 mod common;
 
-use common::{load_rotlib_or_skip, make_synthetic_backbone};
+use common::{load_rotlib_or_skip, make_synthetic_backbone, require_rotlib};
 use proxide_confind::coords::{ProteinBackbone, ResidueBackbone, ResidueIndex};
 use proxide_confind::{ConFind, ConFindError};
 use proxide_core::processing::residues::ResidueId;
 use std::sync::Arc;
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn freedom_before_contacts_returns_error() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -30,7 +29,6 @@ fn freedom_before_contacts_returns_error() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn crowdedness_before_cache_returns_error() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -86,7 +84,10 @@ fn cache_residue_missing_n() {
     let ri = ResidueIndex(0);
 
     let result = confind.cache_residue(ri);
-    assert!(matches!(result, Err(ConFindError::MissingBackbone(ResidueIndex(0), "N"))));
+    assert!(matches!(
+        result,
+        Err(ConFindError::MissingBackbone(ResidueIndex(0), "N"))
+    ));
 }
 
 #[test]
@@ -125,7 +126,10 @@ fn cache_residue_missing_ca() {
     let ri = ResidueIndex(0);
 
     let result = confind.cache_residue(ri);
-    assert!(matches!(result, Err(ConFindError::MissingBackbone(ResidueIndex(0), "CA"))));
+    assert!(matches!(
+        result,
+        Err(ConFindError::MissingBackbone(ResidueIndex(0), "CA"))
+    ));
 }
 
 #[test]
@@ -164,28 +168,28 @@ fn cache_residue_missing_c() {
     let ri = ResidueIndex(0);
 
     let result = confind.cache_residue(ri);
-    assert!(matches!(result, Err(ConFindError::MissingBackbone(ResidueIndex(0), "C"))));
+    assert!(matches!(
+        result,
+        Err(ConFindError::MissingBackbone(ResidueIndex(0), "C"))
+    ));
 }
 
 #[test]
 fn contacts_uncached_returns_error() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = require_rotlib();
 
     let backbone = make_synthetic_backbone(2, 3.8);
-    let confind = ConFind::new(rotlib, backbone.clone(), false).unwrap();
+    let confind = ConFind::new(rotlib, backbone, false).unwrap();
 
-    // Don't cache anything, try to get contacts
+    // The cache is empty. `contacts` fills it (`cache_residue` before Phase B) and
+    // returns Ok. `ConFindError::NotCached` is what `interference` returns for an
+    // uncached query; it is not what `contacts` returns.
     let residues = vec![ResidueIndex(0)];
     let result = confind.contacts(&residues, 0.0);
-    // contacts() calls cache_residue internally, so should succeed
-    // But if cache_residue fails, contacts will error
-    let _ = result;
+    assert!(
+        result.is_ok(),
+        "contacts() on an uncached residue builds the cache and returns Ok, got {result:?}"
+    );
 }
 
 #[test]

@@ -5,7 +5,6 @@ use proxide_confind::coords::ResidueIndex;
 use proxide_confind::ConFind;
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn crowdedness_isolated_residue_near_zero() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -29,7 +28,6 @@ fn crowdedness_isolated_residue_near_zero() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn crowdedness_compact_higher_than_isolated() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -52,7 +50,6 @@ fn crowdedness_compact_higher_than_isolated() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn freedom_fully_isolated_is_near_1() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -78,7 +75,6 @@ fn freedom_fully_isolated_is_near_1() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn contact_degree_symmetry() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,

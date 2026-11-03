@@ -8,7 +8,9 @@
 
 mod common;
 
-use common::{load_rotlib_or_skip, make_synthetic_backbone, make_two_chain_backbone};
+use common::{
+    load_rotlib_or_skip, make_synthetic_backbone, make_two_chain_backbone, require_rotlib,
+};
 use proxide_confind::coords::ResidueIndex;
 use proxide_confind::ConFind;
 
@@ -16,15 +18,15 @@ use proxide_confind::ConFind;
 /// contact degree strictly decreases or stays zero.
 #[test]
 fn test_contact_degree_distance_monotonicity() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(rl) => rl,
-        None => return,
-    };
+    let rotlib = require_rotlib();
 
+    // Closest pair of chains is well inside D_cut; the last sits beyond it (spec §2.3).
     let distances = [6.0, 7.5, 9.0, 11.0, 14.0, 26.0];
     let mut prev_total_contacts = f64::INFINITY;
+    let mut close_sum = 0.0;
+    let mut far_sum = 0.0;
 
-    for &dist in &distances {
+    for (k, &dist) in distances.iter().enumerate() {
         let backbone = make_two_chain_backbone(3, 3.8, [0.0, dist, 0.0]);
         let cf = ConFind::new(rotlib.clone(), backbone, false).unwrap();
         let residues: Vec<ResidueIndex> = (0..6).map(ResidueIndex).collect();
@@ -44,11 +46,27 @@ fn test_contact_degree_distance_monotonicity() {
             cross_sum <= prev_total_contacts + 1e-6,
             "Contact degree sum must decrease with distance: dist={dist}, cross_sum={cross_sum}, prev={prev_total_contacts}"
         );
+        if k == 0 {
+            close_sum = cross_sum;
+        }
+        far_sum = cross_sum;
         prev_total_contacts = cross_sum;
     }
 
+    // An all-zero matrix is non-increasing and ends at 0, so the inequalities above do
+    // not detect a contacts() that returns 0 for every pair. The close sum must be a
+    // real contact, and it must exceed the far sum (spec §2.1, §2.3).
+    assert!(
+        close_sum > 0.0,
+        "cross-chain contact degree at {} Å must be strictly positive, got {close_sum}",
+        distances[0]
+    );
+    assert!(
+        close_sum > far_sum,
+        "close cross-chain sum {close_sum} must be strictly greater than the far sum {far_sum}"
+    );
     // At 26 Å (> DCUT 25 Å), total contact sum must be exactly 0.0
-    assert_eq!(prev_total_contacts, 0.0);
+    assert_eq!(far_sum, 0.0);
 }
 
 /// Mutual interference: clashing sidechains produce non-negative interference.

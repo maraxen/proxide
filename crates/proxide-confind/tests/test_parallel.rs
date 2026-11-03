@@ -5,7 +5,6 @@ use proxide_confind::coords::ResidueIndex;
 use proxide_confind::ConFind;
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn parallel_determinism_contacts() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -50,7 +49,6 @@ fn parallel_determinism_contacts() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn parallel_determinism_freedom() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -74,7 +72,6 @@ fn parallel_determinism_freedom() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn parallel_cache_all_idempotent() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -98,7 +95,6 @@ fn parallel_cache_all_idempotent() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn parallel_contacts_subset_vs_all() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
