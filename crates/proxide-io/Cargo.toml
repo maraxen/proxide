@@ -37,6 +37,7 @@ serde = { workspace = true, optional = true, features = ["derive"] }
 bincode = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 ndarray-npy = { workspace = true, optional = true }
+toml_edit = { version = "=0.25.11", optional = true, default-features = false, features = ["parse"] }
 
 [features]
 default = ["pdb", "cif", "xtc", "parallel"]
@@ -46,7 +47,7 @@ ssbond = []
 fetching = ["dep:reqwest"]
 hdf5 = ["dep:hdf5"]
 foldcomp = ["dep:flate2"]
-xtc = ["dep:molly", "dep:serde", "dep:bincode", "dep:ndarray", "dep:ndarray-npy"]
+xtc = ["dep:molly", "dep:serde", "dep:bincode", "dep:ndarray", "dep:ndarray-npy", "dep:toml_edit"]
 parallel = ["dep:orx-parallel", "dep:proxide-parallel-rt", "dep:rayon"]
 mmap = ["dep:memmap2"]
 full = ["fetching", "hdf5", "foldcomp", "xtc", "parallel", "mmap", "pdb", "cif", "ssbond"]

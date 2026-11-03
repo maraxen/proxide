@@ -119,9 +119,8 @@ pub fn parse_mmcif_batch(
     numbering: &str,
 ) -> PyResult<Vec<PyObject>> {
     let numbering = parse_numbering(numbering)?;
-    let batch_results = py.allow_threads(|| {
-        formats::mmcif::parse_mmcif_batch(&paths, fail_on_ligands, numbering)
-    });
+    let batch_results =
+        py.allow_threads(|| formats::mmcif::parse_mmcif_batch(&paths, fail_on_ligands, numbering));
 
     let mut py_results = Vec::with_capacity(batch_results.len());
     for res in batch_results {
@@ -143,7 +142,10 @@ pub fn parse_mmcif_batch(
                 dict.set_item("xyz", xyz_reshaped)?;
 
                 dict.set_item("b_factor", PyArray1::from_vec_bound(py, table.b_factor))?;
-                dict.set_item("label_seq_id", PyArray1::from_vec_bound(py, table.label_seq_id))?;
+                dict.set_item(
+                    "label_seq_id",
+                    PyArray1::from_vec_bound(py, table.label_seq_id),
+                )?;
                 dict.set_item("ligand_flag", table.ligand_flag)?;
             }
             Err(e) => {

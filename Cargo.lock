@@ -2836,6 +2836,7 @@ dependencies = [
  "serde",
  "tempfile",
  "thiserror",
+ "toml_edit",
 ]
 
 [[package]]

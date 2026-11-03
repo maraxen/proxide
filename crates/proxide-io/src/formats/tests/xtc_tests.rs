@@ -1044,30 +1044,30 @@ fn test_sidecar_resolver_5_tier_hierarchy() {
 
     // Tier 1: Explicit path
     assert_eq!(
-        resolve_offsets_dir(Some(Path::new("/tmp/explicit_cache"))),
+        resolve_offsets_dir(Some(Path::new("/tmp/explicit_cache"))).unwrap(),
         Some(PathBuf::from("/tmp/explicit_cache"))
     );
     // Explicit disable
-    assert_eq!(resolve_offsets_dir(Some(Path::new("off"))), None);
-    assert_eq!(resolve_offsets_dir(Some(Path::new("none"))), None);
-    assert_eq!(resolve_offsets_dir(Some(Path::new(""))), None);
+    assert_eq!(resolve_offsets_dir(Some(Path::new("off"))).unwrap(), None);
+    assert_eq!(resolve_offsets_dir(Some(Path::new("none"))).unwrap(), None);
+    assert_eq!(resolve_offsets_dir(Some(Path::new(""))).unwrap(), None);
 
     // Tier 2: Environment variable
     std::env::set_var("PROXIDE_OFFSETS_DIR", "/tmp/env_cache");
     assert_eq!(
-        resolve_offsets_dir(None),
+        resolve_offsets_dir(None).unwrap(),
         Some(PathBuf::from("/tmp/env_cache"))
     );
     // Tier 1 overrides Tier 2
     assert_eq!(
-        resolve_offsets_dir(Some(Path::new("/tmp/explicit_override"))),
+        resolve_offsets_dir(Some(Path::new("/tmp/explicit_override"))).unwrap(),
         Some(PathBuf::from("/tmp/explicit_override"))
     );
     // Env var disable
     std::env::set_var("PROXIDE_OFFSETS_DIR", "off");
-    assert_eq!(resolve_offsets_dir(None), None);
+    assert_eq!(resolve_offsets_dir(None).unwrap(), None);
     std::env::set_var("PROXIDE_OFFSETS_DIR", "none");
-    assert_eq!(resolve_offsets_dir(None), None);
+    assert_eq!(resolve_offsets_dir(None).unwrap(), None);
     std::env::remove_var("PROXIDE_OFFSETS_DIR");
 }
 
@@ -1109,4 +1109,269 @@ fn test_read_frames_parallel_early_stop_parity_against_all() {
         );
         assert_eq!(par_frames[idx].time, molly_frame.time);
     }
+}
+
+/// A compressed frame whose declared `nbytes` exceeds molly's 256 KiB buffered
+/// threshold, with the payload missing. A matching offset sidecar keeps the
+/// frame in the index (the tolerant scan would otherwise drop a truncated
+/// *last* frame before the parallel reader sees it). Partial-atom decode must
+/// surface `XtcError` rather than panic or hang inside `Buffer::pop`.
+#[test]
+fn test_truncated_large_frame_partial_atoms_returns_xtc_error() {
+    use crate::formats::xtc::read_frames_parallel_with_offsets_dir;
+    use std::io::Write;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    const N_ATOMS: u32 = 100;
+    // molly `Buffer::MIN_BUFFERED_SIZE` is 2 * 128 KiB. At or below that, the
+    // buffered reader `read_exact`s the whole payload in `Buffer::new` and
+    // never reaches the `pop` loop this regression is about.
+    const NBYTES: u32 = 300_000;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let xtc_path = dir.path().join("truncated.xtc");
+    {
+        let mut f = std::fs::File::create(&xtc_path).expect("create xtc");
+        let w = |f: &mut std::fs::File, bytes: &[u8]| f.write_all(bytes).unwrap();
+        w(&mut f, &1995i32.to_be_bytes()); // magic
+        w(&mut f, &N_ATOMS.to_be_bytes());
+        w(&mut f, &0u32.to_be_bytes()); // step
+        w(&mut f, &0.0f32.to_be_bytes()); // time
+        for _ in 0..9 {
+            w(&mut f, &1.0f32.to_be_bytes());
+        }
+        w(&mut f, &N_ATOMS.to_be_bytes()); // natoms repeated
+        w(&mut f, &1000.0f32.to_be_bytes()); // precision
+        for _ in 0..3 {
+            w(&mut f, &0i32.to_be_bytes()); // minint
+        }
+        for _ in 0..3 {
+            w(&mut f, &10i32.to_be_bytes()); // maxint
+        }
+        w(&mut f, &10u32.to_be_bytes()); // smallidx (MAGICINTS[10] != 0)
+        w(&mut f, &NBYTES.to_be_bytes());
+        // Payload omitted: shorter than nbytes.
+    }
+
+    let offsets_dir = dir.path().join("offsets");
+    std::fs::create_dir(&offsets_dir).unwrap();
+    let meta = std::fs::metadata(&xtc_path).unwrap();
+    let cache = OffsetCache::from_metadata(&meta, N_ATOMS as usize, vec![0]).unwrap();
+    cache.store(&xtc_path, Some(&offsets_dir)).unwrap();
+
+    let xtc_path_thread = xtc_path.clone();
+    let offsets_thread = offsets_dir.clone();
+    let (tx, rx) = mpsc::channel();
+    let _worker = std::thread::spawn(move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            read_frames_parallel_with_offsets_dir(
+                &xtc_path_thread,
+                &[0usize],
+                Some(&[0usize][..]),
+                Some(offsets_thread.as_path()),
+            )
+        }));
+        let _ = tx.send(result);
+    });
+
+    match rx.recv_timeout(Duration::from_secs(3)) {
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            eprintln!("partial-atom read of a truncated >256KiB frame hung");
+            // The worker is stuck in molly's buffered `read_to_include` loop.
+            // Detach it and exit so the harness does not wait forever.
+            std::process::exit(101);
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            panic!("worker dropped the result channel");
+        }
+        Ok(Err(_)) => panic!("partial-atom read panicked instead of returning XtcError"),
+        Ok(Ok(Ok(_))) => panic!("expected XtcError from a truncated frame, got frames"),
+        Ok(Ok(Err(_))) => {}
+    }
+}
+
+/// Trailing comments, invalid TOML, wrong types, and unreadable configs must
+/// not be stored as a path or treated as "unset". The walk stops at the
+/// nearest `pyproject.toml`.
+#[test]
+fn test_offsets_dir_trailing_comment_and_invalid_config() {
+    use crate::formats::xtc::resolve_offsets_dir;
+
+    struct EnvGuard {
+        cwd: PathBuf,
+        env: Option<String>,
+        xdg: Option<String>,
+    }
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.cwd);
+            match &self.env {
+                Some(v) => std::env::set_var("PROXIDE_OFFSETS_DIR", v),
+                None => std::env::remove_var("PROXIDE_OFFSETS_DIR"),
+            }
+            match &self.xdg {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+    }
+    let _guard = EnvGuard {
+        cwd: std::env::current_dir().unwrap(),
+        env: std::env::var("PROXIDE_OFFSETS_DIR").ok(),
+        xdg: std::env::var("XDG_CONFIG_HOME").ok(),
+    };
+    std::env::remove_var("PROXIDE_OFFSETS_DIR");
+    let xdg = tempfile::tempdir().unwrap();
+    std::env::set_var("XDG_CONFIG_HOME", xdg.path());
+
+    let commented = tempfile::tempdir().unwrap();
+    std::fs::write(
+        commented.path().join("pyproject.toml"),
+        "[tool.proxide]\noffsets_dir = \"/fast/offsets\" # node-local\n",
+    )
+    .unwrap();
+    std::env::set_current_dir(commented.path()).unwrap();
+    assert_eq!(
+        resolve_offsets_dir(None).expect("commented offsets_dir"),
+        Some(PathBuf::from("/fast/offsets")),
+        "a trailing TOML comment must not be part of the path"
+    );
+
+    let Some(xtc_src) = test_xtc_path() else {
+        return;
+    };
+    let (_fix_dir, xtc_path) = copy_fixture_to_tempdir(&xtc_src);
+
+    let invalid = tempfile::tempdir().unwrap();
+    std::fs::write(
+        invalid.path().join("pyproject.toml"),
+        "[tool.proxide\noffsets_dir = \"/should-not-be-used\"\n",
+    )
+    .unwrap();
+    std::env::set_current_dir(invalid.path()).unwrap();
+    match XtcReader::open(&xtc_path) {
+        Err(err) => assert!(
+            err.to_string().contains("offsets config"),
+            "open error must report the config failure, got {err}"
+        ),
+        Ok(_) => panic!("invalid pyproject.toml must fail the open"),
+    }
+
+    let wrong_type = tempfile::tempdir().unwrap();
+    std::fs::write(
+        wrong_type.path().join("pyproject.toml"),
+        "[tool.proxide]\noffsets_dir = 12\n",
+    )
+    .unwrap();
+    std::env::set_current_dir(wrong_type.path()).unwrap();
+    let err = resolve_offsets_dir(None).expect_err("integer offsets_dir must fail");
+    assert!(
+        err.to_string().contains("string"),
+        "wrong type must say the key has to be a string, got {err}"
+    );
+    match XtcReader::open(&xtc_path) {
+        Err(err) => assert!(err.to_string().contains("offsets config"), "{err}"),
+        Ok(_) => panic!("wrong-typed offsets_dir must fail the open"),
+    }
+
+    let ancestor = tempfile::tempdir().unwrap();
+    std::fs::write(
+        ancestor.path().join("pyproject.toml"),
+        "[tool.proxide]\noffsets_dir = \"/from-parent\"\n",
+    )
+    .unwrap();
+    let child = ancestor.path().join("child");
+    std::fs::create_dir(&child).unwrap();
+    std::fs::write(child.join("pyproject.toml"), "[project]\nname = \"child\"\n").unwrap();
+    std::env::set_current_dir(&child).unwrap();
+    assert_eq!(
+        resolve_offsets_dir(None).expect("child pyproject is valid"),
+        None,
+        "nearest pyproject.toml without offsets_dir must not inherit an ancestor"
+    );
+
+    let alias = tempfile::tempdir().unwrap();
+    std::fs::write(
+        alias.path().join("pyproject.toml"),
+        "[tool.proxide]\ncache_dir = \"/not-a-documented-key\"\n",
+    )
+    .unwrap();
+    std::env::set_current_dir(alias.path()).unwrap();
+    assert_eq!(
+        resolve_offsets_dir(None).expect("undocumented key is not an error"),
+        None,
+        "only the documented offsets_dir key is honored"
+    );
+
+    let unreadable = tempfile::tempdir().unwrap();
+    let cfg = unreadable.path().join("pyproject.toml");
+    std::fs::write(&cfg, "[tool.proxide]\noffsets_dir = \"/fast/offsets\"\n").unwrap();
+    let mut perms = std::fs::metadata(&cfg).unwrap().permissions();
+    perms.set_readonly(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(0);
+    }
+    std::fs::set_permissions(&cfg, perms).unwrap();
+    std::env::set_current_dir(unreadable.path()).unwrap();
+    match XtcReader::open(&xtc_path) {
+        Err(err) => assert!(err.to_string().contains("offsets config"), "{err}"),
+        Ok(_) => panic!("an unreadable pyproject.toml must fail the open"),
+    }
+
+    // XDG tier: trailing comment, then an invalid file. No pyproject on the walk.
+    let xdg_root = tempfile::tempdir().unwrap();
+    let proxide_cfg = xdg_root.path().join("proxide");
+    std::fs::create_dir(&proxide_cfg).unwrap();
+    std::fs::write(
+        proxide_cfg.join("config.toml"),
+        "[offsets]\ndir = \"/xdg/offsets\" # node-local\n",
+    )
+    .unwrap();
+    std::env::set_var("XDG_CONFIG_HOME", xdg_root.path());
+    let bare = tempfile::tempdir().unwrap();
+    std::env::set_current_dir(bare.path()).unwrap();
+    assert_eq!(
+        resolve_offsets_dir(None).expect("xdg comment"),
+        Some(PathBuf::from("/xdg/offsets")),
+        "XDG trailing comment must not be part of the path"
+    );
+    std::fs::write(proxide_cfg.join("config.toml"), "[offsets]\ndir = \n").unwrap();
+    match XtcReader::open(&xtc_path) {
+        Err(err) => assert!(err.to_string().contains("offsets config"), "{err}"),
+        Ok(_) => panic!("invalid XDG config must fail the open"),
+    }
+}
+
+/// Default `proxide_parallel_rt` counter is 1 and Python never calls
+/// `set_num_threads`. Native decode must still request orx `NumThreads::Auto`
+/// (0) and split work across the machine, not hard-cap at one thread.
+#[test]
+fn test_native_xtc_parallel_uses_auto_threads_when_unset() {
+    proxide_parallel_rt::clear_num_threads();
+    let (orx_threads, chunk_divisor) = crate::formats::xtc::xtc_thread_plan();
+    assert_eq!(
+        orx_threads, 0,
+        "native default must be NumThreads::Auto (0), got {orx_threads}"
+    );
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .max(1);
+    assert_eq!(
+        chunk_divisor, cpus,
+        "Auto must partition frames across available CPUs"
+    );
+
+    proxide_parallel_rt::set_num_threads(4);
+    assert_eq!(crate::formats::xtc::xtc_thread_plan(), (4, 4));
+    proxide_parallel_rt::set_num_threads(1);
+    assert_eq!(
+        crate::formats::xtc::xtc_thread_plan(),
+        (1, 1),
+        "an explicit count of 1 stays sequential"
+    );
+    proxide_parallel_rt::clear_num_threads();
 }

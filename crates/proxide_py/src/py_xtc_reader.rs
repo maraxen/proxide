@@ -210,8 +210,9 @@ pub fn read_xtc_parallel(
         let (num_frames, num_atoms, flat_coords, flat_boxes, flat_times, total_frames) = py
             .allow_threads(|| -> Result<_, String> {
                 let (total_frames, n_atoms) = {
-                    let mut reader = XtcReader::open_with_offsets_dir(&path, offsets_dir.as_deref())
-                        .map_err(|e| e.to_string())?;
+                    let mut reader =
+                        XtcReader::open_with_offsets_dir(&path, offsets_dir.as_deref())
+                            .map_err(|e| e.to_string())?;
                     let total_frames = reader.frame_count().map_err(|e| e.to_string())?;
                     let n_atoms = reader.n_atoms().map_err(|e| e.to_string())?;
                     (total_frames, n_atoms)
@@ -295,11 +296,7 @@ pub fn read_xtc_parallel(
 /// partially-flushed in-flight frame as complete.
 #[pyfunction]
 #[pyo3(signature = (path, offsets_dir=None))]
-pub fn frame_count(
-    py: Python<'_>,
-    path: String,
-    offsets_dir: Option<String>,
-) -> PyResult<usize> {
+pub fn frame_count(py: Python<'_>, path: String, offsets_dir: Option<String>) -> PyResult<usize> {
     #[cfg(feature = "xtc")]
     {
         use crate::formats::xtc::XtcReader;
@@ -382,8 +379,9 @@ pub fn read_xtc_ca_distogram(
         let (n_frames, n_pairs, flat) = py
             .allow_threads(|| -> Result<_, String> {
                 let (total_frames, n_atoms) = {
-                    let mut reader = XtcReader::open_with_offsets_dir(&path, offsets_dir.as_deref())
-                        .map_err(|e| e.to_string())?;
+                    let mut reader =
+                        XtcReader::open_with_offsets_dir(&path, offsets_dir.as_deref())
+                            .map_err(|e| e.to_string())?;
                     let total_frames = reader.frame_count().map_err(|e| e.to_string())?;
                     let n_atoms = reader.n_atoms().map_err(|e| e.to_string())?;
                     (total_frames, n_atoms)
@@ -430,11 +428,7 @@ pub fn read_xtc_ca_distogram(
 /// header — never decodes coordinate data.
 #[pyfunction]
 #[pyo3(signature = (path, offsets_dir=None))]
-pub fn n_atoms(
-    py: Python<'_>,
-    path: String,
-    offsets_dir: Option<String>,
-) -> PyResult<usize> {
+pub fn n_atoms(py: Python<'_>, path: String, offsets_dir: Option<String>) -> PyResult<usize> {
     #[cfg(feature = "xtc")]
     {
         use crate::formats::xtc::XtcReader;

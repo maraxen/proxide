@@ -2071,8 +2071,8 @@ ATOM 1 N ALA A 0.000 0.000 0.000
 
         // 1CRN (index 0) must succeed
         let crn_res = results[0].as_ref().expect("1CRN should parse successfully");
-        let (crn_expected, _) = parse_mmcif_file_with(&crn_path, MmcifNumbering::Auth)
-            .expect("serial parse of 1CRN");
+        let (crn_expected, _) =
+            parse_mmcif_file_with(&crn_path, MmcifNumbering::Auth).expect("serial parse of 1CRN");
         assert_eq!(crn_res.element, crn_expected.elements);
         assert_eq!(crn_res.atom_name, crn_expected.atom_names);
         assert_eq!(crn_res.chain, crn_expected.chain_ids);
@@ -2091,8 +2091,8 @@ ATOM 1 N ALA A 0.000 0.000 0.000
 
         // 1UBQ (index 2) must succeed with fail_on_ligands=false
         let ubq_res = results[2].as_ref().expect("1UBQ should parse successfully");
-        let (ubq_expected, _) = parse_mmcif_file_with(&ubq_path, MmcifNumbering::Auth)
-            .expect("serial parse of 1UBQ");
+        let (ubq_expected, _) =
+            parse_mmcif_file_with(&ubq_path, MmcifNumbering::Auth).expect("serial parse of 1UBQ");
         assert_eq!(ubq_res.xyz, ubq_expected.coords);
         assert_eq!(ubq_res.label_seq_id, ubq_expected.res_ids);
         assert_eq!(ubq_res.ligand_flag, ubq_expected.is_hetatm);
@@ -2118,7 +2118,9 @@ ATOM 1 N ALA A 0.000 0.000 0.000
         assert!(results[0].is_ok());
 
         // 1UBQ has ligands -> fails with fail_on_ligands=true
-        let err = results[1].as_ref().expect_err("1UBQ should fail when fail_on_ligands=true");
+        let err = results[1]
+            .as_ref()
+            .expect_err("1UBQ should fail when fail_on_ligands=true");
         assert!(
             err.contains("contains ligand/HETATM atoms"),
             "Error message should mention ligands: {err}"

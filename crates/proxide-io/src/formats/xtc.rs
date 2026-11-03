@@ -79,6 +79,11 @@ pub enum XtcError {
     FrameOutOfBounds { index: usize, n_frames: usize },
     #[error("atom index {index} out of bounds ({n_atoms} atoms)")]
     AtomIndexOutOfBounds { index: usize, n_atoms: usize },
+    /// Offset-cache configuration was present but could not be used.
+    /// Syntax errors, wrong types, and unreadable files are reported here;
+    /// a missing config file is not an error.
+    #[error("offsets config: {0}")]
+    OffsetsConfig(String),
 }
 
 /// XTC trajectory data structure
@@ -134,170 +139,215 @@ const OFFSET_CACHE_VERSION: u16 = 2;
 #[cfg(test)]
 const OFFSET_CACHE_VERSION_PRE_TRUNCATION_FIX: u16 = 1;
 
+/// Outcome of one config tier. `Absent` means "this tier does not decide";
+/// the resolver may try the next tier. `Disabled` and `Dir` are final.
+enum OffsetsDirective {
+    Absent,
+    Disabled,
+    Dir(PathBuf),
+}
+
 /// Resolve the cache directory for trajectory frame offset sidecars according to the
 /// 5-tier resolution order:
 /// 1. Explicit argument (`explicit: Option<&Path>`)
 /// 2. Environment variable `PROXIDE_OFFSETS_DIR` (empty or "none"/"off"/"false"/"0" disables)
-/// 3. `[tool.proxide] offsets_dir = "..."` in `pyproject.toml`
-/// 4. `[offsets] dir = "..."` or `offsets_dir = "..."` in `$XDG_CONFIG_HOME/proxide/config.toml` (or `~/.config/proxide/config.toml`)
-/// 5. Off (`None`) — caching is disabled. Never write sidecar files adjacent to library/trajectory code by default.
-pub fn resolve_offsets_dir(explicit: Option<&Path>) -> Option<PathBuf> {
+/// 3. `[tool.proxide] offsets_dir` in the nearest `pyproject.toml` (ancestors are not consulted)
+/// 4. `[offsets] dir` or `[offsets] offsets_dir` or top-level `offsets_dir` in
+///    `${XDG_CONFIG_HOME:-~/.config}/proxide/config.toml`
+/// 5. Off (`Ok(None)`) — caching is disabled. Never write sidecar files adjacent to
+///    library/trajectory code by default.
+///
+/// A config file that exists but is unreadable, is not valid TOML, or gives a
+/// documented key a non-string value fails with [`XtcError::OffsetsConfig`].
+/// Only the keys named above are read; aliases such as `cache_dir` are ignored.
+pub fn resolve_offsets_dir(explicit: Option<&Path>) -> Result<Option<PathBuf>, XtcError> {
     // Tier 1: Explicit argument
     if let Some(path) = explicit {
-        let s = path.as_os_str().to_string_lossy();
-        let trimmed = s.trim();
-        if trimmed.is_empty()
-            || trimmed.eq_ignore_ascii_case("none")
-            || trimmed.eq_ignore_ascii_case("off")
-            || trimmed.eq_ignore_ascii_case("false")
-            || trimmed == "0"
-        {
-            return None;
-        }
-        return Some(path.to_path_buf());
+        return Ok(explicit_offsets_path(path));
     }
 
     // Tier 2: Environment variable PROXIDE_OFFSETS_DIR
     if let Ok(val) = std::env::var("PROXIDE_OFFSETS_DIR") {
-        let trimmed = val.trim();
-        if trimmed.is_empty()
-            || trimmed.eq_ignore_ascii_case("none")
-            || trimmed.eq_ignore_ascii_case("off")
-            || trimmed.eq_ignore_ascii_case("false")
-            || trimmed == "0"
-        {
-            return None;
-        }
-        return Some(PathBuf::from(trimmed));
+        return Ok(offsets_path_from_str(&val, false, Path::new("")));
     }
 
-    // Tier 3: [tool.proxide] in pyproject.toml
-    if let Some(dir) = find_pyproject_offsets_dir() {
-        return dir;
+    // Tier 3: [tool.proxide] offsets_dir in the nearest pyproject.toml
+    match find_pyproject_offsets_dir()? {
+        OffsetsDirective::Absent => {}
+        OffsetsDirective::Disabled => return Ok(None),
+        OffsetsDirective::Dir(path) => return Ok(Some(path)),
     }
 
     // Tier 4: XDG config file
-    if let Some(dir) = find_xdg_offsets_dir() {
-        return dir;
+    match find_xdg_offsets_dir()? {
+        OffsetsDirective::Absent => {}
+        OffsetsDirective::Disabled => return Ok(None),
+        OffsetsDirective::Dir(path) => return Ok(Some(path)),
     }
 
     // Tier 5: Off
-    None
+    Ok(None)
 }
 
-/// Helper for Tier 3: Search upwards for pyproject.toml and parse [tool.proxide] offsets_dir.
-fn find_pyproject_offsets_dir() -> Option<Option<PathBuf>> {
-    let mut curr = std::env::current_dir().ok()?;
-    for _ in 0..12 {
-        let candidate = curr.join("pyproject.toml");
-        if candidate.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&candidate) {
-                if let Some(res) = parse_pyproject_offsets_val(&content, &curr) {
-                    return Some(res);
-                }
+fn is_offsets_disabled(trimmed: &str) -> bool {
+    trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("none")
+        || trimmed.eq_ignore_ascii_case("off")
+        || trimmed.eq_ignore_ascii_case("false")
+        || trimmed == "0"
+}
+
+fn explicit_offsets_path(path: &Path) -> Option<PathBuf> {
+    let s = path.as_os_str().to_string_lossy();
+    if is_offsets_disabled(s.trim()) {
+        None
+    } else {
+        Some(path.to_path_buf())
+    }
+}
+
+/// `relativize` joins a relative value onto `base`. XDG values are not
+/// joined onto the config file; a leading `~/` expands to `$HOME` when set.
+fn offsets_path_from_str(val: &str, relativize: bool, base: &Path) -> Option<PathBuf> {
+    let trimmed = val.trim();
+    if is_offsets_disabled(trimmed) {
+        return None;
+    }
+    let mut path_str = trimmed.to_string();
+    if !relativize {
+        if let Some(rest) = path_str.strip_prefix("~/") {
+            if let Ok(home) = std::env::var("HOME") {
+                path_str = format!("{home}/{rest}");
             }
+        }
+    }
+    let p = PathBuf::from(path_str);
+    if relativize && p.is_relative() {
+        Some(base.join(p))
+    } else {
+        Some(p)
+    }
+}
+
+fn offsets_config_err(path: &Path, detail: impl std::fmt::Display) -> XtcError {
+    XtcError::OffsetsConfig(format!("{}: {detail}", path.display()))
+}
+
+fn read_toml_file(path: &Path) -> Result<toml_edit::DocumentMut, XtcError> {
+    let content = std::fs::read_to_string(path).map_err(|e| offsets_config_err(path, e))?;
+    content
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| offsets_config_err(path, e))
+}
+
+/// Documented string key. Missing → `Ok(None)`. Present but not a string → error.
+fn documented_string(
+    table: &toml_edit::Table,
+    key: &str,
+    path: &Path,
+) -> Result<Option<String>, XtcError> {
+    match table.get(key) {
+        None => Ok(None),
+        Some(item) => match item.as_str() {
+            Some(s) => Ok(Some(s.to_string())),
+            None => Err(offsets_config_err(path, format!("{key} must be a string"))),
+        },
+    }
+}
+
+fn directive_from_setting(
+    setting: Option<String>,
+    relativize: bool,
+    base: &Path,
+) -> OffsetsDirective {
+    match setting {
+        None => OffsetsDirective::Absent,
+        Some(val) => match offsets_path_from_str(&val, relativize, base) {
+            None => OffsetsDirective::Disabled,
+            Some(path) => OffsetsDirective::Dir(path),
+        },
+    }
+}
+
+/// Tier 3. Stops at the nearest `pyproject.toml`. A missing file is `Absent`;
+/// an unreadable or invalid file is an error and does not continue the walk.
+fn find_pyproject_offsets_dir() -> Result<OffsetsDirective, XtcError> {
+    let mut curr = std::env::current_dir()
+        .map_err(|e| XtcError::OffsetsConfig(format!("cannot read current directory: {e}")))?;
+    loop {
+        let candidate = curr.join("pyproject.toml");
+        match std::fs::metadata(&candidate) {
+            Ok(meta) if meta.is_file() => return parse_pyproject_file(&candidate),
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(offsets_config_err(&candidate, e)),
         }
         if !curr.pop() {
             break;
         }
     }
-    None
+    Ok(OffsetsDirective::Absent)
 }
 
-fn parse_pyproject_offsets_val(content: &str, base_dir: &Path) -> Option<Option<PathBuf>> {
-    let mut in_tool_proxide = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') || trimmed.is_empty() {
-            continue;
-        }
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            let section = trimmed[1..trimmed.len() - 1].trim();
-            in_tool_proxide = section == "tool.proxide";
-            continue;
-        }
-        if in_tool_proxide {
-            if let Some((k, v)) = trimmed.split_once('=') {
-                let key = k.trim();
-                if key == "offsets_dir" || key == "offsets-dir" || key == "cache_dir" {
-                    let val = v.trim().trim_matches('"').trim_matches('\'').trim();
-                    if val.is_empty()
-                        || val.eq_ignore_ascii_case("none")
-                        || val.eq_ignore_ascii_case("off")
-                        || val.eq_ignore_ascii_case("false")
-                        || val == "0"
-                    {
-                        return Some(None);
-                    }
-                    let p = PathBuf::from(val);
-                    let resolved = if p.is_relative() {
-                        base_dir.join(p)
-                    } else {
-                        p
-                    };
-                    return Some(Some(resolved));
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Helper for Tier 4: Search XDG config for proxide config.toml.
-fn find_xdg_offsets_dir() -> Option<Option<PathBuf>> {
-    let config_path = if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        if !xdg.trim().is_empty() {
-            PathBuf::from(xdg.trim()).join("proxide/config.toml")
-        } else {
-            let home = std::env::var("HOME").ok()?;
-            PathBuf::from(home).join(".config/proxide/config.toml")
-        }
-    } else {
-        let home = std::env::var("HOME").ok()?;
-        PathBuf::from(home).join(".config/proxide/config.toml")
+fn parse_pyproject_file(path: &Path) -> Result<OffsetsDirective, XtcError> {
+    let doc = read_toml_file(path)?;
+    let Some(proxide) = doc
+        .get("tool")
+        .and_then(toml_edit::Item::as_table)
+        .and_then(|tool| tool.get("proxide"))
+        .and_then(toml_edit::Item::as_table)
+    else {
+        return Ok(OffsetsDirective::Absent);
     };
+    // Only `offsets_dir` is documented. `cache_dir` / `offsets-dir` are not read.
+    let setting = documented_string(proxide, "offsets_dir", path)?;
+    let base = path.parent().unwrap_or(Path::new("."));
+    Ok(directive_from_setting(setting, true, base))
+}
 
-    if !config_path.is_file() {
-        return None;
+fn xdg_config_path() -> Option<PathBuf> {
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.trim().is_empty() {
+            return Some(PathBuf::from(xdg.trim()).join("proxide/config.toml"));
+        }
     }
+    let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".config/proxide/config.toml"))
+}
 
-    let content = std::fs::read_to_string(&config_path).ok()?;
-    let mut in_offsets_section = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') || trimmed.is_empty() {
-            continue;
-        }
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            let section = trimmed[1..trimmed.len() - 1].trim();
-            in_offsets_section = section == "offsets" || section == "cache" || section == "tool.proxide";
-            continue;
-        }
-        if let Some((k, v)) = trimmed.split_once('=') {
-            let key = k.trim();
-            if (in_offsets_section && (key == "dir" || key == "offsets_dir" || key == "path"))
-                || key == "offsets_dir"
-            {
-                let val = v.trim().trim_matches('"').trim_matches('\'').trim();
-                if val.is_empty()
-                    || val.eq_ignore_ascii_case("none")
-                    || val.eq_ignore_ascii_case("off")
-                    || val.eq_ignore_ascii_case("false")
-                    || val == "0"
-                {
-                    return Some(None);
-                }
-                let mut path_str = val.to_string();
-                if path_str.starts_with("~/") {
-                    if let Ok(home) = std::env::var("HOME") {
-                        path_str = format!("{home}/{}", &path_str[2..]);
-                    }
-                }
-                return Some(Some(PathBuf::from(path_str)));
+/// Tier 4. Documented keys: `[offsets] dir`, `[offsets] offsets_dir`, and a
+/// top-level `offsets_dir`. `[offsets] dir` wins when more than one is set.
+fn find_xdg_offsets_dir() -> Result<OffsetsDirective, XtcError> {
+    let Some(config_path) = xdg_config_path() else {
+        return Ok(OffsetsDirective::Absent);
+    };
+    match std::fs::metadata(&config_path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(OffsetsDirective::Absent),
+        Err(e) => return Err(offsets_config_err(&config_path, e)),
+        Ok(meta) if !meta.is_file() => return Ok(OffsetsDirective::Absent),
+        Ok(_) => {}
+    }
+    let doc = read_toml_file(&config_path)?;
+    let section_setting = match doc.get("offsets") {
+        None => None,
+        Some(item) => {
+            let Some(table) = item.as_table() else {
+                return Err(offsets_config_err(
+                    &config_path,
+                    "[offsets] must be a table",
+                ));
+            };
+            match documented_string(table, "dir", &config_path)? {
+                Some(dir) => Some(dir),
+                None => documented_string(table, "offsets_dir", &config_path)?,
             }
         }
-    }
-    None
+    };
+    let setting = match section_setting {
+        Some(dir) => Some(dir),
+        None => documented_string(doc.as_table(), "offsets_dir", &config_path)?,
+    };
+    Ok(directive_from_setting(setting, false, Path::new("")))
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -323,7 +373,9 @@ impl OffsetCache {
                 return Some(PathBuf::from(s));
             }
         }
-        let canon = traj_path.canonicalize().unwrap_or_else(|_| traj_path.to_path_buf());
+        let canon = traj_path
+            .canonicalize()
+            .unwrap_or_else(|_| traj_path.to_path_buf());
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
@@ -535,7 +587,7 @@ impl XtcReader {
     ) -> Result<Self, XtcError> {
         let path = path.as_ref().to_path_buf();
         let reader = XTCReader::open(&path)?;
-        let resolved = resolve_offsets_dir(offsets_dir.as_ref().map(|d| d.as_ref()));
+        let resolved = resolve_offsets_dir(offsets_dir.as_ref().map(|d| d.as_ref()))?;
         Ok(Self {
             path,
             offsets_dir: resolved,
@@ -864,13 +916,48 @@ pub fn read_frames_parallel<P: AsRef<Path>>(
     read_frames_parallel_with_offsets_dir(path, frame_indices, atom_indices, None::<&Path>)
 }
 
+/// `(orx-parallel num_threads, chunk divisor)`.
+///
+/// On native, an unset [`proxide_parallel_rt::num_threads_override`] is
+/// `NumThreads::Auto` (`0`). orx maps `0` to Auto and `n > 0` to a hard cap.
+/// The chunk divisor is still a positive CPU count so frames are split across
+/// workers; passing `0` to `div_ceil` would panic. Wasm stays off Auto and
+/// uses at least one thread.
+#[cfg(feature = "parallel")]
+fn xtc_thread_plan() -> (usize, usize) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let n = proxide_parallel_rt::num_threads().max(1);
+        return (n, n);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        match proxide_parallel_rt::num_threads_override() {
+            Some(n) => {
+                let n = n.max(1);
+                (n, n)
+            }
+            None => {
+                let n = std::thread::available_parallelism()
+                    .map(|p| p.get())
+                    .unwrap_or(1)
+                    .max(1);
+                (0, n)
+            }
+        }
+    }
+}
+
 /// Decode a set of frames concurrently via contiguous chunks across workers.
 ///
 /// Implements throughput optimizations:
 /// - #2231: Early-stop coordinate decompression using `AtomSelection::Until` when
 ///   the requested atoms lead the frame (e.g. protein-leading selections in solvated systems).
-/// - #2226: Early frame tail skipping with `BUFFERED = true` in `read_frame_at_offset`.
-/// - #2227: Native thread control via `proxide_parallel_rt::num_threads().max(1)`.
+/// - #2226: `AtomSelection::Until` still stops decompression at the last requested
+///   atom. The read itself stays unbuffered: molly's buffered reader panics or
+///   hangs when a compressed payload is shorter than its `nbytes`.
+/// - #2227: Native thread count is `NumThreads::Auto` unless the user set one;
+///   wasm stays capped at one thread when unset.
 /// - #2229: Contiguous chunk partitioning of frame indices for sequential forward seeking.
 /// - #2232: File handle pooling — each worker reuses a single `XTCReader` across its chunk.
 #[cfg(feature = "parallel")]
@@ -890,36 +977,36 @@ pub fn read_frames_parallel_with_offsets_dir<P: AsRef<Path>, D: AsRef<Path>>(
         return Ok(Vec::new());
     }
 
-    // #2231 (order: #2231 BEFORE #2226): Early stopping decompression up to max_idx
-    // #2226: Coordinate buffer tail-skipping with BUFFERED = true
-    let (selection, use_buffered) = match atom_indices {
+    // #2231: Stop decompression at the last requested atom when it is not the
+    // final atom of the frame. Unbuffered (`BUFFERED = false`) so a short
+    // payload returns `io::Error` instead of hanging in molly's `Buffer::pop`.
+    let selection = match atom_indices {
         Some(indices) if !indices.is_empty() => {
             let max_idx = indices.iter().copied().max().unwrap_or(0);
             let needed_atoms = max_idx + 1;
             if needed_atoms < n_atoms {
-                (AtomSelection::Until(needed_atoms as u32), true)
+                AtomSelection::Until(needed_atoms as u32)
             } else {
-                (AtomSelection::All, false)
+                AtomSelection::All
             }
         }
-        _ => (AtomSelection::All, false),
+        _ => AtomSelection::All,
     };
 
-    // #2227: Native thread control via proxide_parallel_rt
-    let n_threads = proxide_parallel_rt::num_threads().max(1);
+    // #2227: Native thread control via proxide_parallel_rt.
+    // `(orx_threads, chunk_divisor)` — see [`xtc_thread_plan`].
+    let (n_threads, chunk_divisor) = xtc_thread_plan();
 
     // #2229: Contiguous chunk partitioning
     // #2232: Pool reader / handle reuse per chunk
-    let chunk_size = frame_indices.len().div_ceil(n_threads).max(1);
+    let chunk_size = frame_indices.len().div_ceil(chunk_divisor).max(1);
     let chunks: Vec<Vec<usize>> = frame_indices
         .chunks(chunk_size)
         .map(|c| c.to_vec())
         .collect();
 
-    let par = chunks
-        .into_par()
-        .num_threads(n_threads)
-        .map(|chunk| -> Result<Vec<SelectedFrame>, XtcError> {
+    let par = chunks.into_par().num_threads(n_threads).map(
+        |chunk| -> Result<Vec<SelectedFrame>, XtcError> {
             let mut worker_reader = XTCReader::open(path)?;
             let mut frame = MollyFrame::default();
             let mut chunk_frames = Vec::with_capacity(chunk.len());
@@ -927,11 +1014,7 @@ pub fn read_frames_parallel_with_offsets_dir<P: AsRef<Path>, D: AsRef<Path>>(
                 let offset = *offsets
                     .get(index)
                     .ok_or(XtcError::FrameOutOfBounds { index, n_frames })?;
-                if use_buffered {
-                    worker_reader.read_frame_at_offset::<true>(&mut frame, offset, &selection)?;
-                } else {
-                    worker_reader.read_frame_at_offset::<false>(&mut frame, offset, &selection)?;
-                }
+                worker_reader.read_frame_at_offset::<false>(&mut frame, offset, &selection)?;
                 let positions = select_positions(&frame, atom_indices)?;
                 let box_vectors = frame.boxvec_cols_2d();
                 let time = frame.time;
@@ -942,7 +1025,8 @@ pub fn read_frames_parallel_with_offsets_dir<P: AsRef<Path>, D: AsRef<Path>>(
                 });
             }
             Ok(chunk_frames)
-        });
+        },
+    );
 
     let collected: Result<Vec<Vec<SelectedFrame>>, XtcError> =
         par.collect::<Vec<_>>().into_iter().collect();
@@ -988,7 +1072,12 @@ pub fn read_xtc_distogram_parallel_with_offsets_dir<P: AsRef<Path>, D: AsRef<Pat
     atom_indices: &[usize],
     offsets_dir: Option<D>,
 ) -> Result<Vec<Vec<f32>>, XtcError> {
-    let frames = read_frames_parallel_with_offsets_dir(path, frame_indices, Some(atom_indices), offsets_dir)?;
+    let frames = read_frames_parallel_with_offsets_dir(
+        path,
+        frame_indices,
+        Some(atom_indices),
+        offsets_dir,
+    )?;
 
     Ok(frames
         .iter()
