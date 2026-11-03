@@ -70,7 +70,6 @@ pub trait Gaff2RuleMatch {
     fn matches(&self, atom_idx: usize, mol: &MolGraph, wildatom_map: &WildatomMap) -> bool;
 }
 
-
 /// Core orchestration logic: assign a GAFF2 atom type to every atom in
 /// `mol` (heavy and H, index-aligned with `mol.elements`) using `rules` in
 /// precedence order and `wildatom_map` for chem-env matching, then run the
@@ -240,7 +239,8 @@ mod tests {
             },
         ];
         let wildatom_map = WildatomMap::new();
-        let types = assign_types_with_rules(&mol, &rules, &wildatom_map).expect("should match rule");
+        let types =
+            assign_types_with_rules(&mol, &rules, &wildatom_map).expect("should match rule");
         assert_eq!(types, vec!["c3".to_string()]);
     }
 
@@ -263,7 +263,8 @@ mod tests {
             },
         ];
         let wildatom_map = WildatomMap::new();
-        let types = assign_types_with_rules(&mol, &rules, &wildatom_map).expect("should match rules");
+        let types =
+            assign_types_with_rules(&mol, &rules, &wildatom_map).expect("should match rules");
         assert_eq!(types, vec!["c3".to_string(), "hc".to_string()]);
     }
 
@@ -324,7 +325,8 @@ mod tests {
             },
         ];
         let wildatom_map = WildatomMap::new();
-        let types = assign_types_with_rules(&mol, &rules, &wildatom_map).expect("should match rules");
+        let types =
+            assign_types_with_rules(&mol, &rules, &wildatom_map).expect("should match rules");
         assert_eq!(
             types,
             vec!["cc", "cd", "cp", "cq"]
