@@ -1,0 +1,51 @@
+[experiment]
+hypothesis = "Clean-room proxide-confind achieves high contact degree fidelity against upstream Mosaist black-box on benchmark proteins (1CRN, 1UBQ) and correctly handles segmented and multi-chain semantics (#1904, #1903)"
+stage_name = "validation"
+novel = true
+
+[outcomes.pass]
+condition = "median_contact_delta_1crn <= 0.0001 AND median_contact_delta_1ubq <= 0.0001 AND omega_opposite_sign_count = 0 AND chain_break_prevented_spurious_contacts = true"
+decision = "accept_clean_room_confind"
+reasoning = "Median contact degree deltas on 1CRN and 1UBQ are within 1e-4, IUPAC omega sign convention holds with 0 inverted residues (#1903), and chain break segmentation eliminates spurious contacts (#1904)."
+is_residual = false
+
+[outcomes.marginal]
+condition = "median_contact_delta_1crn <= 0.0002 AND median_contact_delta_1ubq <= 0.0002"
+decision = "review_divergences_and_park"
+reasoning = "Median contact degree deltas are between 1e-4 and 2e-4 due to Dunbrack 2010 vs legacy binary library differences; document and park if needed."
+is_residual = false
+
+[outcomes.fail]
+condition = "median_contact_delta_1crn > 0.0002 OR median_contact_delta_1ubq > 0.0002"
+decision = "reject_and_investigate"
+reasoning = "Contact degree deltas exceed tolerance or omega/chain-break invariants fail."
+is_residual = true
+
+[result_schema]
+median_contact_delta_1crn = "float"
+mean_contact_delta_1crn = "float"
+max_contact_delta_1crn = "float"
+pct_within_1e4_1crn = "float"
+pct_within_005_1crn = "float"
+median_crowdedness_delta_1crn = "float"
+median_freedom_delta_1crn = "float"
+
+median_contact_delta_1ubq = "float"
+mean_contact_delta_1ubq = "float"
+max_contact_delta_1ubq = "float"
+pct_within_1e4_1ubq = "float"
+pct_within_005_1ubq = "float"
+median_crowdedness_delta_1ubq = "float"
+median_freedom_delta_1ubq = "float"
+
+multichain_contacts_count = "int"
+multichain_common_pairs = "int"
+median_contact_delta_multichain = "float"
+pct_within_1e4_multichain = "float"
+pct_within_005_multichain = "float"
+
+omega_same_sign_count = "int"
+omega_opposite_sign_count = "int"
+max_omega_delta_deg = "float"
+chain_break_prevented_spurious_contacts = "bool"
+outcome = "string"

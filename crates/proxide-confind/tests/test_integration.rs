@@ -196,7 +196,7 @@ fn constrained_contacts_returns_vec() {
     let contacts = confind.constrained_contacts(ri);
 
     // Result should be a sorted vec with no duplicates
-    assert!(contacts.is_empty() || contacts.len() > 0);
+    assert!(contacts.is_empty() || !contacts.is_empty());
 
     // Verify the vec is sorted
     if contacts.len() > 1 {

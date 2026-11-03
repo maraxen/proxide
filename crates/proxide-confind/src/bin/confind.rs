@@ -84,7 +84,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let id = cf.residue_id(*ri);
         writeln!(
             out,
-            "crwdnes\t{},{}\t{:.6}\t{}",
+            "crowdedness\t{},{}\t{:.6}\t{}",
             id.chain_id,
             format_resnum(id.res_id, id.insertion_code),
             cr,

@@ -39,16 +39,16 @@ END
     assert_eq!(backbone.bb[0].res_name, "ALA");
     assert!(backbone.bb[0].ca.is_some());
     assert_eq!(
-        backbone.bb[0].phi, 9999.0,
-        "N-terminus should have phi=9999"
+        backbone.bb[0].phi, None,
+        "N-terminus should have phi=None"
     );
 
     // Check residue 1 (GLY)
     assert_eq!(backbone.bb[1].res_name, "GLY");
     assert!(backbone.bb[1].ca.is_some());
     assert_eq!(
-        backbone.bb[1].psi, 9999.0,
-        "C-terminus should have psi=9999"
+        backbone.bb[1].psi, None,
+        "C-terminus should have psi=None"
     );
 
     // Check that CA coords are present
@@ -85,4 +85,138 @@ END
     assert_eq!(backbone.chain_map.len(), 1);
     assert_eq!(backbone.bb[0].res_name, "ALA");
     assert!(backbone.bb[0].ca.is_some());
+}
+
+#[test]
+fn chain_terminal_undefined_angle_reaches_rotlib_and_records_default_bin() {
+    use proxide_confind::{ConFind, ResidueIndex};
+    use proxide_rotlib::pb::rotlib_v1::{
+        Bin, GeometryMode, ResidueEntry, Rotamer, RotamerLibrary as PbRotamerLibrary, Vec3,
+    };
+    use proxide_rotlib::RotamerLibrary;
+    use std::sync::Arc;
+
+    // 3-residue synthetic peptide (ALA-ALA-ALA) with realistic non-collinear geometry
+    let pdb_content = r#"ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N
+ATOM      2  CA  ALA A   1       1.458   0.000   0.000  1.00  0.00           C
+ATOM      3  C   ALA A   1       2.009   1.420   0.000  1.00  0.00           C
+ATOM      4  O   ALA A   1       1.251   2.390   0.000  1.00  0.00           O
+ATOM      5  N   ALA A   2       3.330   1.540   0.000  1.00  0.00           N
+ATOM      6  CA  ALA A   2       3.980   2.845   0.000  1.00  0.00           C
+ATOM      7  C   ALA A   2       5.490   2.710   0.000  1.00  0.00           C
+ATOM      8  O   ALA A   2       6.030   1.600   0.000  1.00  0.00           O
+ATOM      9  N   ALA A   3       6.160   3.860   0.000  1.00  0.00           N
+ATOM     10  CA  ALA A   3       7.610   3.890   0.000  1.00  0.00           C
+ATOM     11  C   ALA A   3       8.160   5.310   0.000  1.00  0.00           C
+ATOM     12  O   ALA A   3       7.400   6.280   0.000  1.00  0.00           O
+END
+"#;
+
+    let mut temp_file = NamedTempFile::new().expect("failed to create temp file");
+    temp_file
+        .write_all(pdb_content.as_bytes())
+        .expect("failed to write PDB content");
+    let (raw, _) =
+        proxide_io::formats::pdb::parse_pdb_file(temp_file.path()).expect("failed to parse PDB");
+    let processed = ProcessedStructure::from_raw(raw).expect("failed to create ProcessedStructure");
+    let backbone = extract_f64_backbone(&processed).expect("failed to extract backbone");
+
+    // Verify N-terminal phi is None, interior phi/psi are Some, C-terminal psi is None
+    assert_eq!(backbone.bb[0].phi, None);
+    assert!(backbone.bb[0].psi.is_some());
+    assert!(backbone.bb[1].phi.is_some());
+    assert!(backbone.bb[1].psi.is_some());
+    assert!(backbone.bb[2].phi.is_some());
+    assert_eq!(backbone.bb[2].psi, None);
+
+    // Build minimal synthetic RotamerLibrary covering all 20 AAs so ConFind::cache_residue runs
+    let aas = [
+        "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS", "MET",
+        "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+    ];
+    let residues = aas
+        .iter()
+        .map(|&code| ResidueEntry {
+            code: code.to_string(),
+            atom_names: if code == "GLY" {
+                vec![]
+            } else {
+                vec!["CB".to_string()]
+            },
+            num_chi: 0,
+            phi_centers: vec![-120.0, -60.0],
+            psi_centers: vec![-45.0, 120.0],
+            default_bin: 2,
+            bins: [(-120.0, -45.0), (-120.0, 120.0), (-60.0, -45.0), (-60.0, 120.0)]
+                .iter()
+                .map(|&(phi, psi)| Bin {
+                    phi,
+                    psi,
+                    freq: 0.25,
+                    rotamers: vec![Rotamer {
+                        prob: 1.0,
+                        coords: if code == "GLY" {
+                            vec![]
+                        } else {
+                            vec![Vec3 {
+                                x: 0.5,
+                                y: 1.2,
+                                z: 0.8,
+                            }]
+                        },
+                        chi: vec![],
+                    }],
+                })
+                .collect(),
+        })
+        .collect();
+    let pb_lib = PbRotamerLibrary {
+        version: 1,
+        provenance: "synthetic".to_string(),
+        attribution: "synthetic".to_string(),
+        data_license: "MIT".to_string(),
+        geometry_mode: GeometryMode::Precomputed as i32,
+        residues,
+        geometry_source: String::new(),
+        geometry_license: String::new(),
+    };
+    let rotlib = Arc::new(RotamerLibrary::from_protobuf(&pb_lib).unwrap());
+
+    // Direct rotlib boundary verification: chain-terminal residue 0 (phi=None) triggers default_bin
+    let (bin0, fb0) = rotlib
+        .backbone_bin_with_fallback(
+            &backbone.bb[0].res_name,
+            backbone.bb[0].phi,
+            backbone.bb[0].psi,
+            backbone.bb[0].is_cis_peptide,
+        )
+        .unwrap();
+    assert_eq!(bin0, 2, "chain-terminal residue must resolve to default_bin");
+    assert!(fb0, "chain-terminal residue must record used_default_bin=true");
+
+    // Interior residue 1 (phi=Some, psi=Some) does NOT use default_bin fallback
+    let (_, fb1) = rotlib
+        .backbone_bin_with_fallback(
+            &backbone.bb[1].res_name,
+            backbone.bb[1].phi,
+            backbone.bb[1].psi,
+            backbone.bb[1].is_cis_peptide,
+        )
+        .unwrap();
+    assert!(!fb1, "interior residue must record used_default_bin=false");
+
+    // End-to-end ConFind verification
+    let cf = ConFind::new(rotlib, Arc::new(backbone), false);
+    assert!(
+        cf.used_default_bin(ResidueIndex(0)).unwrap(),
+        "N-terminal residue must record used_default_bin=true in ConFind"
+    );
+    assert!(
+        !cf.used_default_bin(ResidueIndex(1)).unwrap(),
+        "Interior residue must record used_default_bin=false in ConFind"
+    );
+    assert!(
+        cf.used_default_bin(ResidueIndex(2)).unwrap(),
+        "C-terminal residue must record used_default_bin=true in ConFind"
+    );
 }

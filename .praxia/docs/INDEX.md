@@ -31,8 +31,6 @@
 - [260602_design-the-proxide-master-crate-backbone](specs/260602_design-the-proxide-master-crate-backbone.md)
 - [260602_dunbrack-rotlib-protobuf-cis-pro](specs/260602_dunbrack-rotlib-protobuf-cis-pro.md) — Dunbrack 2010 → protobuf+zstd rotamer library; adds cis-PRO (CPR); MIT-code/ODC-BY-data; geometry engine (proline-first)
 - [260602_proxide-master-spec](specs/260602_proxide-master-spec.md)
-- [260529_confind](specs/260529_confind.md) — Spec for proxide-confind crate — Rust/rayon reimplementation of ConFind contact-degree algorithm (rev 4 — cis-proline detection, omega field, backbone_bin cis_proline param)
-- [260529_rotlib](specs/260529_rotlib.md) — Spec for proxide-rotlib crate — standalone Rust port of MSL RotamerLibrary (mstrotlib.cpp), backbone binning, Frame/Transform rigid-body placement
 - [260529_rotlib_testplan](specs/260529_rotlib_testplan.md) — Test plan for proxide-rotlib — 55 unit + 4 integration tests across 6 modules
 
 ## Actuation Surfaces

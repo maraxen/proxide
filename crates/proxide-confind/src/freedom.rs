@@ -1,111 +1,88 @@
-use proxide_rotlib::RotamerId;
-use std::collections::HashMap;
-use std::sync::Arc;
+//! Structural freedom calculation from sidechain collision probabilities.
+//!
+//! Citations:
+//! - Zheng, W., & Grigoryan, G. (2017). "Sequence statistics of tertiary structural motifs
+//!   reflect protein stability." *PLoS ONE*, 12(5), e0178272, S1 Text.
 
-/// Compute rotamer freedom score: the fraction of conformational space uncontested by backbone or neighbors.
+/// Compute residue structural freedom from surviving rotamer collision probabilities.
 ///
-/// Freedom quantifies sidechain conformational flexibility: 0 = fully constrained, 1 = completely free.
-/// Surviving rotamers and collision probability combine to estimate available rotamer space.
+/// Under the RMS freedom formulation (spec §2.5, §3.3):
+/// - Uncontested rotamers (zero collision with neighbors) = n_surviving - collision_counts.len()
+/// - n_1 = n_uncontested + count(P_coll < lo_cut)
+/// - n_2 = n_uncontested + count(P_coll < hi_cut)
+/// - Freedom = sqrt((n_1^2 + n_2^2) / 2) / n_library
 pub fn compute_freedom(
-    coll_prob: &HashMap<Arc<RotamerId>, f64>,
+    collision_counts: &[f64],
     n_surviving: usize,
     n_library: usize,
     lo_cut: f64,
     hi_cut: f64,
-    freedom_type: u8,
 ) -> f64 {
     if n_library == 0 {
         return 0.0;
     }
-    let n_uncontested = n_surviving.saturating_sub(coll_prob.len()) as f64;
 
-    match freedom_type {
-        1 => {
-            let n = n_uncontested + coll_prob.values().filter(|&&v| v / 100.0 < 0.5).count() as f64;
-            n / n_library as f64
+    let n_uncontested = n_surviving.saturating_sub(collision_counts.len());
+    let mut n1 = n_uncontested;
+    let mut n2 = n_uncontested;
+
+    for &c in collision_counts {
+        if c < lo_cut {
+            n1 += 1;
         }
-        2 => {
-            let n1 =
-                n_uncontested + coll_prob.values().filter(|&&v| v / 100.0 < lo_cut).count() as f64;
-            let n2 =
-                n_uncontested + coll_prob.values().filter(|&&v| v / 100.0 < hi_cut).count() as f64;
-            ((n1 * n1 + n2 * n2) / 2.0).sqrt() / n_library as f64
+        if c < hi_cut {
+            n2 += 1;
         }
-        3 => {
-            let n1 = (n_uncontested
-                + coll_prob.values().filter(|&&v| v / 100.0 < lo_cut).count() as f64)
-                / n_library as f64;
-            let n2 = (n_uncontested
-                + coll_prob.values().filter(|&&v| v / 100.0 < hi_cut).count() as f64)
-                / n_library as f64;
-            ((n2 * n2 + n2 * n1) / 2.0).sqrt()
-        }
-        _ => panic!("unknown freedom type {freedom_type}"),
     }
+
+    let n1_f = n1 as f64;
+    let n2_f = n2 as f64;
+    let rms = ((n1_f * n1_f + n2_f * n2_f) / 2.0).sqrt();
+    (rms / (n_library as f64)).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_map(entries: &[(u32, f64)]) -> HashMap<Arc<RotamerId>, f64> {
-        entries
-            .iter()
-            .map(|&(i, v)| {
-                (
-                    Arc::new(RotamerId {
-                        aa: format!("AA{i}"),
-                        bin_index: 0,
-                        rot_index: i,
-                    }),
-                    v,
-                )
-            })
-            .collect()
+    #[test]
+    fn test_zero_library_returns_zero() {
+        assert_eq!(compute_freedom(&[], 0, 0, 0.5, 2.0), 0.0);
     }
 
     #[test]
-    fn freedom_type2_no_collisions() {
-        // All surviving rotamers uncontested → freedom = 1.0.
-        let cp: HashMap<Arc<RotamerId>, f64> = HashMap::new();
-        let f = compute_freedom(&cp, 10, 10, 0.5, 2.0, 2);
-        assert!((f - 1.0).abs() < 1e-10, "f={f}");
+    fn test_uncontested_freedom() {
+        // 10 surviving rotamers out of 10 library rotamers, zero collisions
+        let f = compute_freedom(&[], 10, 10, 0.5, 2.0);
+        assert!((f - 1.0).abs() < 1e-6);
+
+        // 5 surviving out of 10 library, zero collisions
+        let f5 = compute_freedom(&[], 5, 10, 0.5, 2.0);
+        assert!((f5 - 0.5).abs() < 1e-6);
     }
 
     #[test]
-    fn freedom_type2_all_contested() {
-        // All rotamers contested with prob >> hi_cut (200 >> 2.0*100 = 200).
-        let cp = make_map(&[(0, 300.0), (1, 300.0), (2, 300.0)]);
-        let f = compute_freedom(&cp, 3, 3, 0.5, 2.0, 2);
-        // n1 = 0, n2 = 0, n_uncontested = 0 → f = 0.
-        assert!(f.abs() < 1e-10, "f={f}");
-    }
-
-    #[test]
-    fn freedom_type2_mixed() {
-        // 2 surviving, 1 with cp=40 (40/100=0.4 < 0.5 AND < 2.0), 1 with cp=150 (1.5 < 2.0 but ≥ 0.5).
-        // n_library=4, n_uncontested = 2 - 2 = 0.
-        // n1 = 0 + 1 (only 40/100=0.4 < 0.5) = 1
-        // n2 = 0 + 2 (both 0.4 < 2.0 and 1.5 < 2.0) = 2
-        let cp = make_map(&[(0, 40.0), (1, 150.0)]);
-        let f = compute_freedom(&cp, 2, 4, 0.5, 2.0, 2);
-        let expected = ((1.0_f64 * 1.0 + 2.0 * 2.0) / 2.0).sqrt() / 4.0;
-        assert!((f - expected).abs() < 1e-10, "f={f} expected={expected}");
-    }
-
-    #[test]
-    fn freedom_type1() {
-        let cp = make_map(&[(0, 40.0)]);
-        let f = compute_freedom(&cp, 3, 4, 0.5, 2.0, 1);
-        // n_uncontested=2, pass < 0.5: 1 (40/100=0.4). n = 3, lib=4.
-        let expected = 3.0 / 4.0;
-        assert!((f - expected).abs() < 1e-10);
-    }
-
-    #[test]
-    fn freedom_zero_library() {
-        let cp: HashMap<Arc<RotamerId>, f64> = HashMap::new();
-        let f = compute_freedom(&cp, 0, 0, 0.5, 2.0, 2);
+    fn test_high_collision_freedom() {
+        // 10 surviving, all 10 have severe collisions (> 2.0)
+        let collisions = vec![3.0; 10];
+        let f = compute_freedom(&collisions, 10, 10, 0.5, 2.0);
         assert_eq!(f, 0.0);
+    }
+
+    #[test]
+    fn test_moderate_collision_freedom() {
+        // 10 surviving, 5 with P_coll = 1.0 (between 0.5 and 2.0), 5 with P_coll = 0.2 (< 0.5)
+        let collisions = vec![0.2, 0.2, 0.2, 0.2, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let f = compute_freedom(&collisions, 10, 10, 0.5, 2.0);
+        // n1 = 5, n2 = 10
+        // rms = sqrt((25 + 100) / 2) = sqrt(62.5) ≈ 7.90569
+        // f = 7.90569 / 10 ≈ 0.79057
+        assert!((f - (62.5f64.sqrt() / 10.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_freedom_bounded_in_zero_one() {
+        let f1 = compute_freedom(&[0.1, 0.4], 5, 10, 0.5, 2.0);
+        assert!((0.0..=1.0).contains(&f1));
     }
 }

@@ -62,18 +62,17 @@ fn cache_residue_missing_n() {
     };
 
     // Create backbone with missing N atom for residue 0
-    let mut bb_vec = vec![];
-    bb_vec.push(ResidueBackbone {
+    let bb_vec = vec![ResidueBackbone {
         res_name: "ALA".to_string(),
         n: None,
         ca: Some([0.0, 0.0, 0.0]),
         c: Some([1.0, 0.0, 0.0]),
         o: Some([1.1, 1.0, 0.0]),
-        phi: 9999.0,
-        psi: 9999.0,
+        phi: None,
+        psi: None,
         omega: None,
         is_cis_peptide: false,
-    });
+    }];
     let backbone = Arc::new(ProteinBackbone {
         bb: bb_vec,
         ids: vec![ResidueId {
@@ -104,18 +103,17 @@ fn cache_residue_missing_ca() {
     };
 
     // Create backbone with missing CA atom
-    let mut bb_vec = vec![];
-    bb_vec.push(ResidueBackbone {
+    let bb_vec = vec![ResidueBackbone {
         res_name: "ALA".to_string(),
         n: Some([0.0, 0.0, 0.0]),
         ca: None,
         c: Some([1.0, 0.0, 0.0]),
         o: Some([1.1, 1.0, 0.0]),
-        phi: 9999.0,
-        psi: 9999.0,
+        phi: None,
+        psi: None,
         omega: None,
         is_cis_peptide: false,
-    });
+    }];
     let backbone = Arc::new(ProteinBackbone {
         bb: bb_vec,
         ids: vec![ResidueId {
@@ -145,18 +143,17 @@ fn cache_residue_missing_c() {
     };
 
     // Create backbone with missing C atom
-    let mut bb_vec = vec![];
-    bb_vec.push(ResidueBackbone {
+    let bb_vec = vec![ResidueBackbone {
         res_name: "ALA".to_string(),
         n: Some([0.0, 0.0, 0.0]),
         ca: Some([0.5, 0.0, 0.0]),
         c: None,
         o: Some([1.1, 1.0, 0.0]),
-        phi: 9999.0,
-        psi: 9999.0,
+        phi: None,
+        psi: None,
         omega: None,
         is_cis_peptide: false,
-    });
+    }];
     let backbone = Arc::new(ProteinBackbone {
         bb: bb_vec,
         ids: vec![ResidueId {
@@ -175,7 +172,6 @@ fn cache_residue_missing_c() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn contacts_uncached_returns_error() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,
@@ -197,7 +193,6 @@ fn contacts_uncached_returns_error() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn interference_uncached_residue_returns_error() {
     let rotlib = match load_rotlib_or_skip() {
         Some(r) => r,

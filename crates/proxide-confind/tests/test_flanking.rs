@@ -1,19 +1,12 @@
 mod common;
 
-use common::{load_rotlib_or_skip, make_synthetic_backbone, make_two_chain_backbone};
+use common::{dummy_rotlib, make_synthetic_backbone, make_two_chain_backbone};
 use proxide_confind::coords::ResidueIndex;
 use proxide_confind::ConFind;
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn flanking_same_chain_adjacent_skipped() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     // 3-residue chain, spacing 3.8 Å
     let backbone = make_synthetic_backbone(3, 3.8);
@@ -39,15 +32,8 @@ fn flanking_same_chain_adjacent_skipped() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn flanking_same_chain_nonadjacent_included() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     // 3-residue chain, spacing 3.8 Å
     let backbone = make_synthetic_backbone(3, 3.8);
@@ -68,15 +54,8 @@ fn flanking_same_chain_nonadjacent_included() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn flanking_zero_same_chain_all_included() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     let backbone = make_synthetic_backbone(3, 3.8);
     let confind = ConFind::new(rotlib, backbone.clone(), false);
@@ -104,15 +83,8 @@ fn flanking_zero_same_chain_all_included() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn flanking_large_ignore_value() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     let backbone = make_synthetic_backbone(3, 3.8);
     let confind = ConFind::new(rotlib, backbone.clone(), false);
@@ -133,15 +105,8 @@ fn flanking_large_ignore_value() {
 }
 
 #[test]
-#[ignore = "requires rotamer library — set RLIB env var to run"]
 fn flanking_cross_chain_always_included() {
-    let rotlib = match load_rotlib_or_skip() {
-        Some(r) => r,
-        None => {
-            println!("RLIB not set, skipping test");
-            return;
-        }
-    };
+    let rotlib = dummy_rotlib();
 
     // Two chains, residue 0 from each placed 3.8 Å apart
     let backbone = make_two_chain_backbone(1, 3.8, [0.0, 0.0, 0.0]);
