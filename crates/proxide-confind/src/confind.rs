@@ -13,7 +13,7 @@ use crate::coords::{ProteinBackbone, ResidueIndex};
 use crate::error::ConFindError;
 use crate::freedom::compute_freedom;
 use crate::grid::ProximityGrid;
-use crate::parallel::{collision_masses, run_phase_b};
+use crate::parallel::{apply_num_threads, collision_masses, run_phase_b};
 use crate::params::AA_NAMES;
 use crate::precondition::require_preconditions;
 use dashmap::DashMap;
@@ -225,13 +225,13 @@ impl ConFind {
         let n = self.n_residues();
         let indices: Vec<ResidueIndex> = (0..n).map(|i| ResidueIndex(i as u32)).collect();
 
-        let cached_items: Vec<Result<(ResidueIndex, ResidueCache), ConFindError>> = indices
-            .into_par()
-            .map(|ri| {
-                let rc = self.compute_cache(ri)?;
-                Ok((ri, rc))
-            })
-            .collect();
+        let cached_items: Vec<Result<(ResidueIndex, ResidueCache), ConFindError>> =
+            apply_num_threads(indices.into_par(), self.config.threads)
+                .map(|ri| {
+                    let rc = self.compute_cache(ri)?;
+                    Ok((ri, rc))
+                })
+                .collect();
 
         for item in cached_items {
             let (ri, rc) = item?;
@@ -293,8 +293,8 @@ impl ConFind {
             &self.backbone,
             &self.cache,
             &self.contacts_cache,
-            self.config.cutoffs.d_cut,
-            self.config.cutoffs.d_cont,
+            &self.config.cutoffs,
+            self.config.threads,
         )
     }
 

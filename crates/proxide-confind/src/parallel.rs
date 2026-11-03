@@ -7,12 +7,25 @@
 //!   reflect protein stability." *PLoS ONE*, 12(5), e0178272.
 
 use crate::cache::{bboxes_overlap, ResidueCache};
+use crate::config::Cutoffs;
 use crate::contact_list::ContactList;
 use crate::coords::{ProteinBackbone, ResidueIndex};
 use crate::error::ConFindError;
 use dashmap::DashMap;
 use orx_parallel::{IntoParIter, ParIter};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
+
+/// Apply a configured worker limit. `None` keeps the orx-parallel default.
+pub(crate) fn apply_num_threads<I>(iter: I, threads: Option<NonZeroUsize>) -> I
+where
+    I: ParIter,
+{
+    match threads {
+        Some(n) => iter.num_threads(n.get()),
+        None => iter,
+    }
+}
 
 /// Compute pairwise contact degree and collision masses between two cached residues.
 ///
@@ -109,15 +122,21 @@ pub fn collision_masses(
 ///
 /// Candidate pairs satisfy `|Cα_i − Cα_j| <= d_cut` (inclusive). Results are ordered by
 /// the query order and independent of the thread count.
+///
+/// `cutoffs` supplies `d_cut` and `d_cont`. `threads` is the worker limit from
+/// [`crate::ConFindConfig`]: `None` is the orx-parallel default, `Some(n)` calls
+/// `.num_threads(n)` on the contact loop.
 pub fn run_phase_b(
     residues: &[ResidueIndex],
     cd_cut: f64,
     backbone: &ProteinBackbone,
     cache: &DashMap<ResidueIndex, Arc<ResidueCache>>,
     contacts_cache: &DashMap<(ResidueIndex, ResidueIndex), f64>,
-    d_cut: f64,
-    d_cont: f64,
+    cutoffs: &Cutoffs,
+    threads: Option<NonZeroUsize>,
 ) -> Result<ContactList, ConFindError> {
+    let d_cut = cutoffs.d_cut;
+    let d_cont = cutoffs.d_cont;
     // 1. Validate that all query residues are cached
     for &ri in residues {
         if !cache.contains_key(&ri) {
@@ -155,18 +174,18 @@ pub fn run_phase_b(
     }
 
     // 3. Parallel pairwise contact evaluation
-    let results: Vec<((ResidueIndex, ResidueIndex), f64)> = candidate_pairs
-        .into_par()
-        .map(|(ri, rj)| {
-            // Evaluate with the lower index first so that c(i, j) is bitwise equal to
-            // c(j, i) whatever the query order (summation order is fixed).
-            let (lo, hi) = if ri <= rj { (ri, rj) } else { (rj, ri) };
-            let cache_lo = cache.get(&lo).unwrap();
-            let cache_hi = cache.get(&hi).unwrap();
-            let (deg, _, _) = compute_pair_contact(&cache_lo, &cache_hi, d_cont);
-            ((ri, rj), deg)
-        })
-        .collect();
+    let results: Vec<((ResidueIndex, ResidueIndex), f64)> =
+        apply_num_threads(candidate_pairs.into_par(), threads)
+            .map(|(ri, rj)| {
+                // Evaluate with the lower index first so that c(i, j) is bitwise equal to
+                // c(j, i) whatever the query order (summation order is fixed).
+                let (lo, hi) = if ri <= rj { (ri, rj) } else { (rj, ri) };
+                let cache_lo = cache.get(&lo).unwrap();
+                let cache_hi = cache.get(&hi).unwrap();
+                let (deg, _, _) = compute_pair_contact(&cache_lo, &cache_hi, d_cont);
+                ((ri, rj), deg)
+            })
+            .collect();
 
     // 4. Collect results
     let mut contact_list = ContactList::default();

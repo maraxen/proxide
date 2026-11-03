@@ -15,6 +15,7 @@ use proxide_confind::{
 use proxide_rotlib::RotamerLibrary;
 use std::fs;
 use std::io::{BufWriter, Write};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -35,10 +36,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("loading PDB: {}", opts.pdb.display());
     let backbone = Arc::new(load_pdb_f64(&opts.pdb)?);
 
-    if let Some(n) = opts.threads {
-        log::info!("configured parallel thread count: {n}");
-    }
-
     // Resolve the freedom scope against the loaded structure.
     let scope = match &opts.scope {
         ScopeArg::All => ResidueScope::All,
@@ -47,6 +44,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ),
     };
     let config = opts.config.clone().with_scope(scope);
+    if let Some(n) = config.threads {
+        log::info!("configured parallel thread count: {n}");
+    }
 
     let cf = ConFind::with_config(rotlib, backbone.clone(), false, config)
         .map_err(|e| describe_error(&e))?;
@@ -70,10 +70,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let freedom_residues: Vec<ResidueIndex> =
         residues.iter().copied().filter(|&ri| cf.in_scope(ri)).collect();
     let par = freedom_residues.into_par();
-    let par = if let Some(n) = opts.threads {
-        par.num_threads(n)
-    } else {
-        par
+    let par = match cf.config().threads {
+        Some(n) => par.num_threads(n.get()),
+        None => par,
     };
     let freedom_list: Vec<(ResidueIndex, f64)> = par
         .map(|ri| cf.freedom(ri).map(|f| (ri, f)))
@@ -296,7 +295,6 @@ struct Opts {
     sel: Option<String>,
     cd_cut: f64,
     in_cut: f64,
-    threads: Option<usize>,
     scope: ScopeArg,
     config: ConFindConfig,
 }
@@ -308,7 +306,7 @@ fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
     let mut sel = None;
     let mut cd_cut = 0.05;
     let mut in_cut = 0.0;
-    let mut threads = None;
+    let mut threads: Option<NonZeroUsize> = None;
     let mut scope = ScopeArg::All;
     let mut cutoffs = Cutoffs::default();
     let mut cb_clash = CbClashPolicy::default();
@@ -353,9 +351,15 @@ fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
             }
             "--threads" => {
                 let v = value()?;
-                let n = v.parse::<usize>().ok().filter(|&n| n > 0).ok_or_else(|| {
-                    format!("--threads: invalid value '{v}'; allowed: a positive integer (>= 1)")
-                })?;
+                let n = v
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(NonZeroUsize::new)
+                    .ok_or_else(|| {
+                        format!(
+                            "--threads: invalid value '{v}'; allowed: a positive integer (>= 1)"
+                        )
+                    })?;
                 threads = Some(n);
             }
             "--cbclash" => {
@@ -395,7 +399,8 @@ fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
         .with_cutoffs(cutoffs)
         .with_cb_clash_policy(cb_clash)
         .with_crowdedness_mode(crowd)
-        .with_freedom_mode(freedom);
+        .with_freedom_mode(freedom)
+        .with_threads(threads);
     config.validate().map_err(|e| describe_config_error(&e))?;
 
     Ok(Opts {
@@ -405,7 +410,6 @@ fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
         sel,
         cd_cut,
         in_cut,
-        threads,
         scope,
         config,
     })

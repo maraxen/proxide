@@ -12,6 +12,7 @@
 //! | [`FreedomMode`] | `freedom` only |
 //! | [`ResidueScope`] | `freedom` only (through the neighbour set) |
 //! | [`Cutoffs`] | `d_clash`: every output; `d_cont`: contacts and freedom; `d_cut`: contacts and freedom (exactness-preserving when valid); `tau_*`: freedom |
+//! | `threads` | no numeric output. `None` is the orx-parallel default; `Some(n)` limits every parallel phase |
 //!
 //! # Validation
 //!
@@ -32,6 +33,7 @@
 use crate::coords::ResidueIndex;
 use crate::params::{CLASH_DIST, CONT_DIST, DCUT, HI_COLL_PROB_CUT, LO_COLL_PROB_CUT};
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 
 /// Configuration validation error.
@@ -178,6 +180,13 @@ pub struct ConFindConfig {
     pub crowdedness_mode: CrowdednessMode,
     /// Freedom combination mode.
     pub freedom_mode: FreedomMode,
+    /// Worker limit for every parallel phase (Phase A cache, Phase B contacts, and the
+    /// CLI freedom map).
+    ///
+    /// `None` leaves the orx-parallel default. `Some(n)` applies `.num_threads(n)` on each
+    /// `into_par()` in this crate. Spec §3.9 does not define this field; it changes no
+    /// numeric result. Zero is not representable.
+    pub threads: Option<NonZeroUsize>,
 }
 
 impl ConFindConfig {
@@ -208,6 +217,12 @@ impl ConFindConfig {
     /// Replace the freedom mode.
     pub fn with_freedom_mode(mut self, m: FreedomMode) -> Self {
         self.freedom_mode = m;
+        self
+    }
+
+    /// Replace the worker limit. `None` restores the orx-parallel default.
+    pub fn with_threads(mut self, threads: Option<NonZeroUsize>) -> Self {
+        self.threads = threads;
         self
     }
 
