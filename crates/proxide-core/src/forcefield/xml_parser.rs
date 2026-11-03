@@ -679,7 +679,7 @@ mod tests {
         <ForceField>
           <PeriodicTorsionForce>
             <Proper class1="C" class2="CA" class3="CA" class4="C" periodicity1="3" phase1="0" k1="1.0" />
-            <Improper class1="N" class2="C" class3="CA" class4="O" periodicity1="2" phase1="3.14" k1="2.5" />
+            <Improper class1="N" class2="C" class3="CA" class4="O" periodicity1="2" phase1="3.1415927" k1="2.5" />
           </PeriodicTorsionForce>
         </ForceField>"#;
 
@@ -690,7 +690,7 @@ mod tests {
         assert_eq!(ff.proper_torsions[0].terms[0].k, 1.0);
 
         assert_eq!(ff.improper_torsions.len(), 1);
-        assert!((ff.improper_torsions[0].terms[0].phase - 3.14).abs() < 0.01);
+        assert!((ff.improper_torsions[0].terms[0].phase - std::f32::consts::PI).abs() < 0.01);
     }
 
     #[test]

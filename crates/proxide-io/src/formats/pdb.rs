@@ -82,7 +82,7 @@ mod tests {
         Ok(raw)
     }
 
-    fn downcast_kind(err: &Box<dyn std::error::Error>) -> Option<&PdbFieldError> {
+    fn downcast_kind<'a>(err: &'a (dyn std::error::Error + 'static)) -> Option<&'a PdbFieldError> {
         err.downcast_ref::<PdbFieldError>()
     }
 
@@ -192,7 +192,7 @@ mod tests {
         // kind-specific error (decision c, OBS-105 option a).
         let err = parse_one_line("ATOM").unwrap_err();
         let kind_err =
-            downcast_kind(&err).expect("Box<dyn Error> should downcast to PdbFieldError");
+            downcast_kind(err.as_ref()).expect("Box<dyn Error> should downcast to PdbFieldError");
         assert_eq!(
             kind_err.kind,
             crate::formats::pdb_fields::PdbFieldErrorKind::LineTooShort
@@ -219,7 +219,7 @@ mod tests {
         // holds "x.xx" -- present but unparseable, not blank).
         let path = workspace_root().join("tests/data/coercion/malformed_occupancy.pdb");
         let err = parse_pdb_file(&path).unwrap_err();
-        let kind_err = downcast_kind(&err).unwrap();
+        let kind_err = downcast_kind(err.as_ref()).unwrap();
         assert_eq!(
             kind_err.kind,
             crate::formats::pdb_fields::PdbFieldErrorKind::Unparseable

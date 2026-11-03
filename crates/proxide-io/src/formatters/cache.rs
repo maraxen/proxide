@@ -477,16 +477,20 @@ mod tests {
         let base = OutputSpec::default();
         assert_eq!(options_key(&base), options_key(&OutputSpec::default()));
 
-        let mut caching_only = OutputSpec::default();
-        caching_only.enable_caching = !base.enable_caching;
+        let caching_only = OutputSpec {
+            enable_caching: !base.enable_caching,
+            ..Default::default()
+        };
         assert_eq!(
             options_key(&base),
             options_key(&caching_only),
             "enable_caching only decides storage, so it is not keyed"
         );
 
-        let mut other = OutputSpec::default();
-        other.remove_solvent = !base.remove_solvent;
+        let other = OutputSpec {
+            remove_solvent: !base.remove_solvent,
+            ..Default::default()
+        };
         assert_ne!(options_key(&base), options_key(&other));
     }
 }

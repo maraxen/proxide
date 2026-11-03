@@ -55,6 +55,6 @@ mod tests {
         let reader = DcdReader::new(file).expect("Failed to create DcdReader");
         assert_eq!(reader.header.n_frames, 1);
         assert_eq!(reader.header.n_atoms, 10);
-        assert_eq!(reader.header.has_unit_cell, false);
+        assert!(!reader.header.has_unit_cell);
     }
 }

@@ -1702,8 +1702,7 @@ _atom_site.label_seq_id
         assert_eq!(raw.res_ids[0], 9);
         // Label numbering reads label_seq_id first: `?` is a hard error.
         let err = parse_mmcif_from_reader_with(text.as_bytes(), MmcifNumbering::Label)
-            .err()
-            .expect("expected an error")
+            .expect_err("expected an error")
             .downcast_ref::<CifFieldError>()
             .cloned()
             .expect("CifFieldError");
@@ -2046,16 +2045,12 @@ ATOM 1 N ALA C 9 0.000 0.000 0.000
     #[test]
     fn question_mark_is_hard_error_in_both_modes() {
         let label_q = format!("{HEADER_LABEL_AND_AUTH}ATOM 1 N ALA B ? A 7 0.000 0.000 0.000\n");
-        let err = parse(&label_q, MmcifNumbering::Label)
-            .err()
-            .expect("expected an error");
+        let err = parse(&label_q, MmcifNumbering::Label).expect_err("expected an error");
         assert_eq!(err.kind, TokenFieldErrorKind::Unknown);
         assert_eq!(err.column, "label_seq_id");
 
         let auth_q = format!("{HEADER_LABEL_AND_AUTH}ATOM 1 N ALA B 1 A ? 0.000 0.000 0.000\n");
-        let err = parse(&auth_q, MmcifNumbering::Auth)
-            .err()
-            .expect("expected an error");
+        let err = parse(&auth_q, MmcifNumbering::Auth).expect_err("expected an error");
         assert_eq!(err.kind, TokenFieldErrorKind::Unknown);
         assert_eq!(err.column, "auth_seq_id");
     }
@@ -2075,8 +2070,7 @@ _atom_site.Cartn_z
 ATOM 1 N ALA A 0.000 0.000 0.000
 ";
         let err = parse_mmcif_from_reader_with(text.as_bytes(), MmcifNumbering::Auth)
-            .err()
-            .expect("expected an error")
+            .expect_err("expected an error")
             .to_string();
         assert!(err.contains("need auth_seq_id or label_seq_id"), "{err}");
     }

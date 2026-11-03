@@ -649,7 +649,7 @@ mod tests {
     /// module's own column convention) with `value`, right-padded/truncated
     /// to fit -- mirrors fixed-column PDB field layout so the rest of the
     /// line's columns stay put.
-    fn set_field(line: &mut Vec<u8>, start: usize, end: usize, value: &str) {
+    fn set_field(line: &mut [u8], start: usize, end: usize, value: &str) {
         let width = end - start;
         let mut field = value.as_bytes().to_vec();
         field.truncate(width);

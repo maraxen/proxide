@@ -300,10 +300,10 @@ mod tests {
         let params = assign_params(&mol);
 
         // Should have at least 1 C-C bond (and 6 C-H bonds from implicit hydrogens)
-        let cc_bond = params.bonds.iter().find(|b| {
-            (b.type_pair[0] == "c3" && b.type_pair[1] == "c3")
-                || (b.type_pair[1] == "c3" && b.type_pair[0] == "c3")
-        });
+        let cc_bond = params
+            .bonds
+            .iter()
+            .find(|b| b.type_pair[0] == "c3" && b.type_pair[1] == "c3");
         assert!(
             cc_bond.is_some(),
             "ethane should have a c3-c3 bond, bonds present: {:?}",
@@ -356,8 +356,8 @@ mod tests {
     fn ethanol_has_bonds_and_angles() {
         let mol = parse("CCO").unwrap();
         let params = assign_params(&mol);
-        assert!(params.bonds.len() > 0, "ethanol should have bonds");
-        assert!(params.angles.len() > 0, "ethanol should have angles");
+        assert!(!params.bonds.is_empty(), "ethanol should have bonds");
+        assert!(!params.angles.is_empty(), "ethanol should have angles");
     }
 
     #[test]

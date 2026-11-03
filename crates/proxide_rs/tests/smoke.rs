@@ -40,7 +40,7 @@ fn test_smoke_parsing_topology_physics() {
 
     // 2. Topology
     let topo = generate_topology(coords_slice, &elements, 1.3);
-    assert!(topo.bonds.len() > 0, "Should have inferred some bonds");
+    assert!(!topo.bonds.is_empty(), "Should have inferred some bonds");
 
     // 3. Physics
     if let Some(charges) = &system.charges {
