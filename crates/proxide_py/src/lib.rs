@@ -89,6 +89,7 @@ fn _proxider(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Structure parsing functions (from py_parsers)
     m.add_function(wrap_pyfunction!(py_parsers::parse_pdb, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_mmcif, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parsers::parse_mmcif_batch, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_pqr, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_parm7, m)?)?;
     m.add_function(wrap_pyfunction!(py_parsers::parse_amber_trajectory, m)?)?;
