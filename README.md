@@ -181,6 +181,13 @@ The tensor-bundle helpers in `proxide.io` (`save_tensor_bundle`, `load_tensor_bu
 
 confind, rotlib and CCD/fixer are experimental too; they have no top-level Python exports at this version.
 
+## Licensing of optional source crates
+
+proxide's own code in the PyPI wheels and sdist is MIT. They also ship files under other terms: `src/proxide/chem/residues.py` is Apache-2.0 (DeepMind AlphaFold residue constants; see its header), the force-field files under `src/proxide/assets` keep their upstream licences (see `src/proxide/assets/README.md`), and `CHANGELOG.md` records further data notes. Some crates in this repository are not part of the wheels or sdist and carry different terms:
+
+- `crates/proxide-confind`, `crates/proxide-rotlib` and `crates/proxide_fixer` derive from, or depend on code derived from, [Mosaist](https://github.com/Grigoryanlab/Mosaist), which is CC BY-NC-SA 4.0. This is unresolved. Read each crate's `NOTICE` before using it, and do not use these crates for commercial purposes.
+- `crates/proxide-gaff2` is GPL-2.0-or-later and opt-in at build time.
+
 ## 🔧 Development
 
 ### Running Tests
