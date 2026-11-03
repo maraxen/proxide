@@ -101,7 +101,11 @@ def check_gbsa_fallback(proxide_mod) -> bool:
 
     # Fallback = 3
     if r_sources[0] != 3 or s_sources[0] != 3:
-      log.error("GBSA sources mismatch: radius=%d, screen=%d (expected 3)", r_sources[0], s_sources[0])
+      log.error(
+        "GBSA sources mismatch: radius=%d, screen=%d (expected 3)",
+        r_sources[0],
+        s_sources[0],
+      )
       return False
 
     if r["all_licensed"] or 0 not in list(r["unlicensed_atoms"]):
@@ -137,7 +141,8 @@ def main() -> int:
     return out
 
   neg_tab_ok, _, neg_untab_ok, _, neg_silent_12 = run_checks(buggy_mock_assign, is_mock=True)
-  # Negative control passes if the validator DETECTS the bug (neg_untab_ok is False and neg_silent_12 > 0)
+  # Negative control passes if the validator DETECTS the bug
+  # (neg_untab_ok is False and neg_silent_12 > 0).
   neg_controls_passed = 1 if (not neg_untab_ok and neg_silent_12 > 0) else 0
 
   all_pass = tab_ok and untab_ok and (silent_12 == 0) and gbsa_ok and (neg_controls_passed >= 1)

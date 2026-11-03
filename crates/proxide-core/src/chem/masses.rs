@@ -62,7 +62,9 @@ pub fn assign_masses(atom_names: &[String]) -> Result<Vec<f32>, String> {
                 format!("cannot infer an element from atom name {name:?} at index {i}")
             })?;
             get_mass(elem).ok_or_else(|| {
-                format!("no tabulated mass for element {elem:?} from atom name {name:?} at index {i}")
+                format!(
+                    "no tabulated mass for element {elem:?} from atom name {name:?} at index {i}"
+                )
             })
         })
         .collect()
@@ -261,7 +263,9 @@ mod tests {
     #[test]
     fn test_get_mass_untabulated_returns_none() {
         // Untabulated elements must return None, never default mass 12.0.
-        for elem in ["", "X", "AU", "Au", "LI", "Li", "U", "He", "Ne", "Ar", "Kr", "Xe", "Rn", "foo"] {
+        for elem in [
+            "", "X", "AU", "Au", "LI", "Li", "U", "He", "Ne", "Ar", "Kr", "Xe", "Rn", "foo",
+        ] {
             assert_eq!(get_mass(elem), None, "{elem:?} must return None");
         }
     }
