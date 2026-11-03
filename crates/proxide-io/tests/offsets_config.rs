@@ -198,7 +198,7 @@ fn test_offsets_dir_trailing_comment_and_invalid_config() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        perms.set_mode(0);
+        perms.set_mode(0o000);
     }
     std::fs::set_permissions(&cfg, perms).unwrap();
     std::env::set_current_dir(unreadable.path()).unwrap();
