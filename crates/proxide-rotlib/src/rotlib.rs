@@ -60,9 +60,21 @@ pub struct RotamerLibrary {
     pub(crate) entries: HashMap<String, AaEntry>,
 }
 
+fn ensure_finite_dihedrals(phi: Option<f64>, psi: Option<f64>) -> Result<(), RotlibError> {
+    if phi.is_some_and(|v| !v.is_finite()) || psi.is_some_and(|v| !v.is_finite()) {
+        Err(RotlibError::InvalidFormat(format!(
+            "NaN or non-finite dihedral angle provided: phi={phi:?}, psi={psi:?}"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
 impl RotamerLibrary {
     /// Decode a RotamerLibrary from an in-memory Protobuf message.
-    pub fn from_protobuf(pb_lib: &crate::pb::rotlib_v1::RotamerLibrary) -> Result<Self, RotlibError> {
+    pub fn from_protobuf(
+        pb_lib: &crate::pb::rotlib_v1::RotamerLibrary,
+    ) -> Result<Self, RotlibError> {
         // 1. Validate attribution
         if pb_lib.attribution.is_empty() {
             return Err(RotlibError::MissingAttribution);
@@ -187,8 +199,9 @@ impl RotamerLibrary {
         reader.read_to_end(&mut bytes)?;
 
         let decoded_bytes = if bytes.starts_with(&[0x28, 0xb5, 0x2f, 0xfd]) {
-            zstd::decode_all(bytes.as_slice())
-                .map_err(|e| RotlibError::InvalidFormat(format!("zstd decompression failed: {}", e)))?
+            zstd::decode_all(bytes.as_slice()).map_err(|e| {
+                RotlibError::InvalidFormat(format!("zstd decompression failed: {}", e))
+            })?
         } else {
             bytes
         };
@@ -315,11 +328,7 @@ impl RotamerLibrary {
         // Under Debt #1897, missing dihedral angles are represented strictly as None.
         // Non-finite dihedrals (NaN or infinite) raise an explicit error.
         // If either angle is None, route to entry.default_bin.
-        if phi.is_some_and(|v| !v.is_finite()) || psi.is_some_and(|v| !v.is_finite()) {
-            return Err(RotlibError::InvalidFormat(format!(
-                "NaN or non-finite dihedral angle provided: phi={phi:?}, psi={psi:?}"
-            )));
-        }
+        ensure_finite_dihedrals(phi, psi)?;
 
         let bin = match (phi, psi) {
             (Some(p), Some(s)) => {
@@ -400,6 +409,8 @@ impl RotamerLibrary {
     ) -> Result<crate::rotamer_id::PlacedRotamer, RotlibError> {
         use crate::rotamer_id::{PlacedAtom, PlacedRotamer, RotamerId};
 
+        ensure_finite_dihedrals(phi, psi)?;
+
         if aa == "GLY" {
             return Ok(PlacedRotamer {
                 id: RotamerId {
@@ -434,10 +445,22 @@ impl RotamerLibrary {
         };
 
         let vx = sub(ca, n);
-        let ux = scale(vx, norm(vx));
+        let vx_norm = norm(vx);
+        if vx_norm == 0.0 || !vx_norm.is_finite() {
+            return Err(RotlibError::InvalidFormat(
+                "degenerate backbone: ||CA − N|| is zero or non-finite".to_string(),
+            ));
+        }
+        let ux = scale(vx, vx_norm);
         let vc = sub(c, ca);
         let vz = cross(ux, vc);
-        let uz = scale(vz, norm(vz));
+        let vz_norm = norm(vz);
+        if vz_norm == 0.0 || !vz_norm.is_finite() {
+            return Err(RotlibError::InvalidFormat(
+                "degenerate backbone: ||N–CA × CA–C|| is zero or non-finite".to_string(),
+            ));
+        }
+        let uz = scale(vz, vz_norm);
         let uy = cross(uz, ux);
 
         let atoms = bin_data.coords[rot_index]
@@ -648,7 +671,10 @@ mod tests {
         assert!(result.is_ok());
         let placed = result.unwrap();
         assert_eq!(placed.id.aa, "GLY");
-        assert!(placed.atoms.is_empty(), "GLY must return empty atoms vector");
+        assert!(
+            placed.atoms.is_empty(),
+            "GLY must return empty atoms vector"
+        );
     }
 
     #[test]

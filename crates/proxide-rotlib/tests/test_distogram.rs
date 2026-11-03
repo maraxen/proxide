@@ -1,9 +1,7 @@
 #[path = "helpers.rs"]
 mod helpers;
 
-use helpers::{
-    committed_rotlib_path, parse_pdb_backbone, real_pdb_path, real_pdb_path_2zta,
-};
+use helpers::{committed_rotlib_path, parse_pdb_backbone, real_pdb_path, real_pdb_path_2zta};
 use proxide_rotlib::RotamerLibrary;
 
 fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -106,7 +104,11 @@ fn test_distogram_invariants_chain_a_small_pdb() {
         .filter(|r| r.chain == 'A' && r.aa != "GLY")
         .take(7)
         .collect();
-    assert_eq!(chain_a.len(), 7, "expected 7 chain-A residues in 1CRN segment 1");
+    assert_eq!(
+        chain_a.len(),
+        7,
+        "expected 7 chain-A residues in 1CRN segment 1"
+    );
 
     let distogram = compute_cb_distogram(&lib, &chain_a);
     verify_distance_matrix_invariants(&distogram);
@@ -124,7 +126,11 @@ fn test_distogram_invariants_chain_b_small_pdb() {
         .iter()
         .filter(|r| r.chain == 'A' && (10..=16).contains(&r.res_seq))
         .collect();
-    assert_eq!(chain_b.len(), 7, "expected 7 residues in 1CRN segment 2 (10..=16)");
+    assert_eq!(
+        chain_b.len(),
+        7,
+        "expected 7 residues in 1CRN segment 2 (10..=16)"
+    );
 
     let distogram = compute_cb_distogram(&lib, &chain_b);
     verify_distance_matrix_invariants(&distogram);
@@ -144,7 +150,11 @@ fn test_distogram_invariants_2zta_chain_a() {
         .filter(|r| r.chain == 'A' && r.aa != "GLY")
         .take(9)
         .collect();
-    assert_eq!(chain_a.len(), 9, "expected 9 contiguous non-GLY residues in 1UBQ");
+    assert_eq!(
+        chain_a.len(),
+        9,
+        "expected 9 contiguous non-GLY residues in 1UBQ"
+    );
 
     let distogram = compute_cb_distogram(&lib, &chain_a);
     verify_distance_matrix_invariants(&distogram);
@@ -170,7 +180,11 @@ fn test_distogram_se3_invariance() {
 
     // Apply arbitrary 3D rotation (angle = 45 deg around axis [1, 2, 3]) and translation [10, -20, 30]
     let theta: f64 = std::f64::consts::FRAC_PI_4;
-    let axis = [1.0 / (14.0_f64).sqrt(), 2.0 / (14.0_f64).sqrt(), 3.0 / (14.0_f64).sqrt()];
+    let axis = [
+        1.0 / (14.0_f64).sqrt(),
+        2.0 / (14.0_f64).sqrt(),
+        3.0 / (14.0_f64).sqrt(),
+    ];
     let cos_t = theta.cos();
     let sin_t = theta.sin();
     let omc = 1.0 - cos_t;
@@ -194,11 +208,13 @@ fn test_distogram_se3_invariance() {
     ];
     let t = [10.5, -20.2, 30.8];
 
-    let xform = |p: [f64; 3]| [
-        r[0][0] * p[0] + r[0][1] * p[1] + r[0][2] * p[2] + t[0],
-        r[1][0] * p[0] + r[1][1] * p[1] + r[1][2] * p[2] + t[1],
-        r[2][0] * p[0] + r[2][1] * p[1] + r[2][2] * p[2] + t[2],
-    ];
+    let xform = |p: [f64; 3]| {
+        [
+            r[0][0] * p[0] + r[0][1] * p[1] + r[0][2] * p[2] + t[0],
+            r[1][0] * p[0] + r[1][1] * p[1] + r[1][2] * p[2] + t[1],
+            r[2][0] * p[0] + r[2][1] * p[1] + r[2][2] * p[2] + t[2],
+        ]
+    };
 
     let transformed_chain_a: Vec<helpers::BackboneResidue> = chain_a
         .iter()

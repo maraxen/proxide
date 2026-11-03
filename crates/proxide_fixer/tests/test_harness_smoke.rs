@@ -265,8 +265,8 @@ fn test_harness_consistent_fixture_format() {
         assert!(path.exists(), "Fixture {} not found", name);
 
         // Try to read as text and verify it starts with HEADER or REMARK/ATOM
-        let content = std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("Failed to read {}", name));
+        let content =
+            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("Failed to read {}", name));
         assert!(!content.is_empty(), "Fixture {} is empty", name);
 
         // Ensure it has ATOM records

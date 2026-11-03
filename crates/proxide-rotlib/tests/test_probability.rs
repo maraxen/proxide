@@ -74,7 +74,9 @@ fn test_prob_sum_le_one_per_bin() {
 fn test_prob_by_id_matches_direct() {
     let (_t, lib) = make_prob_lib();
     // default bin is 4 (phi=0, psi=0, located at phi_idx=1, psi_idx=1 -> 1*3+1=4)
-    let direct = lib.rotamer_probability("TST", Some(0.0), Some(0.0), false, 0).unwrap();
+    let direct = lib
+        .rotamer_probability("TST", Some(0.0), Some(0.0), false, 0)
+        .unwrap();
     let by_id = lib
         .rotamer_probability_by_id(&RotamerId {
             aa: "TST".to_string(),
@@ -89,7 +91,9 @@ fn test_prob_by_id_matches_direct() {
 fn test_prob_sentinel_bin() {
     let (_t, lib) = make_prob_lib();
     // None -> default_bin=4, second rotamer (rot=1)
-    let p = lib.rotamer_probability("TST", None, None, false, 1).unwrap();
+    let p = lib
+        .rotamer_probability("TST", None, None, false, 1)
+        .unwrap();
     assert!(
         (p - 0.3).abs() < 1e-6,
         "expected ~0.3 for sentinel bin, got {}",

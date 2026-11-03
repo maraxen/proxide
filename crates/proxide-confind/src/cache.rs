@@ -6,9 +6,32 @@ use proxide_rotlib::{counts_as_sidechain, RotamerId, RotamerLibrary};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+/// A rotamer kept in the phase-A cache.
+///
+/// `used_default_bin` is the library's own flag for an undefined backbone
+/// angle. `RotamerId` does not carry it, so dropping `PlacedRotamer` down to
+/// `placed.id` would hide a default-bin placement.
+#[derive(Clone, Debug)]
+pub struct CachedRotamer {
+    pub id: RotamerId,
+    pub used_default_bin: bool,
+}
+
+/// Map the in-band undefined dihedral `9999.0` to `None` at the rotlib boundary.
+///
+/// `ResidueBackbone.phi` / `psi` are still `f64` (PR #91 makes them `Option<f64>`).
+/// Passing `Some(9999.0)` wraps to −81° and selects a real Dunbrack bin.
+fn defined_backbone_angle(angle: f64) -> Option<f64> {
+    if angle == 9999.0 {
+        None
+    } else {
+        Some(angle)
+    }
+}
+
 /// Per-residue rotamer cache computed in phase A: surviving rotamers, grids, and interference data.
 pub struct ResidueCache {
-    pub surviving_rotamers: Vec<Arc<RotamerId>>,
+    pub surviving_rotamers: Vec<Arc<CachedRotamer>>,
     /// Per-aa proximity grid of surviving heavy-SC atoms.
     /// `None` means every rotamer of that (library-known) aa was pruned by backbone clash;
     /// it never means the aa was unknown to the library — an unknown aa is a hard error from
@@ -35,15 +58,15 @@ pub fn weight_of_available_rotamers(
     cache
         .surviving_rotamers
         .iter()
-        .filter(|r| available_aa.contains(r.aa.as_str()))
+        .filter(|r| available_aa.contains(r.id.aa.as_str()))
         .map(|r| {
             // RotamerId came from this library's own surviving_rotamers, so its (aa, bin,
             // rot_index) is guaranteed valid here — an error would mean the cache and the
             // library it was built from have gone out of sync.
             let p = rotlib
-                .rotamer_probability_by_id(r)
+                .rotamer_probability_by_id(&r.id)
                 .expect("RotamerId came from this library");
-            aa_propensity(&r.aa) * p
+            aa_propensity(&r.id.aa) * p
         })
         .sum()
 }
@@ -107,14 +130,14 @@ pub fn cache_residue_impl(
     bb_atom_res: &[ResidueIndex],   // maps bb_atom_idx → owning ResidueIndex
 ) -> Result<ResidueCache, ConFindError> {
     let rb = &backbone.bb[ri.0 as usize];
-    let phi = rb.phi;
-    let psi = rb.psi;
+    let phi = defined_backbone_angle(rb.phi);
+    let psi = defined_backbone_angle(rb.psi);
 
     let n = rb.n.ok_or(ConFindError::MissingBackbone(ri, "N"))?;
     let ca = rb.ca.ok_or(ConFindError::MissingBackbone(ri, "CA"))?;
     let c = rb.c.ok_or(ConFindError::MissingBackbone(ri, "C"))?;
 
-    let mut surviving: Vec<Arc<RotamerId>> = Vec::new();
+    let mut surviving: Vec<Arc<CachedRotamer>> = Vec::new();
     let mut rotamer_grids: HashMap<String, Option<ProximityGrid<Arc<RotamerId>>>> = HashMap::new();
     let mut interference: HashMap<ResidueIndex, HashMap<String, f64>> = HashMap::new();
     let mut permanent_contacts_set: HashSet<usize> = HashSet::new();
@@ -122,7 +145,7 @@ pub fn cache_residue_impl(
 
     for &aa in &AA_NAMES {
         let nr = rotlib
-            .num_rotamers(aa, Some(phi), Some(psi), rb.is_cis_peptide)
+            .num_rotamers(aa, phi, psi, rb.is_cis_peptide)
             .map_err(ConFindError::RotlibError)?;
         total_rotamers += nr;
 
@@ -131,10 +154,14 @@ pub fn cache_residue_impl(
 
         for rot_index in 0..nr {
             let placed = rotlib
-                .place_rotamer(aa, Some(phi), Some(psi), rot_index, rb.is_cis_peptide, n, ca, c)
+                .place_rotamer(aa, phi, psi, rot_index, rb.is_cis_peptide, n, ca, c)
                 .map_err(ConFindError::RotlibError)?;
 
             let rot_id = Arc::new(placed.id.clone());
+            let cached = Arc::new(CachedRotamer {
+                id: placed.id.clone(),
+                used_default_bin: placed.used_default_bin,
+            });
             let rot_prob = rotlib.rotamer_probability_by_id(&placed.id)?;
 
             // Accumulate interference for this rotamer across all its SC heavy atoms.
@@ -187,7 +214,7 @@ pub fn cache_residue_impl(
                     aa_sc_tags.push(tag.clone());
                 }
             }
-            surviving.push(rot_id);
+            surviving.push(cached);
         }
 
         let grid = if aa_sc_points.is_empty() {
@@ -219,4 +246,110 @@ pub fn cache_residue_impl(
         interference,
         permanent_contacts,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::coords::{ProteinBackbone, ResidueBackbone, ResidueIndex};
+    use crate::grid::ProximityGrid;
+    use crate::params::{AA_NAMES, CONT_DIST};
+    use proxide_core::processing::residues::ResidueId;
+    use proxide_rotlib::rotlib_v1::{self, GeometryMode};
+    use proxide_rotlib::RotamerLibrary;
+
+    /// 9999° is the in-band "undefined" sentinel on `ResidueBackbone`. It must
+    /// not be wrapped into a real Dunbrack bin: `angle_to_standard(9999) = -81`,
+    /// whose nearest center in this grid is -80 (bin 0), while `default_bin` is 3.
+    #[test]
+    fn cache_sentinel_9999_uses_default_bin() {
+        let lib = library_with_distinct_default_bin();
+        let backbone = ProteinBackbone {
+            bb: vec![ResidueBackbone {
+                res_name: "ALA".to_string(),
+                n: Some([0.0, 0.0, 0.0]),
+                ca: Some([1.5, 0.0, 0.0]),
+                c: Some([2.0, 1.4, 0.0]),
+                o: Some([2.5, 1.4, 1.0]),
+                phi: 9999.0,
+                psi: 9999.0,
+                omega: None,
+                is_cis_peptide: false,
+            }],
+            ids: vec![ResidueId {
+                chain_id: "A".to_string(),
+                res_id: 1,
+                insertion_code: ' ',
+            }],
+            chain_map: vec![0],
+        };
+        let bb_grid = ProximityGrid::build(&[], Vec::<usize>::new(), CONT_DIST);
+        let cache =
+            cache_residue_impl(ResidueIndex(0), &backbone, &lib, &bb_grid, &[]).expect("cache");
+        assert!(
+            !cache.surviving_rotamers.is_empty(),
+            "synthetic library must place rotamers"
+        );
+        for rot in &cache.surviving_rotamers {
+            assert_eq!(
+                rot.id.bin_index, 3,
+                "{} cached bin {} for phi=psi=9999; undefined angles must use default_bin 3, not the -81° wrap",
+                rot.id.aa, rot.id.bin_index
+            );
+            assert!(
+                rot.used_default_bin,
+                "{} default-bin flag must stay visible on the cached rotamer",
+                rot.id.aa
+            );
+        }
+    }
+
+    fn library_with_distinct_default_bin() -> RotamerLibrary {
+        let phi = vec![-80.0_f64, 60.0];
+        let psi = vec![-80.0_f64, 60.0];
+        let residues = AA_NAMES
+            .iter()
+            .map(|code| {
+                let mut bins = Vec::new();
+                for &p in &phi {
+                    for &s in &psi {
+                        bins.push(rotlib_v1::Bin {
+                            phi: p,
+                            psi: s,
+                            freq: 1.0,
+                            rotamers: vec![rotlib_v1::Rotamer {
+                                prob: 1.0,
+                                chi: vec![],
+                                coords: vec![rotlib_v1::Vec3 {
+                                    x: 1.5,
+                                    y: 0.5,
+                                    z: 0.2,
+                                }],
+                            }],
+                        });
+                    }
+                }
+                rotlib_v1::ResidueEntry {
+                    code: (*code).to_string(),
+                    atom_names: vec!["CB".to_string()],
+                    num_chi: 0,
+                    phi_centers: phi.clone(),
+                    psi_centers: psi.clone(),
+                    default_bin: 3,
+                    bins,
+                }
+            })
+            .collect();
+        RotamerLibrary::from_protobuf(&rotlib_v1::RotamerLibrary {
+            version: 1,
+            provenance: "synthetic".to_string(),
+            attribution: "test".to_string(),
+            data_license: "test".to_string(),
+            geometry_mode: GeometryMode::Precomputed as i32,
+            residues,
+            geometry_source: String::new(),
+            geometry_license: String::new(),
+        })
+        .expect("synthetic library")
+    }
 }

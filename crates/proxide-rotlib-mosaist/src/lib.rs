@@ -3,10 +3,10 @@
 //! Licensed under CC BY-NC-SA 4.0 (Non-Commercial Research Use Only).
 //! See NOTICE for full licensing details.
 
+use proxide_rotlib::{AaGridSummary, RotlibError};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, Read};
 use std::path::Path;
-use proxide_rotlib::{AaGridSummary, RotlibError};
 
 fn angle_to_standard(a: f64) -> f64 {
     let mut v = a.rem_euclid(360.0);

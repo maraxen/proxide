@@ -76,7 +76,11 @@ fn test_challenger_load_binary_strictly_rejects_psi_major_file() {
     let mut psi_major_bins = Vec::new();
     for &psi in &angles {
         for &phi in &angles {
-            psi_major_bins.push(BinSpec { phi, psi, freq: 1.0 });
+            psi_major_bins.push(BinSpec {
+                phi,
+                psi,
+                freq: 1.0,
+            });
         }
     }
 
@@ -105,7 +109,11 @@ fn test_challenger_load_binary_accepts_valid_phi_major_file() {
     let mut phi_major_bins = Vec::new();
     for &phi in &angles {
         for &psi in &angles {
-            phi_major_bins.push(BinSpec { phi, psi, freq: 1.0 });
+            phi_major_bins.push(BinSpec {
+                phi,
+                psi,
+                freq: 1.0,
+            });
         }
     }
 

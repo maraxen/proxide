@@ -26,6 +26,9 @@ pub enum RepackError {
         res_id: i32,
         insertion_code: char,
     },
+
+    #[error("atom name {atom_name} determines no element")]
+    UnknownElement { atom_name: String },
 }
 
 /// Enum for selecting which residues to repack.
@@ -76,11 +79,14 @@ fn get_element_radius(element: &str) -> f32 {
 
 /// Calculate the clash penalty for a rotamer candidate against already-placed atoms.
 /// Uses soft repulsion: penalty accumulates for any pair where distance < r_i + r_j.
-fn calculate_clash_penalty(candidate_atoms: &[(String, [f32; 3])], placed_atoms: &[Atom]) -> f64 {
+fn calculate_clash_penalty(
+    candidate_atoms: &[(String, [f32; 3])],
+    placed_atoms: &[Atom],
+) -> Result<f64, RepackError> {
     let mut penalty: f64 = 0.0;
 
     for (cand_name, cand_coords) in candidate_atoms {
-        let cand_element = extract_element(cand_name);
+        let cand_element = extract_element(cand_name)?;
         let cand_radius = get_element_radius(&cand_element) as f64;
 
         for placed_atom in placed_atoms {
@@ -102,24 +108,46 @@ fn calculate_clash_penalty(candidate_atoms: &[(String, [f32; 3])], placed_atoms:
         }
     }
 
-    penalty
+    Ok(penalty)
 }
 
-/// Extract element symbol from atom name (first letter, or first two letters for multi-char).
-fn extract_element(atom_name: &str) -> String {
-    let name = atom_name.trim();
-    if name.is_empty() {
-        return "C".to_string();
-    }
-
-    // Remove leading digits and positions (common in PDB atom names)
-    let trimmed = name.trim_start_matches(char::is_numeric);
+/// Element symbol determined by a PDB atom name.
+///
+/// An empty name, a digit-only name, or a name whose letters are not an element
+/// is an error. It is not recorded as carbon.
+pub(crate) fn element_from_atom_name(atom_name: &str) -> Result<String, String> {
+    let trimmed = atom_name
+        .trim()
+        .trim_start_matches(|c: char| c.is_ascii_digit());
     if trimmed.is_empty() {
-        return "C".to_string();
+        return Err(format!("atom name {atom_name:?} determines no element"));
     }
+    let inferred = proxide_core::chem::masses::infer_element(trimmed);
+    if element_symbol_matches_name(trimmed, inferred) {
+        Ok(inferred.to_string())
+    } else {
+        Err(format!("atom name {atom_name:?} determines no element"))
+    }
+}
 
-    // Delegate to proxide_core's two-letter-aware inference
-    proxide_core::chem::masses::infer_element(trimmed).to_string()
+/// True when `inferred` is the element the name itself spells, not the carbon default.
+fn element_symbol_matches_name(name: &str, inferred: &str) -> bool {
+    const TWO_LETTER: &[&str] = &["Cl", "Br", "Na", "Mg", "Zn", "Fe", "Cu", "Mn", "Se", "Si"];
+    if TWO_LETTER.contains(&inferred) {
+        return name.len() >= inferred.len()
+            && name[..inferred.len()].eq_ignore_ascii_case(inferred);
+    }
+    match name.chars().next() {
+        Some(c) => inferred.len() == 1 && c.eq_ignore_ascii_case(&inferred.chars().next().unwrap()),
+        None => false,
+    }
+}
+
+/// Extract element symbol from atom name.
+fn extract_element(atom_name: &str) -> Result<String, RepackError> {
+    element_from_atom_name(atom_name).map_err(|_| RepackError::UnknownElement {
+        atom_name: atom_name.to_string(),
+    })
 }
 
 /// Derive φ (phi) and ψ (psi) angles from backbone N, CA, C atoms of a residue and its neighbors.
@@ -314,56 +342,59 @@ impl<'a> SidechainRepacker<'a> {
         target_aa: &str,
         phi: Option<f64>,
         psi: Option<f64>,
-    ) -> Option<Vec<Atom>> {
+    ) -> Result<Option<Vec<Atom>>, RepackError> {
         let chain = &self.topology.chains[chain_idx];
         let residue = &chain.residues[res_idx];
 
         // Get backbone atom coordinates
-        let n = find_atom(residue, "N")?;
-        let ca = find_atom(residue, "CA")?;
-        let c = find_atom(residue, "C")?;
+        let Some(n) = find_atom(residue, "N") else {
+            return Ok(None);
+        };
+        let Some(ca) = find_atom(residue, "CA") else {
+            return Ok(None);
+        };
+        let Some(c) = find_atom(residue, "C") else {
+            return Ok(None);
+        };
 
         // Place rotamer from library using first rotamer (greedy; can improve later)
-        let nr = self.lib.num_rotamers(target_aa, phi, psi, false).ok()?;
+        let Ok(nr) = self.lib.num_rotamers(target_aa, phi, psi, false) else {
+            return Ok(None);
+        };
         if nr == 0 {
-            return None;
+            return Ok(None);
         }
 
         // Use rotamer 0 as default (can be improved with clash calculation)
-        let placed_rot = self
-            .lib
-            .place_rotamer(
-                target_aa,
-                phi,
-                psi,
-                0,
-                false,
-                [n[0] as f64, n[1] as f64, n[2] as f64],
-                [ca[0] as f64, ca[1] as f64, ca[2] as f64],
-                [c[0] as f64, c[1] as f64, c[2] as f64],
-            )
-            .ok()?;
+        let Ok(placed_rot) = self.lib.place_rotamer(
+            target_aa,
+            phi,
+            psi,
+            0,
+            false,
+            [n[0] as f64, n[1] as f64, n[2] as f64],
+            [ca[0] as f64, ca[1] as f64, ca[2] as f64],
+            [c[0] as f64, c[1] as f64, c[2] as f64],
+        ) else {
+            return Ok(None);
+        };
 
         // Convert placed atoms to our Atom type
-        let atoms = placed_rot
-            .atoms
-            .iter()
-            .map(|a| {
-                let element = extract_element(&a.name);
-                Atom {
-                    name: a.name.clone(),
-                    element,
-                    coords: [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32],
-                    alt_loc: ' ',
-                    serial: 0, // Will be fixed up later
-                    b_factor: 0.0,
-                    occupancy: 1.0,
-                    is_hetatm: false,
-                }
-            })
-            .collect();
+        let mut atoms = Vec::with_capacity(placed_rot.atoms.len());
+        for a in &placed_rot.atoms {
+            atoms.push(Atom {
+                name: a.name.clone(),
+                element: extract_element(&a.name)?,
+                coords: [a.xyz[0] as f32, a.xyz[1] as f32, a.xyz[2] as f32],
+                alt_loc: ' ',
+                serial: 0, // Will be fixed up later
+                b_factor: 0.0,
+                occupancy: 1.0,
+                is_hetatm: false,
+            });
+        }
 
-        Some(atoms)
+        Ok(Some(atoms))
     }
 
     /// Rebuild a single residue sidechain from rotlib with ForceRebuild mode.
@@ -438,7 +469,8 @@ impl<'a> SidechainRepacker<'a> {
         self.strip_sidechain(chain_idx, res_idx, &aa);
 
         // Rebuild from rotamer library
-        if let Some(placed_atoms_new) = self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)
+        if let Some(placed_atoms_new) =
+            self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)?
         {
             // Update serial numbers and place atoms
             let chain = &mut self.topology.chains[chain_idx];
@@ -447,11 +479,7 @@ impl<'a> SidechainRepacker<'a> {
 
             for (i, placed_atom) in placed_atoms_new.iter().enumerate() {
                 // Check if this atom already exists (e.g., CB kept by strip_sidechain)
-                if residue
-                    .atoms
-                    .iter()
-                    .any(|a| a.name == placed_atom.name)
-                {
+                if residue.atoms.iter().any(|a| a.name == placed_atom.name) {
                     // Keep existing atom coordinates (e.g., preserved CB)
                     continue;
                 } else {
@@ -686,7 +714,7 @@ impl<'a> SidechainRepacker<'a> {
                             .collect();
 
                         // Calculate clash penalty
-                        let clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms);
+                        let clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms)?;
 
                         // Score = probability - lambda * clash
                         let lambda = 1.0; // Weight of clash penalty
@@ -729,7 +757,7 @@ impl<'a> SidechainRepacker<'a> {
                         ];
                     } else {
                         // Add new atom
-                        let element = extract_element(&placed_atom.name);
+                        let element = extract_element(&placed_atom.name)?;
                         residue.atoms.push(Atom {
                             name: placed_atom.name.clone(),
                             element,
@@ -853,7 +881,7 @@ impl<'a> SidechainRepacker<'a> {
 
                 // Rebuild from rotamer library
                 if let Some(placed_atoms) =
-                    self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)
+                    self.rebuild_from_rotlib(chain_idx, res_idx, &aa, phi, psi)?
                 {
                     // Update serial numbers and place atoms
                     let chain = &mut self.topology.chains[chain_idx];
@@ -862,11 +890,7 @@ impl<'a> SidechainRepacker<'a> {
 
                     for (i, placed_atom) in placed_atoms.iter().enumerate() {
                         // Check if this atom already exists (e.g., CB kept by strip_sidechain)
-                        if residue
-                            .atoms
-                            .iter()
-                            .any(|a| a.name == placed_atom.name)
-                        {
+                        if residue.atoms.iter().any(|a| a.name == placed_atom.name) {
                             // Keep existing atom coordinates (e.g., preserved CB)
                             continue;
                         } else {
@@ -924,7 +948,9 @@ impl<'a> SidechainRepacker<'a> {
 
             for rot_idx in 0..nr {
                 // Get rotamer probability
-                let prob = self.lib.rotamer_probability(&aa, phi, psi, false, rot_idx)?;
+                let prob = self
+                    .lib
+                    .rotamer_probability(&aa, phi, psi, false, rot_idx)?;
 
                 // Place the rotamer
                 let placed_rot = self.lib.place_rotamer(
@@ -951,7 +977,7 @@ impl<'a> SidechainRepacker<'a> {
                     .collect();
 
                 // Calculate clash penalty
-                let clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms);
+                let clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms)?;
 
                 // Score = probability - lambda * clash
                 let lambda = 1.0; // Weight of clash penalty
@@ -986,7 +1012,7 @@ impl<'a> SidechainRepacker<'a> {
                     )
                 })
                 .collect();
-            let final_clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms);
+            let final_clash = calculate_clash_penalty(&candidate_atoms, &placed_atoms)?;
 
             // Now get mutable residue and update atoms with the placed sidechain
             let chain = &mut self.topology.chains[chain_idx];
@@ -1006,7 +1032,7 @@ impl<'a> SidechainRepacker<'a> {
                     ];
                 } else {
                     // Add new atom
-                    let element = extract_element(&placed_atom.name);
+                    let element = extract_element(&placed_atom.name)?;
                     residue.atoms.push(Atom {
                         name: placed_atom.name.clone(),
                         element,
@@ -1108,7 +1134,9 @@ mod tests {
         }
 
         if std::env::var("CI").is_ok() {
-            panic!("CI environment detected but rotamer library asset not found at candidate paths");
+            panic!(
+                "CI environment detected but rotamer library asset not found at candidate paths"
+            );
         }
 
         RotlibLoadResult::NotConfigured(
@@ -1203,18 +1231,29 @@ mod tests {
             is_hetatm: false,
         }];
 
-        let penalty = calculate_clash_penalty(&candidate, &placed);
+        let penalty = calculate_clash_penalty(&candidate, &placed).unwrap();
         assert!(penalty > 0.0, "Penalty should be positive for a clash");
     }
 
     #[test]
+    fn unknown_atom_name_is_not_carbon() {
+        assert!(
+            extract_element("QQ").is_err(),
+            "QQ determines no element and must not be recorded as carbon"
+        );
+        assert!(extract_element("").is_err());
+        assert!(extract_element("1").is_err());
+        assert_eq!(extract_element("CA").unwrap(), "C");
+    }
+
+    #[test]
     fn test_element_extraction() {
-        assert_eq!(extract_element("CA"), "C");
-        assert_eq!(extract_element("CB"), "C");
-        assert_eq!(extract_element("N"), "N");
-        assert_eq!(extract_element("OG"), "O");
-        assert_eq!(extract_element("2HD"), "H");
-        assert_eq!(extract_element("SG"), "S");
+        assert_eq!(extract_element("CA").unwrap(), "C");
+        assert_eq!(extract_element("CB").unwrap(), "C");
+        assert_eq!(extract_element("N").unwrap(), "N");
+        assert_eq!(extract_element("OG").unwrap(), "O");
+        assert_eq!(extract_element("2HD").unwrap(), "H");
+        assert_eq!(extract_element("SG").unwrap(), "S");
     }
 
     #[test]
@@ -1805,15 +1844,15 @@ mod tests {
         // Regression test: "CL" (all uppercase) should resolve to "Cl" (chlorine),
         // not "C" (carbon). This is a known bug fix for two-letter element inference.
         // PDB convention uses uppercase element names, so we test uppercase and mixed-case.
-        assert_eq!(extract_element("CL"), "Cl");
-        assert_eq!(extract_element("Cl"), "Cl");
+        assert_eq!(extract_element("CL").unwrap(), "Cl");
+        assert_eq!(extract_element("Cl").unwrap(), "Cl");
         // Also test with leading digits (common in PDB)
-        assert_eq!(extract_element("1CL"), "Cl");
-        assert_eq!(extract_element("2Cl"), "Cl");
+        assert_eq!(extract_element("1CL").unwrap(), "Cl");
+        assert_eq!(extract_element("2Cl").unwrap(), "Cl");
         // Test other two-letter elements
-        assert_eq!(extract_element("BR"), "Br");
-        assert_eq!(extract_element("NA"), "Na");
-        assert_eq!(extract_element("FE"), "Fe");
+        assert_eq!(extract_element("BR").unwrap(), "Br");
+        assert_eq!(extract_element("NA").unwrap(), "Na");
+        assert_eq!(extract_element("FE").unwrap(), "Fe");
     }
 
     #[test]
