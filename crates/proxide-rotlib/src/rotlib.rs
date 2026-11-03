@@ -501,6 +501,47 @@ impl RotamerLibrary {
             .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))
     }
 
+    /// Maximum sidechain reach of amino acid `aa`: the largest distance from Cα to any
+    /// non-hydrogen, non-backbone (N, CA, C, O) atom, taken over every tabulated bin and
+    /// every rotamer of the entry, with atoms in the standard residue frame (the frame is
+    /// a rigid rotation about Cα, so local-coordinate norms equal placed distances).
+    ///
+    /// Cβ is included for every amino acid. No backbone pruning is applied.
+    ///
+    /// # Errors
+    ///
+    /// - [`RotlibError::UnknownAa`] if `aa` has no entry.
+    /// - [`RotlibError::InvalidFormat`] if the entry holds no sidechain atom or a
+    ///   non-finite coordinate (the reach is undefined; no sentinel is returned).
+    pub fn max_sidechain_reach(&self, aa: &str) -> Result<f64, RotlibError> {
+        let entry = self
+            .entries
+            .get(aa)
+            .ok_or_else(|| RotlibError::UnknownAa(aa.to_string()))?;
+
+        let mut reach: Option<f64> = None;
+        for bin in &entry.rotamers {
+            for rotamer in &bin.coords {
+                for (xyz, name) in rotamer.iter().zip(&entry.atom_names) {
+                    if crate::sidechain::is_backbone_or_hydrogen(name) {
+                        continue;
+                    }
+                    let d = (xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2]).sqrt();
+                    if !d.is_finite() {
+                        return Err(RotlibError::InvalidFormat(format!(
+                            "residue '{aa}': non-finite sidechain coordinate for atom {name}"
+                        )));
+                    }
+                    reach = Some(reach.map_or(d, |r| r.max(d)));
+                }
+            }
+        }
+
+        reach.ok_or_else(|| {
+            RotlibError::InvalidFormat(format!("residue '{aa}': no sidechain atoms in library"))
+        })
+    }
+
     /// Look up the discrete Ramachandran bin index for `aa` at (`phi`, `psi`).
     pub fn backbone_bin(
         &self,

@@ -1,6 +1,6 @@
 ---
 title: 'Clean-Room Functional Specification: proxide-confind, proxide-rotlib, and proxide_fixer'
-description: Clean-room behavioral specification for de-deriving proxide-confind, proxide-rotlib, and proxide_fixer under MIT license, covering mathematical formulas with citations, Option<f64> dihedrals (#1897), IUPAC omega (#1903), chain semantics (#1904), Mosaist reader segregation to proxide-rotlib-mosaist, fixer repack tests (#1891), and CCD parser fallbacks (#1933).
+description: Clean-room behavioral specification for proxide-confind, proxide-rotlib, and proxide_fixer under MIT license, covering mathematical formulas with citations, a typed configuration section (Cβ clash policy, crowdedness mode, freedom mode, scope, cutoffs), Option<f64> dihedrals (#1897), IUPAC omega (#1903), chain semantics (#1904), fixer repack tests (#1891), and CCD parser fallbacks (#1933).
 status: draft
 task_id: 261102_proxide-mosaist-cleanroom
 date: '261102'
@@ -9,87 +9,76 @@ adversarial_review: ''
 ---
 # Clean-Room Functional Specification: `proxide-confind`, `proxide-rotlib`, and `proxide_fixer`
 
-**Document ID:** `SPEC-261102-MOSAIST-CLEANROOM`  
-**Task ID:** `261102_proxide-mosaist-cleanroom`  
+**Document ID:** `SPEC-261102-CONFIND-CLEANROOM`  
 **Author:** Spec Team Lead (`spec_author`) & Spec Defender (`spec_defender_cleanroom`)  
-**Date:** 2026-11-02  
-**Status:** REVISED SPECIFICATION (Adversarial Defense Remediated — Revision 1.1)  
-**Target Crates:** `crates/proxide-confind`, `crates/proxide-rotlib`, `crates/proxide_fixer`, `crates/proxide-rotlib-mosaist`  
+**Date:** 2026-11-02 (Revision 2.0: 2026-11-03)  
+**Status:** REVISED SPECIFICATION (Revision 2.0 — owner decisions incorporated; composable configuration)  
+**Target Crates:** `crates/proxide-confind`, `crates/proxide-rotlib`, `crates/proxide_fixer`  
 
 ---
 
-## 1. Overview & Clean-Room Architecture
+## 1. Overview & Architecture
 
-### 1.1 Objective & Clean-Room De-Derivation Principles
-The objective of this clean-room re-specification is to eliminate all intellectual property taint originating from upstream Mosaist (licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International, CC BY-NC-SA 4.0). By establishing independent functional specifications derived strictly from peer-reviewed scientific literature and public Rust type signatures, `proxide-confind`, `proxide-rotlib`, and `proxide_fixer` will be re-implemented as pure MIT / Apache-2.0 licensed software suitable for commercial distribution on `crates.io`.
+### 1.1 Objective & Principles
+This specification defines, from peer-reviewed scientific literature and public Rust type signatures only, the behavior of `proxide-confind`, `proxide-rotlib`, and `proxide_fixer`. The crates are pure MIT / Apache-2.0 licensed software suitable for distribution on `crates.io`.
 
-The clean-room engineering boundary adheres to the following strict principles:
-1. **Behavioral Specification Only**: Specifications describe mathematical equations, geometric transformations, physical invariants, data schemas, public APIs, input preconditions, and postconditions. Internal loop nesting structures, private variable naming conventions, AST topologies, and idiosyncrasies of upstream C++ implementations are strictly excluded.
-2. **Strict Licensing Isolation**: Any parsing logic, conversion tooling, or file format specifications specific to the proprietary Mosaist binary format (`rotlib.bin`) are segregated into a standalone, unpublishable companion crate (`proxide-rotlib-mosaist`) marked `publish = false` with an explicit CC BY-NC-SA 4.0 `NOTICE`.
-3. **Zero Upstream Ingestion**: Production MIT crates (`proxide-confind`, `proxide-rotlib`, `proxide_fixer`, `proxide-frag`) must have zero direct or indirect compile-time or runtime dependencies on `proxide-rotlib-mosaist`.
-4. **Independent Test Invariants**: All hardcoded test golden arrays, upstream PDB coordinate files (`small.pdb`, `1DC7.pdb`), and binary rotamer tables (`rotlib.bin`) are eliminated from the MIT test suites. Correctness is verified through physical conservation laws, geometric invariants, synthetic structural generators, and out-of-tree black-box differential parity testing pre-registered with `bth`.
-5. **Upstream Metadata Scrubbing**: All package descriptions in `Cargo.toml`, crate-level docstrings in `lib.rs`, and source comments must be thoroughly scrubbed of upstream tool names (`Mosaist`, `mstcondeg`, `msttransforms.cpp`), citing solely peer-reviewed scientific literature (Zheng et al. 2015, Zheng & Grigoryan 2017, Dunbrack 1997, Engh & Huber 1991).
+Principles:
+1. **Behavioral Specification Only**: this document gives mathematical equations, geometric transformations, physical invariants, data schemas, public APIs, input preconditions, and postconditions. Implementation structure is the implementer's choice.
+2. **Literature-Only Sources**: every constant and formula cites peer-reviewed literature (Zheng et al. 2015, Zheng & Grigoryan 2017, Dunbrack & Cohen 1997, Shapovalov & Dunbrack 2011, Engh & Huber 1991, Bondi 1964) or is defined here as pure mathematics.
+3. **Single Rotamer Format**: `proxide-rotlib` loads the Protobuf rotamer library (`load_pb`, `load_pb_zst`) only.
+4. **Independent Test Invariants**: tests use physical conservation laws, geometric invariants, synthetic structural generators, committed public-domain structures, and the committed Dunbrack Protobuf asset. No externally generated golden tables are embedded.
+5. **Composability & Configurability**: behaviors that admit more than one physically defensible definition are exposed as typed, documented options (§3.9) that compose freely, with sensible defaults.
 
 ---
 
-### 1.2 Crate Segregation & Workspace Boundaries
+### 1.2 Crate Boundaries
 
 ```
 +-----------------------------------------------------------------------------------------+
 |                                  PROXIDE WORKSPACE                                      |
 +-----------------------------------------------------------------------------------------+
-|                                                                                         |
-|  [ crates/proxide-confind ] (Target: MIT)                                              |
-|  * Clean mathematical contact degree, crowdedness, and structural freedom               |
+|  [ crates/proxide-confind ] (MIT)                                                       |
+|  * Contact degree, crowdedness, interference, structural freedom                        |
+|  * Typed configuration (§3.9) and `confind` binary flags                                |
 |  * Option<f64> dihedral angles (Debt #1897)                                             |
-|  * Standard IUPAC omega torsion & segmented chain semantics (Debts #1903, #1904)         |
+|  * IUPAC omega & segmented chain semantics (Debts #1903, #1904)                         |
 |  * Depends on: proxide-rotlib, proxide-core, proxide-geometry, orx-parallel, dashmap    |
 |                                                                                         |
-|  [ crates/proxide-rotlib ] (Target: MIT)                                                |
+|  [ crates/proxide-rotlib ] (MIT)                                                        |
 |  * Protobuf-backed Dunbrack rotamer library engine (load_pb, load_pb_zst)               |
-|  * Standard Gram-Schmidt orthonormal coordinate frame (Dunbrack 1997)                   |
+|  * Gram-Schmidt orthonormal coordinate frame (Dunbrack & Cohen 1997)                    |
 |  * CCD parser with explicit token validation & cited fallbacks (Debt #1933)             |
-|  * Clean query & placement APIs; zero Mosaist binary format code                        |
 |                                                                                         |
-|  [ crates/proxide_fixer ] (Target: MIT)                                                 |
-|  * High-throughput atomic model prep, sidechain repacking, point mutagenesis            |
-|  * Inlined canonical amino-acid set (decoupled from proxide-confind)                    |
-|  * Repack test suite running against committed Dunbrack Protobuf asset (Debt #1891)     |
-|                                                                                         |
-|  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  |
-|  AIR-GAP BOUNDARY (No production dependencies from MIT crates)                          |
-|  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  |
-|                                                                                         |
-|  [ crates/proxide-rotlib-mosaist ] (License: CC BY-NC-SA 4.0, publish = false)          |
-|  * Mosaist rotlib.bin binary reader (load, validate_grid with phi-major sort check)     |
-|  * Offline converter CLI (parse_master) emitting non-commercial Protobuf blobs          |
-|  * Strictly isolated; unpublishable; ignored by cargo tree -e normal from MIT crates    |
-|                                                                                         |
+|  [ crates/proxide_fixer ] (MIT)                                                         |
+|  * Atomic model prep, sidechain repacking, point mutagenesis                            |
+|  * Inlined canonical amino-acid set (no dependency on proxide-confind)                  |
+|  * Repack tests run against the committed Dunbrack Protobuf asset (Debt #1891)          |
 +-----------------------------------------------------------------------------------------+
 ```
 
 ---
 
-### 1.3 Module Reconstruction Boundary
+### 1.3 Module Requirements
 
-| Crate | Module | Current Status | Clean-Room Strategy |
-|---|---|---|---|
-| `proxide-confind` | `src/coords.rs` | Independent | **Retain**: Update `phi` and `psi` from `f64` (with `9999.0` sentinel) to `Option<f64>`. Implement segmented chain semantics. |
-| `proxide-confind` | `src/precondition.rs` | Independent | **Retain**: Adapt dihedral validation to `Option<f64>`. Preserve precondition reporting. |
-| `proxide-confind` | `src/grid.rs` | Independent | **Retain**: Pure mathematical 3D spatial hash index (`ProximityGrid<T>`) in f64. |
-| `proxide-confind` | `src/contact_list.rs` | Independent | **Retain**: Holds `ContactList` container and `CONTACT_THRESHOLD = 0.02`. |
-| `proxide-confind` | `src/error.rs` | Independent | **Retain**: Standard `ConFindError` enum. |
-| `proxide-confind` | `src/cache.rs` | Tainted | **Delete & Re-implement**: Clean Phase A sidechain placement, local backbone clash filtering, and residue caching from literature equations. |
-| `proxide-confind` | `src/parallel.rs` | Tainted | **Delete & Re-implement**: Clean Phase B pairwise contact degree reduction using parallel batch processing (`orx-parallel` / `rayon`). Remove all C++ line comments. |
-| `proxide-confind` | `src/freedom.rs` | Tainted | **Delete & Re-implement**: Clean Phase C structural freedom aggregation from collision probabilities. |
-| `proxide-confind` | `src/confind.rs` | Tainted | **Delete & Re-implement**: Clean pipeline orchestrator for caching, contact queries, and crowdedness. Fix doc contradictions. |
-| `proxide-confind` | `src/params.rs` | Tainted | **Delete & Re-implement**: Re-specify background amino-acid frequencies and physical cutoffs with peer-reviewed literature citations. |
-| `proxide-rotlib` | `src/rotlib.rs` | Mixed | **Segregate**: Extract `load()`, `validate_grid()`, and `to_protobuf()` into `proxide-rotlib-mosaist`. Retain `load_pb()` and clean query APIs in `proxide-rotlib`. |
-| `proxide-rotlib` | `src/frame.rs` | Minor Taint | **Re-document**: Remove Mosaist source line comments; specify standard Gram-Schmidt orthonormalization. |
-| `proxide-rotlib` | `src/sidechain.rs` | Independent | **Retain**: Formalize IUPAC sidechain heavy-atom predicates and alanine $C_\beta$ handling. |
-| `proxide-rotlib` | `src/geometry/ccd_parser.rs` | Independent Bug | **Patch**: Enforce exact CIF token validation; eliminate silent 1.5 Å / 109.5° defaults (Debt #1933). |
-| `proxide_fixer` | `src/mutate.rs` | External Coup. | **Decouple**: Inline `CANONICAL_AA_NAMES`; remove `proxide-confind` dependency. |
-| `proxide_fixer` | `src/repack.rs` | Test Flaw | **Patch**: Migrate repack tests to workspace Dunbrack Protobuf asset; fail loudly on corrupt load (Debt #1891). |
+| Crate | Module | Requirement |
+|---|---|---|
+| `proxide-confind` | `src/coords.rs` | `phi`, `psi`, `omega` are `Option<f64>`; segmented chain semantics (§3.4–§3.6). |
+| `proxide-confind` | `src/precondition.rs` | Dihedral validation on `Option<f64>`; precondition reporting. |
+| `proxide-confind` | `src/grid.rs` | 3D spatial hash index `ProximityGrid<T>` in f64. |
+| `proxide-confind` | `src/contact_list.rs` | `ContactList` container and `CONTACT_THRESHOLD = 0.02`. |
+| `proxide-confind` | `src/error.rs` | `ConFindError` enum (§3.2). |
+| `proxide-confind` | `src/config.rs` | Typed configuration, validation, string parsing (§3.9). |
+| `proxide-confind` | `src/cache.rs` | Phase A: sidechain placement, backbone clash pruning, residue caching (§2.4, §3.8.3). |
+| `proxide-confind` | `src/parallel.rs` | Phase B: pairwise contact degree with parallel batch processing (§2.1). |
+| `proxide-confind` | `src/freedom.rs` | Phase C: freedom from collision probabilities (§2.5, §3.8.2). |
+| `proxide-confind` | `src/confind.rs` | Pipeline orchestration for caching, contact queries, crowdedness, freedom, interference. |
+| `proxide-confind` | `src/params.rs` | Background frequencies and default cutoffs with literature citations. |
+| `proxide-rotlib` | `src/rotlib.rs` | Protobuf loading (`load_pb`, `load_pb_zst`) and query APIs. |
+| `proxide-rotlib` | `src/frame.rs` | Standard Gram-Schmidt orthonormalization (§2.7). |
+| `proxide-rotlib` | `src/sidechain.rs` | IUPAC sidechain heavy-atom predicates (§4.5). |
+| `proxide-rotlib` | `src/geometry/ccd_parser.rs` | Exact CIF token validation; recorded, cited fallbacks (Debt #1933). |
+| `proxide_fixer` | `src/mutate.rs` | Inline `CANONICAL_AA_NAMES`; no `proxide-confind` dependency. |
+| `proxide_fixer` | `src/repack.rs` | Repack tests use workspace Dunbrack Protobuf asset; fail loudly on corrupt load (Debt #1891). |
 
 ---
 
@@ -113,7 +102,7 @@ The sequence-independent pairwise contact degree $c(i, j)$ between residue posit
 $$c(i, j) = \frac{1}{\Omega_i \, \Omega_j} \sum_{a \in \mathcal{A}_{18}} P(a) \sum_{b \in \mathcal{A}_{18}} P(b) \sum_{r_a \in \mathcal{R}_i(a)} P(r_a \mid a, \phi_i, \psi_i) \sum_{r_b \in \mathcal{R}_j(b)} P(r_b \mid b, \phi_j, \psi_j) \, w(r_a, r_b)$$
 where:
 - $w(r_a, r_b)$ is the binary steric contact indicator function between rotamer $r_a$ at position $i$ and rotamer $r_b$ at position $j$:
-  $$w(r_a, r_b) = \begin{cases} 1 & \text{if } \exists \, k \in \text{atoms}(r_a), \, l \in \text{atoms}(r_b) \text{ such that } \|\vec{x}_{ik} - \vec{x}_{jl}\| \le d_{\text{cont}} \\ 0 & \text{otherwise} \end{cases}$$
+  $$w(r_a, r_b) = \begin{cases} 1 & \text{if } \exists \, k \in S_{\text{cont}}(r_a), \, l \in S_{\text{cont}}(r_b) \text{ such that } \|\vec{x}_{ik} - \vec{x}_{jl}\| \le d_{\text{cont}} \\ 0 & \text{otherwise} \end{cases}$$
 - $d_{\text{cont}} = 3.0$ Å is the standard heavy-atom contact threshold for non-bonded sidechain interaction.
 - $\Omega_i$ is the surviving rotamer partition function (normalization weight) at position $i$:
   $$\Omega_i = \sum_{a \in \mathcal{A}_{18}} P(a) \sum_{r_a \in \mathcal{R}_i(a)} P(r_a \mid a, \phi_i, \psi_i)$$
@@ -162,7 +151,7 @@ From Zheng, Zhang, & Grigoryan (2015) *Structure* 23(5): 961–971 (Table S1):
 All spatial calculations in `proxide-confind` are parameterized by the following physical and geometric cutoffs:
 
 1. **Backbone Steric Clash Cutoff ($d_{\text{clash}} = 2.0$ Å)**:
-   Any sidechain heavy atom placed closer than $2.0$ Å to any backbone heavy atom ($N, C_\alpha, C, O$) of the protein represents an unphysical hard steric overlap (van der Waals overlap $> 0.8$ Å) and causes that rotamer to be pruned in Phase A.
+   Any sidechain heavy atom placed closer than $2.0$ Å to any backbone heavy atom ($N, C_\alpha, C, O$) of any other residue (tested atom set per `CbClashPolicy`, §2.4) represents an unphysical hard steric overlap (van der Waals overlap $> 0.8$ Å) and causes that rotamer to be pruned in Phase A.
 2. **Sidechain Contact Cutoff ($d_{\text{cont}} = 3.0$ Å)**:
    Two sidechain heavy atoms approaching within $3.0$ Å are defined as being in physical contact (van der Waals contact distance).
 3. **Backbone Neighbor Search Cutoff ($D_{\text{cut}} = 25.0$ Å)**:
@@ -174,46 +163,65 @@ All spatial calculations in `proxide-confind` are parameterized by the following
 
 ---
 
-### 2.4 Residue Crowdedness ($C(i)$)
-Residue crowdedness measures the degree of steric confinement imposed on residue $i$ by the surrounding fixed protein backbone (Zheng & Grigoryan 2017, S1 Text).
 
-Let $\mathcal{R}_i^{\text{lib}}(a)$ be the complete set of rotamers for amino acid $a$ tabulated in the rotamer library at dihedrals $(\phi_i, \psi_i)$. A rotamer $r \in \mathcal{R}_i^{\text{lib}}(a)$ is marked as clashing with the backbone if:
-$$\exists \, k \in \text{atoms}(r), \, \exists \, l \in \text{backbone atoms} \text{ such that } \|\vec{x}_{ik} - \vec{x}_{\text{bb}, l}\| \le d_{\text{clash}} = 2.0 \text{ Å}$$
-The surviving rotamer set is:
-$$\mathcal{R}_i(a) = \left\{ r \in \mathcal{R}_i^{\text{lib}}(a) \mid \min_{k, l} \|\vec{x}_{ik} - \vec{x}_{\text{bb}, l}\| > 2.0 \text{ Å} \right\}$$
-The residue crowdedness $C(i)$ is the weighted fraction of rotamer probability pruned by steric clash with the backbone:
-$$C(i) = 1.0 - \frac{\sum_{a \in \mathcal{A}_{18}} P(a) \sum_{r \in \mathcal{R}_i(a)} P(r \mid a, \phi_i, \psi_i)}{\sum_{a \in \mathcal{A}_{18}} P(a) \sum_{r \in \mathcal{R}_i^{\text{lib}}(a)} P(r \mid a, \phi_i, \psi_i)}$$
-**Properties:**
-- $C(i) \in [0.0, 1.0]$.
-- $C(i) = 0.0$: Completely solvent-exposed, zero backbone occlusion.
-- $C(i) = 1.0$: Completely buried or sterically blocked; no sidechains can fit.
+### 2.4 Residue Crowdedness ($C(i)$)
+Residue crowdedness measures the degree of steric confinement imposed on residue position $i$ by the surrounding fixed protein backbone (Zheng & Grigoryan 2017, S1 Text).
+
+**Atom sets.** For rotamer $r$ of amino acid $a$:
+- $S_{\text{cont}}(r)$: sidechain heavy atoms that count for sidechain–sidechain contact, per `counts_as_sidechain` (§4.5): all non-hydrogen atoms other than $N, C_\alpha, C, O$, with $C_\beta$ retained only for alanine.
+- $S_{\text{clash}}(r)$: atoms tested against backbone, selected by the `CbClashPolicy` option (§3.9):
+  - `AlaOnly`: $S_{\text{clash}}(r)=S_{\text{cont}}(r)$ ($C_\beta$ tested for alanine only).
+  - `AllResidues` (default): $S_{\text{clash}}(r)=S_{\text{cont}}(r)\cup\{C_\beta\}$ for every amino acid.
+- $B_j=\{N,C_\alpha,C,O\}$ present for residue $j$. The own-residue backbone $B_i$ is never tested for rotamers of $i$ (bonded $C_\beta$–$N$ and $C_\beta$–$C$ distances of $\approx1.5$ Å are below $d_{\text{clash}}$).
+
+Distance indicator, for atom sets $X,Y$: $\operatorname{near}(X,Y;d)=\mathbf 1[\exists x\in X,y\in Y:\|x-y\|\le d]$. A rotamer–rotamer or rotamer–backbone pair contributes **at most once**, however many atom pairs are within $d$.
+
+Let $\mathcal{R}_i^{\text{lib}}(a)$ be the complete set of rotamers for amino acid $a$ tabulated at $(\phi_i,\psi_i)$. A rotamer is pruned if it clashes with the backbone of any other residue:
+$$\text{clash}(r)=\max_{j\ne i}\ \operatorname{near}\big(S_{\text{clash}}(r),B_j;\,d_{\text{clash}}\big),\qquad d_{\text{clash}}=2.0\text{ Å (inclusive)}$$
+$$\mathcal{R}_i(a)=\{\,r\in\mathcal{R}_i^{\text{lib}}(a)\mid \text{clash}(r)=0\,\}$$
+
+Counts and masses (pooled over $\mathcal A_{18}$): $N_{\text{lib}}(i)=\sum_a|\mathcal R^{\text{lib}}_i(a)|$, $N_{\text{surv}}(i)=\sum_a|\mathcal R_i(a)|$, and
+$$W^{\text{lib}}_i=\sum_{a}P(a)\!\!\sum_{r\in\mathcal R^{\text{lib}}_i(a)}\!\!P(r\mid a,\phi_i,\psi_i),\qquad W^{\text{surv}}_i=\sum_{a}P(a)\!\!\sum_{r\in\mathcal R_i(a)}\!\!P(r\mid a,\phi_i,\psi_i).$$
+
+**Crowdedness modes** (`CrowdednessMode`, §3.9):
+
+- `ProbabilityWeighted` (default): the pruned fraction of prior probability mass,
+  $$C(i)=1-\frac{W^{\text{surv}}_i}{W^{\text{lib}}_i}\qquad(W^{\text{lib}}_i=0\Rightarrow C(i)=0).$$
+- `PrunedCountFraction`: the pruned fraction of rotamer count,
+  $$C(i)=1-\frac{N_{\text{surv}}(i)}{N_{\text{lib}}(i)}\qquad(N_{\text{lib}}(i)=0\Rightarrow C(i)=0).$$
+
+**Properties (both modes):**
+- $C(i)\in[0,1]$; $C(i)=0$: no backbone occlusion; $C(i)=1$: no rotamer fits.
+- $C(i)$ does not depend on the analysis scope (§2.5) or on freedom or interference options; the backbone of every residue in the structure is tested.
+- The mode changes only the value returned by `ConFind::crowdedness`. The surviving sets $\mathcal R_i(a)$ — and therefore contact degree, freedom and interference — are identical in both modes.
 
 ---
 
 ### 2.5 Residue Structural Freedom ($F(i)$)
-Structural freedom quantifies the residual conformational flexibility available to residue $i$ when considering mutual sidechain crowding from neighboring residues (Zheng & Grigoryan 2017, S1 Text).
+Structural freedom quantifies the residual conformational flexibility of residue $i$ given backbone pruning and mutual sidechain crowding from neighbouring residues (Zheng & Grigoryan 2017, S1 Text). It is defined with the quantities of §2.4 and §3.8.2.
 
-For each surviving rotamer $r_a \in \mathcal{R}_i(a)$, the cumulative collision probability $P_{\text{coll}}(r_a)$ against all neighboring residues $j \in \text{neighbors}(i)$ is accumulated across the ensemble. Because the background propensities $P(b)$ in Table 2.2 are expressed in percent ($P(b) \in [1.5\%, 8.8\%]$), $P(b)$ is normalized by $\frac{1}{100.0}$ to yield fractional probability:
-$$P_{\text{coll}}(r_a) = \sum_{j \in \text{neighbors}(i)} \sum_{b \in \mathcal{A}_{18}} \frac{P(b)}{100.0} \sum_{r_b \in \mathcal{R}_j(b)} P(r_b \mid b, \phi_j, \psi_j) \, w(r_a, r_b)$$
-Two empirical collision thresholds define the accessibility of rotamers:
-- Low-collision threshold: $\tau_{\text{lo}} = 0.5$
-- High-collision threshold: $\tau_{\text{hi}} = 2.0$
+**Neighbour set.** For analysis scope $\mathcal S$ (a set of residues; default all residues of the structure): $\mathcal N(i)=\{j\in\mathcal S,\ j\ne i:\ \|C\alpha_i-C\alpha_j\|\le D_{\text{cut}}\}$.
 
-Let:
-- $n_1$ be the number of rotamers with $P_{\text{coll}}(r) < \tau_{\text{lo}}$ (unhindered rotamers, including uncontested rotamers with $P_{\text{coll}} = 0$).
-- $n_2$ be the number of rotamers with $P_{\text{coll}}(r) < \tau_{\text{hi}}$ (moderately accessible rotamers, including uncontested rotamers).
-- $N_{\text{lib}}$ be the total number of rotamers in the unpruned library for that residue.
+**Collision probability** of a surviving rotamer $r\in\mathcal R_i=\bigsqcup_a\mathcal R_i(a)$ ($P(b)$ is in percent, so it is divided by $100$ to give fractional probability):
+$$P_{\text{coll}}(r)=\sum_{j\in\mathcal N(i)}\ \sum_{b\in\mathcal A_{18}}\frac{P(b)}{100}\sum_{s\in\mathcal R_j(b)}P(s\mid b,\phi_j,\psi_j)\ \operatorname{near}\big(S_{\text{cont}}(r),S_{\text{cont}}(s);\,d_{\text{cont}}\big)$$
+$P_{\text{coll}}$ is an unnormalised mass (not divided by the neighbour's surviving mass) and may exceed $1$.
 
-The RMS freedom formulation is defined as:
-$$F(i) = \frac{1}{N_{\text{lib}}} \sqrt{\frac{n_1^2 + n_2^2}{2}}$$
-*(Alternative formulations and parked gap details are specified in Section 3.8).*
+**Threshold counts.** With $\tau_{\text{lo}}=0.5$, $\tau_{\text{hi}}=2.0$ (dimensionless) and strict inequality,
+$$N_\tau(i)=\big|\{\,r\in\mathcal R_i:\ P_{\text{coll}}(r)<\tau\,\}\big|,\qquad \tau\in\{\tau_{\text{lo}},\tau_{\text{hi}}\}.$$
+Uncontested rotamers ($P_{\text{coll}}=0$) are counted. Hence $0\le N_{\tau_{\text{lo}}}\le N_{\tau_{\text{hi}}}\le N_{\text{surv}}\le N_{\text{lib}}$.
+
+**Freedom modes** (`FreedomMode`, §3.9). Freedom is count-based: every rotamer counts once irrespective of $P(a)$ and $P(r\mid a,\phi,\psi)$.
+- `Rms` (default): $$F(i)=\frac{1}{N_{\text{lib}}(i)}\sqrt{\frac{N_{\tau_{\text{lo}}}(i)^2+N_{\tau_{\text{hi}}}(i)^2}{2}}$$
+- `SingleThreshold`: $$F^{(1)}(i)=\frac{N_{\tau_{\text{lo}}}(i)}{N_{\text{lib}}(i)}$$
+
+Both lie in $[0,1]$; $F^{(1)}(i)\le F(i)$. $N_{\text{lib}}(i)=0\Rightarrow F=0$ (convention; no error). The freedom modes have no effect on any quantity other than `ConFind::freedom`.
 
 ---
 
-### 2.6 Mutual Interference ($I(i, j)$)
-Mutual interference measures steric clash between the placed sidechains of residue $i$ and the fixed backbone atoms of residue $j$:
-$$I(i, j) = \sum_{a \in \mathcal{A}_{18}} P(a) \sum_{r_a \in \mathcal{R}_i(a)} P(r_a \mid a, \phi_i, \psi_i) \, \mathbf{1}_{\text{clash}}(r_a, \text{backbone}_j)$$
-where $\mathbf{1}_{\text{clash}}(r_a, \text{backbone}_j) = 1$ if any sidechain atom of $r_a$ is within $2.0$ Å of any backbone heavy atom of residue $j$.
+### 2.6 Mutual Interference ($I(i,j)$)
+Mutual interference is the prior probability mass of rotamers of residue $i$ that hit the backbone of residue $j\ne i$. The sum runs over the **unpruned library** set (summing over survivors would give $I\equiv0$, since survivors clash with no backbone by construction):
+$$I(i,j)=\sum_{a\in\mathcal A_{18}}\frac{P(a)}{100}\sum_{r\in\mathcal R^{\text{lib}}_i(a)}P(r\mid a,\phi_i,\psi_i)\ \operatorname{near}\big(S_{\text{clash}}(r),B_j;\,d_{\text{clash}}\big),\qquad d_{\text{clash}}=2.0\text{ Å},\ j\ne i$$
+$S_{\text{clash}}$ follows `CbClashPolicy` (§2.4). A rotamer hitting several residues' backbones counts fully toward **each** of them (every clashed residue is credited), so $\sum_jI(i,j)$ may exceed the pruned mass. The full definition, optional normalised form, edge cases and tests are in §3.8.3.
 
 ---
 
@@ -304,22 +312,44 @@ pub fn load_pdb_f64<P: AsRef<Path>>(path: P) -> Result<ProteinBackbone, ConFindE
 pub fn extract_f64_backbone(s: &ProcessedStructure) -> Result<ProteinBackbone, ConFindError>;
 ```
 
+#### Configuration Types (`src/config.rs`) — full definitions in §3.9
+```rust
+pub struct ConFindConfig { /* cutoffs, scope, cb_clash_policy, crowdedness_mode, freedom_mode */ }
+pub enum CbClashPolicy { AlaOnly, AllResidues }
+pub enum CrowdednessMode { ProbabilityWeighted, PrunedCountFraction }
+pub enum FreedomMode { Rms, SingleThreshold }
+pub enum ResidueScope { All, Subset(Vec<ResidueIndex>) }
+pub struct Cutoffs { pub d_clash: f64, pub d_cont: f64, pub d_cut: f64, pub tau_lo: f64, pub tau_hi: f64 }
+```
+
 #### Pipeline Interface (`src/confind.rs`)
 ```rust
 pub struct ConFind {
     pub rotlib: Arc<RotamerLibrary>,
     pub strict: bool,
     pub backbone: Arc<ProteinBackbone>,
-    // Private spatial acceleration structures and concurrent caches
+    // Private spatial acceleration structures, concurrent caches and the validated config
 }
 
 impl ConFind {
-    /// Construct ConFind instance and build spatial indices.
+    /// Construct with `ConFindConfig::default()`. Equivalent to `with_config(.., ConFindConfig::default())`.
     pub fn new(
         rotlib: Arc<RotamerLibrary>,
         backbone: Arc<ProteinBackbone>,
         strict: bool,
     ) -> Result<Self, ConFindError>;
+
+    /// Construct with an explicit configuration. Validates the configuration (§3.9.3),
+    /// computes R_max from `rotlib` (§3.8.5) and checks D_cut against it, then builds spatial indices.
+    pub fn with_config(
+        rotlib: Arc<RotamerLibrary>,
+        backbone: Arc<ProteinBackbone>,
+        strict: bool,
+        config: ConFindConfig,
+    ) -> Result<Self, ConFindError>;
+
+    /// The validated configuration in force.
+    pub fn config(&self) -> &ConFindConfig;
 
     /// Number of protein residues in backbone.
     pub fn n_residues(&self) -> usize;
@@ -336,7 +366,7 @@ impl ConFind {
     /// Concurrently execute Phase A caching for all residues in structure.
     pub fn cache_all(&self) -> Result<(), ConFindError>;
 
-    /// Query residues within 25.0 Å Cα–Cα distance cutoff.
+    /// Query residues within `config.cutoffs.d_cut` Cα–Cα distance (inclusive).
     pub fn neighbors(&self, ri: ResidueIndex) -> Vec<ResidueIndex>;
 
     /// Compute pairwise contact degrees across query residue set.
@@ -347,8 +377,8 @@ impl ConFind {
         cd_cut: f64,
     ) -> Result<ContactList, ConFindError>;
 
-    /// Compute mutual sidechain-to-backbone interference.
-    /// Evaluates pairs where BOTH endpoints are present in `residues`.
+    /// Interference I(i,j) (§2.6, §3.8.3): pairs where BOTH endpoints are present in
+    /// `residues` and the value is >= in_cut. Interference is directed (i -> backbone of j).
     pub fn interference(
         &self,
         residues: &[ResidueIndex],
@@ -363,30 +393,32 @@ impl ConFind {
         ignore_flanking: usize,
     ) -> Result<ContactList, ConFindError>;
 
-    /// Query fraction of rotamers pruned by backbone clash for residue `ri`.
+    /// Crowdedness C(i) per `config.crowdedness_mode` (§2.4).
     pub fn crowdedness(&self, ri: ResidueIndex) -> Result<f64, ConFindError>;
 
-    /// Query residual conformational freedom for residue `ri`.
-    /// Residue must have been included in preceding `contacts()` query set.
+    /// Freedom per `config.freedom_mode` (§2.5) with neighbours drawn from `config.scope`.
+    /// Returns `ConFindError::OutOfScope` if `ri` is not in the scope.
     pub fn freedom(&self, ri: ResidueIndex) -> Result<f64, ConFindError>;
 }
 ```
 
-#### Freedom Formulation (`src/freedom.rs`)
+#### Freedom Kernel (`src/freedom.rs`)
 ```rust
-/// Compute residue structural freedom from surviving rotamer collision probabilities.
+/// Compute residue structural freedom (§2.5) from surviving-rotamer collision probabilities.
 ///
-/// Under the RMS freedom formulation:
-/// - Uncontested rotamers (zero collision with neighbors) = n_surviving - collision_counts.len()
-/// - n_1 = n_uncontested + count(P_coll < lo_cut)
-/// - n_2 = n_uncontested + count(P_coll < hi_cut)
-/// - Freedom = sqrt((n_1^2 + n_2^2) / 2) / n_library
+/// - `p_coll`: P_coll of the *contested* surviving rotamers only (those with P_coll > 0).
+/// - uncontested = n_surviving.saturating_sub(p_coll.len())   (P_coll = 0 < tau for any tau > 0)
+/// - N_lo = uncontested + count(p < tau_lo);  N_hi = uncontested + count(p < tau_hi)
+/// - Rms:             sqrt((N_lo^2 + N_hi^2) / 2) / n_library
+/// - SingleThreshold: N_lo / n_library
+/// - n_library == 0 returns 0.0.
 pub fn compute_freedom(
-    collision_counts: &[f64],
+    mode: FreedomMode,
+    p_coll: &[f64],
     n_surviving: usize,
     n_library: usize,
-    lo_cut: f64,
-    hi_cut: f64,
+    tau_lo: f64,
+    tau_hi: f64,
 ) -> f64;
 ```
 
@@ -470,11 +502,14 @@ pub enum ConFindError {
     #[error("residue {0:?} missing required backbone atom {1}")]
     MissingBackbone(ResidueIndex, &'static str),
 
-    #[error("freedom not computed for {0:?} — residue must be included in contacts() query set")]
-    FreedomNotComputed(ResidueIndex),
+    #[error("residue {0:?} is not in the configured analysis scope")]
+    OutOfScope(ResidueIndex),
 
     #[error("structure failed {0} structural precondition check(s); inspect report for diagnostics")]
     PreconditionsFailed(usize),
+
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(#[from] ConfigError),
 
     #[error("rotamer library error: {0}")]
     RotlibError(#[from] proxide_rotlib::RotlibError),
@@ -483,48 +518,30 @@ pub enum ConFindError {
     Io(#[from] std::io::Error),
 }
 ```
+`ConfigError` is specified in §3.9.3.
 
 ---
 
-### 3.3 Module Decomposition & Reconstruction Plan
+### 3.3 Module Decomposition
 
-1. **`src/cache.rs` (Re-implemented Cleanly)**:
-   - Evaluates Phase A rotamer compatibility: places rotamers using `rotlib.place_rotamer(aa, phi, psi, rot_idx, cis_proline, ...)`.
-   - Queries backbone spatial index (`ProximityGrid`) for heavy-atom clashes $\le 2.0$ Å.
-   - Accumulates crowdedness fraction $C(i)$ and sidechain-to-backbone interference.
-   - For Alanine: treats $C_\beta$ as permanent contact via `counts_as_sidechain`.
-   - For Glycine: zero sidechains placed; crowdedness defined as 0.0.
-2. **`src/parallel.rs` (Re-implemented Cleanly)**:
-   - Evaluates Phase B pairwise contact degrees for all candidate pairs $(i, j)$ with $d(C\alpha_i, C\alpha_j) \le 25.0$ Å.
-   - Parallelized across chunks using `orx-parallel` or `rayon`.
-   - Accumulates cross-rotamer heavy-atom contacts $\le 3.0$ Å weighted by $P(a) P(b) P(r_a) P(r_b)$ and normalizes by $\Omega_i \Omega_j$.
-   - Short-circuits to $0.0$ if $\Omega_i == 0.0$ or $\Omega_j == 0.0$ to prevent division by zero.
-   - Strips all comments referencing C++ line numbers or historical compiler quirks.
-3. **`src/freedom.rs` (Re-implemented Cleanly)**:
-   - Evaluates Phase C conformational freedom $F(i)$ from collision probabilities.
-   - Implements clean public function:
-     ```rust
-     pub fn compute_freedom(
-         collision_counts: &[f64],
-         n_surviving: usize,
-         n_library: usize,
-         lo_cut: f64,
-         hi_cut: f64,
-     ) -> f64;
-     ```
-   - Behavior:
-     - Returns $0.0$ if $n_{\text{library}} == 0$.
-     - Computes uncontested rotamers: $n_{\text{uncontested}} = (n_{\text{surviving}} - \text{collision\_counts.len()})$ (saturating at 0).
-     - Counts accessible rotamers using normalized collision probabilities:
-       $n_1 = n_{\text{uncontested}} + |\{c \in \text{collision\_counts} \mid c < \text{lo\_cut}\}|$
-       $n_2 = n_{\text{uncontested}} + |\{c \in \text{collision\_counts} \mid c < \text{hi\_cut}\}|$
-     - Evaluates RMS freedom: $F = \frac{1}{n_{\text{library}}} \sqrt{\frac{n_1^2 + n_2^2}{2}}$.
-4. **`src/params.rs` (Re-implemented Cleanly)**:
-   - Exposes public physical constants `CLASH_DIST = 2.0`, `CONT_DIST = 3.0`, `DCUT = 25.0`, `LO_COLL_PROB_CUT = 0.5`, `HI_COLL_PROB_CUT = 2.0`.
-   - Exposes `aa_propensity(aa: &str) -> f64` returning percentage values $P(a) \in [1.5, 8.8]$ with citations to Zheng et al. (2015).
-   - In collision probability summation, $P(b)$ is divided by $100.0$ to ensure proper calibration against collision thresholds $\tau_{\text{lo}} = 0.5$ and $\tau_{\text{hi}} = 2.0$.
-5. **`src/confind.rs` (Re-implemented Cleanly)**:
-   - Orchestrates caching, spatial indexing, pairwise dispatch, residue ID resolution, and metrics extraction.
+1. **`src/cache.rs`** (Phase A):
+   - Places rotamers using `rotlib.place_rotamer(aa, phi, psi, rot_idx, cis_proline, ...)`.
+   - Queries the backbone spatial index (`ProximityGrid`) for heavy-atom clashes $\le d_{\text{clash}}$ using $S_{\text{clash}}$ per `CbClashPolicy` (§2.4), excluding the own-residue backbone.
+   - Accumulates $W^{\text{lib}}$, $W^{\text{surv}}$, $N_{\text{lib}}$, $N_{\text{surv}}$ (both crowdedness modes are derivable from the same cache) and the per-neighbour-residue interference masses $I(i,j)$ (§3.8.3).
+   - Alanine: $C_\beta$ is in $S_{\text{cont}}$ via `counts_as_sidechain`. Under `AllResidues`, $C_\beta$ of every amino acid is additionally in $S_{\text{clash}}$.
+   - Glycine residue: zero sidechain atoms placed; crowdedness defined as $0.0$.
+2. **`src/parallel.rs`** (Phase B):
+   - Evaluates pairwise contact degrees for all candidate pairs $(i,j)$ with $\|C\alpha_i-C\alpha_j\|\le D_{\text{cut}}$.
+   - Parallelised across chunks using `orx-parallel` or `rayon`.
+   - Accumulates cross-rotamer heavy-atom contacts ($S_{\text{cont}}$, $\le d_{\text{cont}}$) weighted by $P(a)P(b)P(r_a)P(r_b)$ and normalises by $\Omega_i\Omega_j$.
+   - Short-circuits to $0.0$ if $\Omega_i=0$ or $\Omega_j=0$ (no float division).
+3. **`src/freedom.rs`** (Phase C): `compute_freedom` (§3.1) implementing §2.5 and §3.8.2. Returns $0.0$ if $n_{\text{library}}=0$.
+4. **`src/params.rs`**:
+   - Public default constants `CLASH_DIST = 2.0`, `CONT_DIST = 3.0`, `DCUT = 25.0`, `LO_COLL_PROB_CUT = 0.5`, `HI_COLL_PROB_CUT = 2.0` (the defaults of `Cutoffs`).
+   - `aa_propensity(aa: &str) -> f64` returning percentage values $P(a)\in[1.5,8.8]$ with citations to Zheng et al. (2015).
+   - In collision-probability and interference summation, $P(\cdot)$ is divided by $100.0$ (§2.5).
+5. **`src/config.rs`**: the types, defaults, validation and string parsing of §3.9.
+6. **`src/confind.rs`**: orchestrates caching, spatial indexing, pairwise dispatch, residue ID resolution and metric extraction under one validated `ConFindConfig`.
 
 ---
 
@@ -542,7 +559,7 @@ pub enum ConFindError {
 ---
 
 ### 3.5 IUPAC Omega Dihedral Angle Convention (Debt #1903)
-- **Defect Description**: Prior versions calculated $\omega$ with a sign opposite to upstream Mosaist due to vector inversion.
+- **Defect Description**: A sign-inverted $\omega$ (from vector inversion) is a defect.
 - **Specification**:
   - Standard IUPAC-IUBMB peptide torsion convention is enforced:
     $$\omega_i = \text{torsion}(C\alpha_{i-1}, C_{i-1}, N_i, C\alpha_i)$$
@@ -569,94 +586,319 @@ pub enum ConFindError {
 
 ---
 
-### 3.7 Documentation & Package Metadata Corrections
-1. **`lib.rs:36-37` Erroneous Coiled-Coil Citation**:
-   - *Current*: Cites Grigoryan & DeGrado (2011) *J Mol Biol* 405(4):1079-1100 (helical bundle parameterization).
-   - *Correction*: Replace with:
-     - Zheng, F., Zhang, J., & Grigoryan, G. (2015). "Tertiary Structural Propensities Reveal Fundamental Sequence/Structure Relationships in Proteins." *Structure*, 23(5), 961–971.
-     - Zheng, W., & Grigoryan, G. (2017). "Sequence statistics of tertiary structural motifs reflect protein stability." *PLoS ONE*, 12(5), e0178272.
-2. **`confind.rs:184` Contradictory Endpoint Documentation**:
-   - *Current*: `/// Interference: pairs where EITHER endpoint is in residues and value >= incut.`
-   - *Correction*: Update docstring to state: `/// Interference: pairs where BOTH endpoints are present in the query set and value >= incut.`
-3. **`parallel.rs:37-55` Upstream C++ Bug Comments**:
-   - *Current*: Detailed comments regarding `contactDegree.cpp line 209` and upstream C++ variable typos.
-   - *Correction*: Purge all upstream file names, line numbers, and bug-replication logic.
-4. **`Cargo.toml` and `lib.rs` Upstream Tool Names**:
-   - *Current*: `crates/proxide-confind/Cargo.toml` states `description = "... reimplementation of Mosaist mstcondeg"`, and `lib.rs` references `Mosaist's mstcondeg`.
-   - *Correction*: Update `Cargo.toml` description to: `Sequence-independent contact degree, crowdedness, and structural freedom algorithm for protein backbones`. Scrub `lib.rs` and all crate docs of `Mosaist` and `mstcondeg`, citing exclusively Zheng et al. (2015) and Zheng & Grigoryan (2017).
+### 3.7 Documentation & Package Metadata Requirements
+1. **Citations**: crate-level docs cite exactly: Zheng, F., Zhang, J., & Grigoryan, G. (2015). "Tertiary Structural Propensities Reveal Fundamental Sequence/Structure Relationships in Proteins." *Structure*, 23(5), 961–971; and Zheng, W., & Grigoryan, G. (2017). "Sequence statistics of tertiary structural motifs reflect protein stability." *PLoS ONE*, 12(5), e0178272. Helical-bundle parameterization papers are not cited as the source of contact degree.
+2. **Interference docstring**: `interference` states: "pairs where BOTH endpoints are present in the query set and value >= in_cut."
+3. **Comments**: source comments describe the mathematics in this specification and cite literature; they contain no references to external tools, file names or line numbers.
+4. **`Cargo.toml` description** of `proxide-confind`: `Sequence-independent contact degree, crowdedness, and structural freedom algorithm for protein backbones`.
+5. **Option documentation**: every public option of §3.9 has rustdoc stating its variants, default, and the quantities it affects.
 
 ---
 
-### 3.8 Parked Gaps & Owner Feedback Beat (`awaiting_feedback`)
+### 3.8 Definitions of Freedom, Interference, Cutoffs and Reach
 
-```markdown
-### Parked Gap: Non-Standardized Empirical Quantities in ConFind (Awaiting Owner Feedback)
+#### 3.8.1 Notation
+$\mathcal{A}_{18}$, $P(a)$ (percent), $P(r\mid a,\phi,\psi)$, $\mathcal{R}^{\text{lib}}_i(a)$, $\mathcal{R}_i(a)$, $N_{\text{lib}}$, $N_{\text{surv}}$, $S_{\text{cont}}$, $S_{\text{clash}}$, $B_j$ and $\operatorname{near}$ are as defined in §2.2 and §2.4. $\mathcal R^{\text{lib}}_i=\bigsqcup_{a}\mathcal R^{\text{lib}}_i(a)$ and $\mathcal R_i=\bigsqcup_{a}\mathcal R_i(a)$. $S_{\text{all}}(r)$ is the set of all non-hydrogen atoms of rotamer $r$ other than $N,C_\alpha,C,O$ (includes $C_\beta$ for every amino acid); it is used only for reach (§3.8.5). Own-residue backbone is never tested when testing rotamers of $i$.
 
-**Context**:
-While the pairwise contact degree $c(i, j) = \sum w(d)$ and canonical threshold $c > 0.02$ are rigorously derived and published in Zheng, Zhang & Grigoryan (2015) and Zheng & Grigoryan (2017) Eq. 9, several auxiliary metrics and cutoffs in ConFind represent empirical heuristics developed in the Grigoryan laboratory that are not formally standardized in public peer-reviewed literature:
-1. **Structural Freedom from Collision Probabilities**: The multi-mode formula for freedom ($F(i) = \frac{1}{N_{\text{lib}}} \sqrt{\frac{n_1^2 + n_2^2}{2}}$) and the specific collision thresholds ($\tau_{\text{lo}} = 0.5$, $\tau_{\text{hi}} = 2.0$) are empirical heuristics.
-2. **Mutual Interference Metric**: Pairwise sidechain-to-backbone clash integration ($I(i, j)$) is defined in Mosaist tooling but rarely referenced in tertiary structural motif publications.
-3. **Geometric Cutoffs**: The backbone clash distance ($d_{\text{clash}} = 2.0$ Å) and neighbor cutoff ($D_{\text{cut}} = 25.0$ Å).
+Quantities depending on the configuration (§3.9): $S_{\text{clash}}$ (`CbClashPolicy`), $C(i)$ (`CrowdednessMode`), $F(i)$ (`FreedomMode`), $\mathcal N(i)$ (`ResidueScope`, $D_{\text{cut}}$), and every cutoff.
 
-**Decision Required from Project Owner (`awaiting_feedback`)**:
-Please select one of the following paths for these empirical quantities in the clean-room implementation:
+---
 
-- **Option A (Drop / Deprecate Auxiliary Metrics)**:
-  Deprecate `compute_freedom`, `ConFind::freedom`, and `ConFind::interference`, retaining strictly the mathematically published contact degree $c(i, j)$ and residue crowdedness $C(i)$.
-- **Option B (Independent Definition & Documented Divergence - RECOMMENDED)**:
-  Retain the existing public API signatures, implement the clean mathematical definitions specified in Sections 2.4–2.6 with explicit literature-divergence documentation, and provide unit tests verifying expected physical invariants.
-- **Option C (Consult Grigoryan Laboratory)**:
-  Pause implementation of the freedom and interference submodules to solicit formal clarification or public domain release documentation from the Grigoryan laboratory.
+#### 3.8.2 Collision Probability and Freedom
+
+**Inputs**: residue $i$; analysis scope $\mathcal S$ (default: all residues of the structure); $\mathcal R^{\text{lib}}_i$, $\mathcal R_i$, $\mathcal R_j$ for $j\in\mathcal S$; $d_{\text{cont}}=3.0$ Å; $\tau_{\text{lo}}=0.5$, $\tau_{\text{hi}}=2.0$.
+
+**Neighbour set**: $\mathcal N(i)=\{\,j\in\mathcal S,\ j\ne i:\ \|C\alpha_i-C\alpha_j\|\le D_{\text{cut}}\,\}$.
+
+**Collision probability** of a surviving rotamer $r\in\mathcal R_i$:
+$$P_{\text{coll}}(r)=\sum_{j\in\mathcal N(i)}\ \sum_{b\in\mathcal A_{18}}\frac{P(b)}{100}\sum_{s\in\mathcal R_j(b)}P(s\mid b,\phi_j,\psi_j)\ \operatorname{near}\big(S_{\text{cont}}(r),S_{\text{cont}}(s);\,d_{\text{cont}}\big)$$
+It is a mass, not a conditional probability (it is not divided by the neighbour's surviving mass), and may exceed $1$.
+
+**Threshold counts** ($\tau\in\{\tau_{\text{lo}},\tau_{\text{hi}}\}$), strict inequality:
+$$N_\tau(i)=\big|\{\,r\in\mathcal R_i:\ P_{\text{coll}}(r)<\tau\,\}\big|$$
+Rotamers with no contacts have $P_{\text{coll}}=0<\tau$ and are counted. Since $\tau_{\text{lo}}<\tau_{\text{hi}}$: $0\le N_{\tau_{\text{lo}}}\le N_{\tau_{\text{hi}}}\le N_{\text{surv}}\le N_{\text{lib}}$.
+
+**Freedom**:
+- `Rms` (default): $$F(i)=\frac{1}{N_{\text{lib}}(i)}\sqrt{\frac{N_{\tau_{\text{lo}}}(i)^2+N_{\tau_{\text{hi}}}(i)^2}{2}}\qquad F(i)\in[0,1]$$
+- `SingleThreshold`: $$F^{(1)}(i)=N_{\tau_{\text{lo}}}(i)/N_{\text{lib}}(i)$$ using the configured $\tau_{\text{lo}}$.
+
+$F$ is count-based: every rotamer counts once, irrespective of $P(a)$ and $P(r\mid a,\phi,\psi)$. $N_{\text{lib}}$ counts the unpruned library rotamers of all 18 amino acids at $(\phi_i,\psi_i)$, so backbone crowding enters through $N_{\text{surv}}\le N_{\text{lib}}$ and neighbour crowding through $P_{\text{coll}}$.
+
+**Output**: $F(i)\in[0,1]$.
+
+**Error / edge cases**
+- $N_{\text{lib}}(i)=0$: $F(i)=0$ by convention (no error).
+- $N_{\text{surv}}(i)=0$: $N_\tau=0$, $F=0$.
+- $\mathcal N(i)=\emptyset$: every $P_{\text{coll}}=0$, $F(i)=N_{\text{surv}}/N_{\text{lib}}$ (= 1 − pruned count fraction) in both freedom modes.
+- A rotamer with $P_{\text{coll}}=\tau$ exactly is *not* counted for that $\tau$.
+- Library lookup failure for $i$ or any $j\in\mathcal N(i)$ propagates as an error; it is not silently treated as zero.
+- $i\notin\mathcal S$: `ConFindError::OutOfScope`.
+- The result depends on $\mathcal S$ only through $\mathcal N(i)$; outputs report the scope used.
+- An unknown mode name (string parsing) is an error (§3.9.3); there is no silent fallback.
+
+**Acceptance tests** (kernel level, defaults)
+1. $N_{\text{lib}}=4,\ N_{\text{surv}}=2$, no neighbours: $F=\sqrt{(2^2+2^2)/2}/4=0.5$; `SingleThreshold`: $F^{(1)}=0.5$.
+2. $N_{\text{lib}}=10,\ N_{\text{surv}}=8$; four rotamers have $P_{\text{coll}}=\{0.3,0.7,1.5,2.5\}$, four have none: $N_{\tau_{\text{lo}}}=5$, $N_{\tau_{\text{hi}}}=7$, $F=\sqrt{37}/10\approx0.6083$ (tolerance $10^{-9}$); `SingleThreshold`: $F^{(1)}=0.5$.
+3. Boundary: a rotamer with $P_{\text{coll}}=0.5$ is excluded from $N_{\tau_{\text{lo}}}$ but included in $N_{\tau_{\text{hi}}}$.
+4. $N_{\text{lib}}=0\Rightarrow F=0$; $N_{\text{surv}}=0\Rightarrow F=0$.
+5. Invariants over random inputs: $0\le F\le1$; $F$ is non-increasing when any $P_{\text{coll}}$ increases; $F\le N_{\text{surv}}/N_{\text{lib}}$; $F^{(1)}\le F$.
+6. Contact multiplicity: duplicating atoms of a rotamer pair that already touch does not change $P_{\text{coll}}$.
+7. Pair symmetry: $\operatorname{near}(S_{\text{cont}}(r),S_{\text{cont}}(s);d_{\text{cont}})$ is symmetric in $(r,s)$.
+
+---
+
+#### 3.8.3 Interference of Residue $i$ Rotamers with Residue $j$ Backbone
+
+**Definition** (identical to §2.6):
+$$I(i,j)=\sum_{a\in\mathcal A_{18}}\frac{P(a)}{100}\sum_{r\in\mathcal R^{\text{lib}}_i(a)}P(r\mid a,\phi_i,\psi_i)\ \operatorname{near}\big(S_{\text{clash}}(r),B_j;\,d_{\text{clash}}\big),\qquad j\ne i$$
+with $d_{\text{clash}}=2.0$ Å. The sum runs over the **full library set**, before backbone pruning. The per-amino-acid contribution $I_a(i,j)$ is the inner term; $I(i,j)=\sum_aI_a(i,j)$.
+
+The result is the prior probability mass of rotamers of $i$ that are eliminated, in part, because they hit the backbone of $j$. A rotamer hitting several residues' backbones counts fully toward **each** of them, for every amino acid (order-independent), so $\sum_jI(i,j)$ may exceed the pruned mass.
+
+**Optional normalised form**: $\hat I(i,j)=I(i,j)/Z_i$, $Z_i=\sum_{a}\frac{P(a)}{100}\sum_{r\in\mathcal R^{\text{lib}}_i(a)}P(r\mid a,\phi_i,\psi_i)=W^{\text{lib}}_i/100$; $Z_i=0\Rightarrow\hat I=0$.
+
+**Output**: $I(i,j)\in[0,Z_i]$, with $Z_i\le\sum_a P(a)/100\approx0.8837$ when each conditional distribution sums to $\le1$.
+
+**Edge cases**: $j=i$ is undefined (excluded; return $0$ or reject the query, but never test own backbone); missing atoms in $B_j$ simply remove those atoms from the set; $B_j=\emptyset\Rightarrow I=0$; no library rotamers $\Rightarrow I=0$; library lookup failure is an error.
+
+**Acceptance tests** (kernel level; defaults unless stated)
+1. One amino acid with $P(a)=10$, three rotamers with $P=\{0.5,0.3,0.2\}$; rotamer 1 clashes (through a non-$C_\beta$ atom) only with $B_j$; rotamer 2 clashes (non-$C_\beta$ atoms) with $B_j$ and $B_k$; rotamer 3 clashes with nothing: $I(i,j)=0.1(0.5+0.3)=0.08$, $I(i,k)=0.1\cdot0.3=0.03$, $I(i,i)$ not evaluated.
+2. Order independence: permuting the order of atoms within rotamers, or of rotamers within the library, leaves every $I(i,j)$ unchanged (to $10^{-12}$).
+3. Multiplicity: a rotamer with many atoms clashing with $B_j$ contributes once.
+4. Bound: for every $j$, $I(i,j)\le Z_i\,C_w(i)$ where $C_w$ is the probability-weighted crowdedness of §2.4 computed with the same $S_{\text{clash}}$ (regardless of the configured `CrowdednessMode`).
+5. Boundary: atom at exactly $2.0$ Å counts as clashing (inclusive), at $2.0+10^{-9}$ Å it does not.
+6. Distance cutoff: if $\|C\alpha_i-C\alpha_j\|>R_{\max}(a)+R_{\text{bb}}+d_{\text{clash}}$ for all $a$ ($R_{\text{bb}}$ the largest $C_\alpha$–backbone-atom distance in a residue, $\approx2.4$ Å), then $I(i,j)=0$.
+
+---
+
+#### 3.8.4 Cutoffs and Their Roles
+
+| Symbol | Default | Role | Used in |
+|---|---|---|---|
+| $d_{\text{clash}}$ | $2.0$ Å (inclusive $\le$) | Hard sidechain–backbone exclusion. A rotamer with any $S_{\text{clash}}(r)$–$B_j$ distance $\le d_{\text{clash}}$ ($j\ne i$) is pruned from $\mathcal R_i$ and contributes to $I(i,j)$. | $C(i)$, $\mathcal R_i$, $I(i,j)$, $\Omega_i$ in the contact-degree denominator |
+| $d_{\text{cont}}$ | $3.0$ Å | Sidechain–sidechain contact between surviving rotamers. | $c(i,j)$, $P_{\text{coll}}$ |
+| $D_{\text{cut}}$ | $25.0$ Å | Pre-filter on $C_\alpha$–$C_\alpha$ distance; pairs beyond it are not evaluated and have $c=0$ and contribute $0$ to $P_{\text{coll}}$. It is an **exactness-preserving optimisation**, valid iff $D_{\text{cut}}\ge R_{\max}(a)+R_{\max}(b)+d_{\text{cont}}$ for all $a,b$ (§3.8.5). | $\mathcal N(i)$, $c(i,j)$ |
+| $\tau_{\text{lo}},\tau_{\text{hi}}$ | $0.5,\,2.0$ (dimensionless) | Collision-mass thresholds in $F(i)$; **unrelated** to $d_{\text{clash}}$ despite $\tau_{\text{hi}}$ and $d_{\text{clash}}$ sharing the number $2.0$. | $F(i)$ |
+
+Provenance of default values: $d_{\text{clash}}=2.0$ Å is a deliberately tight, overlap-only exclusion (the van der Waals sum for C···N is $\approx3.25$ Å, Bondi 1964). $D_{\text{cut}}=25.0$ Å is justified as an upper bound by §3.8.5. $\tau_{\text{lo}},\tau_{\text{hi}}$ are empirical and calibrated only against the unnormalised scale of $P_{\text{coll}}$; a normalised $P_{\text{coll}}$ would require re-deriving them. All five are configurable (§3.9) and validated.
+
+**Acceptance tests**
+1. $d_{\text{clash}}$ inclusive: atom–backbone distance $2.0$ Å prunes; $2.0001$ Å does not.
+2. $D_{\text{cut}}$ soundness: for a library-derived $R_{\max}$ (§3.8.5), construction checks $D_{\text{cut}}\ge2\max_aR_{\max}(a)+d_{\text{cont}}$ and returns `ConfigError::DcutTooSmall` otherwise.
+3. $D_{\text{cut}}$ invariance: recomputing $c(i,j)$ for all pairs with $D_{\text{cut}}'=\infty$ and with $D_{\text{cut}}=25.0$ Å gives identical results (to $10^{-12}$) on a test protein.
+4. A pair with $\|C\alpha_i-C\alpha_j\|=25.0$ Å is evaluated (inclusive); $25.0+10^{-9}$ Å is not.
+
+---
+
+#### 3.8.5 Maximum Sidechain Reach per Amino Acid
+
+**Definition** (library-derived):
+$$R_{\max}(a)=\max_{\text{bins }(\phi,\psi,\text{cis/trans})}\ \max_{r\in\mathcal R^{\text{lib}}(a)}\ \max_{x\in S_{\text{all}}(r)}\ \|x-C\alpha\|,\qquad a\in\mathcal A_{18}$$
+evaluated over every tabulated bin and every rotamer, **before** any backbone pruning, with atoms placed in the standard residue frame (§2.7). Required cutoff:
+$$D_{\text{cut}}^{\min}=2\max_{a\in\mathcal A_{18}}R_{\max}(a)+d_{\text{cont}}$$
+
+**Independent geometric upper bound** (library-free): by the triangle inequality $R_{\max}(a)\le L(a)$, with $L(a)$ the sum of bond lengths along the longest bonded path from $C_\alpha$ to a sidechain heavy atom (ideal lengths from Engh & Huber 1991). For arginine the path $C_\alpha\!-\!C_\beta\!-\!C_\gamma\!-\!C_\delta\!-\!N_\epsilon\!-\!C_\zeta\!-\!N_\eta$ gives $L\approx8.7$ Å; lysine $\approx7.6$ Å; tryptophan, tyrosine and the other aromatics $\lesssim8.7$ Å. Hence $2L_{\max}+d_{\text{cont}}\approx20.4$ Å. If contact were instead defined by van der Waals envelopes (Bondi radii, $r_C=1.70$, $r_N=1.55$, $r_O=1.52$, $r_S=1.80$ Å) the additive term would be at most $2\cdot1.80=3.6$ Å, giving $\approx21.0$ Å. Both bounds are $<25.0$ Å.
+
+**Computing it from the loaded library is sufficient** for exactness of the quantities defined in this specification, with three conditions:
+1. Every contact and clash is evaluated only among library-placed rotamers, so a reach measured over the same library bounds the same set of states; the library-free bound $L(a)$ is only a sanity ceiling.
+2. The maximum is taken over **all** bins, including cis, and over unpruned rotamers; a per-structure maximum over survivors would be unsound.
+3. It is recomputed whenever a different library is loaded; a library with additional extended states can raise $R_{\max}$.
+
+$R_{\max}$ is computed from the loaded library at construction. $D_{\text{cut}}$ is **validated** against $D^{\min}_{\text{cut}}$ (error `ConfigError::DcutTooSmall` if $D_{\text{cut}}<2\max_aR_{\max}(a)+d_{\text{cont}}$) and is never silently replaced. A smaller derived cutoff would only speed up neighbour search and must not change results.
+
+**Edge cases**: amino acid with no library entries ($\mathcal R^{\text{lib}}(a)=\emptyset$): $R_{\max}(a)$ undefined, library-load error (all 18 amino acids must be present); non-finite coordinates: error; GLY and PRO excluded ($a\in\mathcal A_{18}$ only).
+
+**Acceptance tests**
+1. $R_{\max}(\text{ALA})\in[1.45,1.60]$ Å ($C_\alpha$–$C_\beta$ distance).
+2. For every $a$: $R_{\max}(\text{ALA})\le R_{\max}(a)\le L(a)$.
+3. $R_{\max}(\text{ARG})\ge5.0$ Å for any library containing an extended $\chi$-state.
+4. $2\max_aR_{\max}(a)+3.0\le25.0$ for the shipped library (else load fails).
+5. Exactness: for random placed pairs with $\|C\alpha_i-C\alpha_j\|>D_{\text{cut}}^{\min}$, no rotamer pair has any atom pair within $3.0$ Å.
+
+Convention notes: $N_{\text{lib}}=0\Rightarrow F=0$ is a chosen convention; library-derived $R_{\max}$ is sufficient for exactness while $25.0$ Å is retained as a validated default.
+
+---
+
+### 3.9 Typed Configuration
+
+All behavior-selecting parameters of `proxide-confind` are carried by one typed value, `ConFindConfig`, accepted by `ConFind::with_config` and populated by the `confind` binary flags (§3.9.5). Options are orthogonal: each option affects a documented set of outputs (§3.9.4) and any combination of valid values is legal, subject only to the validation rules of §3.9.3.
+
+#### 3.9.1 Types, Variants and Defaults
+```rust
+/// Which residues' backbone-clash test includes the Cβ atom.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum CbClashPolicy {
+    /// Cβ is tested against backbone for alanine only.
+    AlaOnly,
+    /// Cβ is tested against backbone for every amino acid.
+    #[default]
+    AllResidues,
+}
+
+/// How crowdedness C(i) aggregates pruned rotamers (§2.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum CrowdednessMode {
+    /// C = 1 - W_surv / W_lib   (prior-probability weighted).
+    #[default]
+    ProbabilityWeighted,
+    /// C = 1 - N_surv / N_lib   (rotamer count).
+    PrunedCountFraction,
+}
+
+/// How freedom F(i) combines threshold counts (§2.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum FreedomMode {
+    /// sqrt((N_lo^2 + N_hi^2)/2) / N_lib
+    #[default]
+    Rms,
+    /// N_lo / N_lib
+    SingleThreshold,
+}
+
+/// Residues eligible as neighbours in the collision accumulation of freedom (§3.8.2).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ResidueScope {
+    #[default]
+    All,
+    Subset(Vec<ResidueIndex>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Cutoffs {
+    pub d_clash: f64, // default 2.0 Å
+    pub d_cont: f64,  // default 3.0 Å
+    pub d_cut: f64,   // default 25.0 Å
+    pub tau_lo: f64,  // default 0.5
+    pub tau_hi: f64,  // default 2.0
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ConFindConfig {
+    pub cutoffs: Cutoffs,                 // Default = the defaults above
+    pub scope: ResidueScope,              // Default = All
+    pub cb_clash_policy: CbClashPolicy,   // Default = AllResidues
+    pub crowdedness_mode: CrowdednessMode,// Default = ProbabilityWeighted
+    pub freedom_mode: FreedomMode,        // Default = Rms
+}
+
+impl ConFindConfig {
+    /// Builder-style setters, one per field, each returning `Self`.
+    pub fn with_cutoffs(self, c: Cutoffs) -> Self;
+    pub fn with_scope(self, s: ResidueScope) -> Self;
+    pub fn with_cb_clash_policy(self, p: CbClashPolicy) -> Self;
+    pub fn with_crowdedness_mode(self, m: CrowdednessMode) -> Self;
+    pub fn with_freedom_mode(self, m: FreedomMode) -> Self;
+    /// Context-free validation (§3.9.3 rules V1–V5).
+    pub fn validate(&self) -> Result<(), ConfigError>;
+}
 ```
+`Cutoffs` implements `Default` with the values in the table. All enums implement `Display` and `FromStr` using the kebab-case names of §3.9.5.
+
+| Option | Variants | Default | Meaning |
+|---|---|---|---|
+| `CbClashPolicy` | `AlaOnly`, `AllResidues` | `AllResidues` | Defines $S_{\text{clash}}$ (§2.4). `AllResidues` is the physically sensible choice (a clashing $C_\beta$ excludes every rotamer); `AlaOnly` restricts the $C_\beta$ test to alanine. |
+| `CrowdednessMode` | `ProbabilityWeighted`, `PrunedCountFraction` | `ProbabilityWeighted` | Defines $C(i)$ (§2.4). |
+| `FreedomMode` | `Rms`, `SingleThreshold` | `Rms` | Defines $F(i)$ (§2.5). |
+| `ResidueScope` | `All`, `Subset(..)` | `All` | Defines $\mathcal S$ and thus $\mathcal N(i)$ (§3.8.2). |
+| `Cutoffs` | five f64 fields | §3.8.4 | $d_{\text{clash}}, d_{\text{cont}}, D_{\text{cut}}, \tau_{\text{lo}}, \tau_{\text{hi}}$. |
+
+#### 3.9.2 Fixed Definitions (not options)
+These follow from the owner-accepted definitions and are not configurable: symmetric RMS and single-threshold freedom are the only freedom variants; every clashed residue is credited in $I(i,j)$ (§3.8.3); $P_{\text{coll}}$ is the unnormalised mass (§2.5); freedom is count-based; $R_{\max}$ is computed from the loaded library (§3.8.5); own-residue backbone is never tested; contact atoms $S_{\text{cont}}$ follow §4.5.
+
+#### 3.9.3 Validation and Errors
+```rust
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum ConfigError {
+    #[error("cutoff {name} must be finite and > 0 (got {value})")]
+    InvalidCutoff { name: &'static str, value: f64 },
+    #[error("tau_lo ({tau_lo}) must be < tau_hi ({tau_hi}) when freedom_mode is Rms")]
+    TauOrder { tau_lo: f64, tau_hi: f64 },
+    #[error("d_cut {d_cut} Å < required {required} Å (= 2*max R_max + d_cont) for the loaded rotamer library")]
+    DcutTooSmall { d_cut: f64, required: f64 },
+    #[error("scope subset is empty")]
+    EmptyScope,
+    #[error("scope contains residue index {index} but structure has {n_residues} residues")]
+    ScopeOutOfRange { index: u32, n_residues: usize },
+    #[error("unknown {option} value '{value}'; expected one of: {expected}")]
+    UnknownVariant { option: &'static str, value: String, expected: &'static str },
+}
+```
+Rules (all reported as `ConFindError::InvalidConfig`; no silent correction or fallback):
+- **V1** every cutoff is finite and $>0$ (`InvalidCutoff`).
+- **V2** $\tau_{\text{lo}}<\tau_{\text{hi}}$ if `freedom_mode == Rms`; for `SingleThreshold` only $\tau_{\text{lo}}$ is used and $\tau_{\text{hi}}$ need only satisfy V1 (`TauOrder`).
+- **V3** `ResidueScope::Subset` is non-empty (`EmptyScope`); duplicates are permitted and ignored.
+- **V4** string parsing of a variant name rejects unknown names (`UnknownVariant`).
+- **V5** $D_{\text{cut}}\ge2\max_aR_{\max}(a)+d_{\text{cont}}$ is checked at `with_config`/`new` time against the loaded library (`DcutTooSmall`).
+- **V6** (at construction) every scope index is $<$ `n_residues` (`ScopeOutOfRange`).
+`validate()` performs V1–V4; construction performs V1–V6 in order V1, V2, V3, V6, V5.
+
+#### 3.9.4 Composition Matrix
+Each option affects exactly the outputs marked ✔; options never alter outputs marked –.
+
+| Output | `CbClashPolicy` | `CrowdednessMode` | `FreedomMode` | `ResidueScope` | `Cutoffs` |
+|---|---|---|---|---|---|
+| surviving sets $\mathcal R_i$, $N_{\text{surv}}$ | ✔ | – | – | – | ✔ ($d_{\text{clash}}$) |
+| `crowdedness` $C(i)$ | ✔ | ✔ | – | – | ✔ ($d_{\text{clash}}$) |
+| `contacts` $c(i,j)$ | ✔ (via $\Omega$) | – | – | – | ✔ ($d_{\text{clash}},d_{\text{cont}},D_{\text{cut}}$) |
+| `interference` $I(i,j)$ | ✔ | – | – | – | ✔ ($d_{\text{clash}}$) |
+| `freedom` $F(i)$ | ✔ (via $\mathcal R_i$) | – | ✔ | ✔ | ✔ (all five) |
+
+Documented interaction restrictions are exactly V2 (`Rms` needs $\tau_{\text{lo}}<\tau_{\text{hi}}$) and V5 ($D_{\text{cut}}$ vs. $d_{\text{cont}}$ and library reach). No other combination is restricted; in particular, all $2\times2\times2$ combinations of the three enums are legal with any valid cutoffs and any valid scope.
+
+#### 3.9.5 `confind` Binary Flags
+Existing flags (`--p`, `--rLib`, `--o`, `--sel`, `--cdcut`, `--incut`, `--threads`) are retained. New flags map one-to-one onto `ConFindConfig`:
+
+| Flag | Values | Default | Field |
+|---|---|---|---|
+| `--cbclash` | `ala-only` \| `all-residues` | `all-residues` | `cb_clash_policy` |
+| `--crowdmode` | `probability-weighted` \| `pruned-count-fraction` | `probability-weighted` | `crowdedness_mode` |
+| `--freedommode` | `rms` \| `single-threshold` | `rms` | `freedom_mode` |
+| `--scope` | `all` \| `<residue-id list or file>` | `all` | `scope` |
+| `--dclash`, `--dcont`, `--dcut` | f64 Å | 2.0, 3.0, 25.0 | `cutoffs.*` |
+| `--taulo`, `--tauhi` | f64 | 0.5, 2.0 | `cutoffs.tau_*` |
+
+Behavior: flags may appear in any order and in any combination; an unknown value or a configuration violating §3.9.3 exits with a non-zero status and a message naming the option, the offending value and the allowed values; nothing falls back silently. The output header records every effective option value (including defaults) so that a run is reproducible from its output.
+
+#### 3.9.6 Acceptance Tests for Options
+Kernel-level fixture **T1** (injected rotamer sets, non-alanine amino acid, $P(a)=10$): rotamers $r_1,r_2,r_3$ with $P=\{0.5,0.3,0.2\}$; $r_1$ has a non-$C_\beta$ atom at $1.9$ Å from $B_j$ (no other close backbone); $r_2$ has only its $C_\beta$ at $1.9$ Å from $B_k$; $r_3$ is clash-free.
+
+1. **Defaults.** `ConFindConfig::default()` equals `{AllResidues, ProbabilityWeighted, Rms, All, Cutoffs{2.0,3.0,25.0,0.5,2.0}}`; `ConFind::new` behaves identically to `with_config(.., default())`.
+2. **Defaults reproduce stated numbers.** Under defaults the tests of §3.8.2 (items 1–2: $F=0.5$, $F=\sqrt{37}/10$), §3.8.3 (item 1: $I(i,j)=0.08$, $I(i,k)=0.03$) and T1 (below, `AllResidues`/`ProbabilityWeighted`) hold to $10^{-9}$.
+3. **T1 expected values**:
+
+   | `CbClashPolicy` | pruned | $N_{\text{surv}}/N_{\text{lib}}$ | $C$ `ProbabilityWeighted` | $C$ `PrunedCountFraction` | $I(i,j)$ | $I(i,k)$ |
+   |---|---|---|---|---|---|---|
+   | `AllResidues` | $r_1,r_2$ | 1/3 | $0.8$ | $2/3$ | $0.05$ | $0.03$ |
+   | `AlaOnly` | $r_1$ | 2/3 | $0.5$ | $1/3$ | $0.05$ | $0$ |
+
+   (Tolerance $10^{-12}$.) For an alanine fixture with the same geometry, both policies give the `AllResidues` row, because $C_\beta\in S_{\text{cont}}$ for alanine.
+4. **Policy-combination matrix.** On a synthetic helix and on the vendored crystal structure, for each of the $2\times2\times2$ combinations of `CbClashPolicy`, `CrowdednessMode`, `FreedomMode`, crossed with scope in {`All`, a proper `Subset`} (16 runs): construction succeeds; `cache_all`, `contacts`, `interference`, `crowdedness` and `freedom` all return `Ok`; all $C,F,c\in[0,1]$ and finite; $I(i,j)\le Z_iC_w(i)$.
+5. **Orthogonality (§3.9.4).** Holding other options fixed: changing `CrowdednessMode` changes only `crowdedness` outputs (bitwise-identical `contacts`, `interference`, `freedom`); changing `FreedomMode` changes only `freedom` outputs; changing `ResidueScope` changes only `freedom` outputs and never any `crowdedness`, `contacts`, `interference` value; changing `CbClashPolicy` leaves all outputs defined (monotonicity: $N_{\text{surv}}^{\text{AllResidues}}(i)\le N_{\text{surv}}^{\text{AlaOnly}}(i)$ and, in either crowdedness mode, $C^{\text{AllResidues}}(i)\ge C^{\text{AlaOnly}}(i)$).
+6. **Freedom-mode relation.** For every residue, $F^{(1)}(i)\le F(i)$, and both equal $N_{\text{surv}}/N_{\text{lib}}$ when $\mathcal N(i)=\emptyset$.
+7. **Crowdedness-mode relation.** On a single-amino-acid fixture with uniform rotamer probabilities the two modes agree; on T1 they differ as in item 3.
+8. **Scope.** `Subset(S)` equals `All` for any residue whose Cα neighbours within $D_{\text{cut}}$ all lie in $S$; `freedom(i)` for $i\notin S$ returns `OutOfScope`; adding a residue to $S$ never increases any $F(i)$ (monotone non-increasing).
+9. **Validation.** One test per error: each of V1 (zero, negative, NaN, infinite for each of the five cutoffs), V2 (`tau_lo>=tau_hi` with `Rms` fails; the same values with `SingleThreshold` pass), V3, V4 (each enum), V5 ($D_{\text{cut}}=10.0$ with the shipped library fails with `DcutTooSmall` whose `required` equals $2\max R_{\max}+d_{\text{cont}}$; setting $d_{\text{cont}}=10$ with $D_{\text{cut}}=25$ fails as well), V6.
+10. **Cutoff composition.** For each policy combination, $F$ is non-decreasing in $\tau_{\text{lo}}$ and in $\tau_{\text{hi}}$ and stays in $[0,1]$; with $d_{\text{clash}}$ below the smallest atom–backbone distance, $C=0$ and $N_{\text{surv}}=N_{\text{lib}}$.
+11. **CLI.** For every flag of §3.9.5: a valid value is accepted and echoed in the output header; an invalid value exits non-zero naming the option; the 8 enum combinations plus a `--scope` list run to completion; a command line with no new flags produces output identical to the same command with every new flag set to its default.
+12. **Determinism.** Identical config and input give bitwise-identical outputs for any `--threads` value.
 
 ---
 
 ## 4. `proxide-rotlib` & `proxide_fixer` Functional Specification
 
-### 4.1 Segregation of Mosaist Reader to `crates/proxide-rotlib-mosaist`
-All code supporting the parsing and conversion of Mosaist's proprietary binary format (`rotlib.bin`) is segregated into a dedicated crate:
-
-#### Package Metadata (`crates/proxide-rotlib-mosaist/Cargo.toml`)
-```toml
-[package]
-name = "proxide-rotlib-mosaist"
-version.workspace = true
-edition.workspace = true
-license = "CC-BY-NC-SA-4.0"
-publish = false
-description = "Mosaist binary rotlib.bin format reader and Protobuf converter (Non-Commercial)"
-
-[dependencies]
-proxide-rotlib = { path = "../proxide-rotlib" }
-prost = "0.13"
-zstd = "0.13"
-clap = { version = "4.4", features = ["derive"] }
-tracing = "0.1"
-thiserror = { workspace = true }
+### 4.1 Rotamer Library Loading (`proxide-rotlib`)
+`proxide-rotlib` carries `license = "MIT"` and loads rotamer libraries exclusively through the Protobuf API:
+```rust
+impl RotamerLibrary {
+    pub fn load_pb(path: &Path) -> Result<Self, RotlibError>;
+    pub fn load_pb_zst(path: &Path) -> Result<Self, RotlibError>;
+}
 ```
-
-#### NOTICE Requirements (`crates/proxide-rotlib-mosaist/NOTICE`)
-Must state clearly that the crate implements format specifications of the Mosaist/MASTER protein design suite, is licensed under CC BY-NC-SA 4.0, and must not be used commercially or committed into commercial distributions.
-
-#### Clean-Room MIT Crates
-- `crates/proxide-rotlib` retains strictly `license = "MIT"` and zero dependencies on `proxide-rotlib-mosaist`.
-- Production Protobuf loading is executed exclusively via:
-  ```rust
-  impl RotamerLibrary {
-      pub fn load_pb(path: &Path) -> Result<Self, RotlibError>;
-      pub fn load_pb_zst(path: &Path) -> Result<Self, RotlibError>;
-  }
-  ```
-- Existing binary format tests in `crates/proxide-rotlib/tests/test_load.rs` and `crates/proxide-rotlib/tests/test_parse_master.rs` must be relocated to `crates/proxide-rotlib-mosaist/tests/` to maintain clean workspace segregation.
+No other binary-format reader, converter or conversion CLI is part of this crate. Tests under `crates/proxide-rotlib/tests/` use the committed Protobuf asset `data/rotlibs/proxide-rotlib-bbdep2010.pb.zst` (ODC-BY-1.0 Dunbrack library) or synthetic in-memory libraries.
 
 ---
 
-### 4.2 Phi-Major Sorting Validation Invariants in `load()`
-In the segregated `proxide-rotlib-mosaist` crate, `validate_grid` must enforce strict phi-major ordering as a formal mathematical invariant:
-1. **Dimension Match**: The total number of bins must equal the exact product of dihedral centers: $|\Phi| \times |\Psi| = |\text{bins}|$.
-2. **Lexicographical Product Invariant**: The grid array must follow phi-major ordering (outer iteration over $\phi$, inner iteration over $\psi$). For every bin index $k \in [0, |\Phi| \cdot |\Psi| - 1]$, stored dihedral centers $(\phi_k, \psi_k)$ must match the expected grid centers within numerical tolerance $\epsilon = 10^{-4}$:
-   $$|\phi_k - \phi_{\lfloor k / |\Psi| \rfloor}| \le 10^{-4}, \quad |\psi_k - \psi_{k \pmod{|\Psi|}}| \le 10^{-4}$$
-3. **Failure Contract**: Any dimension mismatch or deviation from phi-major ordering returns an explicit `RotlibError::InvalidFormat` describing the mismatched bin index and coordinates.
+### 4.2 (Reserved)
 
 ---
 
@@ -758,6 +1000,9 @@ pub fn is_backbone_or_hydrogen(name: &str) -> bool {
 /// backbone frame. For Alanine, Cβ is the sole sidechain heavy atom and is retained;
 /// for all other amino acids, Cβ is excluded to prevent rigid backbone-level contacts
 /// from artificially inflating rotamer contact degree.
+///
+/// This predicate defines S_cont (the sidechain-sidechain contact atoms). The backbone-clash
+/// test uses S_clash, which adds Cβ for every amino acid under `CbClashPolicy::AllResidues` (§2.4).
 pub fn counts_as_sidechain(atom_name: &str, aa: &str) -> bool {
     if is_backbone_or_hydrogen(atom_name) {
         return false;
@@ -863,22 +1108,18 @@ pub fn counts_as_sidechain(atom_name: &str, aa: &str) -> bool {
 
 ## 5. Test Acceptance & Golden Replacement Specification
 
-### 5.1 Elimination of Tainted Test Fixtures & Constants
-The clean-room test suite must not contain any data derived from upstream Mosaist runs or proprietary binary files:
+### 5.1 Test Fixtures & Constants
+The test suites must contain only data produced by this repository's own generators, public-domain structures, or the committed Protobuf asset:
 
-| Existing Tainted Asset | Location | Elimination & Replacement Strategy |
+| Need | Location | Source |
 |---|---|---|
-| `small.pdb` | `tests/common/mod.rs` | Replace with synthetic helical generator `make_synthetic_backbone(n, spacing)` |
-| `1DC7.pdb` | `tests/common/mod.rs` | Vendor clean crystallographic coordinates directly from wwPDB into `tests/data/1dc7.pdb` |
-| `rotlib.bin` | `tests/common/mod.rs` | Replace with `data/rotlibs/proxide-rotlib-bbdep2010.pb.zst` |
-| Upstream path defaults | `tests/common/mod.rs:231,240,258` | Purge all `/home/marielle/repos/mosaist/testfiles/` paths; resolve workspace paths or synthetic fixtures |
-| `REF_CONTACTS` (60 pairs) | `test_parity_small_pdb.rs` | Purge from MIT crate; verify via out-of-tree black-box parity harness |
-| `test_drift_loadpb_small_pdb.rs` | `crates/proxide-confind/tests/` | **Complete removal** from MIT crate; purge hardcoded Mosaist `REF_CONTACTS` table |
-| `test_parity_1dc7.rs` | `crates/proxide-confind/tests/` | **Complete removal** from MIT crate; purge hardcoded Mosaist `REF_CROWDEDNESS*`, `REF_FREEDOM*`, `REF_CONTACTS*` |
-| `REF_INTERFERENCE` (1,700+ entries) | `test_parity_small_pdb.rs` | Purge from MIT crate |
-| `REF_DISTOGRAM*` (13,000+ floats) | `test_distogram.rs` | Replace with mathematical invariant tests (symmetry, triangle inequality, SE(3) invariance) |
-| `REF_CB` float array | `test_placement.rs` | Replace with exact analytical coordinate derivation |
-| `test_load.rs` & `test_parse_master.rs` | `crates/proxide-rotlib/tests/` | **Relocate** to `crates/proxide-rotlib-mosaist/tests/` to prevent test failures on segregated crate |
+| Small backbone | `tests/common/mod.rs` | Synthetic helical generator `make_synthetic_backbone(n, spacing)` |
+| Crystal structure | `tests/common/mod.rs` | Clean coordinates vendored from wwPDB into `tests/data/1dc7.pdb` |
+| Rotamer library | `tests/common/mod.rs` | `data/rotlibs/proxide-rotlib-bbdep2010.pb.zst` |
+| Paths | `tests/common/mod.rs` | Workspace-relative paths (`CARGO_MANIFEST_DIR`) or synthetic fixtures; no absolute or external-checkout paths |
+| Distogram checks | `test_distogram.rs` | Mathematical invariant tests (symmetry, triangle inequality, SE(3) invariance); no embedded float tables |
+| $C_\beta$ placement | `test_placement.rs` | Exact analytical coordinate derivation; no embedded float tables |
+| Contact / crowdedness / freedom / interference | `crates/proxide-confind/tests/` | Invariant tests of §3.8, §3.9.6 and §5.3; no embedded reference tables |
 
 ---
 
@@ -912,48 +1153,33 @@ All clean-room implementations must satisfy the following invariant unit tests:
 
 ---
 
-### 5.4 Out-of-Tree Black-Box Parity Testing Protocol with `bth`
-To confirm numerical parity with upstream Mosaist without copyright contamination:
-
-1. **Isolated Execution Environment**:
-   - Upstream Mosaist is compiled in `/tmp/mosaist_scratch/` outside the workspace.
-   - The parity evaluation script runs strictly in `/tmp/`.
-2. **Pre-Registration via `bth`**:
-   - Every verification run is pre-registered with a committed `.bth.toml` sidecar and tracked script.
-3. **Data Isolation Barrier**:
-   - The parity runner compares clean-room output against upstream output:
-     $$\max_{i, j} |c_{\text{clean}}(i, j) - c_{\text{upstream}}(i, j)| \le 5 \times 10^{-4}$$
-   - The runner emits **only**:
-     - Status: `VERDICT: PASS / FAIL`
-     - Maximum absolute delta ($\Delta_{\max}$) and root-mean-square delta ($\Delta_{\text{RMS}}$).
-   - Zero upstream output tables or C++ code fragments are committed into the `proxide` repository.
+### 5.4 Configuration-Option Tests
+The per-option acceptance tests, policy-combination matrix and CLI tests are specified in §3.9.6 and are mandatory.
 
 ---
 
 ## 6. Traceability Matrix & Debt Reconciliation
 
-| Debt / Issue ID | Summary | Clean-Room Resolution in Specification | Section |
+| Debt / Issue ID | Summary | Resolution in Specification | Section |
 |---|---|---|---|
-| **#3184** | Clean-room rewrite of `proxide-confind` | `cache.rs`, `parallel.rs`, `freedom.rs`, `confind.rs`, `params.rs` deleted and re-specified from Zheng & Grigoryan (2017) | §1.3, §2.1–§2.6, §3.3 |
-| **#3185** | Segregate `rotlib` and `fixer` | `load()`, `validate_grid()`, `to_protobuf()`, `parse_master` moved to `proxide-rotlib-mosaist`; MIT crates decoupled | §1.2, §4.1, §4.3 |
-| **#1897** | Magic `9999.0` dihedral sentinel | Replaced with `Option<f64>` on `ResidueBackbone` across `confind` and `rotlib`; no sentinel floats | §3.1, §3.4, §4.3 |
-| **#1891** | Fixer repack tests skip in CI | Point `load_rotlib()` to committed `proxide-rotlib-bbdep2010.pb.zst`; fail loudly on corrupt load; portable workspace path resolution; replace `eprintln!` with `tracing` | §4.6 |
-| **#1903** | Omega dihedral sign convention | Standard IUPAC $C\alpha_{i-1}-C_{i-1}-N_i-C\alpha_i$ torsion adopted; cis defined by $|\omega| < 30^\circ$ | §3.5 |
-| **#1904** | Chain semantics & breaks | PDB file order preserved; segmented on `chain_id` change, TER records, or $C\alpha-C\alpha > 4.5$ Å; dihedrals cleared at breaks | §3.6 |
-| **#1933** | CCD parser fallbacks | Strict token validation; CIF null tokens handled as `None`; mandatory `GeometryFallback` records on `ResidueGeometryTable` with `tracing::warn!` citing Engh & Huber (1991) and tetrahedral $109.47^\circ$ | §4.7 |
-| **Challenge Obj 1** | Rotlib API cis-proline hallucination | Conceded: fixed `is_c_terminal: bool` -> `cis_proline: bool` across all `RotamerLibrary` methods (§4.3, §4.4) with explicit CPR routing | §4.3, §4.4 |
-| **Challenge Obj 2** | P_coll factor-of-100 dimensional mismatch | Conceded: normalized Eq. 2.5 with $\frac{P(b)}{100.0}$ fractional probability, aligning with $\tau_{\text{lo}} = 0.5$ and $\tau_{\text{hi}} = 2.0$ | §2.5, §3.3 |
-| **Challenge Obj 3** | "Type 2" terminology & missing compute_freedom | Conceded: purged "Type 2" in favor of "RMS freedom formulation"; added public `compute_freedom` signature taking `&[f64]` | §2.5, §3.1, §3.3 |
-| **Challenge Obj 4** | Missing backbone loaders & public APIs | Conceded: added public signatures for `load_pdb_f64`, `extract_f64_backbone`, `residue_id`, `constrained_contacts`, and `precondition` module | §3.1 |
-| **Challenge Obj 5** | Ambiguous Debt #1933 fallback contract | Conceded: eliminated either/or branch; defined `GeometryFallback` and `FallbackKind`; attached to `ResidueGeometryTable` | §4.7 |
-| **Challenge Obj 6** | Unpurged upstream test tables | Conceded: Table 5.1 expanded to mandate complete removal of `test_drift_loadpb_small_pdb.rs`, `test_parity_1dc7.rs`, and purging `/home/marielle/repos/mosaist` paths from `tests/common/mod.rs` | §5.1 |
-| **Challenge Obj 7** | Upstream tool names in metadata | Conceded: mandated scrubbing `Cargo.toml` description and `lib.rs` docs of `mstcondeg`/`Mosaist` | §1.1, §3.7 |
-| **Challenge Obj 8** | Procedural Rust code in spec | Conceded: replaced imperative loop snippets with formal declarative mathematical invariants | §4.2, §4.7 |
-| **Challenge Obj 9** | Chain boundaries without TER | Conceded: explicitly added `res_i.chain_id != res_{i-1}.chain_id` as boundary condition | §3.6 |
-| **Challenge Obj 10** | Zero partition function division | Conceded: specified analytical short-circuit $\Omega_i = 0 \lor \Omega_j = 0 \implies c(i, j) = 0.0$ | §2.1, §3.3 |
-| **Challenge Obj 11** | Rotlib test file relocation | Conceded: mandated moving `test_load.rs` and `test_parse_master.rs` to `proxide-rotlib-mosaist/tests/` | §4.1, §5.1 |
-| **Challenge Obj 12** | Fixer repack portable paths | Conceded: specified `CARGO_MANIFEST_DIR` + relative traversal with workspace fallback | §4.6 |
-| **Doc Fix** | `lib.rs:36-37` citation error | Replace helical bundle paper with Zheng et al. (2015) and Zheng & Grigoryan (2017) | §3.7 |
-| **Doc Fix** | `confind.rs:184` endpoint doc | Correct docstring: both endpoints must belong to query residue set | §3.7 |
-| **Doc Fix** | `parallel.rs:37-55` C++ comments | Purge all C++ line comments and upstream bug-replication logic | §3.7 |
-| **Parked Gap** | Empirical freedom / cutoffs | Parked for owner decision (`awaiting_feedback`) with Options A, B (recommended), C | §3.8 |
+| **#3184** | Clean-room rewrite of `proxide-confind` | `cache.rs`, `parallel.rs`, `freedom.rs`, `confind.rs`, `params.rs` specified from Zheng & Grigoryan (2017) | §1.3, §2.1–§2.6, §3.3 |
+| **#3185** | Single rotamer format for MIT crates | `proxide-rotlib` loads Protobuf only; `proxide_fixer` decoupled | §1.2, §4.1, §4.3 |
+| **#1897** | Magic `9999.0` dihedral sentinel | `Option<f64>` on `ResidueBackbone` across `confind` and `rotlib`; no sentinel floats | §3.1, §3.4, §4.3 |
+| **#1891** | Fixer repack tests skip in CI | `load_rotlib()` points to committed `proxide-rotlib-bbdep2010.pb.zst`; fail loudly on corrupt load; portable workspace path resolution; `tracing` instead of `eprintln!` | §4.6 |
+| **#1903** | Omega dihedral sign convention | Standard IUPAC $C\alpha_{i-1}-C_{i-1}-N_i-C\alpha_i$ torsion; cis defined by $|\omega|<30^\circ$ | §3.5 |
+| **#1904** | Chain semantics & breaks | File order preserved; segmented on `chain_id` change, TER records, or $C\alpha-C\alpha>4.5$ Å; dihedrals cleared at breaks | §3.6 |
+| **#1933** | CCD parser fallbacks | Strict token validation; CIF null tokens as `None`; mandatory `GeometryFallback` records on `ResidueGeometryTable` with `tracing::warn!` citing Engh & Huber (1991) and tetrahedral $109.47^\circ$ | §4.7 |
+| **Challenge Obj 1** | Rotlib API cis-proline | `is_c_terminal: bool` → `cis_proline: bool` across all `RotamerLibrary` methods with explicit CPR routing | §4.3, §4.4 |
+| **Challenge Obj 2** | $P_{\text{coll}}$ factor-of-100 mismatch | $P(b)/100$ fractional probability, aligning with $\tau_{\text{lo}}=0.5$, $\tau_{\text{hi}}=2.0$ | §2.5, §3.3 |
+| **Challenge Obj 3** | Terminology & missing `compute_freedom` | "RMS freedom"; public `compute_freedom` (now with `FreedomMode`) | §2.5, §3.1, §3.3 |
+| **Challenge Obj 4** | Missing backbone loaders & public APIs | Signatures for `load_pdb_f64`, `extract_f64_backbone`, `residue_id`, `constrained_contacts`, `precondition` | §3.1 |
+| **Challenge Obj 5** | Ambiguous #1933 fallback contract | `GeometryFallback` and `FallbackKind` attached to `ResidueGeometryTable` | §4.7 |
+| **Challenge Obj 6** | Embedded reference tables in tests | Fixture table: no embedded reference tables; invariant tests only | §5.1 |
+| **Challenge Obj 7** | External tool names in metadata | Metadata/docs cite literature only | §1.1, §3.7 |
+| **Challenge Obj 8** | Procedural Rust code in spec | Declarative mathematical invariants | §4.2, §4.7 |
+| **Challenge Obj 9** | Chain boundaries without TER | `res_i.chain_id != res_{i-1}.chain_id` is a boundary condition | §3.6 |
+| **Challenge Obj 10** | Zero partition function division | $\Omega_i=0\lor\Omega_j=0\implies c(i,j)=0.0$ | §2.1, §3.3 |
+| **Challenge Obj 12** | Fixer repack portable paths | `CARGO_MANIFEST_DIR` + relative traversal with workspace fallback | §4.6 |
+| **Doc Fix** | Contact-degree citation | Zheng et al. (2015) and Zheng & Grigoryan (2017) | §3.7 |
+| **Doc Fix** | `interference` endpoint doc | Both endpoints must belong to the query residue set | §3.7 |
+| **Owner decision** | Freedom, interference, crowdedness, Cβ clash, scope, cutoffs | Defined in §2.4–§2.6, §3.8 and exposed as typed options with defaults and validation | §3.8, §3.9 |
