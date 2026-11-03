@@ -336,10 +336,10 @@ mod tests {
     fn test_kabsch_identity() {
         let coords: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
         let rotation = kabsch_rotation(&coords, &coords);
-        for i in 0..3 {
-            for j in 0..3 {
+        for (i, row) in rotation.iter().enumerate() {
+            for (j, &val) in row.iter().enumerate() {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!((rotation[i][j] - expected).abs() < 0.01);
+                assert!((val - expected).abs() < 0.01);
             }
         }
     }

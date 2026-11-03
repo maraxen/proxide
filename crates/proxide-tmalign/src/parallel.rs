@@ -271,8 +271,8 @@ mod tests {
         // frame is no longer its own nearest neighbour and every selection below is
         // suspect -- cheap to check, and it catches an inverted d0/l_norm convention.
         let q = helix(30, 0.0);
-        let scores =
-            tm_scores_fixed_correspondence(&q.coords, &[q.coords.clone()]).expect("valid input");
+        let scores = tm_scores_fixed_correspondence(&q.coords, std::slice::from_ref(&q.coords))
+            .expect("valid input");
         assert_eq!(scores.len(), 1);
         assert!(
             (scores[0] - 1.0).abs() < 1e-4,
@@ -391,8 +391,8 @@ mod tests {
         // than skipping redundant work.
         let q = helix(40, 0.0);
         let c = helix(40, 5.0);
-        let fast =
-            tm_scores_fixed_correspondence(&q.coords, &[c.coords.clone()]).expect("valid input")[0];
+        let fast = tm_scores_fixed_correspondence(&q.coords, std::slice::from_ref(&c.coords))
+            .expect("valid input")[0];
         let full = tmalign_pair_serial(&q.coords, &c.coords).expect("valid input");
         assert!(
             (fast - full.tm_score_norm1).abs() < 0.05,

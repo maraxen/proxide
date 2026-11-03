@@ -1,0 +1,29 @@
+[metadata]
+title = "proxide GAFF2 fail-fast atom typing verification (debt #1899)"
+created = "261102"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Unmatched atoms in assign_gaff2_atom_types fail fast by raising Gaff2AtomTypeMissingError (Python) and Err (Rust) with informative messages naming element and atom index, replacing the silent fallback ladder ('c3', 'n3', 'oh', 's', 'ha', 'x'). Positive control: well-formed molecules with full rules type correctly without raising. Negative control: rules excluding an element (C, O, H) or empty rule lists raise immediately."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "all_pass = true AND python_unmatched_carbon_raises = true AND python_unmatched_oxygen_raises = true AND python_unmatched_hydrogen_raises = true AND python_standard_rules_pass = true AND rust_tests_pass = true"
+decision = "Confirm debt #1899 is resolved: fail-fast atom typing in Python and Rust is verified."
+reasoning = "Unmatched atoms raise Gaff2AtomTypeMissingError / Err at point of determination; standard molecules continue to type correctly."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (all_pass = true AND python_unmatched_carbon_raises = true AND python_unmatched_oxygen_raises = true AND python_unmatched_hydrogen_raises = true AND python_standard_rules_pass = true AND rust_tests_pass = true)"
+decision = "Do not merge: defect persists or regressions observed."
+reasoning = "An atom matching no rule either silently defaults or crashes unexpectedly, or standard rules regress."
+is_residual = true
+
+[result_schema]
+all_pass = "bool"
+python_unmatched_carbon_raises = "bool"
+python_unmatched_oxygen_raises = "bool"
+python_unmatched_hydrogen_raises = "bool"
+python_standard_rules_pass = "bool"
+rust_tests_pass = "bool"

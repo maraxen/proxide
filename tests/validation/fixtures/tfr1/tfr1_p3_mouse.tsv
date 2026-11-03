@@ -1,0 +1,15 @@
+design_id	n_mouse_runs_valid	n_mouse_docked	mouse_docked_fraction	mouse_recurrence_report_only	mouse_median_ipsae_report_only	mouse_medoid_run	n_mouse_contacted	mouse_epitope_contacts	n_human_contacted	n_h_aligned_contacts	n_m_aligned_contacts	contact_overlap	mouse_no_docked	t2_overlap_floor	human_structure
+f2c006r13	6	0	0.0	0.0	0.2759				11	10	0	0.0	1	0	outputs/tfr1/f3/structures/f2c006r13.pdb
+f2c008r18	6	0	0.0	0.0	0.0126				12	11	0	0.0	1	0	outputs/tfr1/f3/structures/f2c008r18.pdb
+f2c008r18_H30	6	0	0.0	0.0	0.007				12	11	0	0.0	1	0	outputs/tfr1/f3/structures/f2c008r18_H30.pdb
+f2c008r18_H59	6	0	0.0	0.0	0.0064				12	11	0	0.0	1	0	outputs/tfr1/f3/structures/f2c008r18_H59.pdb
+f2c010r19	6	0	0.0	0.0	0.0068				11	10	0	0.0	1	0	outputs/tfr1/f3/structures/f2c010r19.pdb
+f2c013r14	6	0	0.0	0.0	0.0				14	13	0	0.0	1	0	outputs/tfr1/f3/structures/f2c013r14.pdb
+f2c013r14_H73	6	0	0.0	0.0	0.0				16	15	0	0.0	1	0	outputs/tfr1/f3/structures/f2c013r14_H73.pdb
+f2c013r5	6	0	0.0	0.1667	0.0106				15	14	0	0.0	1	0	outputs/tfr1/f3/structures/f2c013r5.pdb
+f2c013r5_H2	6	0	0.0	0.1667	0.0056				18	17	0	0.0	1	0	outputs/tfr1/f3/structures/f2c013r5_H2.pdb
+f2c014r2_H48	6	0	0.0	0.0	0.0107				15	14	0	0.0	1	0	outputs/tfr1/f3/structures/f2c014r2_H48.pdb
+f2c016r5_H32	6	0	0.0	0.0	0.0421				12	11	0	0.0	1	0	outputs/tfr1/f3/structures/f2c016r5_H32.pdb
+f2c018r4_H35	6	0	0.0	0.0	0.0114				21	20	0	0.0	1	0	outputs/tfr1/f3/structures/f2c018r4_H35.pdb
+f2c020r4_H62	6	0	0.0	0.0	0.012				18	17	0	0.0	1	0	outputs/tfr1/f3/structures/f2c020r4_H62.pdb
+f2c025r15_H60	6	0	0.0	0.0	0.0				14	13	0	0.0	1	0	outputs/tfr1/f3/structures/f2c025r15_H60.pdb

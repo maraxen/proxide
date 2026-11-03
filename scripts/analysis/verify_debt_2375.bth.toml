@@ -1,0 +1,32 @@
+schema = "bathos/0.3"
+
+[experiment]
+hypothesis = """
+GAFF2 parameterization in proxide previously emitted zero <Improper> records in FFXML,
+omitted the 'impropers' key from parameterize_gaff_with_rdkit, and applied _BOND_TYPE_SUB
+substitutions in bond/angle lookups without recording them or exposing them to the caller.
+With the genuine fix:
+1. build_gaff2_ffxml emits <Improper> records for planar centers under <PeriodicTorsionForce>.
+2. parameterize_gaff_with_rdkit returns a populated 'impropers' list for planar molecules.
+3. _lookup_bond_params and _lookup_angle_params record _BOND_TYPE_SUB substitutions in caller-supplied substitutions list.
+"""
+
+[outcomes.pass]
+condition = "impropers_emitted = true AND impropers_returned = true AND bond_sub_recorded = true AND angle_sub_recorded = true AND num_acetone_impropers = 1 AND num_benzene_impropers = 6"
+reasoning = "All criteria for Debt #2375 are confirmed working genuine behavior."
+decision = "Accept fix for Debt #2375 and proceed with commit and draft PR."
+is_residual = false
+
+[outcomes.fail]
+condition = "impropers_emitted = false OR impropers_returned = false OR bond_sub_recorded = false OR angle_sub_recorded = false"
+reasoning = "One or more Debt #2375 criteria failed."
+decision = "Investigate failure in improper assignment or substitution tracking."
+is_residual = true
+
+[result_schema]
+impropers_emitted = "bool"
+impropers_returned = "bool"
+bond_sub_recorded = "bool"
+angle_sub_recorded = "bool"
+num_acetone_impropers = "int"
+num_benzene_impropers = "int"

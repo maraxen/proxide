@@ -55,6 +55,10 @@ jobs:
         python-version: ['3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
+        with:
+          # tests/validation/test_stale_debt_reproduction_fidelity.py and
+          # scripts/validation/verify_stale_debts.py read historical commits.
+          fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -136,7 +140,7 @@ jobs:
       - name: Rustfmt Check
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets --exclude proxide-confind --exclude proxide-rotlib --exclude proxide_fixer -- -D warnings
       - name: Feature Powerset Check (Native)
         run: cargo hack check --feature-powerset
       - name: WASM Compatibility Check

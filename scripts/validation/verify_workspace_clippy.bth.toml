@@ -1,0 +1,32 @@
+[metadata]
+title = "proxide workspace clippy on all targets across non-cleanroom crates (debt #2917)"
+created = "261102"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Cargo clippy on all targets passes with zero warnings (-D warnings) across all 15 non-cleanroom workspace crates, while cleanroom crate proxide-confind emits lints (positive and negative controls)."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "non_cleanroom_passed == true AND non_cleanroom_warnings == 0 AND negative_control_detected_lints == true AND negative_control_warnings > 0"
+decision = "Accept clippy fixes for non-cleanroom workspace crates on all targets and update CI."
+reasoning = "All 15 non-cleanroom crates pass with zero warnings, and clean-room negative control demonstrates active defect detection."
+is_residual = false
+adversarial_check = "negative_control_warnings == 0"
+
+[outcomes.fail]
+condition = "NOT (non_cleanroom_passed == true AND non_cleanroom_warnings == 0 AND negative_control_detected_lints == true AND negative_control_warnings > 0)"
+decision = "Reject verification; inspect failing non-cleanroom crates or investigate defective negative control."
+reasoning = "Either non-cleanroom crates have remaining lints or the linter failed to flag defects in the control crate."
+is_residual = true
+
+[result_schema]
+all_pass = "bool"
+non_cleanroom_passed = "bool"
+non_cleanroom_warnings = "int"
+negative_control_detected_lints = "bool"
+negative_control_warnings = "int"
+
+[dependencies]
+proxide_version = { type = "git_sha", required = true }

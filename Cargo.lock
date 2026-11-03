@@ -2831,10 +2831,12 @@ dependencies = [
  "proxide-geometry",
  "proxide-parallel-rt",
  "quick-xml",
+ "rayon",
  "reqwest",
  "serde",
  "tempfile",
  "thiserror",
+ "toml_edit",
 ]
 
 [[package]]

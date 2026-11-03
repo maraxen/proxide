@@ -1,0 +1,25 @@
+design_id	group	predictor	ipsae	valid	n_if_a	n_if_b	assoc	problem
+sa_f2c006r13	design	openfold3	0.411053	1	17	17	1	
+sa_f2c006r13	design	protenix2	0.243129	1	17	16	0	
+sa_f2c008r18	design	openfold3	0.016639	1	47	47	0	
+sa_f2c008r18	design	protenix2	0.541606	1	46	46	1	
+sa_f2c016r5_H32	design	openfold3	0.0	1	11	11	0	
+sa_f2c016r5_H32	design	protenix2	0.23236	1	49	49	0	
+sa_f2c020r4_H62_i14	design	openfold3	0.01334	1	35	35	0	
+sa_f2c020r4_H62_i14	design	protenix2	0.078417	1	26	26	0	
+sa_f2c025r15_H60	design	openfold3	0.0	1	16	16	0	
+sa_f2c025r15_H60	design	protenix2	0.014706	1	12	12	0	
+sa_gcn4p1	pos_ctl	openfold3	0.423417	1	18	18	1	
+sa_gcn4p1	pos_ctl	protenix2	0.771513	1	20	20	1	
+sa_shuf_f2c006r13	shuffle	openfold3	0.0	1	47	47	0	
+sa_shuf_f2c006r13	shuffle	protenix2	0.021602	1	29	30	0	
+sa_shuf_f2c008r18	shuffle	openfold3	0.0	1	26	27	0	
+sa_shuf_f2c008r18	shuffle	protenix2	0.016294	1	29	27	0	
+sa_shuf_f2c016r5_H32	shuffle	openfold3	0.0	1	45	46	0	
+sa_shuf_f2c016r5_H32	shuffle	protenix2	0.01872	1	31	33	0	
+sa_shuf_f2c020r4_H62_i14	shuffle	openfold3	0.0	1	32	32	0	
+sa_shuf_f2c020r4_H62_i14	shuffle	protenix2	0.019536	1	27	27	0	
+sa_shuf_f2c025r15_H60	shuffle	openfold3	0.0	1	46	45	0	
+sa_shuf_f2c025r15_H60	shuffle	protenix2	0.016671	1	40	40	0	
+sa_ubiquitin	neg_ctl	openfold3	0.0	1	16	16	0	
+sa_ubiquitin	neg_ctl	protenix2	0.077847	1	22	24	0	
