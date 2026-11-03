@@ -27,6 +27,10 @@ Versioning rule: `crates.io` stays pre-release. A stable PyPI tag has a final `X
 10. Smoke test from a clean environment: `pip install proxide==<version>` then `python -c "import proxide"`, and exercise one call from the stable surface (parse a PDB, write it back, read an XTC frame).
 11. Bump the version on `main` to the next development version, in a PR. After stable `0.1.0`, set `pyproject.toml` to `0.1.1.dev0` and the Cargo workspace to `0.1.1-dev.0`, bump the path pins to match, run `uv lock`, and run `python scripts/check_versions.py`. After a pre-release tag, bump both to the next pre-release pair and run the same checks. Open a fresh `## [Unreleased]` entry if step 2 did not already.
 
+## Crates held back from crates.io
+
+`proxide-confind`, `proxide-rotlib` and `proxide_fixer` carry `publish = false` because they derive from CC BY-NC-SA 4.0 code (debt #1420). Do not restore them to `publish.yml` until that debt is resolved. `proxide-frag` was reviewed and found independent (`audits/261102_mosaist-derivation-map.md`), so it stays published.
+
 ## Release record
 
 0.1.0 shipped on 2026-10-23. `CHANGELOG.md` has `## [0.1.0] - 2026-10-23`. Tag `v0.1.0` is commit `b5305dd` (`release: proxide 0.1.0 (#77)`). `pyproject.toml` on this tree is `0.1.1.dev0`. This document is the release procedure for later cuts.
