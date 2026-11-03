@@ -16,7 +16,8 @@ import numpy as np
 
 AA: str = "ACDEFGHIKLMNPQRSTVWY"
 
-# UniProt / SwissProt Release 2021 canonical background composition
+# Default amino-acid background composition. The exact UniProtKB/Swiss-Prot
+# release these frequencies were taken from is unverified.
 SWISSPROT_BG: dict[str, float] = {
   "A": 0.0825,
   "C": 0.0137,
@@ -40,7 +41,7 @@ SWISSPROT_BG: dict[str, float] = {
   "Y": 0.0292,
 }
 
-# Kyte-Doolittle hydropathy scale
+# Kyte & Doolittle, J. Mol. Biol. 157:105-132 (1982).
 KYTE_DOOLITTLE: dict[str, float] = {
   "A": 1.8,
   "C": 2.5,
@@ -64,7 +65,8 @@ KYTE_DOOLITTLE: dict[str, float] = {
   "Y": -1.3,
 }
 
-# Bjellqvist pKa values
+# Bjellqvist et al., Electrophoresis 14:1023-1031 (1993).
+# The single N-terminus and C-terminus pKa values are a simplified table.
 BJELLQVIST_PKA: dict[str, float] = {
   "N_term": 7.50,
   "C_term": 3.55,
@@ -107,6 +109,8 @@ def net_charge(sequence: str, ph: float = 7.4, model: str = "heuristic") -> floa
     Henderson-Hasselbalch titration with Bjellqvist pKa values.
   """
   seq = _validate_sequence(sequence)
+  if not math.isfinite(ph):
+    raise ValueError(f"pH must be finite, got {ph}")
   if model == "heuristic":
     if not np.isclose(ph, 7.4):
       raise ValueError(f"Heuristic net_charge model is only defined at pH 7.4, got {ph}")
@@ -139,9 +143,14 @@ def isoelectric_point(sequence: str, model: str = "bjellqvist") -> float:
 
   low, high = 0.0, 14.0
   q_low = net_charge(seq, ph=low, model=model)
+  q_high = net_charge(seq, ph=high, model=model)
+  if q_low * q_high > 0.0:
+    raise ValueError(
+      "Isoelectric point is undefined: net charge does not change sign "
+      f"between pH 0 and pH 14 (q(0)={q_low}, q(14)={q_high})"
+    )
   if q_low <= 0.0:
     return 0.0
-  q_high = net_charge(seq, ph=high, model=model)
   if q_high >= 0.0:
     return 14.0
 
@@ -194,7 +203,29 @@ def screen(
   pad_mask: np.ndarray | None = None,
 ) -> dict[str, Any]:
   """Screen sequence list, group dict, or padded 2D array against background composition."""
-  bg = background or SWISSPROT_BG
+  if not math.isfinite(threshold_ek):
+    raise ValueError(f"threshold_ek must be finite, got {threshold_ek}")
+  if background is None:
+    bg = SWISSPROT_BG
+  elif not isinstance(background, dict):
+    raise TypeError(
+      "background must be a dict of amino-acid frequencies or None, "
+      f"got {type(background).__name__}"
+    )
+  else:
+    expected = set(AA)
+    keys = set(background)
+    if keys != expected:
+      missing = "".join(sorted(expected - keys))
+      extra = "".join(sorted(str(key) for key in keys - expected))
+      raise ValueError(
+        "background must contain exactly the twenty canonical amino acids "
+        f"(missing={missing or '-'}, extra={extra or '-'})"
+      )
+    total = float(sum(background.values()))
+    if not math.isfinite(total) or abs(total - 1.0) >= 0.01:
+      raise ValueError(f"background frequencies must sum to within 0.01 of 1, got {total}")
+    bg = background
 
   # Internal controls check (selftest gate)
   ctl_pos = (
@@ -216,13 +247,25 @@ def screen(
       raise ValueError(
         f"pad_mask shape {pad_mask.shape} does not match sequences shape {sequences.shape}"
       )
+    if pad_mask.dtype != np.bool_:
+      raise TypeError(f"pad_mask.dtype must be np.bool_, got {pad_mask.dtype}")
     seqs_list: list[str] = []
     for i in range(sequences.shape[0]):
       valid_tokens = sequences[i][pad_mask[i]]
+      chars: list[str] = []
       if np.issubdtype(sequences.dtype, np.integer):
-        seq_str = "".join(AA[int(tok)] for tok in valid_tokens)
+        for tok in valid_tokens:
+          tok_i = int(tok)
+          if tok_i < 0 or tok_i >= len(AA):
+            raise ValueError(f"Invalid amino acid token: {tok_i}")
+          chars.append(AA[tok_i])
       else:
-        seq_str = "".join(str(tok) for tok in valid_tokens)
+        for tok in valid_tokens:
+          text = str(tok).upper()
+          if len(text) != 1:
+            raise ValueError(f"Invalid amino acid token: {tok!r}; expected a single character")
+          chars.append(text)
+      seq_str = "".join(chars)
       _validate_sequence(seq_str)
       seqs_list.append(seq_str)
     groups = {"all": seqs_list}
@@ -283,11 +326,14 @@ def screen(
 
   # Summarize per group
   groups_out: dict[str, dict[str, Any]] = {}
+  group_freq_raw: dict[str, dict[str, float]] = {}
   for grp_name, grp_seqs in groups.items():
     g_len = [len(s) for s in grp_seqs]
     g_eks = [(s.count("E") + s.count("K")) / len(s) for s in grp_seqs]
     g_charges = [net_charge(s, ph=7.4, model="heuristic") for s in grp_seqs]
-    g_freqs = {a: round(float(np.mean([s.count(a) / len(s) for s in grp_seqs])), 4) for a in AA}
+    g_freq_raw = {a: float(np.mean([s.count(a) / len(s) for s in grp_seqs])) for a in AA}
+    group_freq_raw[grp_name] = g_freq_raw
+    g_freqs = {a: round(g_freq_raw[a], 4) for a in AA}
     groups_out[grp_name] = {
       "n": len(grp_seqs),
       "mean_len": float(np.mean(g_len)),
@@ -300,7 +346,7 @@ def screen(
 
   if is_dict_input:
     fold_over_background: Any = {
-      grp_name: {a: round(groups_out[grp_name]["mean_freq"][a] / bg[a], 2) for a in AA}
+      grp_name: {a: round(group_freq_raw[grp_name][a] / bg[a], 2) for a in AA}
       for grp_name in groups_out
     }
   else:

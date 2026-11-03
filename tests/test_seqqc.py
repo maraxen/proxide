@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import inspect
 import math
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
@@ -208,7 +212,121 @@ def test_empty_2d_ndarray_and_ndim_validation() -> None:
 
 
 def test_isoelectric_point_unbracketed_boundary() -> None:
-    """Extreme sequences outside standard titration window resolve to boundaries without drift."""
-    # Poly-arginine has net positive charge at pH 14.0
-    assert isoelectric_point("R" * 1000) == 14.0
+    """Same-sign charge at pH 0 and pH 14 is undefined, not a pH-boundary sentinel."""
+    seq = "R" * 1000
+    q0 = net_charge(seq, ph=0.0, model="bjellqvist")
+    q14 = net_charge(seq, ph=14.0, model="bjellqvist")
+    assert q0 > 0.0
+    assert q14 > 0.0
+    with pytest.raises(ValueError, match=r"q\(0\)=") as excinfo:
+        isoelectric_point(seq)
+    message = str(excinfo.value)
+    assert str(q0) in message
+    assert str(q14) in message
+
+
+def test_out_of_range_integer_tokens_raise() -> None:
+    """Integer tokens outside [0, 20) are rejected by name, not wrapped or IndexError."""
+    mask = np.array([[True]])
+    for tok in (-1, 20):
+        arr = np.array([[tok]], dtype=int)
+        with pytest.raises(ValueError, match=str(tok)):
+            screen(arr, pad_mask=mask)
+
+
+def test_non_boolean_pad_mask_raises() -> None:
+    """A 0/1 integer pad_mask must not be used as an index array."""
+    arr = np.array([[AA.index("A"), AA.index("C")]], dtype=int)
+    mask = np.array([[1, 0]], dtype=int)
+    with pytest.raises(TypeError, match="bool"):
+        screen(arr, pad_mask=mask)
+
+
+def test_multicharacter_tokens_raise() -> None:
+    """Multi-character residue tokens are not concatenated into a fake sequence."""
+    arr = np.array([["ALA", "GLY", "SER"]])
+    mask = np.ones((1, 3), dtype=bool)
+    with pytest.raises(ValueError, match="ALA"):
+        screen(arr, pad_mask=mask)
+    single = np.array([["a", "c"]])
+    single_mask = np.ones((1, 2), dtype=bool)
+    res = screen(single, pad_mask=single_mask)
+    assert np.isclose(res["mean_gravy"], gravy("AC"))
+
+
+def test_background_dict_must_be_complete_distribution() -> None:
+    """Only background=None selects SWISSPROT_BG; a passed dict is validated."""
+    with pytest.raises(ValueError):
+        screen(["ACDEFGHIKLMNPQRSTVWY"], background={})
+    missing = dict(SWISSPROT_BG)
+    del missing["Y"]
+    with pytest.raises(ValueError):
+        screen(["A"], background=missing)
+    extra = dict(SWISSPROT_BG)
+    extra["Z"] = 0.0
+    with pytest.raises(ValueError):
+        screen(["A"], background=extra)
+    skewed = dict(SWISSPROT_BG)
+    skewed["A"] = skewed["A"] + 0.02
+    with pytest.raises(ValueError):
+        screen(["A"], background=skewed)
+    uniform = {a: 0.05 for a in AA}
+    res_uniform = screen(["A"], background=uniform)
+    res_default = screen(["A"], background=None)
+    assert res_uniform["background_ek"] == 0.1
+    assert res_default["background_ek"] == round(SWISSPROT_BG["E"] + SWISSPROT_BG["K"], 4)
+
+
+def test_nonfinite_threshold_ek_and_ph_raise() -> None:
+    """NaN and inf must not silently disable the E+K gate or return a NaN charge."""
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            screen(["E" * 50], threshold_ek=bad)
+        with pytest.raises(ValueError):
+            net_charge("EEEE", ph=bad, model="bjellqvist")
+        with pytest.raises(ValueError):
+            net_charge("EEEE", ph=bad, model="heuristic")
+
+
+def test_dict_fold_over_background_uses_unrounded_frequencies() -> None:
+    """Fold enrichment is rounded once from unrounded frequencies for every input shape."""
+    seqs = ["AAACCCC"]
+    freq_a = seqs[0].count("A") / len(seqs[0])
+    expected = round(freq_a / SWISSPROT_BG["A"], 2)
+    from_rounded_freq = round(round(freq_a, 4) / SWISSPROT_BG["A"], 2)
+    assert expected != from_rounded_freq
+    listed = screen(seqs)["fold_over_background"]["A"]
+    grouped = screen({"g": seqs})["fold_over_background"]["g"]["A"]
+    assert listed == expected
+    assert grouped == expected
+
+
+def test_composition_tables_cite_sources() -> None:
+    """pKa, hydropathy, and background tables carry source notes and no invented release."""
+    import proxide.seqqc as seqqc
+
+    src = inspect.getsource(seqqc)
+    assert "Kyte & Doolittle" in src
+    assert "J. Mol. Biol. 157:105-132 (1982)" in src
+    assert "Bjellqvist et al." in src
+    assert "Electrophoresis 14:1023-1031 (1993)" in src
+    assert "simplified" in src
+    assert "unverified" in src
+
+
+def test_import_proxide_does_not_eagerly_import_scipy() -> None:
+    """import proxide must not load scipy, geometry, or seqqc until those names are used."""
+    script = (
+        "import sys\n"
+        "import proxide\n"
+        "loaded = [m for m in ('scipy', 'proxide.geometry', 'proxide.seqqc') if m in sys.modules]\n"
+        "raise SystemExit(0 if not loaded else 1)\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr + completed.stdout
 
