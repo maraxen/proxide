@@ -1,6 +1,6 @@
 ---
 title: proxide Release Checklist
-description: Numbered steps for cutting a proxide release to PyPI, and the open blockers that gate the first stable release (0.1.0)
+description: Numbered steps for the proxide release procedure (cutting a release to PyPI)
 status: final
 task_id: 261021_proxide-stable-release-scope
 date: '261021'
@@ -10,14 +10,14 @@ date: '261021'
 
 Pushing a `v*` tag publishes to PyPI through `publish.yml`. Work through the steps in order.
 
-Versioning rule: `crates.io` stays pre-release. A stable PyPI tag has a final `X.Y.Z` in `pyproject.toml`, while the Cargo workspace carries a pre-release `X.Y.Z-(alpha|beta|rc|dev).N`. `scripts/check_versions.py` (debt #2909, PR #58) accepts exactly that relation, and will support `.devN` in pyproject against `-dev.N` in Cargo.
+Versioning rule: `crates.io` stays pre-release. A stable PyPI tag has a final `X.Y.Z` in `pyproject.toml`, while the Cargo workspace carries a pre-release `X.Y.Z-(alpha|beta|rc|dev).N`. `scripts/check_versions.py` (debt #2909, merged in PR #58, commit `627e7a4`) accepts exactly that relation, including `.devN` in pyproject against `-dev.N` in Cargo (`PEP440_RE` in that script).
 
 ## Cutting a release
 
 1. Check the version relation: `python scripts/check_versions.py`. It must accept a final pyproject `X.Y.Z` with a Cargo `X.Y.Z-(alpha|beta|rc|dev).N` workspace version.
 2. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<version>] - <YYYY-MM-DD>` and open a fresh empty `## [Unreleased]` above it. Check that every **Changed (behaviour)** entry is intended for this release.
 3. Confirm CI is green on `main` for both `ci.yml` and `trajectory_parity.yml`. Do not tag a commit whose CI is still running or red.
-4. Dry run: dispatch `publish.yml` with `workflow_dispatch` on the branch of the version PR from step 5 (open that PR first, so the dry run builds the exact versions that will be tagged), never on a tag ref. A tag ref runs the `release` job and publishes. The dry run builds all platform wheels and the sdist and publishes nothing, and it skips `verify-crates`. Confirm the wheel set and the abi3 wheels.
+4. Dry run: dispatch `publish.yml` with `workflow_dispatch` on the branch of the version PR from step 5 (open that PR first, so the dry run builds the exact versions that will be tagged), never on a tag ref. A tag ref runs the `release` job and publishes. The dry run builds all platform wheels and the sdist and publishes nothing, and it skips `verify-crates`. Confirm the wheel set and the abi3 wheels. The dry run also runs `smoke-wheels` and `smoke-sdist`, which install each artifact in a clean environment on its platform and run `scripts/smoke_wheel.py`. `release` needs both, so a failure there blocks the upload on a real tag.
 5. Version PR, before tagging. Set `[project].version` in `pyproject.toml` to the release version (for example `0.1.0`). Set the Cargo workspace version to the chosen pre-release (for example `0.1.0-beta.1`). Bump every workspace path-dependency pin to match. Run `uv lock`, then `python scripts/check_versions.py`. Commit through a PR and merge it.
 6. Note the merge commit SHA of the version PR on `main`.
 7. Tag the merge commit and push the tag: `git tag v<version> <merge-sha>` then `git push origin v<version>`.
@@ -31,18 +31,18 @@ Versioning rule: `crates.io` stays pre-release. A stable PyPI tag has a final `X
 
 `proxide-confind`, `proxide-rotlib` and `proxide_fixer` carry `publish = false` because they derive from CC BY-NC-SA 4.0 code (debt #1420). Do not restore them to `publish.yml` until that debt is resolved. `proxide-frag` was reviewed and found independent (`audits/261102_mosaist-derivation-map.md`), so it stays published.
 
-## Before 0.1.0 (stable)
+## Release record
+
+0.1.0 shipped on 2026-10-23. `CHANGELOG.md` has `## [0.1.0] - 2026-10-23`. Tag `v0.1.0` is commit `b5305dd` (`release: proxide 0.1.0 (#77)`). `pyproject.toml` on this tree is `0.1.1.dev0`. This document is the release procedure for later cuts.
 
 The stable contract is core IO: structure parsing, formatting (Atom37, Atom14, Full), writing (PDB, mmCIF) and XTC trajectory reading. GAFF2, confind, rotlib and CCD/fixer ship as experimental. `crates.io` stays pre-release. Anything not listed as stable is provisional.
 
-Open blockers, by debt id:
+#2909, the version agreement check (`scripts/check_versions.py`), is merged (PR #58, `627e7a4`, an ancestor of `origin/main`).
 
-- #2909: version agreement check (`scripts/check_versions.py`, PR #58 not yet merged)
-- #2911, #2912, #2913
-- #1930, #2372, #2362, #2366, #2367, #2233, #2252, #909, #1891, #1331
+These debts were listed here as gates for the first 0.1.0 release. That release is tagged, so this checklist no longer treats them as gating it: #2911, #2912, #2913, #1930, #2372, #2362, #2366, #2367, #2233, #2252, #909, #1891, #1331.
 
-Resolved and removed from this list: #2353 and #2355 (already fixed on `main`, 2026-10-21); #2910 (this change); #2914 (publish-crates gating, PR #60 merged); #2915 (PR #57 merged).
+Resolved and removed from the pre-release list: #2353 and #2355 (already fixed on `main`, 2026-10-21); #2910 (this change); #2914 (publish-crates gating, PR #60 merged); #2915 (PR #57 merged).
 
-Note, not a blocker: the residual TestPyPI and trusted-publisher check stays tracked under #2914.
+Note, carried forward: the residual TestPyPI and trusted-publisher check stays tracked under #2914.
 
-Clear the blockers, then cut 0.1.0 by the steps above. Update the stable and experimental split in the README if it changes.
+Update the stable and experimental split in the README if it changes. Cut later releases by the steps above.

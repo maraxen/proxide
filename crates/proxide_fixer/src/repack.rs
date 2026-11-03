@@ -116,31 +116,9 @@ fn calculate_clash_penalty(
 /// An empty name, a digit-only name, or a name whose letters are not an element
 /// is an error. It is not recorded as carbon.
 pub(crate) fn element_from_atom_name(atom_name: &str) -> Result<String, String> {
-    let trimmed = atom_name
-        .trim()
-        .trim_start_matches(|c: char| c.is_ascii_digit());
-    if trimmed.is_empty() {
-        return Err(format!("atom name {atom_name:?} determines no element"));
-    }
-    let inferred = proxide_core::chem::masses::infer_element(trimmed);
-    if element_symbol_matches_name(trimmed, inferred) {
-        Ok(inferred.to_string())
-    } else {
-        Err(format!("atom name {atom_name:?} determines no element"))
-    }
-}
-
-/// True when `inferred` is the element the name itself spells, not the carbon default.
-fn element_symbol_matches_name(name: &str, inferred: &str) -> bool {
-    const TWO_LETTER: &[&str] = &["Cl", "Br", "Na", "Mg", "Zn", "Fe", "Cu", "Mn", "Se", "Si"];
-    if TWO_LETTER.contains(&inferred) {
-        return name.len() >= inferred.len()
-            && name[..inferred.len()].eq_ignore_ascii_case(inferred);
-    }
-    match name.chars().next() {
-        Some(c) => inferred.len() == 1 && c.eq_ignore_ascii_case(&inferred.chars().next().unwrap()),
-        None => false,
-    }
+    proxide_core::chem::masses::infer_element(atom_name)
+        .map(str::to_string)
+        .ok_or_else(|| format!("atom name {atom_name:?} determines no element"))
 }
 
 /// Extract element symbol from atom name.
