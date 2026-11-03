@@ -71,6 +71,7 @@ BONDI_RADII: dict[str, float] = {
   "CL": 1.75,
   "BR": 1.85,
   "I": 1.98,
+  "SE": 1.90,  # Bondi, J. Phys. Chem. 68, 441 (1964)
 }
 PROBE_RADIUS: float = 1.40
 

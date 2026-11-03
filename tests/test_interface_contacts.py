@@ -846,8 +846,8 @@ def test_f6_design_rate_threshold_uses_unrounded_ratio() -> None:
     assert res_high["outcome"] == "inconclusive"
 
 
-def test_f7_unknown_elements_raise() -> None:
-    """Elements absent from BONDI_RADII raise."""
+def test_f7_unknown_elements_raise_se_uses_bondi() -> None:
+    """Elements absent from BONDI_RADII raise; selenium uses the cited Bondi radius."""
     coords = np.zeros((1, 3))
     with pytest.raises(ValueError, match="ZN"):
         compute_shrake_rupley(coords, ["Zn"])
@@ -857,6 +857,11 @@ def test_f7_unknown_elements_raise() -> None:
         compute_shrake_rupley(np.zeros((3, 3)), ["Na", "Zn", "Fe"])
     message = str(exc.value)
     assert "NA" in message and "ZN" in message and "FE" in message
+
+    total, per_atom = compute_shrake_rupley(coords, ["Se"], probe_radius=1.40, n_points=100)
+    expected = 4.0 * np.pi * (1.90 + 1.40) ** 2
+    assert np.isclose(total, expected)
+    assert np.isclose(per_atom[0], expected)
 
     import proxide.geometry.contacts as contacts_mod
 
