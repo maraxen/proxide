@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from scipy.spatial import cKDTree
+from scipy.spatial import KDTree
 
 SOLVENT_RESIDUES: frozenset[str] = frozenset({"HOH", "WAT", "TIP3", "H2O"})
 
@@ -724,7 +724,7 @@ def contacts_and_dock(
       "docked": False,
     }
 
-  tree = cKDTree(target_coords_arr)
+  tree = KDTree(target_coords_arr)
   hits = tree.query_ball_point(binder_coords_arr, r=cutoff)
   target_indices = {idx for sublist in hits for idx in sublist}
   raw_contacted = {target_resids_list[idx] for idx in target_indices}
@@ -778,7 +778,7 @@ def contacts_and_dock_batch(
   min_epitope_contacts: int = kwargs.get("min_epitope_contacts", 4)
   min_interface_residues: int = kwargs.get("min_interface_residues", 10)
 
-  tree = cKDTree(target_coords_arr)
+  tree = KDTree(target_coords_arr)
   results: list[dict[str, Any]] = []
 
   for binder_coords in binder_coords_list:
@@ -1158,7 +1158,7 @@ def compute_shrake_rupley(
   max_eff = float(np.max(eff_radii))
   pts = _generate_sphere_points(n_points)
 
-  tree = cKDTree(coords_arr)
+  tree = KDTree(coords_arr)
   sasa = np.zeros(n_atoms, dtype=float)
 
   for i in range(n_atoms):

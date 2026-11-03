@@ -249,9 +249,11 @@ def screen(
       )
     if pad_mask.dtype != np.bool_:
       raise TypeError(f"pad_mask.dtype must be np.bool_, got {pad_mask.dtype}")
+    seq_arr = np.asarray(sequences)
+    mask_arr = np.asarray(pad_mask, dtype=np.bool_)
     seqs_list: list[str] = []
-    for i in range(sequences.shape[0]):
-      valid_tokens = sequences[i][pad_mask[i]]
+    for i in range(seq_arr.shape[0]):
+      valid_tokens = seq_arr[i][mask_arr[i]]
       chars: list[str] = []
       if np.issubdtype(sequences.dtype, np.integer):
         for tok in valid_tokens:
