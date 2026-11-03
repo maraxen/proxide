@@ -2038,7 +2038,8 @@ def build_gaff2_ffxml(
     # the central atom in type1 and that r4 atom in type4.
     nbs = sorted(b.GetOtherAtomIdx(center) for b in bonds_c)
     t_center = idx_to_type[center]
-    improper_params = _lookup_improper_params(t_center, *(idx_to_type[nb] for nb in nbs), params)
+    nb1, nb2, nb3 = (idx_to_type[nb] for nb in nbs)
+    improper_params = _lookup_improper_params(t_center, nb1, nb2, nb3, params)
     if improper_params is not None:
       pk, phase, (s1, s2, s4) = improper_params
       r1, r2, r4 = nbs[s1], nbs[s2], nbs[s4]
@@ -2341,7 +2342,7 @@ def parameterize_gaff_with_rdkit(
     ordered = tuple(sorted(nbs))
     t_center = atom_types[center]
     t_nbs = tuple(atom_types[nb] for nb in ordered)
-    improper_params = _lookup_improper_params(t_center, *t_nbs, params)
+    improper_params = _lookup_improper_params(t_center, t_nbs[0], t_nbs[1], t_nbs[2], params)
     if improper_params is not None:
       pk, phase, (s1, s2, s4) = improper_params
       # i-j-k-l is the dihedral order a PeriodicTorsionForce expects:
