@@ -17,6 +17,7 @@
 - [260416_phase2-plan](plans/260416_phase2-plan.md)
 
 ## Specs
+- [261102_design-utilities-placement](specs/261102_design-utilities-placement.md) — Engineering specification for Slice 1 and Slice 2 design-screening utilities in proxide: proxide.seqqc and proxide.geometry.contacts (contact analysis, Shrake-Rupley SASA, self-association screening, and alignment overlap), with exact API signatures, batching contracts, selftest gates, and bathos parity verification across 4 runs
 - [261102_proxide-stable-hardening-and-cisternal](specs/261102_proxide-stable-hardening-and-cisternal.md) — Deeper audit and remaining work after 0.1.0: licensing, sdist, stable-surface gaps, cisternal skill and plugin, provenance and telemetry, unified CLI and MCP
 - [261001_proxide-config-file](specs/261001_proxide-config-file.md) — One resolver (explicit > PROXIDE_* env > [tool.proxide] > ~/.config/proxide/config.toml > default) for threads, XTC offsets dir, fetch cache/mirrors, tool paths and dev fixtures; science parameters and secrets deliberately excluded
 - [260910_proxide-silent-substitution-observability](specs/260910_proxide-silent-substitution-observability.md) — Canonical diagnostics channel, connected telemetry, provenance/parity attestation, and a chemical-space coverage gate — built by generalising mechanisms proxide already has

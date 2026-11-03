@@ -7,6 +7,7 @@ and seamless integration with JAX MD.
 
 from __future__ import annotations
 
+import importlib
 import importlib.metadata
 from typing import Any
 
@@ -75,8 +76,10 @@ from proxide.io.fetching import (
 from proxide.io.writing import write_mmcif, write_npz, write_pdb
 
 __all__ = [
+  "geometry",
   "io",
   "jaccard",
+  "seqqc",
   "tmalign",
   # Structure parsing
   "parse_pdb",
@@ -138,6 +141,22 @@ __all__ = [
   "write_mmcif",
   "write_npz",
   "Protein",
+  # Geometry contacts & Slice 2 utilities
+  "InterfaceContactResult",
+  "aligned_contact_overlap",
+  "associates",
+  "compute_buried_sasa",
+  "compute_interface_contacts",
+  "compute_interface_contacts_batch",
+  "compute_shrake_rupley",
+  "contact_jaccard",
+  "contacts_and_dock",
+  "contacts_and_dock_batch",
+  "interface_counts",
+  "load_aligned_pairs",
+  "screen_self_association",
+  "selftest_contacts",
+  "selftest_slice2",
 ]
 
 # Stable surface at 0.1.0 is core IO only (see README "Stability"). Everything else in
@@ -183,7 +202,35 @@ _STABLE = frozenset(
 __experimental__ = tuple(name for name in __all__ if name not in _STABLE)
 
 
+# geometry.contacts imports scipy; seqqc is NumPy-only. Both stay out of
+# `import proxide` until a caller actually touches them.
+_LAZY_GEOMETRY_EXPORTS = frozenset(
+  {
+    "InterfaceContactResult",
+    "aligned_contact_overlap",
+    "associates",
+    "compute_buried_sasa",
+    "compute_interface_contacts",
+    "compute_interface_contacts_batch",
+    "compute_shrake_rupley",
+    "contact_jaccard",
+    "contacts_and_dock",
+    "contacts_and_dock_batch",
+    "interface_counts",
+    "load_aligned_pairs",
+    "screen_self_association",
+    "selftest_contacts",
+    "selftest_slice2",
+  }
+)
+
+
 def __getattr__(name: str) -> Any:
+  if name in {"geometry", "seqqc"}:
+    return importlib.import_module(f"{__name__}.{name}")
+  if name in _LAZY_GEOMETRY_EXPORTS:
+    contacts = importlib.import_module(f"{__name__}.geometry.contacts")
+    return getattr(contacts, name)
   # Lazy: parsing.backend imports jax.numpy.
   if name in {
     "TrajectoryStream",
