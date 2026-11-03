@@ -236,10 +236,11 @@ def _parse_pdb_text(text: str) -> _ParsedAtoms:
     res = ln[17:20].strip()
     if res in SOLVENT_RESIDUES:
       continue
+    # Columns 77-78 are the element symbol. A non-empty column is kept
+    # (uppercased, not rewritten): "CA" is calcium, not carbon. Atom name
+    # CA maps to carbon only when this column is empty, via name inference.
     raw_elem = ln[76:78].strip().upper() if len(ln) >= 78 else ""
-    if raw_elem == "CA" or (not raw_elem and name == "CA"):
-      element = "C"
-    elif raw_elem:
+    if raw_elem:
       element = raw_elem
     else:
       element = _infer_element_symbol(name)
@@ -305,10 +306,8 @@ def _normalize_atoms(
       if res in SOLVENT_RESIDUES:
         continue
       name = atom["name"]
-      raw_elem = atom.get("element", "").strip().upper()
-      if raw_elem == "CA" or (not raw_elem and name == "CA"):
-        element = "C"
-      elif raw_elem:
+      raw_elem = str(atom.get("element") or "").strip().upper()
+      if raw_elem:
         element = raw_elem
       else:
         element = _infer_element_symbol(name)
@@ -1150,7 +1149,7 @@ def compute_shrake_rupley(
     return 0.0, np.array([], dtype=float)
 
   coords_arr = np.asarray(coords, dtype=float)
-  resolved = ["C" if str(e).upper() == "CA" else str(e).upper() for e in elements]
+  resolved = [str(e).strip().upper() for e in elements]
   missing = sorted({elem for elem in resolved if elem not in BONDI_RADII})
   if missing:
     raise ValueError("Elements missing from BONDI_RADII: " + ", ".join(missing))
@@ -1254,7 +1253,7 @@ def compute_buried_sasa(
 
     free_coords = np.array([x["xyz"] for x in atoms_a], dtype=float)
     free_elements = [
-      _infer_element_symbol(x.get("element") or x.get("name", ""))
+      str(x.get("element") or _infer_element_symbol(x.get("name", ""))).strip().upper()
       for x in atoms_a
     ]
     free_resids = [
@@ -1265,7 +1264,7 @@ def compute_buried_sasa(
     atoms_comp = atoms_a + atoms_b
     complex_coords = np.array([x["xyz"] for x in atoms_comp], dtype=float)
     complex_elements = [
-      _infer_element_symbol(x.get("element") or x.get("name", ""))
+      str(x.get("element") or _infer_element_symbol(x.get("name", ""))).strip().upper()
       for x in atoms_comp
     ]
 

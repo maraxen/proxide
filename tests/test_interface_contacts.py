@@ -497,9 +497,9 @@ def test_compute_shrake_rupley_isolated_carbon() -> None:
     assert tot_empty == 0.0
     assert len(arr_empty) == 0
 
-    # Alpha carbon element resolution: "CA" resolves to Carbon (1.70 A), not Calcium (2.31 A)
-    tot_ca, _ = compute_shrake_rupley(coords, ["CA"], probe_radius=1.40, n_points=100)
-    assert np.isclose(tot_ca, expected_area, atol=1e-2)
+    # Element symbol CA is calcium, which is not in BONDI_RADII. Do not borrow carbon.
+    with pytest.raises(ValueError, match="CA"):
+        compute_shrake_rupley(coords, ["CA"], probe_radius=1.40, n_points=100)
 
 
 def test_compute_buried_sasa_and_s1_invariant() -> None:

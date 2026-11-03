@@ -13,13 +13,16 @@ import pytest
 
 from proxide.geometry.contacts import (
     RESIDUE_CHARGE,
+    _parse_pdb_text,
     aligned_contact_overlap,
     associates,
     compute_interface_contacts,
+    compute_shrake_rupley,
     contacts_and_dock,
     interface_counts,
     load_aligned_pairs,
     screen_self_association,
+    selftest_slice2,
 )
 from proxide.seqqc import AA, screen
 
@@ -51,6 +54,15 @@ STRUCTURE_HASHES: dict[str, str] = {
 
 # Decoupling rule per spec §5.3: TfR1 motif definition resides in test suite
 MOTIF: set[int] = {n + 188 for n in list(range(14, 28)) + [160, 183]}
+
+# Spec §5.3 unrounded buried binder SASA (A^2). Two decimal places support atol 0.005.
+_UNROUNDED_BURIED_A2: dict[str, float] = {
+    "f2c020r4_H62": 763.70,
+    "f2c008r18": 536.80,
+    "f2c025r15_H60": 467.01,
+    "f2c016r5_H32": 515.42,
+    "f2c006r13": 485.03,
+}
 
 
 def _resolve_fixture_dir() -> Path:
@@ -98,6 +110,30 @@ def test_fixture_hashes_match_spec_table_5_1() -> None:
     pass
 
 
+def test_fixture_provenance_matches_table_5_1() -> None:
+    """Provenance JSON parses, and its hashes are Table 5.1."""
+    path = Path(__file__).parent / "fixtures" / "tfr1" / "fixture_provenance.json"
+    payload = json.loads(path.read_text())
+    assert payload["producer"]["tool"] is None
+    assert payload["producer"]["version"] is None
+    assert payload["producer"]["command"] is None
+    assert payload["bathos_run_id"] is None
+    assert payload["input_paths"] is None
+    hashes = payload["hashes_sha256"]
+    assert hashes["fixtures"] == FIXTURE_HASHES
+    assert hashes["structures"] == STRUCTURE_HASHES
+
+
+def test_compute_shrake_rupley_returns_total_and_per_atom() -> None:
+    """compute_shrake_rupley returns (total_sasa, per_atom_sasa), not a bare array."""
+    coords = np.array([[0.0, 0.0, 0.0]])
+    total, per_atom = compute_shrake_rupley(coords, ["C"])
+    assert isinstance(total, float)
+    assert isinstance(per_atom, np.ndarray)
+    assert per_atom.shape == (1,)
+    assert np.isclose(total, float(per_atom.sum()))
+
+
 def test_bathos_parity_dda7de75_composition() -> None:
     """Parity verification for dda7de75 (composition analysis of full pool and final slate).
 
@@ -138,6 +174,31 @@ def test_bathos_parity_dda7de75_composition() -> None:
     # Run screen across all candidate groups and final slate
     res = screen(groups_input)
     assert res["controls_pass"] is True
+    # Dict input nests fold_over_background by group and carries the screen gates.
+    assert set(res) == {
+        "background_ek",
+        "controls_pass",
+        "final_mean_ek",
+        "flag_reasons",
+        "fold_over_background",
+        "frac_ek_gt_30pct",
+        "frac_net_neg",
+        "groups",
+        "mean_aromatic_fraction",
+        "mean_ek",
+        "mean_entropy",
+        "mean_freq",
+        "mean_gravy",
+        "mean_net_charge",
+        "n_sequences",
+        "pool_ek_enrichment",
+        "pool_mean_ek",
+        "pool_n",
+        "screen_pass",
+    }
+    assert set(res["fold_over_background"]) == set(res["groups"])
+    for fold in res["fold_over_background"].values():
+        assert set(fold) == set(AA)
 
     # Golden comparison from composition_result.json
     golden_json_file = fix_dir / "composition_result.json"
@@ -254,13 +315,13 @@ def test_bathos_parity_bba33e3a_interface_audit() -> None:
         assert np.isclose(result.binder_if_frac_ek, float(golden["binder_if_frac_EK"]), atol=1e-4)
         assert np.isclose(result.binder_if_frac_hydrophobic, float(golden["binder_if_frac_hydrophobic"]), atol=1e-4)
 
-        # Buried binder SASA parity: exact integer match across all 5 structures
+        # Buried binder SASA: integer golden, and the unrounded float against spec §5.3.
         assert result.buried_binder_a2 == int(golden["buried_binder_A2"])
         assert "buried_binder_a2_float" in result.details
         assert np.isclose(
             result.details["buried_binder_a2_float"],
-            float(golden["buried_binder_A2"]),
-            atol=0.5,
+            _UNROUNDED_BURIED_A2[pdb.stem],
+            atol=0.005,
         )
 
         # Target interface residue string
@@ -296,7 +357,7 @@ def test_bathos_parity_bba33e3a_interface_audit() -> None:
         golden_result_file = next(fix_dir.glob("**/interface_result.json"))
     golden_summary = json.loads(golden_result_file.read_text())
 
-    assert golden_summary["selftest_all_pass"] is True
+    assert selftest_slice2()["all_pass"] is True
     assert total_ion_pairs == golden_summary["total_ion_pairs"] == 21
     assert total_like_close == golden_summary["total_like_charge_close"] == 2
 
@@ -371,19 +432,11 @@ def test_bathos_parity_20aeafaf_self_association() -> None:
 
 
 def test_bathos_parity_5d906f67_mouse_overlap() -> None:
-    """Parity verification for bathos run 5d906f67 (P3 mouse cross-reactivity and overlap).
+    """Human-side checks for the P3 numbering table and the five complex PDBs.
 
-    Verifies:
-    - load_aligned_pairs parses exactly 194 aligned pairs in crop.
-    - Human residue 212 is strictly unaligned.
-    - contacts_and_dock on the 5 complex PDBs yields total human contacted residues matching
-      n_human_contacted [11, 12, 12, 18, 14] and all 5 contact human 212.
-    - Aligned contacts n_h_aligned_contacts match [10, 11, 11, 17, 13] exactly.
-    - All 14 candidates in tfr1_p3_mouse.tsv have contact_overlap == 0.0 and mouse_no_docked == 1.
-    - All 84 runs in tfr1_p3_mouse_runs.tsv have docked == 0.
-    - Summary parity with p3_result.json: median_overlap == 0.0, max_overlap == 0.0,
-      n_designs == 14, n_mouse_runs_valid == 84, n_designs_mouse_docked_any == 0.
-    - Registered bathos outcome is 'pass'.
+    The mouse contact sets and structures that produced the 84 runs are not in
+    this repo, so this test does not gate Jaccard against mouse, docked flags,
+    the aggregate in p3_result.json, or a bathos outcome of 'pass'.
     """
     fix_dir = _resolve_fixture_dir()
 
@@ -423,48 +476,56 @@ def test_bathos_parity_5d906f67_mouse_overlap() -> None:
         assert h_dock["n_contacted"] == exp_human
         assert 212 in h_dock["contacted"], f"Human 212 must be contacted in {did}.pdb"
 
-        # Overlap with empty mouse contacts drops 212
+        # Empty mouse set only checks that unaligned human 212 drops out.
+        # It does not exercise contacts_b.
         j, nh, nm = aligned_contact_overlap(set(h_dock["contacted"]), set(), pairs)
         assert nh == exp_aligned
         assert nm == 0
         assert j == 0.0
 
-    # 3. Candidate TSV verification
-    cand_file = fix_dir / "tfr1_p3_mouse.tsv"
-    if not cand_file.exists():
-        cand_file = next(fix_dir.glob("**/tfr1_p3_mouse.tsv"))
-    cand_rows = list(csv.DictReader(cand_file.open(), delimiter="\t"))
-    assert len(cand_rows) == 14
 
-    for r in cand_rows:
-        assert float(r["contact_overlap"]) == 0.0
-        assert int(r["mouse_no_docked"]) == 1
-        assert int(r["n_mouse_docked"]) == 0
-        assert int(r["n_mouse_runs_valid"]) == 6
+def _pdb_record(
+    record: str,
+    serial: int,
+    name: str,
+    resname: str,
+    chain: str,
+    resnum: int,
+    xyz: tuple[float, float, float],
+    element: str,
+) -> str:
+    """Build one ATOM/HETATM record with the element symbol in columns 77-78."""
+    x, y, z = xyz
+    return (
+        f"{record:<6}{serial:5d} {name:>4} {resname:>3} {chain}{resnum:4d}    "
+        f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {element:>2}"
+    )
 
-    # 4. Runs TSV verification
-    runs_file = fix_dir / "tfr1_p3_mouse_runs.tsv"
-    if not runs_file.exists():
-        runs_file = next(fix_dir.glob("**/tfr1_p3_mouse_runs.tsv"))
-    runs_rows = list(csv.DictReader(runs_file.open(), delimiter="\t"))
-    assert len(runs_rows) == 84
 
-    for r in runs_rows:
-        assert int(r["docked"]) == 0
-        assert int(r["valid"]) == 1
+def test_hetatm_element_column_ca_is_not_carbon() -> None:
+    """A HETATM element column of CA is calcium, not carbon.
 
-    # 5. Golden summary parity with p3_result.json
-    p3_file = fix_dir / "p3_result.json"
-    if not p3_file.exists():
-        p3_file = next(fix_dir.glob("**/p3_result.json"))
-    p3_golden = json.loads(p3_file.read_text())
+    A non-empty element column is kept as written. Atom name CA maps to
+    carbon only when that column is empty. Calcium is absent from
+    BONDI_RADII, so the stored symbol raises instead of borrowing carbon's radius.
+    """
+    calcium = _pdb_record("HETATM", 1, "CA", "CA", "A", 1, (0.0, 0.0, 0.0), "CA")
+    partner = _pdb_record("ATOM", 2, "N", "ALA", "B", 1, (4.0, 0.0, 0.0), "N")
+    text = calcium + "\n" + partner + "\n"
+    atoms = _parse_pdb_text(text)
+    parsed = next(atom for atom in atoms if atom["name"] == "CA")
+    assert parsed["element"] == "CA"
+    assert parsed["element"] != "C"
 
-    assert p3_golden["n_designs"] == 14
-    assert p3_golden["n_designs_complete"] == 14
-    assert p3_golden["n_mouse_runs_valid"] == 84
-    assert p3_golden["n_designs_mouse_docked_any"] == 0
-    assert p3_golden["median_overlap"] == 0.0
-    assert p3_golden["max_overlap"] == 0.0
-    assert p3_golden["n_overlap_at_or_above_floor"] == 0
-    assert p3_golden["selftest_all_pass"] is True
-    assert p3_golden["rows_complete"] is True
+    blank_column = (
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00\n"
+        + partner
+        + "\n"
+    )
+    blank_atoms = _parse_pdb_text(blank_column)
+    assert blank_atoms[0]["element"] == "C"
+
+    with pytest.raises(ValueError, match="CA"):
+        compute_shrake_rupley(np.array([[0.0, 0.0, 0.0]]), [parsed["element"]])
+    with pytest.raises(ValueError, match="CA"):
+        compute_interface_contacts(text, compute_sasa=True)

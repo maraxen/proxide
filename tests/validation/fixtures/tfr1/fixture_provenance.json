@@ -1,0 +1,67 @@
+{
+  "unverified_note": "JSON null means the field is unknown. It is not a measured value, a default, or a guess. Notes named unverified say why.",
+  "producer": {
+    "tool": null,
+    "version": null,
+    "command": null,
+    "unverified": "No producer tool, version, or command is recorded in git history or under tests/validation/fixtures/tfr1."
+  },
+  "bathos_run_id": null,
+  "bathos_run_id_unverified": "tests/validation/test_bathos_parity.py and .praxia/docs/specs/261102_design-utilities-placement.md name dda7de75, bba33e3a, 20aeafaf, and 5d906f67. No bathos sidecar in this repository confirms those ids, so bathos_run_id is null.",
+  "input_paths": null,
+  "input_paths_unverified": "The paths that were read to produce these fixtures are not recorded in git history.",
+  "fixture_dir": "tests/validation/fixtures/tfr1",
+  "git_revisions": {
+    "note": "Each path below has a single git commit, which is the commit that added the file. Recorded from git log --diff-filter=A.",
+    "ef33c56edf5c7297b5722da80ed87bad8a3ef7c1": [
+      "composition_result.json",
+      "interface_result.json",
+      "structures/f2c006r13.pdb",
+      "structures/f2c008r18.pdb",
+      "structures/f2c016r5_H32.pdb",
+      "structures/f2c020r4_H62.pdb",
+      "structures/f2c025r15_H60.pdb",
+      "tfr1_composition.tsv",
+      "tfr1_final_order.tsv",
+      "tfr1_final_slate.csv",
+      "tfr1_interface.tsv"
+    ],
+    "e60d9e3bae8101054c189eb6e96f3ce5123320d2": [
+      "tfr1_f2_candidates.tsv"
+    ],
+    "adee1af551d14fc289c6b8c1116bd02e643addd8": [
+      "p3_result.json",
+      "sa_result.json",
+      "tfr1_numbering_table.csv",
+      "tfr1_p3_mouse.tsv",
+      "tfr1_p3_mouse_runs.tsv",
+      "tfr1_sa_designs.tsv",
+      "tfr1_sa_runs.tsv"
+    ]
+  },
+  "hashes_sha256": {
+    "fixtures": {
+      "tfr1_final_slate.csv": "346c70e21e626c33fa803f18346a1b5b7caebb3615766e36b58670ff45671b5f",
+      "tfr1_f2_candidates.tsv": "fc4c470cf19b6ca7ea692c99dc6d2a0f758fce317c176d1557f135b464a5fa88",
+      "tfr1_final_order.tsv": "bc5b1570564b2847c457b9cb056d70192ad065755a8d25d7dd5758f41d4b2003",
+      "composition_result.json": "66377549e3564c7287eb599bee4464523b0cdf796b9a48b00c6fbf6b608f91a6",
+      "tfr1_composition.tsv": "681506b5bdafe439fe24705726bd270671bd2d289c3c30203deca14657805692",
+      "interface_result.json": "109e0a6a65897612be337180ba9027891357c10eb81745625eaaa53e7a893b79",
+      "tfr1_interface.tsv": "f90040b53322d346a4a7847a1ee025618877288a924e5b779526e7585199ba6c",
+      "tfr1_numbering_table.csv": "a7cd98283012c7e0ebe8e67946796c5c7ab3ccf4ed801c398b66b4b18ce54e1c",
+      "sa_result.json": "10573f96e26c4970bf8deb8ba7277047a8f6694260a26640dba0850f593bb088",
+      "tfr1_sa_runs.tsv": "b6c61fa896c710ef3ec9ac47bccf6e8d90ab06320756ec2289c2eb41678e6f5b",
+      "tfr1_sa_designs.tsv": "0af7f574eb0d68051617d19a83188a67d95a02c66bff14d6d8739e9eba165806",
+      "p3_result.json": "0f08eecaccdcfa22e9b2d45343d06d1a31acdfc6fb57e6c11daf24ed593c27cb",
+      "tfr1_p3_mouse.tsv": "e484e9305b2ad84e77ee1b4fda673f99a249270fc763de3a4645d487211a200e",
+      "tfr1_p3_mouse_runs.tsv": "2eb426825e9afb4e8b16cdbc2b6999e86d44360551f7dd74665df0b61b9bd7c2"
+    },
+    "structures": {
+      "f2c006r13.pdb": "35b33d416edc6b6991765a6b74082c9d1593a2cce68b42c4412e9b89d0a10ab9",
+      "f2c008r18.pdb": "cc6c71cbd338809d5def07d78e9a609b418e422852cafad714c0b76dfea0e001",
+      "f2c016r5_H32.pdb": "816fd52830793b5b600dacc831ba0ab6fc455911032fa0dd4f9e9820680cc073",
+      "f2c020r4_H62.pdb": "0802ec32057fa83af2302a9b03fbaf087a45b34e8edd375524a64bfbb4a0e1b2",
+      "f2c025r15_H60.pdb": "c6004dd2bf964c98f30880e4513c44c1ec38d8acd6875b13c1afa2c1de78d5fd"
+    }
+  }
+}

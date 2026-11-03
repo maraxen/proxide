@@ -36,14 +36,14 @@ Lessons that are mechanical become library functions; policy stays in specs. Sta
   3. **2c: Buried Binder Surface Area (`buried_binder_a2` / SASA)** (`proxide.geometry.contacts`):
      - Pure-NumPy Shrake-Rupley (`compute_shrake_rupley`, `compute_buried_sasa`) with standard Bondi atomic radii, probe radius $1.40$ Å, and $N=100$ Fibonacci sphere points (zero external runtime dependencies).
      - Physical invariant S1: non-increasing binder SASA on binding (`complex_sasa <= free_sasa + 1e-5`).
-     - Integer rounding vs float precision: exact unrounded dSASA matches Biopython to $< 10^{-6}$ Å², integer rounded values match `tfr1_interface.tsv` exactly (`[764, 537, 467, 515, 485]`).
+     - Integer `buried_binder_a2` matches `tfr1_interface.tsv` exactly (`[764, 537, 467, 515, 485]`). The unrounded floats are the §5.3 values, checked at `atol = 0.005` Å².
      - Wired into `InterfaceContactResult` as `buried_binder_a2: int | None = None` and populated in `compute_interface_contacts` when SASA computation is requested or executed.
   4. **2d: Bathos Parity Verification across 4 Runs**:
      - Parity verification in `tests/validation/test_bathos_parity.py` across 4 bathos runs:
        - `dda7de75`: composition QC on `tfr1_final_slate.csv` and `composition_result.json`.
        - `bba33e3a`: interface contact and charge audit on `tfr1_interface.tsv`, un-excluding `buried_binder_A2` (`[764, 537, 467, 515, 485]`).
        - `20aeafaf`: SA screen on `tfr1_sa_runs.tsv` and `sa_result.json` (`outcome: "monomeric"`, `design_rate: 0.2`, `controls_ok: True`, synthetic dimer/monomer 3D tests).
-       - `5d906f67`: P3 mouse overlap on `tfr1_p3_mouse.tsv`, `tfr1_p3_mouse_runs.tsv`, `p3_result.json` (194 aligned pairs, human 212 unaligned, `outcome: "pass"`, `median_overlap: 0.0`).
+       - `5d906f67` fixtures: numbering table and the five human complex PDBs (194 aligned pairs, human 212 unaligned, human contact counts). The 84-run mouse Jaccard, docked flags, aggregate `p3_result.json`, and outcome `"pass"` are not gated by `tests/validation/test_bathos_parity.py`, because the mouse contact sets and structures are not in the repo.
      - Explicit documentation that ephemeral Modal scratch directories (`sa_modal_pull`, `p3_modal_pull`) no longer exist on disk.
 - **Deferred to Slice 3+ / Future Milestones**:
   - Design campaign spec skeletons and `spec_lint` rule extensions (L1, L8, L9, L10).
@@ -95,7 +95,7 @@ Lessons that are mechanical become library functions; policy stays in specs. Sta
 - Located at `src/proxide/seqqc/`.
 - Pure-Python / NumPy implementation; no heavy C-extensions or external network dependencies.
 - Standard 20 amino acid alphabet: `AA = "ACDEFGHIKLMNPQRSTVWY"`.
-- Canonical background: SwissProt Release 2021 composition:
+- Canonical background frequencies. The exact UniProtKB/Swiss-Prot release these frequencies were taken from is unverified in the repo:
   ```python
   SWISSPROT_BG: dict[str, float] = {
       "A": 0.0825, "C": 0.0137, "D": 0.0545, "E": 0.0675, "F": 0.0386,
@@ -113,13 +113,16 @@ Lessons that are mechanical become library functions; policy stays in specs. Sta
    - When `model == "heuristic"` and `np.isclose(ph, 7.4)`:
      $$q = \text{count}(\text{K}) + \text{count}(\text{R}) + 0.1 \times \text{count}(\text{H}) - \text{count}(\text{D}) - \text{count}(\text{E})$$
      (matches `tfr1_composition.py:33` to guarantee parity with `dda7de75`).
-   - When `model == "bjellqvist"`: Henderson-Hasselbalch charge using Bjellqvist pKa values (N-term: 7.50, C-term: 3.55, K: 10.00, R: 12.00, H: 5.98, D: 4.05, E: 4.45, C: 9.00, Y: 10.00).
+   - When `model == "bjellqvist"`: Henderson-Hasselbalch charge using Bjellqvist et al., Electrophoresis 14:1023-1031 (1993). The single N-terminus and C-terminus pKa values are a simplified table (N-term: 7.50, C-term: 3.55, K: 10.00, R: 12.00, H: 5.98, D: 4.05, E: 4.45, C: 9.00, Y: 10.00).
+   - A non-finite `ph` raises `ValueError`.
 
 3. `def isoelectric_point(sequence: str, model: str = "bjellqvist") -> float:`
-   Calculates pI via bisection root-finding on `net_charge(sequence, ph=pI, model=model) == 0.0` within tolerance $10^{-4}$ in $[0.0, 14.0]$.
+   Calculates pI via bisection on `net_charge(sequence, ph=pI, model=model)` within tolerance $10^{-4}$ in $[0.0, 14.0]$.
+   - If `q(0)` and `q(14)` share a sign (`q(0) * q(14) > 0`), raise `ValueError`. The message includes both charges.
+   - An endpoint whose charge is already on the non-positive side at pH 0 (`q(0) <= 0`) returns `0.0`. An endpoint whose charge is already on the non-negative side at pH 14 (`q(14) >= 0`) returns `14.0`. An exact-zero endpoint therefore returns that endpoint.
 
 4. `def gravy(sequence: str) -> float:`
-   Grand Average of Hydropathy using the Kyte-Doolittle scale:
+   Grand Average of Hydropathy using the Kyte & Doolittle scale, J. Mol. Biol. 157:105-132 (1982):
    $$\text{GRAVY} = \frac{1}{L} \sum_{i=1}^L \text{KD}[s_i]$$
    Scale: `A: 1.8, C: 2.5, D: -3.5, E: -3.5, F: 2.8, G: -0.4, H: -3.2, I: 4.5, K: -3.9, L: 3.8, M: 1.9, N: -3.5, P: -1.6, Q: -3.5, R: -4.5, S: -0.8, T: -0.7, V: 4.2, W: -0.9, Y: -1.3`.
 
@@ -131,33 +134,55 @@ Lessons that are mechanical become library functions; policy stays in specs. Sta
    $$H = -\sum_{a \in \text{AA}, f_a > 0} f_a \log_{\text{base}} f_a$$
    If `normalized=True`, $H_{\text{norm}} = \frac{H}{\log_{\text{base}}(20)}$.
 
-7. `def screen(sequences: list[str] | dict[str, list[str]], background: dict[str, float] | None = None, threshold_ek: float = 0.30) -> dict[str, Any]:`
-   Aggregates sequence QC metrics across a list or dictionary of sequence groups.
-   Returns a dictionary structured for bathos `[result_schema]`:
+7. `def screen(sequences: list[str] | dict[str, list[str]] | np.ndarray, background: dict[str, float] | None = None, threshold_ek: float = 0.30, pad_mask: np.ndarray | None = None) -> dict[str, Any]:`
+   Aggregates sequence QC metrics across a list, a dictionary of sequence groups, or a padded integer/character array.
+   - `background=None` is the only default (it selects `SWISSPROT_BG`). A passed dict must contain exactly the 20 canonical keys and a finite sum with `|sum - 1| < 0.01`; otherwise `ValueError`. A non-dict background raises `TypeError`.
+   - A non-finite `threshold_ek` raises `ValueError`.
+   - For a 2D integer array, each unmasked token is valid only for `0 <= tok < len(AA)`; any other integer raises `ValueError`. `pad_mask` is required and `pad_mask.dtype` must be `np.bool_`; any other dtype raises `TypeError`. A non-integer token must be one canonical character after uppercasing; otherwise `ValueError`.
+   - `fold_over_background` is computed from the unrounded mean frequencies and rounded once to 2 decimal places. `mean_freq` is the same unrounded means displayed at 4 decimal places. A dict input nests `fold_over_background` by group name. A list or array input keeps it flat, keyed by amino acid, under the single group `"all"`.
+   - `pool_n` and `pool_mean_ek` are present when the input contains a group named `pool_all`. `final_mean_ek` is present when the input contains `final_five`.
+   Dict-input shape, from `screen({"pool_all": ["ACDEFGHIKLMNPQRSTVWY"], "final_five": ["ACDEFGHIKLMNPQRSTVWY"]})`. `mean_freq` and each fold map contain all 20 canonical keys:
    ```json
    {
      "controls_pass": true,
-     "n_sequences": 5,
+     "screen_pass": true,
+     "flag_reasons": [],
+     "n_sequences": 2,
      "background_ek": 0.1259,
-     "mean_ek": 0.4517,
-     "frac_ek_gt_30pct": 1.0,
-     "mean_net_charge": -8.5,
-     "frac_net_neg": 1.0,
-     "mean_gravy": -1.25,
-     "mean_aromatic_fraction": 0.042,
-     "mean_entropy": 2.85,
-     "pool_ek_enrichment": 3.59,
-     "mean_freq": {"A": 0.0935, ..., "Y": 0.0144},
-     "fold_over_background": {"A": 1.13, ..., "Y": 0.49},
+     "mean_ek": 0.1,
+     "frac_ek_gt_30pct": 0.0,
+     "mean_net_charge": 0.1,
+     "frac_net_neg": 0.0,
+     "mean_gravy": -0.49,
+     "mean_aromatic_fraction": 0.15,
+     "mean_entropy": 4.321928094887363,
+     "pool_ek_enrichment": 0.79,
+     "pool_n": 1,
+     "pool_mean_ek": 0.1,
+     "final_mean_ek": 0.1,
+     "mean_freq": {"A": 0.05, "C": 0.05, "D": 0.05, "E": 0.05, "F": 0.05, "G": 0.05, "H": 0.05, "I": 0.05, "K": 0.05, "L": 0.05, "M": 0.05, "N": 0.05, "P": 0.05, "Q": 0.05, "R": 0.05, "S": 0.05, "T": 0.05, "V": 0.05, "W": 0.05, "Y": 0.05},
+     "fold_over_background": {
+       "pool_all": {"A": 0.61, "C": 3.65, "D": 0.92, "E": 0.74, "F": 1.30, "G": 0.71, "H": 2.20, "I": 0.84, "K": 0.86, "L": 0.52, "M": 2.07, "N": 1.23, "P": 1.06, "Q": 1.27, "R": 0.90, "S": 0.76, "T": 0.94, "V": 0.73, "W": 4.63, "Y": 1.71},
+       "final_five": {"A": 0.61, "C": 3.65, "D": 0.92, "E": 0.74, "F": 1.30, "G": 0.71, "H": 2.20, "I": 0.84, "K": 0.86, "L": 0.52, "M": 2.07, "N": 1.23, "P": 1.06, "Q": 1.27, "R": 0.90, "S": 0.76, "T": 0.94, "V": 0.73, "W": 4.63, "Y": 1.71}
+     },
      "groups": {
+       "pool_all": {
+         "n": 1,
+         "mean_len": 20.0,
+         "mean_ek": 0.1,
+         "frac_ek_gt_30pct": 0.0,
+         "mean_net_charge": 0.1,
+         "frac_net_neg": 0.0,
+         "mean_freq": {"A": 0.05, "C": 0.05, "D": 0.05, "E": 0.05, "F": 0.05, "G": 0.05, "H": 0.05, "I": 0.05, "K": 0.05, "L": 0.05, "M": 0.05, "N": 0.05, "P": 0.05, "Q": 0.05, "R": 0.05, "S": 0.05, "T": 0.05, "V": 0.05, "W": 0.05, "Y": 0.05}
+       },
        "final_five": {
-         "n": 5,
-         "mean_len": 82.4,
-         "mean_ek": 0.4517,
-         "frac_ek_gt_30pct": 1.0,
-         "mean_net_charge": -8.5,
-         "frac_net_neg": 1.0,
-         "mean_freq": {"A": 0.0935, ..., "Y": 0.0144}
+         "n": 1,
+         "mean_len": 20.0,
+         "mean_ek": 0.1,
+         "frac_ek_gt_30pct": 0.0,
+         "mean_net_charge": 0.1,
+         "frac_net_neg": 0.0,
+         "mean_freq": {"A": 0.05, "C": 0.05, "D": 0.05, "E": 0.05, "F": 0.05, "G": 0.05, "H": 0.05, "I": 0.05, "K": 0.05, "L": 0.05, "M": 0.05, "N": 0.05, "P": 0.05, "Q": 0.05, "R": 0.05, "S": 0.05, "T": 0.05, "V": 0.05, "W": 0.05, "Y": 0.05}
        }
      }
    }
@@ -198,13 +223,19 @@ Accepts:
    - `"xyz"`: `tuple[float, float, float]` or `np.ndarray` of shape `(3,)`
    - optional `"element"`: `str` (chemical element, e.g. `"C"`, `"N"`, `"O"`)
 
-- **Element Preservation and Inference Rule**:
-  - When parsing PDB text (`_parse_pdb_text`), columns 76–78 are read for `element`. If empty or whitespace, `element` is inferred from `name[0].upper()` for amino acid heavy atoms (`C, N, O, S`). Backbone alpha carbons named `"CA"` must strictly be treated as Carbon (`"C"`), never assigned Calcium (`"Ca"`).
-  - For atom dict inputs, `element` is read from `atom.get("element")` or inferred from `atom["name"][0].upper()`.
-  - Element lookup in atomic radii tables is case-insensitive (`element.upper()`).
+- **Element resolution** (one rule for PDB text and for atom dicts):
+  - A non-empty element column (PDB columns 77–78) or a non-empty `atom["element"]` is stripped and uppercased and used as written. It is not rewritten from the atom name. Element column `CA` stays `CA` (calcium). It is not mapped to carbon.
+  - Atom name `CA` maps to carbon (`"C"`) only when that element column or `element` field is empty. Empty-column inference is `_infer_element_symbol`: a two-letter prefix in `{CL, BR, NA, MG, ZN, FE, CU, MN, SE, SI}` is returned in title case (`Cl`, `Se`, …); otherwise the first letter is used when it is in `{H, C, N, O, S, P, F, I, K}`.
+  - Radius lookup uppercases the symbol. Calcium `CA` is not in `BONDI_RADII`, so a CA-element atom raises `ValueError` naming `CA`. No radius is invented for it.
+- **altLoc and occupancy** (PDB column 17 is altLoc; columns 55–60 are occupancy):
+  - Occupancy `<= 0` is skipped. A blank occupancy is not a measurement and is kept.
+  - Malformed occupancy text raises `ValueError` naming the line number and atom name.
+  - Blank altLoc records are kept. Among non-blank altLocs, one conformer is kept: the letter with the highest summed occupancy, and the earliest letter on a tie.
+  - `details["altloc_kept"]` is that letter, or `""` when every kept atom has a blank altLoc. `details["altloc_skipped"]` is the count of dropped atoms.
+- **Unparseable ATOM/HETATM lines** shorter than 54 characters, or with a blank, asterisk, or otherwise unparseable residue number or coordinates, raise `ValueError` naming the line number and atom name.
 
 #### 4.2.3 Chemical Groups and Cutoff Definitions
-- **Interface Residues**: Any residue with a heavy atom within `cutoff_heavy` (default 5.0 Å) of any heavy atom in the opposite chain.
+- **Interface Residues**: Any residue with a heavy atom at or within `cutoff_heavy` (default 5.0 Å) of any heavy atom in the opposite chain. The same closed comparison applies to the other cutoffs: a distance equal to 4.0, 4.5, 3.5, or 5.0 Å is a contact, and a distance 0.01 Å outside that cutoff is not.
 - **Charge Sign Mapping**:
   - Cations (+1): `("LYS", "NZ")`, `("ARG", "NE")`, `("ARG", "NH1")`, `("ARG", "NH2")`.
   - Anions (-1): `("ASP", "OD1")`, `("ASP", "OD2")`, `("GLU", "OE1")`, `("GLU", "OE2")`.
@@ -228,8 +259,8 @@ class InterfaceContactResult:
     nonpolar_pairs: int
     binder_if_charge: int
     target_if_charge: int
-    binder_if_frac_ek: float
-    binder_if_frac_hydrophobic: float
+    binder_if_frac_ek: float | None
+    binder_if_frac_hydrophobic: float | None
     details: dict[str, Any]
     buried_binder_a2: int | None = None  # Slice 2: Shrake-Rupley buried binder surface area in Å²
 
@@ -242,6 +273,7 @@ class InterfaceContactResult:
   - When `compute_sasa=True`, `buried_binder_a2` holds the rounded integer ($\text{round}(\Delta \text{SASA}_A)$ in Å²), matching registered golden tables (e.g. `tfr1_interface.tsv`).
   - When `compute_sasa=True`, `details["buried_binder_a2_float"]` holds the unrounded float value $\Delta \text{SASA}_A$ in Å².
   - When `compute_sasa=True`, `details["sasa_details"]` holds the complete per-residue SASA breakdown dictionary returned by `compute_buried_sasa`.
+  - `binder_if_frac_ek` and `binder_if_frac_hydrophobic` are `float | None`. Both are `None` when `n_binder_interface` is 0. The 500 Å negative selftest expects `None`, not `0.0`.
 
 ---
 
@@ -249,7 +281,7 @@ class InterfaceContactResult:
 
 #### 4.3.1 Ragged Sequence Batching
 - `screen(sequences: list[str] | dict[str, list[str]])` accepts ragged string lists natively.
-- When 2D array representation `(B, L_max)` is provided, an accompanying `pad_mask: np.ndarray` (boolean mask where True indicates valid amino acid) is required. Unmasked tokens are guaranteed to produce identical metrics to unpadded string inputs.
+- When 2D array representation `(B, L_max)` is provided, an accompanying `pad_mask: np.ndarray` with `dtype == np.bool_` (True indicates a valid amino acid) is required. Any other dtype raises `TypeError`. Integer tokens must satisfy `0 <= tok < len(AA)`. Unmasked tokens produce the same metrics as the unpadded string inputs.
 - Equivalence Assertion:
   For any sequence list `seqs = [s_1, ..., s_N]`:
   ```python
@@ -292,7 +324,13 @@ class InterfaceContactResult:
 - **Empty Sequence**: `""` raises `ValueError("Sequence cannot be empty")`.
 - **Case Normalization**: Sequences are automatically normalized to uppercase (`seq.upper()`).
 - **Non-Canonical Amino Acids**: Symbols outside `ACDEFGHIKLMNPQRSTVWY` raise `ValueError(f"Invalid amino acid character: '{c}'")` by default.
+- **Non-finite pH or `threshold_ek`**: `ValueError`.
+- **Background**: only `None` selects the default table. A dict that is not exactly the 20 canonical keys, or whose values are non-finite or fail `|sum - 1| < 0.01`, raises `ValueError`. Any other background type raises `TypeError`.
+- **Padded tokens**: integer tokens outside `0 <= tok < len(AA)` raise `ValueError`. `pad_mask.dtype` other than `np.bool_` raises `TypeError`. A non-integer token that is not one character after uppercasing raises `ValueError`.
+- **Isoelectric point**: `q(0)` and `q(14)` of the same sign raise `ValueError` and the message contains both charges. An exact-zero endpoint returns that endpoint (`0.0` or `14.0`).
 - **Missing Chains**: Requesting a non-existent chain in `compute_interface_contacts` raises `KeyError(f"Chain '{chain}' not found in structure")`.
+- **Non-finite coordinates** in either chain raise `ValueError` naming that chain.
+- **Unparseable ATOM/HETATM records** (line shorter than 54 characters, or a blank, asterisk, or otherwise unparseable residue number or coordinate) raise `ValueError` naming the line number and atom name.
 - **CA-only Structures**: Heavy-atom interface residue detection functions normally; sidechain-specific contacts (`ion_pairs`, `nonpolar_pairs`) return 0 without error.
 
 ---
@@ -303,7 +341,7 @@ class InterfaceContactResult:
 1. **Positive Selftest**:
    - Single-residue sequence `"EEEE"` produces `freqs["E"] == 1.0`.
    - SwissProt background frequencies sum to $1.0 \pm 0.01$.
-   - Standard balanced sequence passes screening complexity filter (`controls_pass == True`, `screen_pass == True`).
+   - Sequence `"ACDEFGHIKLMNPQRSTVWY"` passes screening: `screen_pass == True` and `flag_reasons == []` (`controls_pass == True`).
 2. **Negative Selftest (Validation Failure)**:
    - Input `""` raises `ValueError`.
    - Input `"ACDEF123"` raises `ValueError`.
@@ -320,7 +358,7 @@ class InterfaceContactResult:
    - Cation `LYS:NZ` at $(0, 0, 0)$ and anion `GLU:OE1` at $(4.5, 0, 0)$ registers `ion_pairs == 0` (distance gate).
    - Same-sign pair `GLU:OE1` at $(0, 0, 0)$ and `ASP:OD1` at $(4.0, 0, 0)$ registers `like_close == 1` and `ion_pairs == 0` (repulsive gate).
    - Backbone carbon `LEU:CA` at $(0, 0, 0)$ and `ILE:CB` at $(4.0, 0, 0)$ registers `nonpolar_pairs == 0` (backbone exclusion gate).
-   - Chains separated by $500$ Å register `n_binder_interface == 0`, `n_target_interface == 0`, `ion_pairs == 0`.
+   - Chains separated by $500$ Å register `n_binder_interface == 0`, `n_target_interface == 0`, `ion_pairs == 0`, `binder_if_frac_ek is None`, and `binder_if_frac_hydrophobic is None`.
 
 ---
 
@@ -360,6 +398,7 @@ class InterfaceContactResult:
    - Returns:
      $$\big(\text{contact\_jaccard}(H, M),\, |H|,\, |M|\big)$$
    - Unaligned residues (such as human residue 212 / `L212`, which exists in the human crop but has no counterpart in mouse) are strictly dropped from both projection sets and do not participate in Jaccard calculation.
+   - Matching uses the full residue id. A blank insertion code is the integer id. An insertion-code residue with no pair in the table is omitted. Pair endpoints may be an integer or `(num, ins_code)`.
    - Accepts sets of integers or `(int, str)` residue tuples.
 
 #### 4.6.2 Alignment Numbering Table Parser
@@ -464,7 +503,8 @@ class InterfaceContactResult:
   ) -> tuple[int, int]:
   ```
 - Accepts atom record lists, coordinate arrays with residue mapping, or parsed PDB models for chains A and B.
-- Computes pairwise heavy-atom Euclidean distances.
+- Computes pairwise heavy-atom Euclidean distances. A distance equal to `cutoff` counts; a distance 0.01 Å beyond it does not.
+- Residue identity is `(num, ins_code)`. A blank insertion code is stored as the integer `num`, so residue 100 and residue 100A are distinct. A record with no `num` raises `KeyError`.
 - Returns `(n_if_a, n_if_b)`: count of unique residues on chain A within `cutoff` of chain B, and unique residues on chain B within `cutoff` of chain A.
 
 #### 4.7.2 Association Criterion
@@ -498,26 +538,29 @@ class InterfaceContactResult:
   ```
 - Input `runs` is a sequence of run records (e.g. parsed from `tfr1_sa_runs.tsv`).
   Each run contains:
-  - `group` (primary column name, matching `tfr1_sa_runs.tsv`) or `role` (fallback): `"pos_ctl"` (e.g. GCN4-p1), `"neg_ctl"` (e.g. ubiquitin), `"design"` (candidate binders), or `"shuffle"` (scrambled controls).
+  - `group` or `role`, stripped of surrounding whitespace. The only accepted labels are `"pos_ctl"`, `"neg_ctl"`, `"design"`, and `"shuffle"`. There is no default group. A missing label, or any other label, appends a problem and the row is excluded from every numerator and denominator.
   - `design_id`: design identifier string.
   - `valid`: optional validity flag (`int`, `str`, or `bool`). Default is 1 (valid).
   - `n_if_a`: interface residue count on chain A.
   - `n_if_b`: interface residue count on chain B.
   - `ipsae`: predicted interface ipSAE score (`float` or `None`).
-  - optional `assoc`: existing boolean/integer flag (if omitted, evaluated via `associates(n_if_a, n_if_b, ipsae, min_if_residues, min_ipsae)`).
+  - optional `assoc`: existing boolean/integer flag (if omitted, `None`, or `""`, evaluated via `associates`).
   - optional `problem`: error or status description string.
 - Run Validity Contract:
   - A run record is considered valid iff `int(row.get("valid", 1)) != 0` and no unhandled error occurred.
-  - Invalid runs must be counted in `n_problems` and appended to `problems` (e.g. `f"{row.get('design_id', 'unknown')}: {row.get('problem', 'invalid run')}"`).
-  - Invalid runs are strictly excluded from the denominators and numerators of `design_rate` and `shuffle_rate`.
-  - Numeric parsing of `n_if_a`, `n_if_b`, and `ipsae` must be safely guarded against empty strings (`""`) or `None` on invalid rows.
+  - Invalid runs must be counted in `n_problems` and appended to `problems` (e.g. `f"{design_id}: {problem}"`). The problems list is complete: it is not silently capped at 20. The text of one invalid-run message is truncated to 200 characters.
+  - Invalid runs, unrecognized groups, and rows dropped for missing metrics are strictly excluded from the denominators and numerators of `design_rate` and `shuffle_rate`.
+  - On a valid row whose `assoc` is absent, `None`, or `""`, an absent, `None`, or empty `n_if_a`, `n_if_b`, or `ipsae` appends a problem and excludes the row from both the numerator and the denominator. A numeric `0` stays and is evaluated by `associates`.
 - Control validation rules:
   - Positive control: at least 1 valid run of positive control must associate (`n_pos_ctl_assoc >= 1`).
   - Negative control: zero valid runs of negative control may associate (`n_neg_ctl_assoc == 0`).
   - `controls_ok = bool(n_pos_ctl_assoc >= 1 and n_neg_ctl_assoc == 0)`.
-- Candidate and shuffle rates:
-  - `design_rate = n_design_assoc / max(1, n_valid_design_runs)`
-  - `shuffle_rate = n_shuffle_assoc / max(1, n_valid_shuffle_runs)`
+- Candidate and shuffle rates. These are unrounded ratios. There is no `max(1, n_valid)` floor.
+  - If `n_valid_design_runs > 0`: `design_rate = n_design_assoc / n_valid_design_runs` and `design_rate_display = round(design_rate, 3)`.
+  - If `n_valid_design_runs == 0`: `design_rate` and `design_rate_display` are `None`.
+  - If `n_valid_shuffle_runs > 0`: `shuffle_rate = n_shuffle_assoc / n_valid_shuffle_runs` and `shuffle_rate_display = round(shuffle_rate, 3)`.
+  - If `n_valid_shuffle_runs == 0`: `shuffle_rate` and `shuffle_rate_display` are `None`.
+  - Outcome cuts at `0.20` and `0.50` compare the unrounded `design_rate`, not the display field.
 - Control Key Conventions:
   - Emits generic keys `"n_pos_ctl_assoc"` and `"n_neg_ctl_assoc"`.
   - Retains domain-specific aliases `"n_gcn4_assoc"` and `"n_ubiquitin_assoc"` for full backward compatibility with `sa_result.json`.
@@ -526,6 +569,7 @@ class InterfaceContactResult:
   {
     "controls_ok": true,
     "design_rate": 0.2,
+    "design_rate_display": 0.2,
     "n_design_assoc": 2,
     "n_pos_ctl_assoc": 2,
     "n_neg_ctl_assoc": 0,
@@ -538,25 +582,26 @@ class InterfaceContactResult:
     "rows_complete": true,
     "selftest_all_pass": true,
     "shuffle_rate": 0.0,
+    "shuffle_rate_display": 0.0,
     "outcome": "monomeric"
   }
   ```
 - Bathos Outcome Decoupling:
-  `"outcome"` is emitted by `screen_self_association` for bathos outcome evaluation (matching registered bathos run `20aeafaf` in `scripts/design/tfr1_sa_screen.bth.toml`). When asserting exact equality against the historical golden fixture `sa_result.json` (which omitted `"outcome"`), `"outcome"` is either excluded or asserted against the bathos run record outcome `"monomeric"`.
+  `screen_self_association` emits `"outcome"`, `"design_rate_display"`, and `"shuffle_rate_display"`. Historical `sa_result.json` omitted those keys. Exact fixture comparison checks the keys the golden does contain. `"outcome"` for that slate is `"monomeric"`.
 
 #### 4.7.4 Decision Logic and Outcomes
-- Categorical 3-tier `outcome` determination matching registered Bathos sidecar:
-  1. If `not controls_ok` or `not rows_complete`: `outcome = "inconclusive"` (experiment rejected due to control failure or incomplete rows).
-  2. Else if `design_rate <= monomeric_max_rate` (default $0.20$): `outcome = "monomeric"` (binder population qualifies as predominantly monomeric).
-  3. Else if `design_rate >= self_associates_min_rate` (default $0.50$): `outcome = "self_associates"` (binder population exceeds tolerable self-association frequency).
-  4. Else (`monomeric_max_rate < design_rate < self_associates_min_rate`): `outcome = "inconclusive"` (intermediate association frequency; ambiguous or indeterminate outcome).
+- Categorical `outcome` determination. Comparisons use the unrounded `design_rate`:
+  1. If `not controls_ok` or `not rows_complete` or `design_rate is None`: `outcome = "inconclusive"`. No valid design runs therefore yield `design_rate is None`, `design_rate_display is None`, and `outcome == "inconclusive"`. No valid shuffle runs yield `shuffle_rate is None` and `shuffle_rate_display is None` and do not by themselves select the outcome.
+  2. Else if `design_rate <= monomeric_max_rate` (default $0.20$): `outcome = "monomeric"`.
+  3. Else if `design_rate >= self_associates_min_rate` (default $0.50$): `outcome = "self_associates"`.
+  4. Else (`monomeric_max_rate < design_rate < self_associates_min_rate`): `outcome = "inconclusive"`.
 
 ---
 
 ### 4.8 Buried Binder Surface Area (`buried_binder_a2` / SASA)
 
 #### 4.8.1 Algorithm: Zero-Dependency Pure-NumPy Shrake-Rupley
-- To eliminate heavy external dependencies (Biopython, Biotite, FreeSASA) while maintaining machine precision against registered goldens, `proxide.geometry.contacts` implements a pure-NumPy Shrake-Rupley (1973) numerical surface integration.
+- `proxide.geometry.contacts` implements a pure-NumPy Shrake-Rupley (1973) numerical surface integration and does not call Biopython, Biotite, or FreeSASA. Integer `buried_binder_a2` matches the registered golden table. The unrounded floats are the §5.3 values.
 
 #### 4.8.2 Atomic Radii and Sphere Generation
 1. **Bondi Atomic Radii**:
@@ -573,13 +618,11 @@ class InterfaceContactResult:
        "CL": 1.75,
        "BR": 1.85,
        "I": 1.98,
+       "SE": 1.90,  # Bondi, J. Phys. Chem. 68, 441 (1964)
    }
-   DEFAULT_RADIUS: float = 2.00
    ```
-   - **Element Resolution Rules**:
-     - When reading PDB files, columns 76–78 are read for `element`. If empty or whitespace, infer element from `name[0].upper()` for amino acid heavy atoms (`C, N, O, S`). Backbone alpha carbons named `"CA"` must strictly be treated as Carbon (`"C"`), never assigned Calcium (`"Ca"`).
-     - For atom dict inputs, `element` is read from `atom.get("element")` or inferred from `atom["name"][0].upper()`.
-     - Element lookup in `BONDI_RADII` is case-insensitive (`element.upper()`). If not found, defaults to `DEFAULT_RADIUS = 2.00` Å.
+   There is no `DEFAULT_RADIUS`. An element absent from `BONDI_RADII` raises `ValueError` naming every missing symbol. No other radii are added. Selenium is the only addition to the Bondi set above, and it is cited.
+   - **Element resolution** is the single rule in §4.2.2. A non-empty element column is used as written. Atom name `CA` maps to carbon only when that column is empty. Two-letter name inference is the prefix list in §4.2.2. Element symbol `CA` is not in `BONDI_RADII` and raises; it is not given carbon's radius.
 2. **Water Probe Radius**: $r_{\text{probe}} = 1.40$ Å.
 3. **Effective Atomic Sphere Radius**: $R_i = r_{\text{vdw}, i} + r_{\text{probe}}$.
 4. **Golden Spiral Sphere Points ($N = 100$)**:
@@ -602,7 +645,7 @@ class InterfaceContactResult:
       elements: Sequence[str],
       probe_radius: float = 1.40,
       n_points: int = 100,
-  ) -> np.ndarray:
+  ) -> tuple[float, np.ndarray]:
       ...
 
   def compute_buried_sasa(
@@ -640,8 +683,8 @@ class InterfaceContactResult:
   Here `bad` contains the identifiers of the violating residues formatted as `num` or `(num, ins_code)`.
 
 #### 4.8.5 Precision Contract: Integer Rounding vs Unrounded Float
-- **Unrounded Numerical Parity**: Pure-NumPy Shrake-Rupley unrounded float output matches Biopython 1.88 `Bio.PDB.SASA.ShrakeRupley` across all atoms to within $< 10^{-6}$ Å².
-- **Integer Storage Contract**: In registered bathos run `bba33e3a` (`tfr1_interface.tsv`), `buried_binder_A2` is stored as an integer:
+- **Unrounded values**: the five complex PDBs produce the unrounded buried areas in §5.3. Those 2-decimal-place figures are checked at `atol = 0.005` Å². No test in this repo gates a Biopython $10^{-6}$ Å² match, and this spec does not claim one.
+- **Integer Storage Contract**: In `tfr1_interface.tsv`, `buried_binder_A2` is stored as an integer:
   $$\text{buried\_binder\_a2} = \text{round}(\Delta \text{SASA}_A)$$
   Exact values across the 5 complex PDBs: `[764, 537, 467, 515, 485]`.
 - Both float precision (`delta_sasa_float`) and integer rounded value (`round(delta_sasa_float)`) are returned.
@@ -741,12 +784,14 @@ All test fixtures are stored under `tests/validation/fixtures/tfr1/` in the `pro
 | `tests/validation/fixtures/tfr1/tfr1_sa_designs.tsv` | `0af7f574eb0d68051617d19a83188a67d95a02c66bff14d6d8739e9eba165806` | Golden per-design association table for `20aeafaf` |
 | `tests/validation/fixtures/tfr1/p3_result.json` | `0f08eecaccdcfa22e9b2d45343d06d1a31acdfc6fb57e6c11daf24ed593c27cb` | Golden registered summary for bathos run `5d906f67` (P3 mouse overlap) |
 | `tests/validation/fixtures/tfr1/tfr1_p3_mouse.tsv` | `e484e9305b2ad84e77ee1b4fda673f99a249270fc763de3a4645d487211a200e` | Golden 14-candidate mouse cross-reactivity and overlap summary |
-| `tests/validation/fixtures/tfr1/tfr1_p3_mouse_runs.tsv` | `2eb426825e9afb4e8b16cdbc2b6999e86d44360551f7dd74665df0b61b9bd7c2` | Golden 84-run predictor contact overlap table |
+| `tests/validation/fixtures/tfr1/tfr1_p3_mouse_runs.tsv` | `2eb426825e9afb4e8b16cdbc2b6999e86d44360551f7dd74665df0b61b9bd7c2` | Stored 84-run table. Mouse structures are absent, so the parity test does not recompute it |
 | `tests/validation/fixtures/tfr1/structures/f2c006r13.pdb` | `35b33d416edc6b6991765a6b74082c9d1593a2cce68b42c4412e9b89d0a10ab9` | F3 Complex PDB (Rank 5) |
 | `tests/validation/fixtures/tfr1/structures/f2c008r18.pdb` | `cc6c71cbd338809d5def07d78e9a609b418e422852cafad714c0b76dfea0e001` | F3 Complex PDB (Rank 2) |
 | `tests/validation/fixtures/tfr1/structures/f2c016r5_H32.pdb` | `816fd52830793b5b600dacc831ba0ab6fc455911032fa0dd4f9e9820680cc073` | F3 Complex PDB (Rank 4) |
 | `tests/validation/fixtures/tfr1/structures/f2c020r4_H62.pdb` | `0802ec32057fa83af2302a9b03fbaf087a45b34e8edd375524a64bfbb4a0e1b2` | F3 Complex PDB (Rank 1 parent) |
 | `tests/validation/fixtures/tfr1/structures/f2c025r15_H60.pdb` | `c6004dd2bf964c98f30880e4513c44c1ec38d8acd6875b13c1afa2c1de78d5fd` | F3 Complex PDB (Rank 3) |
+
+`tests/validation/fixtures/tfr1/fixture_provenance.json` records, for this fixture set, only what git history verifies: the single introducing commit of each file, and the SHA256 hashes in this table. Producer tool, version, command, bathos run id, and input paths are JSON `null`, each with an unverified note. `tests/validation/test_bathos_parity.py` parses that file and checks the hashes against this table.
 
 ### 5.2 Parity Scope for `dda7de75` (Composition)
 - Evaluated against `tfr1_final_slate.csv`.
@@ -804,42 +849,25 @@ All test fixtures are stored under `tests/validation/fixtures/tfr1/` in the `pro
   - Synthetic dimer (separation $3.5$ Å, `ipsae=0.65`): `n_if_a >= 12, n_if_b >= 12, associates == True`.
   - Synthetic monomer (separation $40.0$ Å): `n_if_a == 0, n_if_b == 0, associates == False`.
 
-### 5.5 Parity Scope for `5d906f67` (P3 Mouse Cross-Reactivity & Overlap)
-- Evaluated against `tfr1_numbering_table.csv`, `tfr1_p3_mouse.tsv` (14 candidates), `tfr1_p3_mouse_runs.tsv` (84 runs), `p3_result.json`, and the 5 complex PDBs.
-- Numbering table alignment parity:
+### 5.5 Parity Scope for the P3 numbering table and human complexes
+- `tests/validation/test_bathos_parity.py` evaluates `tfr1_numbering_table.csv` and the 5 complex PDBs. It does not gate an 84-run mouse evaluation, and it does not gate outcome `"pass"`.
+- The mouse contact sets and structures that produced `tfr1_p3_mouse.tsv`, `tfr1_p3_mouse_runs.tsv`, and `p3_result.json` are not in this repo. Those three files remain hashed fixtures. Re-reading their stored columns is not a parity check of `aligned_contact_overlap` against mouse contacts, so the parity test does not assert them.
+- What the test does gate:
   - `load_aligned_pairs` parses exactly 194 aligned pairs in crop.
-  - Verifies human residue 212 (`L212`) has no mouse counterpart and is strictly unaligned.
-- Human complex heavy-atom contacts:
-  - `contacts_and_dock` on the 5 complex PDBs at 5.0 Å heavy-atom cutoff yields total human contacted residues matching `n_human_contacted`:
-    `[11, 12, 12, 18, 14]` for `[f2c006r13, f2c008r18, f2c016r5_H32, f2c020r4_H62, f2c025r15_H60]`.
-  - Human residue 212 is contacted in all 5 complexes.
-  - Aligned contact count `n_h_aligned_contacts = n_human_contacted - 1` matches `[10, 11, 11, 17, 13]` exactly.
-- Per-run and per-candidate overlap:
-  - Evaluates `aligned_contact_overlap` across all 84 runs in `tfr1_p3_mouse_runs.tsv` and 14 candidates in `tfr1_p3_mouse.tsv`.
-  - Zero designs dock against mouse apical crop (`n_designs_mouse_docked_any == 0`) due to high sequence divergence at key epitope positions.
-  - Median and maximum mouse overlap Jaccard equal $0.0$.
-- Summary parity with `p3_result.json`:
-  - `n_designs == 14`
-  - `n_designs_complete == 14`
-  - `n_mouse_runs_valid == 84`
-  - `n_designs_mouse_docked_any == 0`
-  - `median_overlap == 0.0`
-  - `max_overlap == 0.0`
-  - `n_overlap_at_or_above_floor == 0`
-  - `selftest_all_pass == true`
-  - `rows_complete == true`
-- Bathos registered outcome: `"pass"`.
+  - Human residue 212 (`L212`) has no mouse counterpart and is strictly unaligned.
+  - `contacts_and_dock` on the 5 complex PDBs at 5.0 Å heavy-atom cutoff yields human contacted counts `[11, 12, 12, 18, 14]` for `[f2c006r13, f2c008r18, f2c016r5_H32, f2c020r4_H62, f2c025r15_H60]`, and human residue 212 is contacted in all 5.
+  - With an empty mouse contact set, `aligned_contact_overlap` reports aligned human counts `[10, 11, 11, 17, 13]`. That call does not exercise `contacts_b`.
 
 ### 5.6 Ephemeral Scratch Path Documentation
 - Historical exploratory logs and sidecars from the initial campaign referenced scratch download paths:
   - `/home/marielle/scratch/sa_modal_pull` (ephemeral CIF pulls for self-association folds)
   - `/home/marielle/scratch/p3_modal_pull` (ephemeral CIF pulls for mouse cross-reactivity folds)
 - **Status on Disk**: These scratch paths were temporary Modal volume pulls located on ephemeral scratch storage and **no longer exist on disk**.
-- **Reproducibility Guarantee**: All production artifacts, run tables, summary metrics, and structural models required for full parity verification across runs `dda7de75`, `bba33e3a`, `20aeafaf`, and `5d906f67` are fully committed as version-controlled test fixtures in `tests/validation/fixtures/tfr1/` and tracked by SHA256 hashes in Table 5.1. No external network access or scratch paths are required.
+- **What the fixtures cover**: The committed files under `tests/validation/fixtures/tfr1/`, tracked by the SHA256 hashes in Table 5.1, are sufficient for the composition, interface, and self-association parity tests and for the human-side P3 checks in §5.5. They are not sufficient for an 84-run mouse overlap evaluation. The mouse structures are absent, so that evaluation and outcome `"pass"` are not gated by the parity test.
 
 ### 5.7 Numerical Tolerances
 - Integer counts (`n`, `ion_pairs`, `like_close`, `polar_pairs`, `nonpolar_pairs`, residue counts, `buried_binder_a2` integer): exact match (`atol = 0`).
-- Unrounded float SASA: `atol = 0.5` Å² (Biopython exact match $< 10^{-6}$ Å²).
+- Unrounded float SASA (`buried_binder_a2_float` against the §5.3 values): `atol = 0.005` Å².
 - Frequencies and fractions (`mean_ek`, `frac_ek_gt_30pct`, amino acid frequencies, Jaccard): `atol = 1e-4`.
 - Net charge (`mean_net_charge`): `atol = 0.05`.
 - Averages and lengths: `atol = 1e-3`.
