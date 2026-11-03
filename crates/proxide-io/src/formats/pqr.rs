@@ -251,7 +251,17 @@ fn parse_pqr_line(line: &str, line_no: usize) -> Result<Option<AtomRecord>, PqrF
     // invalid single-letter symbols ("Z", "M"...) -- found during the
     // proxide-brittle-parsing sweep (task 260909_dhfr_gap_tranche2) that
     // also found and fixed the identical pattern in `pdb.rs`.
-    let element = infer_element(&atom_name).to_string();
+    let element = infer_element(&atom_name)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            PqrFieldError::new(
+                line_no,
+                2,
+                "atom_name",
+                line,
+                TokenFieldErrorKind::UnknownElement,
+            )
+        })?;
 
     Ok(Some(AtomRecord {
         serial,
@@ -407,6 +417,15 @@ mod tests {
     fn err_kind_field(line: &str) -> (TokenFieldErrorKind, &'static str) {
         let err = parse_one(line).unwrap_err();
         (err.kind, err.field)
+    }
+
+    #[test]
+    fn unknown_atom_name_is_an_error_not_carbon() {
+        let line = "ATOM      1  QZ  MET A   1      20.154  29.699   5.276  -0.4157  1.8240";
+        assert_eq!(
+            err_kind_field(line),
+            (TokenFieldErrorKind::UnknownElement, "atom_name")
+        );
     }
 
     #[test]

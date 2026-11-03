@@ -751,7 +751,17 @@ fn extract_row(
     // Debt #2366: a filled type_symbol is normalised to the same canonical
     // title-case symbol as the blank-column fallback; an unknown one is an error.
     let element = if type_symbol.is_empty() {
-        infer_element(&atom_name).to_string()
+        infer_element(&atom_name)
+            .map(str::to_string)
+            .ok_or_else(|| {
+                CifFieldError::new(
+                    row_start_line,
+                    "label_atom_id",
+                    "element",
+                    &atom_name,
+                    TokenFieldErrorKind::UnknownElement,
+                )
+            })?
     } else {
         normalize_element_symbol(strip_charge_suffix(&type_symbol)).ok_or_else(|| {
             CifFieldError::new(
@@ -1390,6 +1400,20 @@ _atom_site.label_seq_id
     }
 
     #[test]
+    fn absent_type_symbol_with_unknown_name_is_an_error_not_carbon() {
+        let text = format!(
+            "{}ATOM 1 QZ . ALA A 500 ? 12.000 3.000 4.000 1.00 0.00 1\n",
+            atom_site_header(FULL_COLS)
+        );
+        let boxed = parse_mmcif_from_reader(text.as_bytes()).unwrap_err();
+        let err = boxed
+            .downcast_ref::<CifFieldError>()
+            .expect("CifFieldError");
+        assert_eq!(err.kind, TokenFieldErrorKind::UnknownElement);
+        assert_eq!(err.column, "label_atom_id");
+    }
+
+    #[test]
     fn type_symbol_charge_suffix_is_stripped_before_validation() {
         // Debt #2366 review: small-molecule style symbols carry a charge.
         let cols: Vec<&str> = FULL_COLS
@@ -1557,9 +1581,15 @@ _atom_site.label_seq_id
 
     #[test]
     fn quoted_question_mark_in_label_atom_id_is_present_text() {
+        // type_symbol is filled because a name of "?" determines no element.
+        let cols: Vec<&str> = FULL_COLS
+            .iter()
+            .copied()
+            .chain(std::iter::once("type_symbol"))
+            .collect();
         let text = format!(
-            "{}ATOM 1 '?' . ALA A 1 ? 0.000 0.000 0.000 1.00 10.00 1\n",
-            atom_site_header(FULL_COLS)
+            "{}ATOM 1 '?' . ALA A 1 ? 0.000 0.000 0.000 1.00 10.00 1 C\n",
+            atom_site_header(&cols)
         );
         let raw = expect_ok(&text);
         assert_eq!(raw.atom_names[0], "?");

@@ -124,7 +124,7 @@ pub fn assign_mbondi2_radii_with_provenance(
     for (i, name) in atom_names.iter().enumerate() {
         let element = infer_element(name);
 
-        if element == "H" {
+        if element == Some("H") {
             // mbondi2's hydrogen radius depends on the element it is bonded to.
             // The reference implementation inspects only the FIRST bonded
             // neighbour, so we do too -- a hydrogen with more than one bond is
@@ -136,7 +136,7 @@ pub fn assign_mbondi2_radii_with_provenance(
                 Some(neighbor) => {
                     let bonded_to_nitrogen = atom_names
                         .get(neighbor)
-                        .map(|n| infer_element(n) == "N")
+                        .map(|n| infer_element(n) == Some("N"))
                         .unwrap_or(false);
                     values[i] = params.hydrogen_radius(bonded_to_nitrogen);
                     sources[i] = if bonded_to_nitrogen {
@@ -157,7 +157,9 @@ pub fn assign_mbondi2_radii_with_provenance(
             continue;
         }
 
-        match params.radius(element) {
+        // A name with no inferable element takes the same recorded fallback as
+        // an element mbondi2 does not define; it never borrows carbon's value.
+        match element.and_then(|e| params.radius(e)) {
             Some(r) => {
                 values[i] = r;
                 sources[i] = ParameterSource::Tabulated.as_u8();
@@ -181,7 +183,7 @@ pub fn assign_obc2_scaling_factors_with_provenance(atom_names: &[String]) -> Ass
     let mut sources = Vec::with_capacity(atom_names.len());
 
     for name in atom_names {
-        match params.screen(infer_element(name)) {
+        match infer_element(name).and_then(|e| params.screen(e)) {
             Some(s) => {
                 values.push(s);
                 sources.push(ParameterSource::Tabulated.as_u8());
@@ -315,6 +317,14 @@ mod tests {
             );
             assert!((p.values[i] - 0.80).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn unknown_name_is_a_recorded_fallback_not_tabulated_carbon() {
+        let r = assign_mbondi2_radii_with_provenance(&names(&["QZ"]), &[]);
+        assert_eq!(r.sources[0], ParameterSource::Fallback.as_u8());
+        let s = assign_obc2_scaling_factors_with_provenance(&names(&["QZ"]));
+        assert_eq!(s.sources[0], ParameterSource::Fallback.as_u8());
     }
 
     /// Silicon was reaching sulfur's arm through its first character.

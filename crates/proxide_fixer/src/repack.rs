@@ -118,8 +118,14 @@ fn extract_element(atom_name: &str) -> String {
         return "C".to_string();
     }
 
-    // Delegate to proxide_core's two-letter-aware inference
-    proxide_core::chem::masses::infer_element(trimmed).to_string()
+    // Delegate to proxide_core's two-letter-aware inference. This value only
+    // picks a steric radius during repacking in this experimental crate. The
+    // carbon stand-in for an unknown name is a known violation of the unknown-
+    // value rule, as are the two empty-name returns above; tracked in the debt
+    // store under task 261102_proxide-stable-hardening.
+    proxide_core::chem::masses::infer_element(trimmed)
+        .unwrap_or("C")
+        .to_string()
 }
 
 /// Derive φ (phi) and ψ (psi) angles from backbone N, CA, C atoms of a residue and its neighbors.
