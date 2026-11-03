@@ -1,0 +1,39 @@
+[metadata]
+title = "Verification and defect reproduction of stale debts #2368, #2363, and #1905 (GAFF2 half)"
+created = "261102"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Stale debts #2368 (fixed-width AMBER parm.dat loader, PK/IDIVF, improper loading), #2363 (strict DEF f8/f9 parser in Python and Rust), and #1905 (GAFF2 silent parameter fills replaced with Gaff2ParameterMissingError) reproduce their defects against historical pre-fix commits 2b73958, 8d74a64 (Py), 48b1c5c (Rs), and 1d4c925, and pass cleanly on main."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "all_reproductions_confirmed AND all_main_verifications_passed AND overall_pass"
+decision = "Confirm debts #2368, #2363, and #1905 (GAFF2 half) are genuinely resolved on main and close as stale debts."
+reasoning = "Every defect is verified to reproduce against historical pre-fix commits and pass on main with zero regressions."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (all_reproductions_confirmed AND all_main_verifications_passed AND overall_pass)"
+decision = "Do not close debts; investigate failing verification or un-reproduced defect."
+reasoning = "A failure indicates either an unverified fix or an invalid defect model."
+is_residual = true
+
+[result_schema]
+all_reproductions_confirmed = "bool"
+all_main_verifications_passed = "bool"
+overall_pass = "bool"
+debt_2368_reproduced = "bool"
+debt_2368_main_passed = "bool"
+debt_2363_py_reproduced = "bool"
+debt_2363_py_main_passed = "bool"
+debt_2363_rs_reproduced = "bool"
+debt_2363_rs_main_passed = "bool"
+debt_1905_reproduced = "bool"
+debt_1905_main_passed = "bool"
+n_checks_passed = "int"
+n_checks_total = "int"
+
+[dependencies]
+proxide_version = { type = "git_sha", required = true }
