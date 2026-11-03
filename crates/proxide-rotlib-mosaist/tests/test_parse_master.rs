@@ -7,7 +7,10 @@ use proxide_rotlib_mosaist::RotamerLibrary;
 /// Test that parse_master binary can be found and runs with --help
 #[test]
 fn test_parse_master_binary_exists() {
-    assert!(std::path::Path::new(env!("CARGO_BIN_EXE_parse_master")).exists(), "parse_master binary should exist");
+    assert!(
+        std::path::Path::new(env!("CARGO_BIN_EXE_parse_master")).exists(),
+        "parse_master binary should exist"
+    );
 }
 
 /// Test round-trip: load MASTER binary → convert to proto → load proto.

@@ -8,7 +8,7 @@ mod helpers;
 use helpers::{write_minimal_lib, BinSpec, RotSpec};
 use proxide_rotlib::frame::backbone_frame;
 use proxide_rotlib::geometry::ccd_parser::{
-    parse_ccd_ic_table_raw, FallbackKind,
+    parse_ccd_ic_table, parse_ccd_ic_table_raw, FallbackKind,
 };
 use proxide_rotlib::{RotamerLibrary, RotlibError};
 
@@ -108,7 +108,10 @@ fn test_challenger_dihedral_large_angles_periodicity_vs_sentinel_hack() {
     let bin_neg120 = lib
         .backbone_bin("TST", Some(-120.0), Some(0.0), false)
         .unwrap();
-    assert_eq!(bin_neg120, 1, "-120, 0 must route to phi_ind=0, psi_ind=1 -> bin 1");
+    assert_eq!(
+        bin_neg120, 1,
+        "-120, 0 must route to phi_ind=0, psi_ind=1 -> bin 1"
+    );
 
     let bin_240 = lib
         .backbone_bin("TST", Some(240.0), Some(0.0), false)
@@ -191,47 +194,95 @@ fn test_challenger_query_apis_consistent_nan_and_sentinel_free() {
     let n = [1.0, 0.0, 0.0];
     let ca = [0.0, 0.0, 0.0];
     let c = [0.0, 1.0, 0.0];
-    let place_nan = lib.place_rotamer(
-        "TST",
-        Some(f64::NAN),
-        Some(0.0),
-        0,
-        false,
-        n,
-        ca,
-        c,
-    );
+    let place_nan = lib.place_rotamer("TST", Some(f64::NAN), Some(0.0), 0, false, n, ca, c);
     assert!(matches!(place_nan, Err(RotlibError::InvalidFormat(_))));
 
     // 4. num_rotamers, rotamer_probability, and place_rotamer succeed with None (default bin)
     assert_eq!(lib.num_rotamers("TST", None, None, false).unwrap(), 1);
-    assert_eq!(lib.rotamer_probability("TST", None, None, false, 0).unwrap(), 1.0);
-    let placed = lib.place_rotamer("TST", None, None, 0, false, n, ca, c).unwrap();
+    assert_eq!(
+        lib.rotamer_probability("TST", None, None, false, 0)
+            .unwrap(),
+        1.0
+    );
+    let placed = lib
+        .place_rotamer("TST", None, None, 0, false, n, ca, c)
+        .unwrap();
     assert_eq!(placed.id.bin_index, 4); // default_bin is 4
 
     // 5. num_rotamers, rotamer_probability, and place_rotamer succeed with 1320.0 (bin 1)
-    let placed_1320 = lib.place_rotamer(
-        "TST",
-        Some(1320.0),
-        Some(0.0),
-        0,
-        false,
-        n,
-        ca,
-        c,
-    ).unwrap();
+    let placed_1320 = lib
+        .place_rotamer("TST", Some(1320.0), Some(0.0), 0, false, n, ca, c)
+        .unwrap();
     assert_eq!(placed_1320.id.bin_index, 1); // 1320.0 deg -> bin 1
 
     // 6. -1320.0 (-1320 + 4*360 = 120 deg -> phi_ind=2, psi_ind=1 -> bin 2*3 + 1 = 7)
-    let bin_neg1320 = lib.backbone_bin("TST", Some(-1320.0), Some(0.0), false).unwrap();
+    let bin_neg1320 = lib
+        .backbone_bin("TST", Some(-1320.0), Some(0.0), false)
+        .unwrap();
     assert_eq!(bin_neg1320, 7);
 
-    // 7. GLY place_rotamer always succeeds and returns empty atoms, regardless of dihedrals
-    let placed_gly = lib.place_rotamer("GLY", Some(f64::NAN), None, 0, false, n, ca, c).unwrap();
+    // 7. Non-finite angles are rejected before the GLY early return.
+    let placed_gly_nan = lib.place_rotamer("GLY", Some(f64::NAN), None, 0, false, n, ca, c);
+    assert!(
+        matches!(placed_gly_nan, Err(RotlibError::InvalidFormat(_))),
+        "GLY with NaN must be InvalidFormat, got {placed_gly_nan:?}"
+    );
+    let placed_gly = lib
+        .place_rotamer("GLY", None, None, 0, false, n, ca, c)
+        .unwrap();
     assert_eq!(placed_gly.id.aa, "GLY");
     assert!(placed_gly.atoms.is_empty());
 }
 
+#[test]
+fn place_rotamer_rejects_degenerate_backbone() {
+    let (_t, lib) = make_test_3x3_lib();
+    let ca = [0.0, 0.0, 0.0];
+    let coincident = lib.place_rotamer(
+        "TST",
+        Some(0.0),
+        Some(0.0),
+        0,
+        false,
+        ca,
+        ca,
+        [1.0, 0.0, 0.0],
+    );
+    assert!(
+        matches!(coincident, Err(RotlibError::InvalidFormat(_))),
+        "coincident N and CA must be InvalidFormat, got {coincident:?}"
+    );
+
+    let collinear = lib.place_rotamer(
+        "TST",
+        Some(0.0),
+        Some(0.0),
+        0,
+        false,
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [2.0, 0.0, 0.0],
+    );
+    assert!(
+        matches!(collinear, Err(RotlibError::InvalidFormat(_))),
+        "collinear N-CA-C must be InvalidFormat, got {collinear:?}"
+    );
+
+    let non_finite = lib.place_rotamer(
+        "TST",
+        Some(0.0),
+        Some(0.0),
+        0,
+        false,
+        [f64::NAN, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+    );
+    assert!(
+        matches!(non_finite, Err(RotlibError::InvalidFormat(_))),
+        "non-finite backbone must be InvalidFormat, got {non_finite:?}"
+    );
+}
 
 // ============================================================================
 // TASK 2: GRAM-SCHMIDT FRAME VERIFICATION
@@ -246,8 +297,7 @@ fn norm(a: [f64; 3]) -> f64 {
 }
 
 fn det3(ux: [f64; 3], uy: [f64; 3], uz: [f64; 3]) -> f64 {
-    ux[0] * (uy[1] * uz[2] - uy[2] * uz[1])
-        - ux[1] * (uy[0] * uz[2] - uy[2] * uz[0])
+    ux[0] * (uy[1] * uz[2] - uy[2] * uz[1]) - ux[1] * (uy[0] * uz[2] - uy[2] * uz[0])
         + ux[2] * (uy[0] * uz[1] - uy[1] * uz[0])
 }
 
@@ -339,10 +389,7 @@ fn test_challenger_frame_degenerate_backbones() {
     let ca_coincident = [1.0, 2.0, 3.0];
     let c_valid = [1.0, 3.0, 3.0];
     let frame_n_ca = backbone_frame(n_coincident, ca_coincident, c_valid);
-    eprintln!(
-        "[EMPIRICAL FINDING] Degenerate N==CA: x={:?}",
-        frame_n_ca.x
-    );
+    eprintln!("[EMPIRICAL FINDING] Degenerate N==CA: x={:?}", frame_n_ca.x);
     assert!(
         frame_n_ca.x[0].is_nan(),
         "Coincident N==CA produces NaN in x axis"
@@ -350,10 +397,7 @@ fn test_challenger_frame_degenerate_backbones() {
 
     // Degeneracy 3: Coincident C and CA
     let frame_c_ca = backbone_frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
-    eprintln!(
-        "[EMPIRICAL FINDING] Degenerate C==CA: z={:?}",
-        frame_c_ca.z
-    );
+    eprintln!("[EMPIRICAL FINDING] Degenerate C==CA: z={:?}", frame_c_ca.z);
     assert!(
         frame_c_ca.z[0].is_nan(),
         "Coincident C==CA produces NaN in z axis"
@@ -388,8 +432,7 @@ N CA C 111.0
     let cif_file = dir.path().join("ALA.cif");
     std::fs::write(&cif_file, cif_content).unwrap();
 
-    let (records, fallbacks) =
-        parse_ccd_ic_table_raw(dir.path().to_str().unwrap()).unwrap();
+    let (records, fallbacks) = parse_ccd_ic_table_raw(dir.path().to_str().unwrap()).unwrap();
     assert!(!records.is_empty(), "ALA records must be generated");
 
     // Verify bond length fallback
@@ -444,23 +487,61 @@ N CA C 111.0
     let cif_file = dir.path().join("ALA.cif");
     std::fs::write(&cif_file, cif_content).unwrap();
 
-    // When a CIF value is garbled, does parse_ccd_ic_table_raw record a fallback or drop the residue?
-    let (records, fallbacks) =
-        parse_ccd_ic_table_raw(dir.path().to_str().unwrap()).unwrap();
-    eprintln!(
-        "[EMPIRICAL FINDING] CCD parser on garbled value: records.len()={}, fallbacks.len()={}",
-        records.len(),
-        fallbacks.len()
+    let dir_str = dir.path().to_str().unwrap();
+    let raw = parse_ccd_ic_table_raw(dir_str);
+    assert!(
+        matches!(raw, Err(RotlibError::InvalidFormat(_))),
+        "garbled CCD value must propagate InvalidFormat from parse_ccd_ic_table_raw, got {raw:?}"
     );
+    let table = parse_ccd_ic_table(dir_str);
+    assert!(
+        matches!(table, Err(RotlibError::InvalidFormat(_))),
+        "garbled CCD value must propagate InvalidFormat from parse_ccd_ic_table, got {table:?}"
+    );
+}
 
-    // In current implementation, parse_cif_file returns Err on garbled floats,
-    // which causes parse_ccd_ic_table_raw to log a warning and DROP THE RESIDUE entirely!
-    assert!(
-        records.is_empty(),
-        "Confirmed: when encountering a garbled float value, the entire residue is dropped rather than recording a fallback"
-    );
-    assert!(
-        fallbacks.is_empty(),
-        "Confirmed: no fallbacks are recorded when a parse error drops the residue"
-    );
+#[test]
+fn ccd_absent_dihedral_is_not_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let cif_content = "\
+data_ALA
+#
+loop_
+_chem_comp_bond.atom_id_1
+_chem_comp_bond.atom_id_2
+_chem_comp_bond.value_dist_ideal
+N CA 1.458
+CA C 1.525
+C O 1.231
+CA CB 1.530
+#
+loop_
+_chem_comp_angle.atom_id_1
+_chem_comp_angle.atom_id_2
+_chem_comp_angle.atom_id_3
+_chem_comp_angle.value_angle_ideal
+N CA C 111.2
+CA C O 120.8
+N CA CB 110.5
+";
+    std::fs::write(dir.path().join("ALA.cif"), cif_content).unwrap();
+    let (records, _) = parse_ccd_ic_table_raw(dir.path().to_str().unwrap()).unwrap();
+    let ala = records.iter().find(|(name, _)| name == "ALA").expect("ALA");
+    assert!(!ala.1.is_empty(), "ALA must yield IC records");
+    for rec in &ala.1 {
+        assert!(
+            rec.phi_ijkl.is_none(),
+            "CCD has no chi; {} dihedral must be absent, got {:?}",
+            rec.atom_k,
+            rec.phi_ijkl
+        );
+        if rec.atom_l.is_empty() {
+            assert!(
+                rec.theta_jkl.is_none(),
+                "inapplicable theta for {} must be absent, got {:?}",
+                rec.atom_k,
+                rec.theta_jkl
+            );
+        }
+    }
 }

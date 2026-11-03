@@ -320,10 +320,7 @@ mod tests {
 
         // Should succeed (fallback)
         let report = result.expect("fallback should not error");
-        assert!(
-            !report.used_propka,
-            "Should use fallback, not PROPKA3"
-        );
+        assert!(!report.used_propka, "Should use fallback, not PROPKA3");
 
         // Verify state changes were applied
         // HIS -> HIE, ASP stays ASP (deprot), LYS stays LYS (prot)

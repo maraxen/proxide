@@ -37,7 +37,7 @@ message IcRecord {
   bool   branch    = 5;  // true = asterisk in RTF (atom_k is a branch point)
   float  b_ij      = 6;  // bond length i–j, Å
   float  theta_ijk = 7;  // valence angle i–j–k, degrees
-  float  phi_ijkl  = 8;  // dihedral i–j–k–l, degrees
-  float  theta_jkl = 9;  // valence angle j–k–l, degrees
+  optional float phi_ijkl  = 8;  // dihedral i–j–k–l, degrees; unset when the source has no chi
+  optional float theta_jkl = 9;  // valence angle j–k–l, degrees; unset when atom_l is absent
   float  b_kl      = 10; // bond length k–l, Å
 }

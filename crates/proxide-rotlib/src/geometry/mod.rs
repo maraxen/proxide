@@ -107,7 +107,7 @@ pub fn apply_ic_table(template: &mut ResidueTemplate, table: &ResidueGeometryTab
                 by_atom_l
                     .get(atom_name.as_str())
                     .filter(|r| r.atom_k == *parent_name)
-                    .map(|r| r.theta_jkl)
+                    .and_then(|r| r.theta_jkl)
             });
 
         match (bond_length, bond_angle) {
@@ -326,11 +326,11 @@ mod tests {
                         atom_k: "C".to_string(),
                         atom_l: "O".to_string(),
                         branch: false,
-                        b_ij: 1.458,      // N-CA bond (prerequisite)
-                        theta_ijk: 108.5, // N-CA-C angle
-                        phi_ijkl: 180.0,  // N-CA-C-O dihedral
-                        theta_jkl: 120.8, // CA-C-O angle
-                        b_kl: 1.231,      // C-O bond (consequent)
+                        b_ij: 1.458,            // N-CA bond (prerequisite)
+                        theta_ijk: 108.5,       // N-CA-C angle
+                        phi_ijkl: Some(180.0),  // N-CA-C-O dihedral
+                        theta_jkl: Some(120.8), // CA-C-O angle
+                        b_kl: 1.231,            // C-O bond (consequent)
                     },
                     // CB placement: N-CA-CB-OG (parent=CA)
                     IcRecord {
@@ -339,11 +339,11 @@ mod tests {
                         atom_k: "CB".to_string(),
                         atom_l: "OG".to_string(),
                         branch: false,
-                        b_ij: 1.458,      // N-CA bond
-                        theta_ijk: 110.5, // N-CA-CB angle
-                        phi_ijkl: -119.7, // dihedral
-                        theta_jkl: 111.1, // CA-CB-OG angle
-                        b_kl: 1.417,      // CB-OG bond
+                        b_ij: 1.458,            // N-CA bond
+                        theta_ijk: 110.5,       // N-CA-CB angle
+                        phi_ijkl: Some(-119.7), // dihedral
+                        theta_jkl: Some(111.1), // CA-CB-OG angle
+                        b_kl: 1.417,            // CB-OG bond
                     },
                     // OG placement: CA-CB-OG-HG (parent=CB, child would be HG)
                     IcRecord {
@@ -352,11 +352,11 @@ mod tests {
                         atom_k: "OG".to_string(),
                         atom_l: "HG".to_string(),
                         branch: false,
-                        b_ij: 1.540,      // CA-CB bond
-                        theta_ijk: 111.1, // CA-CB-OG angle
-                        phi_ijkl: 0.0,    // dihedral
-                        theta_jkl: 109.5, // CB-OG-HG angle
-                        b_kl: 0.96,       // OG-HG bond
+                        b_ij: 1.540,            // CA-CB bond
+                        theta_ijk: 111.1,       // CA-CB-OG angle
+                        phi_ijkl: Some(0.0),    // explicit dihedral in this fixture
+                        theta_jkl: Some(109.5), // CB-OG-HG angle
+                        b_kl: 0.96,             // OG-HG bond
                     },
                     // HG placement: CB-OG-HG-* (parent=OG, for successor bond lookup)
                     IcRecord {
@@ -365,11 +365,11 @@ mod tests {
                         atom_k: "HG".to_string(),
                         atom_l: "O".to_string(), // dummy reference
                         branch: false,
-                        b_ij: 1.417,      // CB-OG bond (this is what OG needs!)
-                        theta_ijk: 109.5, // CB-OG-HG angle
-                        phi_ijkl: 180.0,  // dihedral
-                        theta_jkl: 104.5, // OG-HG-* angle
-                        b_kl: 0.96,       // HG-* bond
+                        b_ij: 1.417,            // CB-OG bond (this is what OG needs!)
+                        theta_ijk: 109.5,       // CB-OG-HG angle
+                        phi_ijkl: Some(180.0),  // dihedral
+                        theta_jkl: Some(104.5), // OG-HG-* angle
+                        b_kl: 0.96,             // HG-* bond
                     },
                 ],
             }],

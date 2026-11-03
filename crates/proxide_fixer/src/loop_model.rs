@@ -452,8 +452,8 @@ fn parse_loop_residues(pdb_path: &Path, loops: &[MissingLoop]) -> Result<ParsedL
 /// `#[cfg(test)]`-only for the `make_atom` test fixture and its own
 /// regression test below, both of which predate that change.
 #[cfg(test)]
-fn extract_element_from_name(name: &str) -> &str {
-    proxide_core::chem::masses::infer_element(name)
+fn extract_element_from_name(name: &str) -> Result<String, String> {
+    crate::repack::element_from_atom_name(name)
 }
 
 // ── Helper: splice loops into topology ───────────────────────────────────────
@@ -727,7 +727,9 @@ mod tests {
     fn make_atom(name: &str, serial: i32) -> Atom {
         Atom {
             name: name.to_string(),
-            element: extract_element_from_name(name).to_string(),
+            element: extract_element_from_name(name)
+                .unwrap_or_else(|err| panic!("{err}"))
+                .to_string(),
             coords: [0.0, 0.0, 0.0],
             alt_loc: ' ',
             serial,
@@ -1411,18 +1413,29 @@ ATOM      2  CA BMET A   1      20.154  29.699   5.276  1.00 49.05           N
     }
 
     #[test]
+    fn unknown_atom_name_is_not_carbon() {
+        assert!(
+            extract_element_from_name("QQ").is_err(),
+            "QQ determines no element and must not be recorded as carbon"
+        );
+        assert!(extract_element_from_name("").is_err());
+        assert!(extract_element_from_name("1").is_err());
+        assert_eq!(extract_element_from_name("CA").unwrap(), "C");
+    }
+
+    #[test]
     fn test_extract_element_from_name_chlorine() {
         // Regression test: "CL" (all uppercase) should resolve to "Cl" (chlorine),
         // not "C" (carbon). This is a known bug fix for two-letter element inference.
         // PDB convention uses uppercase element names, so we test uppercase and mixed-case.
-        assert_eq!(extract_element_from_name("CL"), "Cl");
-        assert_eq!(extract_element_from_name("Cl"), "Cl");
+        assert_eq!(extract_element_from_name("CL").unwrap(), "Cl");
+        assert_eq!(extract_element_from_name("Cl").unwrap(), "Cl");
         // Also test with leading digits (common in PDB)
-        assert_eq!(extract_element_from_name("1CL"), "Cl");
-        assert_eq!(extract_element_from_name("2Cl"), "Cl");
+        assert_eq!(extract_element_from_name("1CL").unwrap(), "Cl");
+        assert_eq!(extract_element_from_name("2Cl").unwrap(), "Cl");
         // Test other two-letter elements
-        assert_eq!(extract_element_from_name("BR"), "Br");
-        assert_eq!(extract_element_from_name("NA"), "Na");
-        assert_eq!(extract_element_from_name("FE"), "Fe");
+        assert_eq!(extract_element_from_name("BR").unwrap(), "Br");
+        assert_eq!(extract_element_from_name("NA").unwrap(), "Na");
+        assert_eq!(extract_element_from_name("FE").unwrap(), "Fe");
     }
 }

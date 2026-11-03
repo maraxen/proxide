@@ -14,9 +14,10 @@ fn make_placement_lib() -> RotamerLibrary {
     let pb = PbLib {
         version: 1,
         provenance: "test".to_string(),
-        attribution: "Contains information from the 2010 Backbone-Dependent Rotamer Library \
+        attribution:
+            "Contains information from the 2010 Backbone-Dependent Rotamer Library \
             (http://dunbrack.fccc.edu/bbdep2010), made available under the ODC Attribution License."
-            .to_string(),
+                .to_string(),
         data_license: "ODC-BY-1.0".to_string(),
         geometry_mode: GeometryMode::Precomputed as i32,
         residues: vec![
@@ -349,7 +350,8 @@ fn test_place_analytical_transformation() {
             ca[2] + local_x * ux[2] + local_y * uy[2] + local_z * uz[2],
         ];
 
-        for (k, (&placed_coord, &expected_coord)) in atom.xyz.iter().zip(&expected_lab).enumerate() {
+        for (k, (&placed_coord, &expected_coord)) in atom.xyz.iter().zip(&expected_lab).enumerate()
+        {
             let diff = (placed_coord - expected_coord).abs();
             assert!(
                 diff < 1e-9,

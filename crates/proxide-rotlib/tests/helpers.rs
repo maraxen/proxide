@@ -52,9 +52,10 @@ pub fn write_minimal_lib(
     let pb = PbRotamerLibrary {
         version: 1,
         provenance: "test".to_string(),
-        attribution: "Contains information from the 2010 Backbone-Dependent Rotamer Library \
+        attribution:
+            "Contains information from the 2010 Backbone-Dependent Rotamer Library \
             (http://dunbrack.fccc.edu/bbdep2010), made available under the ODC Attribution License."
-            .to_string(),
+                .to_string(),
         data_license: "ODC-BY-1.0".to_string(),
         geometry_mode: GeometryMode::Precomputed as i32,
         residues: vec![ResidueEntry {
@@ -64,20 +65,30 @@ pub fn write_minimal_lib(
             phi_centers,
             psi_centers,
             default_bin,
-            bins: bins.iter().map(|b| Bin {
-                phi: b.phi as f64,
-                psi: b.psi as f64,
-                freq: b.freq as f64,
-                rotamers: rotamers_per_bin.iter().map(|r| Rotamer {
-                    prob: r.prob,
-                    chi: vec![],
-                    coords: r.coords.iter().map(|c| Vec3 {
-                        x: c[0],
-                        y: c[1],
-                        z: c[2],
-                    }).collect(),
-                }).collect(),
-            }).collect(),
+            bins: bins
+                .iter()
+                .map(|b| Bin {
+                    phi: b.phi as f64,
+                    psi: b.psi as f64,
+                    freq: b.freq as f64,
+                    rotamers: rotamers_per_bin
+                        .iter()
+                        .map(|r| Rotamer {
+                            prob: r.prob,
+                            chi: vec![],
+                            coords: r
+                                .coords
+                                .iter()
+                                .map(|c| Vec3 {
+                                    x: c[0],
+                                    y: c[1],
+                                    z: c[2],
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                })
+                .collect(),
         }],
         geometry_source: String::new(),
         geometry_license: String::new(),
@@ -111,8 +122,7 @@ pub fn real_pdb_path() -> std::path::PathBuf {
     if let Ok(p) = std::env::var("PDB_PATH") {
         std::path::PathBuf::from(p)
     } else {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../proxide-io/tests/data/1CRN.pdb")
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../proxide-io/tests/data/1CRN.pdb")
     }
 }
 

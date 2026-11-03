@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import proxide
 import pytest
 
 try:
@@ -54,3 +55,16 @@ def test_unknown_element_symbol_raises(tmp_path: Path):
   pdb.write_text(_hetatm(1, "XX", "XX") + "\nEND\n")
   with pytest.raises(Exception, match="PROX-IO-MALFORMED-RECORD"):
     parse_pdb_raw_rust(str(pdb))
+
+
+@pytest.mark.parametrize("name", ["QZ", "D1", "EPW", "AU"])
+def test_blank_element_column_with_unknown_name_raises_not_carbon(tmp_path: Path, name: str):
+  pdb = tmp_path / "unknown.pdb"
+  pdb.write_text(_hetatm(1, name, "") + "\nEND\n")
+  with pytest.raises(ValueError, match="PROX-IO-MALFORMED-RECORD"):
+    parse_pdb_raw_rust(str(pdb))
+
+
+def test_assign_masses_refuses_a_name_with_no_element():
+  with pytest.raises(ValueError, match="QZ"):
+    proxide.assign_masses(["CA", "QZ"])
