@@ -17,6 +17,9 @@ they exist only in source builds that opt in.
 - **Changed (behaviour)**: `assign_mbondi2_radii_with_provenance` and `assign_obc2_scaling_factors_with_provenance` give such a name the recorded fallback (`ParameterSource::Fallback`) instead of carbon's tabulated value. (experimental)
 - `proxide-confind`, `proxide-rotlib` and `proxide_fixer` are no longer published to crates.io. They derive from, or depend on code derived from, CC BY-NC-SA 4.0 code (Mosaist), which is unresolved, and now carry a `NOTICE`. None of them is in the PyPI wheels or sdist. `proxide-frag` was reviewed, found independent of Mosaist, and is still published.
 
+### Removed
+- Intel macOS wheels are no longer built. The required `grain` dependency has no build for that platform, so the 0.1.0 wheel could not be installed there.
+
 ## [0.1.0] - 2026-10-23
 
 ### Added
