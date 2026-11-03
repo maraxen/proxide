@@ -137,9 +137,9 @@ mod tests {
         assert_eq!(ss[6], b'C');
         // Residues 2,3,4 are interior and will be assigned based on distances
         // We don't assert a specific value here, just that they're valid letters.
-        assert!([b'H', b'E', b'C', b'T'].contains(&ss[2]));
-        assert!([b'H', b'E', b'C', b'T'].contains(&ss[3]));
-        assert!([b'H', b'E', b'C', b'T'].contains(&ss[4]));
+        assert!(b"HECT".contains(&ss[2]));
+        assert!(b"HECT".contains(&ss[3]));
+        assert!(b"HECT".contains(&ss[4]));
     }
 
     /// Synthetic extended (strand-like) geometry.
@@ -170,9 +170,9 @@ mod tests {
         assert_eq!(ss[5], b'C');
         assert_eq!(ss[6], b'C');
         // Interior residues assigned based on geometry
-        assert!([b'H', b'E', b'C', b'T'].contains(&ss[2]));
-        assert!([b'H', b'E', b'C', b'T'].contains(&ss[3]));
-        assert!([b'H', b'E', b'C', b'T'].contains(&ss[4]));
+        assert!(b"HECT".contains(&ss[2]));
+        assert!(b"HECT".contains(&ss[3]));
+        assert!(b"HECT".contains(&ss[4]));
     }
 
     /// Boundary residues (lacking full 5-residue neighborhood) are always coil.
