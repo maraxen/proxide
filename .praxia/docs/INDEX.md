@@ -17,6 +17,7 @@
 - [260416_phase2-plan](plans/260416_phase2-plan.md)
 
 ## Specs
+- [261102_clean-room-functional-specification-proxide-confind-proxide-rotlib-and-proxide_fixer](specs/261102_clean-room-functional-specification-proxide-confind-proxide-rotlib-and-proxide_fixer.md) — Clean-room behavioral specification for proxide-confind, proxide-rotlib, and proxide_fixer under MIT license, covering mathematical formulas with citations, a typed configuration section (Cβ clash policy, crowdedness mode, freedom mode, scope, cutoffs), Option<f64> dihedrals (#1897), IUPAC omega (#1903), chain semantics (#1904), fixer repack tests (#1891), and CCD parser fallbacks (#1933).
 - [261102_design-utilities-placement](specs/261102_design-utilities-placement.md) — Engineering specification for Slice 1 and Slice 2 design-screening utilities in proxide: proxide.seqqc and proxide.geometry.contacts (contact analysis, Shrake-Rupley SASA, self-association screening, and alignment overlap), with exact API signatures, batching contracts, selftest gates, and bathos parity verification across 4 runs
 - [261102_proxide-stable-hardening-and-cisternal](specs/261102_proxide-stable-hardening-and-cisternal.md) — Deeper audit and remaining work after 0.1.0: licensing, sdist, stable-surface gaps, cisternal skill and plugin, provenance and telemetry, unified CLI and MCP
 - [261001_proxide-config-file](specs/261001_proxide-config-file.md) — One resolver (explicit > PROXIDE_* env > [tool.proxide] > ~/.config/proxide/config.toml > default) for threads, XTC offsets dir, fetch cache/mirrors, tool paths and dev fixtures; science parameters and secrets deliberately excluded
@@ -32,8 +33,6 @@
 - [260602_design-the-proxide-master-crate-backbone](specs/260602_design-the-proxide-master-crate-backbone.md)
 - [260602_dunbrack-rotlib-protobuf-cis-pro](specs/260602_dunbrack-rotlib-protobuf-cis-pro.md) — Dunbrack 2010 → protobuf+zstd rotamer library; adds cis-PRO (CPR); MIT-code/ODC-BY-data; geometry engine (proline-first)
 - [260602_proxide-master-spec](specs/260602_proxide-master-spec.md)
-- [260529_confind](specs/260529_confind.md) — Spec for proxide-confind crate — Rust/rayon reimplementation of ConFind contact-degree algorithm (rev 4 — cis-proline detection, omega field, backbone_bin cis_proline param)
-- [260529_rotlib](specs/260529_rotlib.md) — Spec for proxide-rotlib crate — standalone Rust port of MSL RotamerLibrary (mstrotlib.cpp), backbone binning, Frame/Transform rigid-body placement
 - [260529_rotlib_testplan](specs/260529_rotlib_testplan.md) — Test plan for proxide-rotlib — 55 unit + 4 integration tests across 6 modules
 
 ## Actuation Surfaces
