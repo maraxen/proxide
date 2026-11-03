@@ -544,7 +544,12 @@ mod tests {
             };
 
             let report = check_preconditions(&bb);
-            assert_eq!(report.warnings().count(), 0, "Variant {} should be canonical", variant);
+            assert_eq!(
+                report.warnings().count(),
+                0,
+                "Variant {} should be canonical",
+                variant
+            );
         }
     }
 }

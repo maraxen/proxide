@@ -223,7 +223,11 @@ fn configured_clash_distance_is_used() {
         )
     };
     assert_eq!(at(1.8).n_surviving, 1, "1.9 A is outside d_clash = 1.8");
-    assert_eq!(at(1.9).n_surviving, 0, "1.9 A is inside d_clash = 1.9 (inclusive)");
+    assert_eq!(
+        at(1.9).n_surviving,
+        0,
+        "1.9 A is inside d_clash = 1.9 (inclusive)"
+    );
     // A d_clash below every atom-backbone distance prunes nothing: C = 0, N_surv = N_lib.
     let rc = at(0.01);
     assert_eq!(rc.n_surviving, rc.n_library);

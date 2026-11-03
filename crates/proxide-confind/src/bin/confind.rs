@@ -67,8 +67,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Result<_, _>>()?;
 
     // Freedom is reported for selected residues inside the analysis scope.
-    let freedom_residues: Vec<ResidueIndex> =
-        residues.iter().copied().filter(|&ri| cf.in_scope(ri)).collect();
+    let freedom_residues: Vec<ResidueIndex> = residues
+        .iter()
+        .copied()
+        .filter(|&ri| cf.in_scope(ri))
+        .collect();
     let par = freedom_residues.into_par();
     let par = match cf.config().threads {
         Some(n) => par.num_threads(n.get()),
@@ -337,7 +340,9 @@ fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
                 let raw = value()?;
                 let v = number(flag, raw)?;
                 if !v.is_finite() {
-                    return Err(format!("{flag}: invalid value '{raw}'; allowed: a finite number").into());
+                    return Err(
+                        format!("{flag}: invalid value '{raw}'; allowed: a finite number").into(),
+                    );
                 }
                 cd_cut = v;
             }
@@ -345,7 +350,9 @@ fn parse_args(args: &[String]) -> Result<Opts, Box<dyn std::error::Error>> {
                 let raw = value()?;
                 let v = number(flag, raw)?;
                 if !v.is_finite() {
-                    return Err(format!("{flag}: invalid value '{raw}'; allowed: a finite number").into());
+                    return Err(
+                        format!("{flag}: invalid value '{raw}'; allowed: a finite number").into(),
+                    );
                 }
                 in_cut = v;
             }

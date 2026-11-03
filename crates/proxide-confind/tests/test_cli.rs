@@ -63,9 +63,24 @@ fn header_records_defaults_and_no_flags_equals_explicit_defaults() {
     assert_eq!(header(&plain, "tauhi"), "2");
 
     let explicit = stdout(&[
-        "--cbclash", "all-residues", "--crowdmode", "probability-weighted", "--freedommode",
-        "rms", "--scope", "all", "--dclash", "2.0", "--dcont", "3.0", "--dcut", "25.0",
-        "--taulo", "0.5", "--tauhi", "2.0",
+        "--cbclash",
+        "all-residues",
+        "--crowdmode",
+        "probability-weighted",
+        "--freedommode",
+        "rms",
+        "--scope",
+        "all",
+        "--dclash",
+        "2.0",
+        "--dcont",
+        "3.0",
+        "--dcut",
+        "25.0",
+        "--taulo",
+        "0.5",
+        "--tauhi",
+        "2.0",
     ]);
     assert_eq!(plain, explicit);
 }
@@ -118,8 +133,14 @@ fn scope_list_runs_and_limits_freedom_lines() {
     let out = stdout(&["--scope", "A:1-3"]);
     assert!(header(&out, "scope").starts_with("A:1-3"));
     let freedom_lines = out.lines().filter(|l| l.starts_with("freedom\t")).count();
-    let crowd_lines = out.lines().filter(|l| l.starts_with("crowdedness\t")).count();
-    assert_eq!(freedom_lines, 3, "freedom is reported only for in-scope residues");
+    let crowd_lines = out
+        .lines()
+        .filter(|l| l.starts_with("crowdedness\t"))
+        .count();
+    assert_eq!(
+        freedom_lines, 3,
+        "freedom is reported only for in-scope residues"
+    );
     assert_eq!(crowd_lines, 6);
 }
 
@@ -129,17 +150,30 @@ fn scope_file_is_read() {
     let path = dir.path().join("scope.txt");
     std::fs::write(&path, "# residues\nA:1-2\nA:4\n").unwrap();
     let out = stdout(&["--scope", path.to_str().unwrap()]);
-    assert_eq!(out.lines().filter(|l| l.starts_with("freedom\t")).count(), 3);
+    assert_eq!(
+        out.lines().filter(|l| l.starts_with("freedom\t")).count(),
+        3
+    );
 }
 
 #[test]
 fn invalid_values_fail_naming_option_and_value() {
-    expect_failure(&["--cbclash", "bogus"], &["--cbclash", "bogus", "ala-only, all-residues"]);
+    expect_failure(
+        &["--cbclash", "bogus"],
+        &["--cbclash", "bogus", "ala-only, all-residues"],
+    );
     expect_failure(
         &["--crowdmode", "median"],
-        &["--crowdmode", "median", "probability-weighted, pruned-count-fraction"],
+        &[
+            "--crowdmode",
+            "median",
+            "probability-weighted, pruned-count-fraction",
+        ],
     );
-    expect_failure(&["--freedommode", "x"], &["--freedommode", "x", "rms, single-threshold"]);
+    expect_failure(
+        &["--freedommode", "x"],
+        &["--freedommode", "x", "rms, single-threshold"],
+    );
     expect_failure(&["--dclash", "abc"], &["--dclash", "abc"]);
     expect_failure(&["--dclash", "0"], &["--dclash", "d_clash"]);
     expect_failure(&["--dcont", "-1"], &["--dcont"]);

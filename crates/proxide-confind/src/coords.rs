@@ -304,7 +304,9 @@ pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
         }
 
         let next_chain_idx = chain_indices.len();
-        let chain_idx = *chain_indices.entry(r.id.chain_id.clone()).or_insert(next_chain_idx);
+        let chain_idx = *chain_indices
+            .entry(r.id.chain_id.clone())
+            .or_insert(next_chain_idx);
 
         // Check if an explicit TER record was encountered between previous residue and this one
         let had_ter = (prev_last_line..r.first_line).any(|line| ter_lines.contains(&line));

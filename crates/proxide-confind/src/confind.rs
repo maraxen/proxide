@@ -86,12 +86,12 @@ impl ConFind {
             ResidueScope::Subset(list) => {
                 let mut mask = vec![false; n_residues];
                 for ri in list {
-                    let slot =
-                        mask.get_mut(ri.0 as usize)
-                            .ok_or(ConfigError::ScopeOutOfRange {
-                                index: ri.0,
-                                n_residues,
-                            })?;
+                    let slot = mask
+                        .get_mut(ri.0 as usize)
+                        .ok_or(ConfigError::ScopeOutOfRange {
+                            index: ri.0,
+                            n_residues,
+                        })?;
                     *slot = true;
                 }
                 Some(mask)
@@ -116,10 +116,7 @@ impl ConFind {
             require_preconditions(&backbone)?;
         }
 
-        let bb_grid = Arc::new(build_backbone_grid_with(
-            &backbone,
-            config.cutoffs.d_clash,
-        ));
+        let bb_grid = Arc::new(build_backbone_grid_with(&backbone, config.cutoffs.d_clash));
 
         Ok(Self {
             rotlib,
@@ -148,8 +145,7 @@ impl ConFind {
 
     /// Minimum valid neighbour cutoff `2 * max_a R_max(a) + d_cont` for the loaded library.
     pub fn d_cut_min(&self) -> f64 {
-        2.0 * self.r_max.iter().map(|&(_, r)| r).fold(0.0f64, f64::max)
-            + self.config.cutoffs.d_cont
+        2.0 * self.r_max.iter().map(|&(_, r)| r).fold(0.0f64, f64::max) + self.config.cutoffs.d_cont
     }
 
     /// Whether residue `ri` belongs to the configured analysis scope.

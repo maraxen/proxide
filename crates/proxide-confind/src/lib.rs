@@ -40,10 +40,10 @@ pub mod parallel;
 pub mod params;
 pub mod precondition;
 
-pub use confind::ConFind;
 pub use config::{
     CbClashPolicy, ConFindConfig, ConfigError, CrowdednessMode, Cutoffs, FreedomMode, ResidueScope,
 };
+pub use confind::ConFind;
 pub use contact_list::{ContactList, CONTACT_THRESHOLD};
 pub use coords::{
     extract_f64_backbone, extract_f64_backbone_with_options, load_pdb_f64, BackboneOptions,

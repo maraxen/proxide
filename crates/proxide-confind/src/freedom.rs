@@ -86,7 +86,10 @@ mod tests {
         // N_lo = 0, N_hi = 1 over N_lib = 1: Rms = sqrt(1/2).
         let f = compute_freedom(Rms, &[0.5], 1, 1, 0.5, 2.0);
         assert!((f - (0.5f64).sqrt()).abs() < 1e-12);
-        assert_eq!(compute_freedom(SingleThreshold, &[0.5], 1, 1, 0.5, 2.0), 0.0);
+        assert_eq!(
+            compute_freedom(SingleThreshold, &[0.5], 1, 1, 0.5, 2.0),
+            0.0
+        );
     }
 
     #[test]

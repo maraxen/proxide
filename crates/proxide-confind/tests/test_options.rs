@@ -6,8 +6,7 @@
 mod common;
 
 use common::{
-    crambin_path, make_helix_backbone, make_synthetic_backbone, require_rotlib,
-    truncate_backbone,
+    crambin_path, make_helix_backbone, make_synthetic_backbone, require_rotlib, truncate_backbone,
 };
 use proxide_confind::{
     load_pdb_f64, CbClashPolicy, ConFind, ConFindConfig, ConFindError, ConfigError,
@@ -114,11 +113,7 @@ fn new_equals_with_default_config() {
 }
 
 fn outputs_of(cf: &ConFind) -> Outputs {
-    outputs(
-        &cf.rotlib,
-        &cf.backbone,
-        cf.config().clone(),
-    )
+    outputs(&cf.rotlib, &cf.backbone, cf.config().clone())
 }
 
 #[test]
@@ -175,7 +170,9 @@ fn policy_matrix_all_combinations_run_and_stay_bounded() {
                                     "{ctx}: F = {f}"
                                 );
                             } else {
-                                assert!(matches!(cf.freedom(r), Err(ConFindError::OutOfScope(x)) if x == r));
+                                assert!(
+                                    matches!(cf.freedom(r), Err(ConFindError::OutOfScope(x)) if x == r)
+                                );
                             }
                         }
                         // I(i,j) <= Z_i * C_w(i) for every directed pair.
@@ -223,7 +220,10 @@ fn freedom_mode_changes_only_freedom() {
         assert_eq!(base.crowdedness, alt.crowdedness, "{name}");
         assert_eq!(base.contacts, alt.contacts, "{name}");
         assert_eq!(base.interference, alt.interference, "{name}");
-        assert_ne!(base.freedom, alt.freedom, "{name}: modes should differ somewhere");
+        assert_ne!(
+            base.freedom, alt.freedom,
+            "{name}: modes should differ somewhere"
+        );
     }
 }
 
@@ -260,7 +260,10 @@ fn cb_clash_policy_monotonicity() {
         let ala = mk(CbClashPolicy::AlaOnly);
         let allr = mk(CbClashPolicy::AllResidues);
         for r in all(bb.bb.len()) {
-            let (a, b) = (ala.residue_cache(r).unwrap(), allr.residue_cache(r).unwrap());
+            let (a, b) = (
+                ala.residue_cache(r).unwrap(),
+                allr.residue_cache(r).unwrap(),
+            );
             assert_eq!(a.n_library, b.n_library);
             assert!(b.n_surviving <= a.n_surviving, "{name} {r:?}");
             for mode in CROWD {
@@ -291,7 +294,10 @@ fn single_threshold_never_exceeds_rms() {
         let rms = mk(FreedomMode::Rms);
         let one = mk(FreedomMode::SingleThreshold);
         for r in all(bb.bb.len()) {
-            assert!(one.freedom(r).unwrap() <= rms.freedom(r).unwrap() + 1e-12, "{name} {r:?}");
+            assert!(
+                one.freedom(r).unwrap() <= rms.freedom(r).unwrap() + 1e-12,
+                "{name} {r:?}"
+            );
         }
     }
 }
@@ -373,7 +379,10 @@ fn scope_equals_all_when_neighbours_inside_and_is_monotone() {
             s18.freedom(r).unwrap(),
             all_cf.freedom(r).unwrap(),
         );
-        assert!(f18 <= f12 + 1e-12 && fall <= f18 + 1e-12, "{r:?}: {f12} {f18} {fall}");
+        assert!(
+            f18 <= f12 + 1e-12 && fall <= f18 + 1e-12,
+            "{r:?}: {f12} {f18} {fall}"
+        );
     }
 }
 
@@ -448,26 +457,52 @@ fn v3_empty_scope_subset() {
     let err = ConFind::with_config(rotlib, make_helix_backbone(4), false, cfg)
         .err()
         .unwrap();
-    assert!(matches!(err, ConFindError::InvalidConfig(ConfigError::EmptyScope)));
+    assert!(matches!(
+        err,
+        ConFindError::InvalidConfig(ConfigError::EmptyScope)
+    ));
 }
 
 #[test]
 fn v4_unknown_variant_names_are_rejected() {
     let e = "bogus".parse::<CbClashPolicy>().unwrap_err();
-    assert!(matches!(e, ConfigError::UnknownVariant { option: "cbclash", ref value, .. } if value == "bogus"));
+    assert!(
+        matches!(e, ConfigError::UnknownVariant { option: "cbclash", ref value, .. } if value == "bogus")
+    );
     let e = "AllResidues".parse::<CbClashPolicy>().unwrap_err();
-    assert!(matches!(e, ConfigError::UnknownVariant { .. }), "names are kebab-case only");
+    assert!(
+        matches!(e, ConfigError::UnknownVariant { .. }),
+        "names are kebab-case only"
+    );
     let e = "".parse::<CrowdednessMode>().unwrap_err();
-    assert!(matches!(e, ConfigError::UnknownVariant { option: "crowdmode", .. }));
+    assert!(matches!(
+        e,
+        ConfigError::UnknownVariant {
+            option: "crowdmode",
+            ..
+        }
+    ));
     let e = "median".parse::<FreedomMode>().unwrap_err();
-    assert!(matches!(e, ConfigError::UnknownVariant { option: "freedommode", .. }));
+    assert!(matches!(
+        e,
+        ConfigError::UnknownVariant {
+            option: "freedommode",
+            ..
+        }
+    ));
     assert!(e.to_string().contains("rms, single-threshold"));
 }
 
 #[test]
 fn variant_names_round_trip() {
-    assert_eq!("ala-only".parse::<CbClashPolicy>().unwrap(), CbClashPolicy::AlaOnly);
-    assert_eq!("all-residues".parse::<CbClashPolicy>().unwrap(), CbClashPolicy::AllResidues);
+    assert_eq!(
+        "ala-only".parse::<CbClashPolicy>().unwrap(),
+        CbClashPolicy::AlaOnly
+    );
+    assert_eq!(
+        "all-residues".parse::<CbClashPolicy>().unwrap(),
+        CbClashPolicy::AllResidues
+    );
     assert_eq!(
         "probability-weighted".parse::<CrowdednessMode>().unwrap(),
         CrowdednessMode::ProbabilityWeighted
@@ -518,7 +553,9 @@ fn v5_dcut_must_cover_library_reach() {
     });
     assert!(matches!(
         ConFind::with_config(rotlib.clone(), bb.clone(), false, cfg).err(),
-        Some(ConFindError::InvalidConfig(ConfigError::DcutTooSmall { .. }))
+        Some(ConFindError::InvalidConfig(
+            ConfigError::DcutTooSmall { .. }
+        ))
     ));
 
     // Exactly the required value is accepted (inclusive), and nothing is silently replaced.
@@ -560,7 +597,10 @@ fn construction_validates_in_documented_order() {
         });
     assert!(matches!(
         ConFind::with_config(rotlib.clone(), make_helix_backbone(3), false, cfg).err(),
-        Some(ConFindError::InvalidConfig(ConfigError::InvalidCutoff { name: "d_clash", .. }))
+        Some(ConFindError::InvalidConfig(ConfigError::InvalidCutoff {
+            name: "d_clash",
+            ..
+        }))
     ));
     // V6 before V5: out-of-range scope and too-small d_cut -> ScopeOutOfRange.
     let cfg = ConFindConfig::default()
@@ -571,7 +611,9 @@ fn construction_validates_in_documented_order() {
         });
     assert!(matches!(
         ConFind::with_config(rotlib.clone(), make_helix_backbone(3), false, cfg).err(),
-        Some(ConFindError::InvalidConfig(ConfigError::ScopeOutOfRange { .. }))
+        Some(ConFindError::InvalidConfig(
+            ConfigError::ScopeOutOfRange { .. }
+        ))
     ));
     // V5 before strict preconditions: a structure with missing backbone atoms and d_cut = 5.0
     // with strict = true still fails with DcutTooSmall (V5) before PreconditionsFailed.
@@ -583,7 +625,9 @@ fn construction_validates_in_documented_order() {
     });
     assert!(matches!(
         ConFind::with_config(rotlib, Arc::new(bad_bb), true, cfg).err(),
-        Some(ConFindError::InvalidConfig(ConfigError::DcutTooSmall { .. }))
+        Some(ConFindError::InvalidConfig(
+            ConfigError::DcutTooSmall { .. }
+        ))
     ));
 }
 
@@ -604,7 +648,10 @@ fn r_max_properties() {
     assert!(cf.r_max("ARG").unwrap() <= 8.7);
     assert!(cf.r_max("LYS").unwrap() <= 7.6);
     assert!(cf.r_max("GLY").is_none());
-    assert!(cf.d_cut_min() <= 25.0, "shipped library must fit the default d_cut");
+    assert!(
+        cf.d_cut_min() <= 25.0,
+        "shipped library must fit the default d_cut"
+    );
 }
 
 #[test]
@@ -743,7 +790,10 @@ fn identical_runs_are_bitwise_identical() {
         let cfg = ConFindConfig::default()
             .with_crowdedness_mode(CrowdednessMode::PrunedCountFraction)
             .with_freedom_mode(FreedomMode::SingleThreshold);
-        assert_eq!(outputs(&rotlib, &bb, cfg.clone()), outputs(&rotlib, &bb, cfg));
+        assert_eq!(
+            outputs(&rotlib, &bb, cfg.clone()),
+            outputs(&rotlib, &bb, cfg)
+        );
     }
 }
 
@@ -754,7 +804,16 @@ fn interference_is_directed() {
     let residues = all(10);
     cf.cache_all().unwrap();
     let list = cf.interference(&residues, 0.0).unwrap();
-    assert_eq!(list.pairs.len(), 10 * 9, "both directions of every pair are reported");
-    let hit = list.pairs.iter().zip(&list.degrees).filter(|(_, &d)| d > 0.0).count();
+    assert_eq!(
+        list.pairs.len(),
+        10 * 9,
+        "both directions of every pair are reported"
+    );
+    let hit = list
+        .pairs
+        .iter()
+        .zip(&list.degrees)
+        .filter(|(_, &d)| d > 0.0)
+        .count();
     assert!(hit > 0, "a compact helix must produce some interference");
 }
