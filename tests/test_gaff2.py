@@ -665,3 +665,51 @@ def test_parameterize_docstring_lists_bond_angle_and_torsion_substitutions():
     assert "angle" in bullet
     assert "torsion" in bullet
     assert '{"term": "torsion"' not in bullet
+
+
+def test_unmatched_atom_raises_rather_than_per_element_fallback():
+    """Debt #1899: an atom matching no rule raises Gaff2AtomTypeMissingError.
+
+    Previously, unmatched atoms silently defaulted to 'c3', 'n3', 'oh', 's', 'ha',
+    or 'x' via a per-element fallback ladder. Under the fail-fast rule, it raises
+    at the point of determination.
+    """
+    from proxide.chem.gaff2 import (
+        Gaff2AtomTypeMissingError,
+        assign_gaff2_atom_types,
+        load_gaff2_rules,
+    )
+
+    mol = prepare_mol("CC(=O)C")  # acetone: C, O, H atoms
+    all_rules, wildatoms = load_gaff2_rules()
+
+    # Carbon unmatched: rules excluding carbon
+    rules_no_c = [r for r in all_rules if r.atomic_num != 6]
+    with pytest.raises(Gaff2AtomTypeMissingError, match=r"no GAFF2 atom type rule matched carbon"):
+        assign_gaff2_atom_types(mol, rules=rules_no_c, wildatom_map=wildatoms)
+
+    # Oxygen unmatched: rules excluding oxygen
+    rules_no_o = [r for r in all_rules if r.atomic_num != 8]
+    with pytest.raises(Gaff2AtomTypeMissingError, match=r"no GAFF2 atom type rule matched oxygen"):
+        assign_gaff2_atom_types(mol, rules=rules_no_o, wildatom_map=wildatoms)
+
+    # Hydrogen unmatched: rules excluding hydrogen
+    rules_no_h = [r for r in all_rules if r.atomic_num != 1]
+    with pytest.raises(Gaff2AtomTypeMissingError, match=r"no GAFF2 atom type rule matched hydrogen"):
+        assign_gaff2_atom_types(mol, rules=rules_no_h, wildatom_map=wildatoms)
+
+    # Nitrogen unmatched: methylamine
+    mol_n = prepare_mol("CN")
+    rules_no_n = [r for r in all_rules if r.atomic_num != 7]
+    with pytest.raises(Gaff2AtomTypeMissingError, match=r"no GAFF2 atom type rule matched nitrogen"):
+        assign_gaff2_atom_types(mol_n, rules=rules_no_n, wildatom_map=wildatoms)
+
+    # Sulfur unmatched: dimethyl sulfide
+    mol_s = prepare_mol("CSC")
+    rules_no_s = [r for r in all_rules if r.atomic_num != 16]
+    with pytest.raises(Gaff2AtomTypeMissingError, match=r"no GAFF2 atom type rule matched sulfur"):
+        assign_gaff2_atom_types(mol_s, rules=rules_no_s, wildatom_map=wildatoms)
+
+    # Empty rules list: first atom immediately raises
+    with pytest.raises(Gaff2AtomTypeMissingError):
+        assign_gaff2_atom_types(mol, rules=[], wildatom_map={})

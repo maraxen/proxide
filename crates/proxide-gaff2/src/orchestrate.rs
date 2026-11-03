@@ -70,30 +70,6 @@ pub trait Gaff2RuleMatch {
     fn matches(&self, atom_idx: usize, mol: &MolGraph, wildatom_map: &WildatomMap) -> bool;
 }
 
-/// Fallback ladder for any atom no rule matched, ported verbatim from
-/// gaff2.py:1188-1201's `else` branch (`atomic_num == 1/6/7/8/16` /
-/// anything-else chain): H -> `ha` (DEF line 91's unconstrained H
-/// catch-all), C -> `c3`, N -> `n3`, O -> `oh`, S -> `s`, anything else ->
-/// `x`.
-///
-/// Ported against `MolGraph::elements`'s element-symbol representation
-/// (`"H"`/`"C"`/`"N"`/`"O"`/`"S"`) rather than Python's `atom.GetAtomicNum()`
-/// integer -- the two are equivalent for exactly these five elements, and
-/// `MolGraph` (see `mol.rs`) does not expose atomic numbers at all, only
-/// symbols, so there is no faithful alternative representation available
-/// to this module.
-fn fallback_atom_type(element: &str) -> String {
-    match element {
-        "H" => "ha",
-        "C" => "c3",
-        "N" => "n3",
-        "O" => "oh",
-        "S" => "s",
-        _ => "x",
-    }
-    .to_string()
-}
-
 /// Core orchestration logic: assign a GAFF2 atom type to every atom in
 /// `mol` (heavy and H, index-aligned with `mol.elements`) using `rules` in
 /// precedence order and `wildatom_map` for chem-env matching, then run the
@@ -107,11 +83,13 @@ fn fallback_atom_type(element: &str) -> String {
 /// trait's doc comment; this is not a behavioral change from the Python,
 /// which took a concrete `list[Gaff2Rule]` for the same
 /// injectable-for-testing purpose (`rules: list[Gaff2Rule] | None = None`).
+/// # Errors
+/// Returns `Err` if any atom matches no GAFF2 rule (debt #1899 fail-fast rule).
 pub fn assign_types_with_rules<R: Gaff2RuleMatch>(
     mol: &MolGraph,
     rules: &[R],
     wildatom_map: &WildatomMap,
-) -> Vec<String> {
+) -> Result<Vec<String>, String> {
     let n = mol.elements.len();
     let mut atom_types: Vec<String> = Vec::with_capacity(n);
 
@@ -130,10 +108,15 @@ pub fn assign_types_with_rules<R: Gaff2RuleMatch>(
                 break;
             }
         }
-        atom_types.push(match assigned {
-            Some(t) => t.to_string(),
-            None => fallback_atom_type(&mol.elements[atom_idx]),
-        });
+        match assigned {
+            Some(t) => atom_types.push(t.to_string()),
+            None => {
+                let elem = &mol.elements[atom_idx];
+                return Err(format!(
+                    "no GAFF2 atom type rule matched element {elem} (atom index {atom_idx})"
+                ));
+            }
+        }
     }
 
     // Two independent alternation passes (gaff2.py:1203-1214): cc/ce/cg/
@@ -159,7 +142,7 @@ pub fn assign_types_with_rules<R: Gaff2RuleMatch>(
         true,
     );
 
-    atom_types
+    Ok(atom_types)
 }
 
 /// Assign GAFF2 atom types to every atom in `mol`, using the default
@@ -167,9 +150,8 @@ pub fn assign_types_with_rules<R: Gaff2RuleMatch>(
 ///
 /// # Returns
 /// A vector of atom type strings, one per atom, in `mol`'s atom index
-/// order -- including H atoms. Never returns `None`/empty-for-an-atom:
-/// the fallback ladder in [`assign_types_with_rules`] guarantees every
-/// atom gets *some* type even if no DEF rule matches it.
+/// order -- including H atoms. Never returns placeholders or silent stand-ins;
+/// every unmatched atom fails fast (debt #1899).
 ///
 /// Port of gaff2.py:1140-1216's `rules is None` default-loading branch:
 /// loads the bundled `ATOMTYPE_GFF2.DEF` (parsed at most once per process,
@@ -181,12 +163,11 @@ pub fn assign_types_with_rules<R: Gaff2RuleMatch>(
 ///
 /// # Errors
 /// Propagates any I/O or parse error from loading the bundled DEF file (see
-/// [`crate::rules_loader::get_default_rules`]) as a `String`, matching this
-/// function's `Result` contract -- Python's `_get_default_rules()` raises
-/// `Gaff2DefMissingError`/`Gaff2DefInvalidError` in the same situations.
+/// [`crate::rules_loader::get_default_rules`]), or returns an error if any
+/// atom in `mol` matches no GAFF2 rule (debt #1899 fail-fast rule).
 pub fn assign_gaff2_atom_types(mol: &MolGraph) -> Result<Vec<String>, String> {
     let (rules, wildatom_map) = crate::rules_loader::get_default_rules()?;
-    Ok(assign_types_with_rules(mol, &rules, &wildatom_map))
+    assign_types_with_rules(mol, &rules, &wildatom_map)
 }
 
 #[cfg(test)]
@@ -258,7 +239,8 @@ mod tests {
             },
         ];
         let wildatom_map = WildatomMap::new();
-        let types = assign_types_with_rules(&mol, &rules, &wildatom_map);
+        let types =
+            assign_types_with_rules(&mol, &rules, &wildatom_map).expect("should match rule");
         assert_eq!(types, vec!["c3".to_string()]);
     }
 
@@ -281,40 +263,38 @@ mod tests {
             },
         ];
         let wildatom_map = WildatomMap::new();
-        let types = assign_types_with_rules(&mol, &rules, &wildatom_map);
+        let types =
+            assign_types_with_rules(&mol, &rules, &wildatom_map).expect("should match rules");
         assert_eq!(types, vec!["c3".to_string(), "hc".to_string()]);
     }
 
     #[test]
-    fn fallback_ladder_matches_python_exactly_for_unmatched_atoms() {
-        // Port of gaff2.py:1188-1201's fallback chain, exercised with no
-        // rules at all so every atom falls through to it.
+    fn unmatched_atom_returns_err_instead_of_fallback_ladder() {
+        // Debt #1899: unmatched atoms fail fast instead of silently defaulting.
         let mol = mol_graph(vec!["H", "C", "N", "O", "S", "P", "Cl"], vec![]);
         let rules: Vec<MockRule> = vec![];
         let wildatom_map = WildatomMap::new();
-        let types = assign_types_with_rules(&mol, &rules, &wildatom_map);
-        assert_eq!(
-            types,
-            vec!["ha", "c3", "n3", "oh", "s", "x", "x"]
-                .into_iter()
-                .map(str::to_string)
-                .collect::<Vec<_>>()
+        let err = assign_types_with_rules(&mol, &rules, &wildatom_map).unwrap_err();
+        assert!(
+            err.contains("no GAFF2 atom type rule matched element H (atom index 0)"),
+            "expected fail-fast error for H, got: {err}"
         );
     }
 
     #[test]
-    fn unmatched_atom_falls_back_even_when_other_atoms_matched_a_rule() {
-        // A rule that matches only carbon leaves the nitrogen to the
-        // fallback ladder in the SAME call -- fallback is per-atom, not
-        // all-or-nothing for the molecule.
+    fn unmatched_atom_returns_err_even_when_other_atoms_matched_a_rule() {
+        // Debt #1899: carbon matches, but nitrogen is unmatched and fails fast.
         let mol = mol_graph(vec!["C", "N"], vec![]);
         let rules = vec![MockRule {
             atom_type: "c3",
             predicate: |i, m| is_element(i, m, "C"),
         }];
         let wildatom_map = WildatomMap::new();
-        let types = assign_types_with_rules(&mol, &rules, &wildatom_map);
-        assert_eq!(types, vec!["c3".to_string(), "n3".to_string()]);
+        let err = assign_types_with_rules(&mol, &rules, &wildatom_map).unwrap_err();
+        assert!(
+            err.contains("no GAFF2 atom type rule matched element N (atom index 1)"),
+            "expected fail-fast error for N, got: {err}"
+        );
     }
 
     #[test]
@@ -345,7 +325,8 @@ mod tests {
             },
         ];
         let wildatom_map = WildatomMap::new();
-        let types = assign_types_with_rules(&mol, &rules, &wildatom_map);
+        let types =
+            assign_types_with_rules(&mol, &rules, &wildatom_map).expect("should match rules");
         assert_eq!(
             types,
             vec!["cc", "cd", "cp", "cq"]
@@ -360,7 +341,7 @@ mod tests {
         let mol = mol_graph(vec![], vec![]);
         let rules: Vec<MockRule> = vec![];
         let wildatom_map = WildatomMap::new();
-        let types = assign_types_with_rules(&mol, &rules, &wildatom_map);
+        let types = assign_types_with_rules(&mol, &rules, &wildatom_map).expect("empty mol");
         assert!(types.is_empty());
     }
 
