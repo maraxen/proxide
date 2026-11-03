@@ -450,9 +450,9 @@ fn check_residue_reappearance(
 /// `None` for an empty or unknown symbol; the caller turns that into a loud
 /// error.
 ///
-/// Deuterium: a filled `D` column gives `D`, but a blank column whose atom name
-/// starts with `D` still infers `C` through `infer_element`, which is unchanged
-/// here. That mismatch is pinned by a test and tracked as a follow-up.
+/// Deuterium: a filled `D` column gives `D`. A blank column whose atom name
+/// starts with `D` raises, because `infer_element` does not determine an element
+/// from it (debt #2918 tracks residue-aware inference).
 pub(crate) fn normalize_element_symbol(raw: &str) -> Option<String> {
     canonical_element_symbol(raw).map(str::to_string)
 }
@@ -505,7 +505,18 @@ fn parse_atom_record(
     // on the line's overall length.
     let element_field = partial_str(s, 76, 78).trim();
     let element = if element_field.is_empty() {
-        infer_element(atom_name.trim()).to_string()
+        infer_element(atom_name.trim())
+            .map(str::to_string)
+            .ok_or_else(|| {
+                PdbFieldError::new(
+                    line_no,
+                    record,
+                    "element",
+                    (13, 16),
+                    line_bytes,
+                    PdbFieldErrorKind::UnknownElement,
+                )
+            })?
     } else {
         normalize_element_symbol(element_field).ok_or_else(|| {
             PdbFieldError::new(
@@ -903,11 +914,23 @@ ATOM      3  N   ALA A   2      2.000   0.000   0.000  1.00  0.00           N
     }
 
     #[test]
-    fn deuterium_filled_column_and_blank_d_prefixed_name_differ() {
-        // Pinned, not fixed (debt #2366 review). A filled D column is the
-        // deuterium symbol. A blank column with a D-prefixed atom name still
-        // infers C through infer_element, which this change does not touch.
+    fn deuterium_filled_column_gives_d_and_blank_d_prefixed_name_raises() {
+        // A filled D column is the deuterium symbol. A blank column with a
+        // D-prefixed name is not carbon; it raises until debt #2918 lands.
         assert_eq!(parsed_element("D", " D").unwrap(), "D");
-        assert_eq!(parsed_element("D1", "  ").unwrap(), "C");
+        let err = parsed_element("D1", "  ").unwrap_err();
+        assert_eq!(err.kind, PdbFieldErrorKind::UnknownElement);
+    }
+
+    #[test]
+    fn blank_column_with_unknown_name_raises_instead_of_inferring_carbon() {
+        for name in ["QZ", "EPW", "AU"] {
+            let err = parsed_element(name, "  ").unwrap_err();
+            assert_eq!(err.kind, PdbFieldErrorKind::UnknownElement, "{name}");
+        }
+        // Names that do determine an element are unaffected.
+        assert_eq!(parsed_element("CA", "  ").unwrap(), "C");
+        assert_eq!(parsed_element("1HB", "  ").unwrap(), "H");
+        assert_eq!(parsed_element("CL", "  ").unwrap(), "Cl");
     }
 }
