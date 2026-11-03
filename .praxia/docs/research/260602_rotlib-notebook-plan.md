@@ -74,7 +74,7 @@ special handling.
 
 | File | Why |
 |------|-----|
-| `.praxia/docs/specs/260529_rotlib.md` | Binary format spec, Frame/Transform algorithm, backbone_bin logic |
+| `.praxia/docs/specs/260529_rotlib.md` | Binary format spec, Frame/Transform algorithm, backbone_bin logic. Removed in PR #91 (superseded by the 261102 clean-room spec) and is in git history. |
 | `.praxia/docs/handoffs/260601_rotlib-fixture-expansion.md` | Known gaps and deferred work |
 
 **Source code (add as text):**
@@ -98,7 +98,7 @@ special handling.
 
 1. Shapovalov & Dunbrack 2011 (defines the library we load)
 2. Dunbrack & Cohen 1997 (foundational theory)
-3. `.praxia/docs/specs/260529_rotlib.md` (implementation grounding)
+3. `.praxia/docs/specs/260529_rotlib.md` (implementation grounding; removed in PR #91, superseded by the 261102 clean-room spec, and is in git history)
 4. `crates/proxide-rotlib/src/rotlib.rs` + `binning.rs` + `frame.rs` + `sidechain.rs`
 5. Lovell 2000 (comparative context)
 6. Dunbrack 2002 review (strategic context)
@@ -184,7 +184,7 @@ the protein design applications that motivate implementing it.
 
 | File | Why |
 |------|-----|
-| `.praxia/docs/specs/260529_confind.md` | Three-phase ConFind spec, crate boundaries, parity-test semantics |
+| `.praxia/docs/specs/260529_confind.md` | Three-phase ConFind spec, crate boundaries, parity-test semantics. Removed in PR #91 (superseded by the 261102 clean-room spec) and is in git history. |
 | `.praxia/docs/notes/260529_confind_model.md` | Formal mstcondeg.cpp derivation — parameters, CD formula, freedom types, interference |
 
 **Source code (add as text):**
@@ -203,7 +203,7 @@ will synthesize it poorly vs. the prose model notes. Do not add the raw C++.
 1. Zheng/Zhang/Grigoryan 2014 (primary algorithm citation — if verified)
 2. Kulp 2012 (MSL context)
 3. `.praxia/docs/notes/260529_confind_model.md` (algorithmic model)
-4. `.praxia/docs/specs/260529_confind.md` (implementation spec)
+4. `.praxia/docs/specs/260529_confind.md` (implementation spec; removed in PR #91, superseded by the 261102 clean-room spec, and is in git history)
 5. `crates/proxide-confind/src/cache.rs` + `parallel.rs`
 6. Grigoryan & Keating 2008 (application context)
 7. Grigoryan & DeGrado 2011 (design methodology)

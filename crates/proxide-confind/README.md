@@ -97,3 +97,7 @@ run is reproducible from its output; a command line without the new flags produc
 
 - Zheng, F., Zhang, J., & Grigoryan, G. (2015). "Tertiary Structural Propensities Reveal Fundamental Sequence/Structure Relationships in Proteins." *Structure*, 23(5), 961–971.
 - Zheng, W., & Grigoryan, G. (2017). "Sequence statistics of tertiary structural motifs reflect protein stability." *PLoS ONE*, 12(5), e0178272.
+
+## Licence and provenance
+
+`proxide-confind` is an independent implementation of the contact-degree method in the papers cited above (Zheng, Zhang, & Grigoryan, 2015; Zheng & Grigoryan, 2017). It was written from the functional specification `.praxia/docs/specs/261102_clean-room-functional-specification-proxide-confind-proxide-rotlib-and-proxide_fixer.md`. The workspace `Cargo.toml` `license` field is `MIT`. The earlier Mosaist-derived port and its NOTICE were removed.

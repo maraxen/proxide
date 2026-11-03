@@ -91,7 +91,7 @@ The paper does not fully specify the crate as it stands:
 - Interference and the 2.0 and 25 Å cutoffs were not found in the main text.
 - S1 Text and [Zheng 2015](https://doi.org/10.1016/j.str.2015.03.015) were not read and may resolve these.
 
-`260529_confind.md:11` is the `Grigoryanlab/Mosaist@450816a` source pin. `260529_confind.md:295` tells implementers to match `cache()` lines 158-160, so the project's own records show the code was written against upstream. Numerical parity tests against upstream would also tie any rewrite back to it.
+`260529_confind.md:11` is the `Grigoryanlab/Mosaist@450816a` source pin. `260529_confind.md:295` tells implementers to match `cache()` lines 158-160, so the project's own records show the code was written against upstream. Numerical parity tests against upstream would also tie any rewrite back to it. That spec was removed in PR #91 (superseded by the 261102 clean-room spec) and is in git history.
 
 ## Other corrections found
 
