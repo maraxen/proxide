@@ -216,7 +216,7 @@ pub fn build_library(
 /// The Dunbrack BBDEP format never contains ALA (or GLY) — it only tabulates chi-bearing
 /// ("rotameric") residues — so `DunbrackSource::residue_codes()` never yields "ALA" and
 /// `build_library`'s main loop never produces an ALA `ResidueEntry`. ConFind needs ALA (it
-/// is one of its 18 amino acids, as in Mosaist), so this step synthesizes one.
+/// is one of its 18 amino acids), so this step synthesizes one.
 ///
 /// This is intentionally a separate, named pipeline step called from `build_library` —
 /// NOT logic added inside `DunbrackSource` — because a synthetic entry is a
@@ -231,9 +231,9 @@ pub fn build_library(
 ///   (`n_phi * n_psi == 1` bin, verified in `rotlib.rs`), and `find_closest_angle` against
 ///   a single-element `centers` slice always returns index 0 regardless of the query angle
 ///   (`binning.rs`) — so no reader ever compares against these numbers; any query angle,
-///   including the `9999.0` "missing backbone" sentinel, resolves to this one bin via
+///   including an undefined (`None`) backbone angle, resolves to this one bin via
 ///   `default_bin`. See the non-`#[cfg(test)]` unit test below, which asserts this holds
-///   for both an interior angle and the sentinel.
+///   for both an interior angle and an undefined angle.
 /// - `freq = 1.0` (also unread by any query path — see above).
 /// - One rotamer at `prob = 1.0`.
 /// - `num_chi = 0`, `chi = []` (ALA truly has no chi angles — see the template fix in
@@ -442,9 +442,9 @@ mod tests {
     #[test]
     fn test_find_closest_angle_bin_selection_for_synthetic_ala() {
         // The synthetic ALA bin's phi/psi=0.0 placeholders must be selected regardless of
-        // query angle (interior angle and the 9999.0 "missing backbone" sentinel alike),
+        // query angle (interior angle and undefined None backbone angle alike),
         // since find_closest_angle against a single-element centers slice always returns
-        // index 0 (binning.rs), and load_pb's default_bin path is used for 9999.0 queries.
+        // index 0 (binning.rs), and load_pb's default_bin path is used for None queries.
         let source = FixtureSource {
             codes: vec!["SER".to_string()],
         };

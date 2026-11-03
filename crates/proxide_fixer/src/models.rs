@@ -2,6 +2,12 @@ use proxide_rs::structure::systems::{AtomicSystem, AtomicSystemArgs};
 use proxide_rs::structure::RawAtomData;
 use std::collections::HashMap;
 
+/// Canonical 3-letter amino acid codes supported by proxide.
+pub const CANONICAL_AA_NAMES: &[&str] = &[
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "HID", "HIE", "HIP", "ILE",
+    "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL", "CYX",
+];
+
 /// Atom index + selection info for altloc filtering
 #[derive(Clone, Copy)]
 struct AtomIndexWithOccupancy {

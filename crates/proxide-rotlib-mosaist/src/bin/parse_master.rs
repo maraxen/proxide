@@ -3,15 +3,6 @@
 /// Converts an existing Mosaist rotlib.bin (binary rotamer library) to the proxide
 /// RotamerLibrary protobuf format in PRECOMPUTED geometry mode.
 ///
-/// ## When to use parse_master vs dunbrack+ccd
-///
-/// - **parse_master**: exact MASTER parity (max|delta|=0). Use when you need contact degrees
-///   numerically identical to MASTER. Requires a Mosaist install (ROTLIB_PATH set).
-///   License: CC-BY-NC-SA 4.0 — personal use OK; output must not be committed or distributed.
-///
-/// - **convert_rotlib (Dunbrack+CCD)**: redistributable, max|delta|<0.05, 0 contact flips at
-///   CD > 0.001. Use for any output you share or bundle in a repo.
-///
 /// ## License note
 ///
 /// Output is CC-BY-NC-SA 4.0 (Grigoryan lab / Mosaist). You may use the output
@@ -21,7 +12,7 @@
 /// WARNING: Output carries CC-BY-NC-SA license. Do NOT commit to version control.
 use clap::Parser;
 use prost::Message;
-use proxide_rotlib::RotamerLibrary;
+use proxide_rotlib_mosaist::RotamerLibrary;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -92,11 +83,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-// Drift validation note: Full validation against contact degrees requires proxide-confind,
-// which has a circular dependency with proxide-rotlib. For comprehensive drift validation,
-// run the confind test suite:
-//
-//   cargo test -p proxide-confind --test test_drift_loadpb_small_pdb
-//
-// This test compares computed contact degrees against reference values from Mosaist
-// and enforces a max|delta| <= 1e-4 threshold.

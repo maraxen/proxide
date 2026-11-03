@@ -10,7 +10,7 @@ pub mod proline;
 pub mod rtf_parser;
 pub mod template;
 
-pub use ccd_parser::parse_ccd_ic_table;
+pub use ccd_parser::{parse_ccd_ic_table, parse_ccd_ic_table_raw, FallbackKind, GeometryFallback};
 pub use charmm_ic::{
     apply_charmm_ideals, load_charmm_ideals, map_template_to_charmm_name, CharmmIdeals,
 };
@@ -373,6 +373,7 @@ mod tests {
                     },
                 ],
             }],
+            fallbacks: vec![],
         };
 
         // Get SER template and apply IC

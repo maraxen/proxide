@@ -126,6 +126,7 @@ pub fn standard_residue_template(code: &str) -> Option<ResidueTemplate> {
         "TRP" => Some(tryptophan_template()),
         "TYR" => Some(tyrosine_template()),
         "VAL" => Some(valine_template()),
+        "PRO" | "CPR" => Some(proline_template()),
         _ => None,
     }
 }

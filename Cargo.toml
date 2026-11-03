@@ -14,6 +14,7 @@ members = [
     "crates/proxide-units",
     "crates/proxide-wasm",
     "crates/proxide-rotlib",
+    "crates/proxide-rotlib-mosaist",
     "crates/proxide-confind",
     "crates/proxide-frag",
     "crates/proxide-parallel-rt",

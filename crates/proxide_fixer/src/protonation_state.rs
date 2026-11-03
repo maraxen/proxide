@@ -320,8 +320,8 @@ mod tests {
 
         // Should succeed (fallback)
         let report = result.expect("fallback should not error");
-        assert_eq!(
-            report.used_propka, false,
+        assert!(
+            !report.used_propka,
             "Should use fallback, not PROPKA3"
         );
 

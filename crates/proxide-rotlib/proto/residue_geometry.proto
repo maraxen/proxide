@@ -9,6 +9,16 @@ message ResidueGeometryTable {
   string license  = 3;  // SPDX id or prose: "NOT-OSI: MacKerell lab academic only" | "CC0"
   string citation = 4;  // DOI or BibTeX key for the source publication
   repeated ResidueGeometry residues = 5;
+  repeated GeometryFallback fallbacks = 6;
+}
+
+// Stereochemical fallback provenance record (Debt #1933).
+message GeometryFallback {
+  string component = 1;
+  repeated string atom_names = 2;
+  int32 parameter_kind = 3; // 0 = BondLength, 1 = ValenceAngle
+  double fallback_value = 4;
+  string citation = 5;
 }
 
 // IC build tree for one amino acid residue.

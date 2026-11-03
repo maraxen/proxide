@@ -374,7 +374,16 @@ fn test_ac_g_e_round_trip_identity() {
 
     // Place rotamer using the same identity backbone.
     let placed = lib
-        .place_rotamer("CPR", -180.0, -180.0, 0, false, n_f64, ca_f64, c_f64)
+        .place_rotamer(
+            "CPR",
+            Some(-180.0),
+            Some(-180.0),
+            0,
+            false,
+            n_f64,
+            ca_f64,
+            c_f64,
+        )
         .expect("place_rotamer CPR failed");
     assert_eq!(placed.atoms.len(), 3, "placed CPR must have 3 atoms");
 
@@ -383,14 +392,14 @@ fn test_ac_g_e_round_trip_identity() {
     let atom_names = ["CB", "CG", "CD"];
 
     for (idx, (atom, &stored)) in placed.atoms.iter().zip(stored_coords.iter()).enumerate() {
-        for i in 0..3 {
-            let diff = (atom.xyz[i] - stored[i] as f64).abs();
+        for (i, &stored_coord) in stored.iter().enumerate() {
+            let diff = (atom.xyz[i] - stored_coord as f64).abs();
             assert!(
                 diff < 1e-2,
                 "AC-G(e): atom {} ({}) coord[{i}]: build()={:.6}, place_rotamer()={:.6}, diff={:.4e} > 1e-2 Å. \
                  Backbone used: N={n_f64:?}, CA={ca_f64:?}, C={c_f64:?} (identity frame).",
                 idx, atom_names[idx],
-                stored[i], atom.xyz[i], diff
+                stored_coord, atom.xyz[i], diff
             );
         }
     }

@@ -92,6 +92,7 @@ pub fn parse_rtf_ic_table(rtf_path: &str) -> Result<ResidueGeometryTable, Rotlib
         license: "NOT-OSI: MacKerell lab academic use only; see https://mackerell.umaryland.edu/charmm_ff.shtml".to_string(),
         citation: "doi:10.1021/jp973084f".to_string(),
         residues,
+        fallbacks: vec![],
     })
 }
 

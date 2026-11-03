@@ -1,5 +1,5 @@
 /// Normalize angle to [-180.0, 180.0).
-/// Matches MSL `angleToStandardRange` (mstrotlib.cpp:137–139).
+/// Standard modular wrap to half-open interval [-180.0, 180.0).
 pub(crate) fn angle_to_standard(a: f64) -> f64 {
     let mut v = a.rem_euclid(360.0);
     if v >= 180.0 {
@@ -20,7 +20,7 @@ pub(crate) fn angle_diff(a: f64, b: f64) -> f64 {
 }
 
 /// Index of the bin center closest to `query` (circular). First minimum wins on tie.
-/// Matches MSL `findClosestAngle` strict-less-than update.
+/// Circular distance comparison with strict tie-breaking by lowest index.
 pub(crate) fn find_closest_angle(centers: &[f64], query: f64) -> usize {
     centers
         .iter()

@@ -8,6 +8,8 @@ pub mod repack;
 pub mod solvate;
 pub mod templates;
 
+pub use models::CANONICAL_AA_NAMES;
+
 #[cfg(feature = "amber_ff")]
 pub mod amber_ff;
 

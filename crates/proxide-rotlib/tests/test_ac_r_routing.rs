@@ -290,7 +290,7 @@ fn test_ac_r_smoke_load_pb_round_trip() {
 
     // CPR rotamer 0, CB stored at (20.0, 2.0, 0.5) — should survive round-trip
     let placed = lib
-        .place_rotamer("CPR", -180.0, -180.0, 0, false, n, ca, c)
+        .place_rotamer("CPR", Some(-180.0), Some(-180.0), 0, false, n, ca, c)
         .expect("place_rotamer CPR failed");
     let cb_xyz = placed.atoms[0].xyz;
 
@@ -322,7 +322,7 @@ fn test_ac_r2_num_rotamers_routing() {
 
     // cis=true on PRO must route to CPR → 2 rotamers
     let cis_count = lib
-        .num_rotamers("PRO", -180.0, -180.0, true)
+        .num_rotamers("PRO", Some(-180.0), Some(-180.0), true)
         .expect("num_rotamers PRO cis=true failed");
     assert_eq!(
         cis_count, 2,
@@ -332,7 +332,7 @@ fn test_ac_r2_num_rotamers_routing() {
 
     // cis=false on PRO stays in PRO → 3 rotamers
     let trans_count = lib
-        .num_rotamers("PRO", -180.0, -180.0, false)
+        .num_rotamers("PRO", Some(-180.0), Some(-180.0), false)
         .expect("num_rotamers PRO cis=false failed");
     assert_eq!(
         trans_count, 3,
@@ -342,7 +342,7 @@ fn test_ac_r2_num_rotamers_routing() {
 
     // Direct CPR lookup → 2 rotamers
     let direct_cpr_count = lib
-        .num_rotamers("CPR", -180.0, -180.0, false)
+        .num_rotamers("CPR", Some(-180.0), Some(-180.0), false)
         .expect("num_rotamers CPR direct failed");
     assert_eq!(
         direct_cpr_count, 2,
@@ -376,17 +376,17 @@ fn test_ac_r1_place_rotamer_routing_identity() {
 
     // p_cis: PRO + cis=true → should use CPR coords
     let p_cis = lib
-        .place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
+        .place_rotamer("PRO", Some(-180.0), Some(-180.0), 0, true, n, ca, c)
         .expect("place_rotamer PRO cis=true failed");
 
     // p_cpr: direct CPR lookup → CPR coords
     let p_cpr = lib
-        .place_rotamer("CPR", -180.0, -180.0, 0, false, n, ca, c)
+        .place_rotamer("CPR", Some(-180.0), Some(-180.0), 0, false, n, ca, c)
         .expect("place_rotamer CPR direct failed");
 
     // p_pro: PRO + cis=false → PRO coords
     let p_pro = lib
-        .place_rotamer("PRO", -180.0, -180.0, 0, false, n, ca, c)
+        .place_rotamer("PRO", Some(-180.0), Some(-180.0), 0, false, n, ca, c)
         .expect("place_rotamer PRO cis=false failed");
 
     // Check: p_cis.id.aa must be "PRO" (the queried aa code is preserved even when routed)
@@ -447,10 +447,10 @@ fn test_ac_r_fallback_no_cpr_entry() {
 
     // Must not panic; must return the PRO count (2 rotamers in pro_only)
     let fallback_count = lib
-        .num_rotamers("PRO", -180.0, -180.0, true)
+        .num_rotamers("PRO", Some(-180.0), Some(-180.0), true)
         .expect("num_rotamers PRO cis=true with no CPR must not error");
     let pro_count = lib
-        .num_rotamers("PRO", -180.0, -180.0, false)
+        .num_rotamers("PRO", Some(-180.0), Some(-180.0), false)
         .expect("num_rotamers PRO cis=false failed");
 
     assert_eq!(
@@ -480,12 +480,12 @@ fn test_cpr_fallback_when_cpro_absent() {
 
     // place_rotamer with cis=false (trans PRO)
     let p_normal = lib
-        .place_rotamer("PRO", -180.0, -180.0, 0, false, n, ca, c)
+        .place_rotamer("PRO", Some(-180.0), Some(-180.0), 0, false, n, ca, c)
         .expect("place_rotamer PRO cis=false failed");
 
     // place_rotamer with cis=true (fallback: no CPR, so uses PRO)
     let p_cis = lib
-        .place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
+        .place_rotamer("PRO", Some(-180.0), Some(-180.0), 0, true, n, ca, c)
         .expect("place_rotamer PRO cis=true with no CPR must not panic");
 
     // Verify atom counts match
@@ -563,7 +563,7 @@ fn test_ac_r3_real_data_cis_chi1() {
     // Place cis-PRO rotamer 0 at phi=-180, psi=-180 onto the identity backbone.
     // cis=true → routes to CPR entry.
     let placed = lib
-        .place_rotamer("PRO", -180.0, -180.0, 0, true, n, ca, c)
+        .place_rotamer("PRO", Some(-180.0), Some(-180.0), 0, true, n, ca, c)
         .expect("place_rotamer cis-PRO rot=0 failed");
 
     // Find the CB and CG atoms in the placed result.

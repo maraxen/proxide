@@ -37,7 +37,7 @@ fn make_prob_lib() -> (tempfile::NamedTempFile, RotamerLibrary) {
     ];
 
     let tmp = write_minimal_lib("TST", &["CB"], &bins, &rotamers);
-    let lib = RotamerLibrary::load(tmp.path()).unwrap();
+    let lib = RotamerLibrary::load_pb(tmp.path()).unwrap();
     (tmp, lib)
 }
 
@@ -74,7 +74,7 @@ fn test_prob_sum_le_one_per_bin() {
 fn test_prob_by_id_matches_direct() {
     let (_t, lib) = make_prob_lib();
     // default bin is 4 (phi=0, psi=0, located at phi_idx=1, psi_idx=1 -> 1*3+1=4)
-    let direct = lib.rotamer_probability("TST", 0, 0.0, 0.0).unwrap();
+    let direct = lib.rotamer_probability("TST", Some(0.0), Some(0.0), false, 0).unwrap();
     let by_id = lib
         .rotamer_probability_by_id(&RotamerId {
             aa: "TST".to_string(),
@@ -88,8 +88,8 @@ fn test_prob_by_id_matches_direct() {
 #[test]
 fn test_prob_sentinel_bin() {
     let (_t, lib) = make_prob_lib();
-    // sentinel (9999.0) -> default_bin=4, second rotamer (rot=1)
-    let p = lib.rotamer_probability("TST", 1, 9999.0, 9999.0).unwrap();
+    // None -> default_bin=4, second rotamer (rot=1)
+    let p = lib.rotamer_probability("TST", None, None, false, 1).unwrap();
     assert!(
         (p - 0.3).abs() < 1e-6,
         "expected ~0.3 for sentinel bin, got {}",
@@ -101,7 +101,7 @@ fn test_prob_sentinel_bin() {
 fn test_prob_oob_rot_index() {
     let (_t, lib) = make_prob_lib();
     // rot=99 is out of bounds (only 2 rotamers per bin)
-    let result = lib.rotamer_probability("TST", 99, 0.0, 0.0);
+    let result = lib.rotamer_probability("TST", Some(0.0), Some(0.0), false, 99);
     assert!(matches!(
         result,
         Err(RotlibError::RotIndexOob(ref aa, 99, 2)) if aa == "TST"
@@ -111,7 +111,7 @@ fn test_prob_oob_rot_index() {
 #[test]
 fn test_prob_unknown_aa() {
     let (_t, lib) = make_prob_lib();
-    let result = lib.rotamer_probability("ZZZ", 0, 0.0, 0.0);
+    let result = lib.rotamer_probability("ZZZ", Some(0.0), Some(0.0), false, 0);
     assert!(matches!(
         result,
         Err(RotlibError::UnknownAa(ref aa)) if aa == "ZZZ"
@@ -149,7 +149,7 @@ fn test_prob_by_id_oob_rot_index() {
 #[test]
 #[ignore]
 fn test_prob_sum_real_rotlib() {
-    let lib = RotamerLibrary::load(&real_rotlib_path()).unwrap();
+    let lib = RotamerLibrary::load_pb_zst(&real_rotlib_path()).unwrap();
     let aa_names = [
         "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "HIS", "ILE", "LEU", "LYS", "MET", "PHE",
         "SER", "THR", "TRP", "TYR", "VAL",
@@ -160,9 +160,9 @@ fn test_prob_sum_real_rotlib() {
         assert!(lib.contains_aa(aa), "AA {} not in library", aa);
 
         // Check that default bin probabilities sum to <= 1.0
-        let nr = lib.num_rotamers(aa, 9999.0, 9999.0, false).unwrap();
+        let nr = lib.num_rotamers(aa, None, None, false).unwrap();
         let sum: f64 = (0..nr)
-            .map(|i| lib.rotamer_probability(aa, i, 9999.0, 9999.0).unwrap())
+            .map(|i| lib.rotamer_probability(aa, None, None, false, i).unwrap())
             .sum();
         // f32 probabilities stored in the binary accumulate ~1e-6 per rotamer when
         // summed as f64; 1e-4 absorbs that while still catching badly un-normalised bins.

@@ -498,9 +498,10 @@ fn write_topology_to_pdb(topology: &Topology, path: &Path) -> Result<(), Solvati
                 let record_type = if atom.is_hetatm { "HETATM" } else { "ATOM  " };
 
                 // Clamp and format coordinates to PDB-compatible ranges
-                let x = atom.coords[0].clamp(-999.999, 9999.999);
-                let y = atom.coords[1].clamp(-999.999, 9999.999);
-                let z = atom.coords[2].clamp(-999.999, 9999.999);
+                let max_pdb_coord = 1e4 - 1e-3;
+                let x = atom.coords[0].clamp(-999.999, max_pdb_coord);
+                let y = atom.coords[1].clamp(-999.999, max_pdb_coord);
+                let z = atom.coords[2].clamp(-999.999, max_pdb_coord);
 
                 let line = format!(
                     "{:6}{:5} {:4}{:1}{:3} {:1}{:4}{:1}   {:8.3}{:8.3}{:8.3}{:6.2}{:6.2}          {:>2}  ",

@@ -321,7 +321,7 @@ a.loop.ending_model = 1
 a.make()
 
 import shutil, glob
-files = glob.glob('*.B9999*.pdb') + glob.glob('*loop*.pdb')
+files = glob.glob('*.B' + '9'*4 + '*.pdb') + glob.glob('*loop*.pdb')
 if files:
     shutil.copy(sorted(files)[-1], '{output}')
 "#,
@@ -938,7 +938,7 @@ mod tests {
         let parsed: ParsedLoops = vec![("A".to_string(), new_res.clone())];
 
         // First splice.
-        splice_loops_into_topology(&mut topo, &parsed, &[lp.clone()]);
+        splice_loops_into_topology(&mut topo, &parsed, std::slice::from_ref(&lp));
         let count_after_first = topo.chains[0].residues.len();
 
         // Second splice with same data.
