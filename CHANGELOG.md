@@ -11,7 +11,14 @@ they exist only in source builds that opt in.
 
 ## [Unreleased]
 
+### Added
+- `proxide-geometry`: `dihedral_angle_iupac`, `dihedral_angle_iupac_f64`, `compute_backbone_dihedrals_iupac` and `compute_backbone_dihedrals_iupac_f64` return the right-handed IUPAC (MDTraj) torsion. For example, an α-helix gives phi ≈ −60°.
+
+### Deprecated
+- `proxide-geometry`: `dihedral_angle`, `dihedral_angle_f64`, `compute_backbone_dihedrals` and `compute_backbone_dihedrals_f64` return the negated IUPAC angle. They still do, and now warn; use the `_iupac` functions instead.
+
 ### Changed
+- **Changed (behaviour)**: ligand-frame torsions (`LigandFrameCoordinates.torsions`, source builds with `ligand-frame` only) use the IUPAC sign. Before, they returned the negated angle, so every value changes sign. Torsions cached from earlier builds are mirror images of new output and must not be mixed with it.
 - **Changed (behaviour)**: with a blank element column (PDB), an absent `type_symbol` (mmCIF), or in PQR, an atom name that does not determine an element raises `PROX-IO-MALFORMED-RECORD` instead of being typed as carbon. This covers names such as `QZ`, `D1`, `EPW` and `AU`. Fill the element column to parse them.
 - **Changed (behaviour)**: `assign_masses` raises `ValueError` for such a name instead of returning carbon's mass. (experimental)
 - **Changed (behaviour)**: `assign_mbondi2_radii_with_provenance` and `assign_obc2_scaling_factors_with_provenance` give such a name the recorded fallback (`ParameterSource::Fallback`) instead of carbon's tabulated value. (experimental)
