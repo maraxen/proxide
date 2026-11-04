@@ -2,7 +2,7 @@ use crate::error::ConFindError;
 use crate::precondition::chain_breaks;
 use proxide_core::processing::residues::{ProcessedStructure, ResidueId};
 use proxide_geometry::geometry::angles::{
-    compute_backbone_dihedrals_f64, dihedral_angle_iupac_f64,
+    compute_backbone_dihedrals_iupac_f64, dihedral_angle_iupac_f64,
 };
 use proxide_io::formats::pdb_fields::parse_pdb_records;
 use std::collections::{HashMap, HashSet};
@@ -401,12 +401,12 @@ fn fill_dihedrals_legacy_compact(bb: &mut [ResidueBackbone], chain_map: &[usize]
             continue;
         }
 
-        let dihedrals = compute_backbone_dihedrals_f64(&dense);
+        let dihedrals = compute_backbone_dihedrals_iupac_f64(&dense);
         for (d_pos, &bb_i) in dense_to_bb.iter().enumerate() {
             let d = &dihedrals[d_pos];
-            bb[bb_i].phi = d.phi.map(|r| -r.to_degrees());
-            bb[bb_i].psi = d.psi.map(|r| -r.to_degrees());
-            bb[bb_i].omega = d.omega.map(|r| -r.to_degrees());
+            bb[bb_i].phi = d.phi.map(f64::to_degrees);
+            bb[bb_i].psi = d.psi.map(f64::to_degrees);
+            bb[bb_i].omega = d.omega.map(f64::to_degrees);
             bb[bb_i].is_cis_peptide = bb[bb_i].omega.is_some_and(|w| w.abs() < 30.0);
         }
     }
