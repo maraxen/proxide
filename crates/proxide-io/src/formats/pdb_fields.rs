@@ -218,7 +218,8 @@ pub struct PdbAtomRecord {
     pub radius: Option<f32>,
     pub is_hetatm: bool,
     /// True when an explicit `TER` record occurred between the preceding atom
-    /// in the same model and this atom (debt #3215).
+    /// and this atom, including across a `MODEL`/`ENDMDL` boundary (debt #3215).
+    /// A `TER` before the file's first atom marks nothing.
     pub ter_before: bool,
 }
 
@@ -591,7 +592,7 @@ pub fn parse_pdb_records<R: BufRead>(mut reader: R) -> Result<Vec<PdbAtomRecord>
     let mut line_no: usize = 0;
     let mut buf: Vec<u8> = Vec::new();
     let mut pending_ter = false;
-    let mut seen_atom_in_model = false;
+    let mut seen_atom = false;
 
     loop {
         buf.clear();
@@ -616,27 +617,21 @@ pub fn parse_pdb_records<R: BufRead>(mut reader: R) -> Result<Vec<PdbAtomRecord>
             "ATOM" | "HETATM" => {
                 let mut rec =
                     parse_atom_record(line_bytes, line_no, current_model, record_str.as_ref())?;
-                rec.ter_before = pending_ter && seen_atom_in_model;
+                rec.ter_before = pending_ter;
                 pending_ter = false;
-                seen_atom_in_model = true;
+                seen_atom = true;
                 check_residue_reappearance(&mut trackers, current_model, &rec, line_bytes)?;
                 records.push(rec);
             }
             "MODEL" => {
                 current_model = parse_model_number(line_bytes, line_no)?;
-                pending_ter = false;
-                seen_atom_in_model = false;
-            }
-            "ENDMDL" => {
-                pending_ter = false;
-                seen_atom_in_model = false;
             }
             "TER" => {
-                if seen_atom_in_model {
+                if seen_atom {
                     pending_ter = true;
                 }
             }
-            "ANISOU" => {
+            "ENDMDL" | "ANISOU" => {
                 // Explicitly ignored, matching pdb.rs's existing behaviour.
             }
             _ => {
@@ -829,6 +824,41 @@ ATOM      3  N   ALA A   2      2.000   0.000   0.000  1.00  0.00           N
         let content = format!("MODEL 1\n{BASE_LINE}\nENDMDL\n");
         let recs = records(&content).unwrap();
         assert_eq!(recs[0].model, 1);
+    }
+
+    /// Debt #3215 regression: a TER before ENDMDL must still mark the next
+    /// model's first atom, as the line scan it replaced did.
+    #[test]
+    fn ter_before_endmdl_marks_first_atom_of_next_model() {
+        let content = format!("MODEL 1\n{BASE_LINE}\nTER\nENDMDL\nMODEL 2\n{BASE_LINE}\nENDMDL\n");
+        let recs = records(&content).unwrap();
+        assert_eq!(recs.len(), 2);
+        assert!(!recs[0].ter_before);
+        assert!(recs[1].ter_before);
+        assert_eq!(recs[1].model, 2);
+    }
+
+    #[test]
+    fn ter_is_consumed_by_the_next_atom_only() {
+        let content = format!("{BASE_LINE}\nTER\n{BASE_LINE}\n{BASE_LINE}\n");
+        let flags: Vec<bool> = records(&content)
+            .unwrap()
+            .iter()
+            .map(|r| r.ter_before)
+            .collect();
+        assert_eq!(flags, vec![false, true, false]);
+    }
+
+    #[test]
+    fn ter_before_any_atom_marks_nothing() {
+        let content = format!("TER\nMODEL 1\nTER\n{BASE_LINE}\nENDMDL\n");
+        assert!(!records(&content).unwrap()[0].ter_before);
+    }
+
+    #[test]
+    fn model_boundary_without_ter_marks_nothing() {
+        let content = format!("MODEL 1\n{BASE_LINE}\nENDMDL\nMODEL 2\n{BASE_LINE}\nENDMDL\n");
+        assert!(!records(&content).unwrap()[1].ter_before);
     }
 
     #[test]

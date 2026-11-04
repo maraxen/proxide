@@ -67,8 +67,9 @@ pub struct RawAtomData {
     pub is_hetatm: Vec<bool>,
 
     /// Atom indices (0-based into `atom_names` / `res_ids`) immediately
-    /// preceded by an explicit PDB `TER` record (debt #3215). Empty for
-    /// formats without `TER` records (mmCIF, PQR, HDF5).
+    /// preceded by an explicit PDB `TER` record (debt #3215). Empty for mmCIF
+    /// and HDF5, which have no `TER` records, and for PQR, whose parser skips
+    /// them, so a `TER` in a PQR file does not sever dihedrals.
     pub ter_atom_indices: Vec<usize>,
 }
 

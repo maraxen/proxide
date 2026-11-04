@@ -305,7 +305,7 @@ END
 }
 
 /// Debt #3215: an explicit `TER` record between two residues with the SAME
-/// chain ID ('A') and consecutive CA–CA distance <= 4.5 Å (here √3 ≈ 1.732 Å)
+/// chain ID ('A') and consecutive CA–CA distance <= 4.5 Å (here 1.0 Å)
 /// must be retained on `ProcessedStructure::ter_positions` and sever `psi` of
 /// the pre-TER residue as well as `phi`, `omega`, and `is_cis_peptide` of the
 /// post-TER residue in `extract_f64_backbone`.
@@ -386,6 +386,54 @@ END
             "is_cis_peptide[{i}]"
         );
     }
+}
+
+/// Debt #3215 regression: `load_pdb_f64` concatenates models, so a `TER` before
+/// `ENDMDL` is what severs the boundary when the models' termini are within
+/// 4.5 Å of each other. The line scan removed in #3215 did this.
+#[test]
+fn ter_before_endmdl_severs_dihedrals_between_models() {
+    let pdb_content = "\
+MODEL        1
+ATOM      1  N   ALA A   1       0.000   1.000  -1.000  1.00  0.00           N
+ATOM      2  CA  ALA A   1       0.000   1.000   0.000  1.00  0.00           C
+ATOM      3  C   ALA A   1       0.000   0.000   0.000  1.00  0.00           C
+ATOM      4  O   ALA A   1      -1.000   0.000   0.000  1.00  0.00           O
+ATOM      5  N   ALA A   2       1.000   0.000   0.000  1.00  0.00           N
+ATOM      6  CA  ALA A   2       1.000   0.000   1.000  1.00  0.00           C
+ATOM      7  C   ALA A   2       1.000   1.000   1.000  1.00  0.00           C
+ATOM      8  O   ALA A   2       2.000   1.000   1.000  1.00  0.00           O
+TER       9      ALA A   2
+ENDMDL
+MODEL        2
+ATOM     10  N   ALA A   1       0.000   1.000   1.000  1.00  0.00           N
+ATOM     11  CA  ALA A   1       0.000   0.000   1.000  1.00  0.00           C
+ATOM     12  C   ALA A   1       0.000   0.000   0.000  1.00  0.00           C
+ATOM     13  O   ALA A   1       0.000  -1.000   0.000  1.00  0.00           O
+ATOM     14  N   ALA A   2       1.000   0.000   0.000  1.00  0.00           N
+ATOM     15  CA  ALA A   2       1.000   0.000  -1.000  1.00  0.00           C
+ATOM     16  C   ALA A   2       1.000   1.000  -1.000  1.00  0.00           C
+ATOM     17  O   ALA A   2       2.000   1.000  -1.000  1.00  0.00           O
+TER      18      ALA A   2
+ENDMDL
+END
+";
+
+    let mut temp_file = NamedTempFile::new().expect("failed to create temp file");
+    temp_file
+        .write_all(pdb_content.as_bytes())
+        .expect("failed to write PDB content");
+    let backbone = load_pdb_f64(temp_file.path()).expect("failed to load_pdb_f64");
+    assert_eq!(backbone.bb.len(), 4);
+
+    assert_eq!(backbone.bb[1].psi, None, "psi before the model boundary");
+    assert_eq!(backbone.bb[2].phi, None, "phi after the model boundary");
+    assert_eq!(backbone.bb[2].omega, None, "omega after the model boundary");
+    assert!(!backbone.bb[2].is_cis_peptide);
+    // Positive control: dihedrals inside each model are still computed.
+    assert!(backbone.bb[1].phi.is_some());
+    assert!(backbone.bb[2].psi.is_some());
+    assert!(backbone.bb[3].phi.is_some());
 }
 
 /// Debt #3215: `extract_f64_backbone` must reject non-finite (NaN / ±∞) f32
