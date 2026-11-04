@@ -392,15 +392,6 @@ mod tests {
         }
     }
 
-    fn candidate_rotlib_paths() -> Vec<std::path::PathBuf> {
-        vec![
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst"),
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../data/rotlibs/proxide-rotlib-bbdep2010.pb.zst"),
-        ]
-    }
-
     #[derive(Debug)]
     enum RotlibLoadResult {
         Loaded(RotamerLibrary),
@@ -421,24 +412,36 @@ mod tests {
             }
         }
         RotlibLoadResult::NotConfigured(
-            "data/rotlibs/proxide-rotlib-bbdep2010.pb.zst not found".to_string(),
+            "data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst not found".to_string(),
         )
     }
 
-    fn test_rotlib() -> Option<RotamerLibrary> {
-        match classify_rotlib_load(&candidate_rotlib_paths()) {
-            RotlibLoadResult::Loaded(lib) => Some(lib),
-            RotlibLoadResult::NotConfigured(msg) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Rotamer library not configured in CI: {msg}");
+    /// Load the committed workspace Dunbrack 2010 rotamer library from
+    /// `data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst` via a
+    /// `CARGO_MANIFEST_DIR`-relative path, panicking loudly if the asset is
+    /// missing or corrupt (never silently skipping).
+    fn require_rotlib() -> &'static RotamerLibrary {
+        static ROTLIB: std::sync::OnceLock<RotamerLibrary> = std::sync::OnceLock::new();
+        ROTLIB.get_or_init(|| {
+            let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let path = manifest_dir
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("data/rotlibs/proxide-rotlib-dunbrack2010-ccd.pb.zst");
+            match classify_rotlib_load(std::slice::from_ref(&path)) {
+                RotlibLoadResult::Loaded(lib) => lib,
+                RotlibLoadResult::NotConfigured(msg) => panic!(
+                    "Rotamer library not found at {} ({msg}). The file is committed in plain git; \
+                     verify your checkout is complete.",
+                    path.display()
+                ),
+                RotlibLoadResult::Failed(err) => {
+                    panic!("CORRUPT ROTAMER LIBRARY ASSET at {}: {err}", path.display())
                 }
-                tracing::warn!("Skipping test: {msg}");
-                None
             }
-            RotlibLoadResult::Failed(err) => {
-                panic!("CORRUPT ROTAMER LIBRARY ASSET: {err}")
-            }
-        }
+        })
     }
 
     #[test]
@@ -469,14 +472,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires rotlib to be loaded
     fn apply_empty_returns_ok() {
         let mut topology = make_test_topology();
-        let lib = match test_rotlib() {
-            Some(l) => l,
-            None => return,
-        };
-        let mut mutator = Mutator::new(&mut topology, &lib);
+        let lib = require_rotlib();
+        let mut mutator = Mutator::new(&mut topology, lib);
         let requests = vec![];
         let result = mutator.apply(&requests);
         assert!(result.is_ok());
@@ -487,14 +486,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires rotlib to be loaded
     fn apply_invalid_target_aa_returns_error() {
         let mut topology = make_test_topology();
-        let lib = match test_rotlib() {
-            Some(l) => l,
-            None => return,
-        };
-        let mut mutator = Mutator::new(&mut topology, &lib);
+        let lib = require_rotlib();
+        let mut mutator = Mutator::new(&mut topology, lib);
         let requests = vec![MutationRequest {
             chain_id: "A".to_string(),
             res_id: 1,
@@ -511,14 +506,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires rotlib to be loaded
     fn apply_missing_residue_returns_error() {
         let mut topology = make_test_topology();
-        let lib = match test_rotlib() {
-            Some(l) => l,
-            None => return,
-        };
-        let mut mutator = Mutator::new(&mut topology, &lib);
+        let lib = require_rotlib();
+        let mut mutator = Mutator::new(&mut topology, lib);
         let requests = vec![MutationRequest {
             chain_id: "A".to_string(),
             res_id: 999,
@@ -536,7 +527,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires rotlib to be loaded
     fn apply_missing_backbone_returns_error() {
         let mut topology = Topology {
             chains: vec![Chain {
@@ -580,11 +570,8 @@ mod tests {
                 }],
             }],
         };
-        let lib = match test_rotlib() {
-            Some(l) => l,
-            None => return,
-        };
-        let mut mutator = Mutator::new(&mut topology, &lib);
+        let lib = require_rotlib();
+        let mut mutator = Mutator::new(&mut topology, lib);
         let requests = vec![MutationRequest {
             chain_id: "A".to_string(),
             res_id: 1,
@@ -608,14 +595,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires full rotlib + topology rebuild; integration test
     fn apply_ala_to_leu_rebuilds_sidechain() {
         let mut topology = make_test_topology();
-        let lib = match test_rotlib() {
-            Some(l) => l,
-            None => return,
-        };
-        let mut mutator = Mutator::new(&mut topology, &lib);
+        let lib = require_rotlib();
+        let mut mutator = Mutator::new(&mut topology, lib);
         let requests = vec![MutationRequest {
             chain_id: "A".to_string(),
             res_id: 1,
@@ -649,7 +632,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires rotlib to be loaded
     fn sg_sg_within_threshold_becomes_cyx() {
         // Two CYS residues with SG atoms 2.0 Å apart → both renamed to CYX
         let mut topology = Topology {
@@ -774,11 +756,8 @@ mod tests {
             }],
         };
 
-        let lib = match test_rotlib() {
-            Some(l) => l,
-            None => return,
-        };
-        let mut mutator = Mutator::new(&mut topology, &lib);
+        let lib = require_rotlib();
+        let mut mutator = Mutator::new(&mut topology, lib);
         let count = mutator.reevaluate_disulfides();
 
         // Should have found 1 disulfide bond
@@ -789,7 +768,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires rotlib to be loaded
     fn sg_sg_outside_threshold_stays_cys() {
         // Two CYS residues with SG atoms 5.0 Å apart → stay CYS
         let mut topology = Topology {
@@ -914,11 +892,8 @@ mod tests {
             }],
         };
 
-        let lib = match test_rotlib() {
-            Some(l) => l,
-            None => return,
-        };
-        let mut mutator = Mutator::new(&mut topology, &lib);
+        let lib = require_rotlib();
+        let mut mutator = Mutator::new(&mut topology, lib);
         let count = mutator.reevaluate_disulfides();
 
         // Should have found 0 disulfide bonds
@@ -929,7 +904,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires rotlib to be loaded
     fn unpaired_cyx_renamed_to_cys() {
         // One CYX residue alone (no partner within 2.5 Å) → renamed to CYS
         let mut topology = Topology {
@@ -995,11 +969,8 @@ mod tests {
             }],
         };
 
-        let lib = match test_rotlib() {
-            Some(l) => l,
-            None => return,
-        };
-        let mut mutator = Mutator::new(&mut topology, &lib);
+        let lib = require_rotlib();
+        let mut mutator = Mutator::new(&mut topology, lib);
         let count = mutator.reevaluate_disulfides();
 
         // Should have found 0 disulfide bonds
@@ -1009,7 +980,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires rotlib to be loaded
     fn missing_sg_atom_treated_as_free_thiol() {
         // CYS residue with no SG atom → remains CYS (no panic)
         let mut topology = Topology {
@@ -1066,11 +1036,8 @@ mod tests {
             }],
         };
 
-        let lib = match test_rotlib() {
-            Some(l) => l,
-            None => return,
-        };
-        let mut mutator = Mutator::new(&mut topology, &lib);
+        let lib = require_rotlib();
+        let mut mutator = Mutator::new(&mut topology, lib);
         let count = mutator.reevaluate_disulfides();
 
         // Should not panic and should find 0 disulfides
