@@ -398,9 +398,13 @@ mod tests {
         let c = BACKBONE_C;
         let n = BACKBONE_N;
         let ca = BACKBONE_CA;
-        let torsion =
-            -proxide_geometry::geometry::angles::dihedral_angle(&c, &n, &ca, &[cb.x, cb.y, cb.z])
-                .to_degrees();
+        let torsion = proxide_geometry::geometry::angles::dihedral_angle_iupac(
+            &c,
+            &n,
+            &ca,
+            &[cb.x, cb.y, cb.z],
+        )
+        .to_degrees();
         assert!(
             (torsion - (-119.7)).abs() < 0.5,
             "synthetic ALA CB torsion: expected -119.7 +-0.5, got {:.3}",

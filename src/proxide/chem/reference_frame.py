@@ -43,7 +43,13 @@ class LigandTopology:
 @dataclass
 class LigandFrameCoordinates:
   """Per-frame extraction: positions, torsions, pucker phase, bond
-  lengths/angles, frame validity."""
+  lengths/angles, frame validity.
+
+  ``torsions`` is ``(n_torsions, n_frames)`` in radians in ``[-pi, pi]``, with
+  the right-handed IUPAC sign used by MDTraj. Releases before the fix for debt
+  #3230 returned the negated angle, so torsions cached from them are mirrored
+  relative to current output.
+  """
 
   positions: np.ndarray
   torsions: np.ndarray

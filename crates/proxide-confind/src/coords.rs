@@ -1,7 +1,9 @@
 use crate::error::ConFindError;
 use crate::precondition::chain_breaks;
 use proxide_core::processing::residues::{ProcessedStructure, ResidueId};
-use proxide_geometry::geometry::angles::{compute_backbone_dihedrals_f64, dihedral_angle_f64};
+use proxide_geometry::geometry::angles::{
+    compute_backbone_dihedrals_iupac_f64, dihedral_angle_iupac_f64,
+};
 use proxide_io::formats::pdb_fields::parse_pdb_records;
 use std::collections::{HashMap, HashSet};
 use std::io::BufReader;
@@ -399,12 +401,12 @@ fn fill_dihedrals_legacy_compact(bb: &mut [ResidueBackbone], chain_map: &[usize]
             continue;
         }
 
-        let dihedrals = compute_backbone_dihedrals_f64(&dense);
+        let dihedrals = compute_backbone_dihedrals_iupac_f64(&dense);
         for (d_pos, &bb_i) in dense_to_bb.iter().enumerate() {
             let d = &dihedrals[d_pos];
-            bb[bb_i].phi = d.phi.map(|r| -r.to_degrees());
-            bb[bb_i].psi = d.psi.map(|r| -r.to_degrees());
-            bb[bb_i].omega = d.omega.map(|r| -r.to_degrees());
+            bb[bb_i].phi = d.phi.map(f64::to_degrees);
+            bb[bb_i].psi = d.psi.map(f64::to_degrees);
+            bb[bb_i].omega = d.omega.map(f64::to_degrees);
             bb[bb_i].is_cis_peptide = bb[bb_i].omega.is_some_and(|w| w.abs() < 30.0);
         }
     }
@@ -463,7 +465,7 @@ fn fill_dihedrals_per_dihedral(
         let phi = if prev_ok {
             match (bb[i - 1].c, bb[i].n, bb[i].ca, bb[i].c) {
                 (Some(c_prev), Some(n_i), Some(ca_i), Some(c_i)) => {
-                    Some(-dihedral_angle_f64(&c_prev, &n_i, &ca_i, &c_i).to_degrees())
+                    Some(dihedral_angle_iupac_f64(&c_prev, &n_i, &ca_i, &c_i).to_degrees())
                 }
                 _ => None,
             }
@@ -474,7 +476,7 @@ fn fill_dihedrals_per_dihedral(
         let psi = if next_ok {
             match (bb[i].n, bb[i].ca, bb[i].c, bb[i + 1].n) {
                 (Some(n_i), Some(ca_i), Some(c_i), Some(n_next)) => {
-                    Some(-dihedral_angle_f64(&n_i, &ca_i, &c_i, &n_next).to_degrees())
+                    Some(dihedral_angle_iupac_f64(&n_i, &ca_i, &c_i, &n_next).to_degrees())
                 }
                 _ => None,
             }
@@ -486,7 +488,7 @@ fn fill_dihedrals_per_dihedral(
         let omega = if prev_ok {
             match (bb[i - 1].ca, bb[i - 1].c, bb[i].n, bb[i].ca) {
                 (Some(ca_prev), Some(c_prev), Some(n_i), Some(ca_i)) => {
-                    Some(-dihedral_angle_f64(&ca_prev, &c_prev, &n_i, &ca_i).to_degrees())
+                    Some(dihedral_angle_iupac_f64(&ca_prev, &c_prev, &n_i, &ca_i).to_degrees())
                 }
                 _ => None,
             }

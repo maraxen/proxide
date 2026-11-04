@@ -169,8 +169,8 @@ fn find_atom(residue: &Residue, name: &str) -> Option<[f32; 3]> {
 /// Returns `None` if either plane is undefined (normal length < 1e-6), so a
 /// degenerate backbone routes to the library's default bin instead of an angle.
 ///
-/// Delegates to the shared [`proxide_geometry::geometry::angles::dihedral_angle`],
-/// which returns `-τ_IUPAC` (pinned by #3216's tests), and negates it. The private
+/// Delegates to the shared
+/// [`proxide_geometry::geometry::angles::dihedral_angle_iupac`]. The private
 /// implementation this replaces built its first bond vector from p2 to p1, which
 /// returned `τ_IUPAC + 180°`: helix phi read about +120° and rotamer bins were
 /// looked up at the wrong backbone (debt #3229).
@@ -182,8 +182,8 @@ fn dihedral_angle(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> Opt
     if norm(cross_product(b1, b2)) < 1e-6 || norm(cross_product(b2, b3)) < 1e-6 {
         return None;
     }
-    let neg_iupac = proxide_geometry::geometry::angles::dihedral_angle(&p1, &p2, &p3, &p4);
-    Some(-(neg_iupac as f64).to_degrees())
+    let iupac = proxide_geometry::geometry::angles::dihedral_angle_iupac(&p1, &p2, &p3, &p4);
+    Some((iupac as f64).to_degrees())
 }
 
 /// Compute cross product of two 3D vectors.

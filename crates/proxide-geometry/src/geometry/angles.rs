@@ -14,9 +14,18 @@ use std::f32::consts::PI;
 ///
 /// Note: returns the **negative** of the right-handed IUPAC / MDTraj torsion
 /// angle (`-τ_IUPAC`); see [`dihedral_angle_f64`] for the full derivation and
-/// worked example. Callers requiring standard IUPAC torsion angles must negate
-/// the returned value.
+/// worked example. Use [`dihedral_angle_iupac`] for the standard angle.
+#[deprecated(
+    since = "0.1.1",
+    note = "returns -IUPAC; use dihedral_angle_iupac, or negate it if you need this sign"
+)]
 pub fn dihedral_angle(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3], d: &[f32; 3]) -> f32 {
+    neg_iupac_dihedral(a, b, c, d)
+}
+
+/// `-τ_IUPAC` in `f32`: the computation behind [`dihedral_angle`] and
+/// [`dihedral_angle_iupac`], private so the crate never calls a deprecated item.
+fn neg_iupac_dihedral(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3], d: &[f32; 3]) -> f32 {
     // Vectors
     let b1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     let b2 = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
@@ -41,6 +50,18 @@ pub fn dihedral_angle(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3], d: &[f32; 3]) ->
     y.atan2(x)
 }
 
+/// Compute the right-handed IUPAC torsion angle of `(A, B, C, D)` in `f32`
+/// precision, in radians in `[-π, π]`.
+///
+/// This is the convention of IUPAC, MDTraj, Mosaist and the Dunbrack rotamer
+/// library: looking down `B → C`, the angle is positive when `D` is rotated
+/// clockwise from `A`. For `A = (0, 1, 0)`, `B = 0`, `C = (1, 0, 0)`,
+/// `D = (1, 0, 1)` it returns `+π/2`. Exactly the negation of
+/// [`dihedral_angle`], so values match bit for bit with a hand-negated call.
+pub fn dihedral_angle_iupac(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3], d: &[f32; 3]) -> f32 {
+    -neg_iupac_dihedral(a, b, c, d)
+}
+
 /// Compute the angle between three points (A, B, C)
 /// Returns angle at B in radians
 pub fn bond_angle(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3]) -> f32 {
@@ -59,8 +80,10 @@ pub fn bond_angle(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3]) -> f32 {
     cos_angle.acos()
 }
 
-/// Compute backbone dihedral angles for a residue
-/// Returns (phi, psi, omega) in radians, or None for terminal residues
+/// Backbone dihedrals of one residue, in radians; `None` at chain termini.
+/// The sign convention is the producing function's: IUPAC from
+/// [`compute_backbone_dihedrals_iupac`], `-τ_IUPAC` from the deprecated
+/// [`compute_backbone_dihedrals`].
 #[derive(Debug, Clone, Copy)]
 pub struct BackboneDihedrals {
     pub phi: Option<f32>,   // C(i-1)-N-CA-C
@@ -68,52 +91,63 @@ pub struct BackboneDihedrals {
     pub omega: Option<f32>, // CA(i-1)-C(i-1)-N-CA
 }
 
+/// phi, psi and omega per residue of `[[N, CA, C], ...]`, using `torsion` for
+/// each quadruple. Shared by both sign conventions and both precisions.
+fn backbone_torsions<T: Copy>(
+    backbone_coords: &[[[T; 3]; 3]],
+    torsion: impl Fn(&[T; 3], &[T; 3], &[T; 3], &[T; 3]) -> T,
+) -> Vec<[Option<T>; 3]> {
+    let n_residues = backbone_coords.len();
+    (0..n_residues)
+        .map(|i| {
+            let [n_i, ca_i, c_i] = &backbone_coords[i];
+            let prev = i.checked_sub(1).map(|j| &backbone_coords[j]);
+            let next = backbone_coords.get(i + 1);
+            // Phi: C(i-1)-N(i)-CA(i)-C(i)
+            let phi = prev.map(|p| torsion(&p[2], n_i, ca_i, c_i));
+            // Psi: N(i)-CA(i)-C(i)-N(i+1)
+            let psi = next.map(|nx| torsion(n_i, ca_i, c_i, &nx[0]));
+            // Omega: CA(i-1)-C(i-1)-N(i)-CA(i)
+            let omega = prev.map(|p| torsion(&p[1], &p[2], n_i, ca_i));
+            [phi, psi, omega]
+        })
+        .collect()
+}
+
+fn to_backbone_dihedrals(t: Vec<[Option<f32>; 3]>) -> Vec<BackboneDihedrals> {
+    t.into_iter()
+        .map(|[phi, psi, omega]| BackboneDihedrals { phi, psi, omega })
+        .collect()
+}
+
+/// Compute IUPAC backbone dihedrals (radians) for a chain of residues.
+/// `backbone_coords` is `[[N, CA, C], ...]`, one entry per residue. An
+/// α-helix gives phi ≈ -60°, psi ≈ -45°; trans omega is near ±180°.
+pub fn compute_backbone_dihedrals_iupac(
+    backbone_coords: &[[[f32; 3]; 3]],
+) -> Vec<BackboneDihedrals> {
+    log::debug!(
+        "Computing backbone dihedrals for {} residues",
+        backbone_coords.len()
+    );
+    to_backbone_dihedrals(backbone_torsions(backbone_coords, dihedral_angle_iupac))
+}
+
 /// Compute backbone dihedrals for a chain of residues.
 /// `backbone_coords` should be organized as `[[N, CA, C], ...]` for each residue.
 ///
-/// Note: delegates directly to [`dihedral_angle`] without sign negation, so the
-/// returned `phi`, `psi`, and `omega` values have the negative-IUPAC sign
-/// convention (`-τ_IUPAC`).
+/// Note: the returned `phi`, `psi`, and `omega` values have the negative-IUPAC
+/// sign convention (`-τ_IUPAC`). Use [`compute_backbone_dihedrals_iupac`].
+#[deprecated(
+    since = "0.1.1",
+    note = "returns -IUPAC phi/psi/omega; use compute_backbone_dihedrals_iupac"
+)]
 pub fn compute_backbone_dihedrals(backbone_coords: &[[[f32; 3]; 3]]) -> Vec<BackboneDihedrals> {
-    let n_residues = backbone_coords.len();
-    let mut dihedrals = Vec::with_capacity(n_residues);
-
-    log::debug!("Computing backbone dihedrals for {} residues", n_residues);
-
-    for i in 0..n_residues {
-        let n_i = &backbone_coords[i][0];
-        let ca_i = &backbone_coords[i][1];
-        let c_i = &backbone_coords[i][2];
-
-        // Phi: C(i-1)-N(i)-CA(i)-C(i)
-        let phi = if i > 0 {
-            let c_prev = &backbone_coords[i - 1][2];
-            Some(dihedral_angle(c_prev, n_i, ca_i, c_i))
-        } else {
-            None
-        };
-
-        // Psi: N(i)-CA(i)-C(i)-N(i+1)
-        let psi = if i < n_residues - 1 {
-            let n_next = &backbone_coords[i + 1][0];
-            Some(dihedral_angle(n_i, ca_i, c_i, n_next))
-        } else {
-            None
-        };
-
-        // Omega: CA(i-1)-C(i-1)-N(i)-CA(i)
-        let omega = if i > 0 {
-            let ca_prev = &backbone_coords[i - 1][1];
-            let c_prev = &backbone_coords[i - 1][2];
-            Some(dihedral_angle(ca_prev, c_prev, n_i, ca_i))
-        } else {
-            None
-        };
-
-        dihedrals.push(BackboneDihedrals { phi, psi, omega });
-    }
-
-    dihedrals
+    log::debug!(
+        "Computing backbone dihedrals for {} residues",
+        backbone_coords.len()
+    );
+    to_backbone_dihedrals(backbone_torsions(backbone_coords, neg_iupac_dihedral))
 }
 
 // Helper functions
@@ -148,8 +182,9 @@ fn normalize(v: &[f32; 3]) -> [f32; 3] {
 
 // =============================================================================
 // f64 versions for high-precision dihedral calculations
-// (Note: dihedral_angle_f64 and compute_backbone_dihedrals_f64 return the
-// NEGATIVE of the right-handed IUPAC/MDTraj torsion angle; negate for IUPAC.)
+// (Note: the deprecated dihedral_angle_f64 and compute_backbone_dihedrals_f64
+// return the NEGATIVE of the right-handed IUPAC/MDTraj torsion angle; the
+// _iupac versions return the standard angle.)
 // =============================================================================
 
 use std::f64::consts::PI as PI_F64;
@@ -176,7 +211,17 @@ use std::f64::consts::PI as PI_F64;
 /// - `x = n1 · n2 = 0`, `y = m1 · n2 = -1`
 /// - `dihedral_angle_f64` returns `atan2(-1, 0) = -π/2` (`-90°`), whereas the
 ///   IUPAC / MDTraj torsion angle is `+π/2` (`+90°`).
+#[deprecated(
+    since = "0.1.1",
+    note = "returns -IUPAC; use dihedral_angle_iupac_f64, or negate it if you need this sign"
+)]
 pub fn dihedral_angle_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3], d: &[f64; 3]) -> f64 {
+    neg_iupac_dihedral_f64(a, b, c, d)
+}
+
+/// `-τ_IUPAC` in `f64`: the computation behind [`dihedral_angle_f64`] and
+/// [`dihedral_angle_iupac_f64`], private so the crate never calls a deprecated item.
+fn neg_iupac_dihedral_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3], d: &[f64; 3]) -> f64 {
     let b1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     let b2 = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
     let b3 = [d[0] - c[0], d[1] - c[1], d[2] - c[2]];
@@ -190,6 +235,15 @@ pub fn dihedral_angle_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3], d: &[f64; 3]
     let y = dot_f64(&m1, &n2);
 
     y.atan2(x)
+}
+
+/// Compute the right-handed IUPAC torsion angle of `(A, B, C, D)` in `f64`
+/// precision, in radians in `[-π, π]`.
+///
+/// Same convention as [`dihedral_angle_iupac`]; `+π/2` for the worked example
+/// on [`dihedral_angle_f64`]. Exactly the negation of [`dihedral_angle_f64`].
+pub fn dihedral_angle_iupac_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3], d: &[f64; 3]) -> f64 {
+    -neg_iupac_dihedral_f64(a, b, c, d)
 }
 
 /// Compute the angle between three points (A, B, C) using f64 precision.
@@ -212,7 +266,10 @@ pub fn bond_angle_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> f64 {
     cos_angle.acos()
 }
 
-/// High-precision backbone dihedrals
+/// High-precision backbone dihedrals, in radians; `None` at chain termini.
+/// The sign convention is the producing function's: IUPAC from
+/// [`compute_backbone_dihedrals_iupac_f64`], `-τ_IUPAC` from the deprecated
+/// [`compute_backbone_dihedrals_f64`].
 #[derive(Debug, Clone, Copy)]
 pub struct BackboneDihedrals64 {
     pub phi: Option<f64>,
@@ -220,49 +277,32 @@ pub struct BackboneDihedrals64 {
     pub omega: Option<f64>,
 }
 
+fn to_backbone_dihedrals_f64(t: Vec<[Option<f64>; 3]>) -> Vec<BackboneDihedrals64> {
+    t.into_iter()
+        .map(|[phi, psi, omega]| BackboneDihedrals64 { phi, psi, omega })
+        .collect()
+}
+
+/// Compute IUPAC backbone dihedrals (radians) with `f64` precision; same
+/// layout and convention as [`compute_backbone_dihedrals_iupac`].
+pub fn compute_backbone_dihedrals_iupac_f64(
+    backbone_coords: &[[[f64; 3]; 3]],
+) -> Vec<BackboneDihedrals64> {
+    to_backbone_dihedrals_f64(backbone_torsions(backbone_coords, dihedral_angle_iupac_f64))
+}
+
 /// Compute backbone dihedrals with `f64` precision.
 ///
-/// Note: delegates directly to [`dihedral_angle_f64`] without sign negation,
-/// so the returned `phi`, `psi`, and `omega` values have the negative-IUPAC
-/// sign convention (`-τ_IUPAC`). Callers requiring standard IUPAC torsion
-/// angles must negate the values.
+/// Note: the returned `phi`, `psi`, and `omega` values have the negative-IUPAC
+/// sign convention (`-τ_IUPAC`). Use [`compute_backbone_dihedrals_iupac_f64`].
+#[deprecated(
+    since = "0.1.1",
+    note = "returns -IUPAC phi/psi/omega; use compute_backbone_dihedrals_iupac_f64"
+)]
 pub fn compute_backbone_dihedrals_f64(
     backbone_coords: &[[[f64; 3]; 3]],
 ) -> Vec<BackboneDihedrals64> {
-    let n_residues = backbone_coords.len();
-    let mut dihedrals = Vec::with_capacity(n_residues);
-
-    for i in 0..n_residues {
-        let n_i = &backbone_coords[i][0];
-        let ca_i = &backbone_coords[i][1];
-        let c_i = &backbone_coords[i][2];
-
-        let phi = if i > 0 {
-            let c_prev = &backbone_coords[i - 1][2];
-            Some(dihedral_angle_f64(c_prev, n_i, ca_i, c_i))
-        } else {
-            None
-        };
-
-        let psi = if i < n_residues - 1 {
-            let n_next = &backbone_coords[i + 1][0];
-            Some(dihedral_angle_f64(n_i, ca_i, c_i, n_next))
-        } else {
-            None
-        };
-
-        let omega = if i > 0 {
-            let ca_prev = &backbone_coords[i - 1][1];
-            let c_prev = &backbone_coords[i - 1][2];
-            Some(dihedral_angle_f64(ca_prev, c_prev, n_i, ca_i))
-        } else {
-            None
-        };
-
-        dihedrals.push(BackboneDihedrals64 { phi, psi, omega });
-    }
-
-    dihedrals
+    to_backbone_dihedrals_f64(backbone_torsions(backbone_coords, neg_iupac_dihedral_f64))
 }
 
 // f64 helper functions
@@ -300,6 +340,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(deprecated)] // pins the raw -IUPAC sign
     fn test_dihedral_angle_planar() {
         // Four points in a plane (dihedral should be 0 or π)
         let a = [0.0, 0.0, 0.0];
@@ -313,6 +354,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // pins the raw -IUPAC sign
     fn test_dihedral_angle_perpendicular() {
         // 90 degree dihedral
         let a = [0.0, 1.0, 0.0];
@@ -327,6 +369,7 @@ mod tests {
     /// Debt #3216: Pin the worked example `A=(0,1,0), B=(0,0,0), C=(1,0,0), D=(1,0,1)`
     /// which yields `-π/2` (`-90°`), the negative of the IUPAC/MDTraj `+90°` torsion.
     #[test]
+    #[allow(deprecated)] // pins the raw -IUPAC sign
     fn test_dihedral_angle_f64_worked_example_minus_90_deg() {
         let a = [0.0, 1.0, 0.0];
         let b = [0.0, 0.0, 0.0];
@@ -356,6 +399,7 @@ mod tests {
     /// `D=(1,1,1)` vs `+45°` for `D=(1,1,-1)`, and a general asymmetric 4-point
     /// configuration) to verify sign sensitivity away from ±90°.
     #[test]
+    #[allow(deprecated)] // pins the raw -IUPAC sign
     fn test_dihedral_angle_f64_asymmetric_sign() {
         let a = [0.0, 1.0, 0.0];
         let b = [0.0, 0.0, 0.0];
@@ -399,6 +443,50 @@ mod tests {
         );
     }
 
+    /// Debt #3230: the IUPAC functions return the right-handed torsion, pinned on
+    /// #3216's quadruples (+90, +45, -45) in both precisions.
+    #[test]
+    fn test_dihedral_angle_iupac_sign() {
+        let a = [0.0, 1.0, 0.0];
+        let b = [0.0, 0.0, 0.0];
+        let c = [1.0, 0.0, 0.0];
+        for (d, want_deg) in [
+            ([1.0, 0.0, 1.0], 90.0),
+            ([1.0, 1.0, 1.0], 45.0),
+            ([1.0, 1.0, -1.0], -45.0),
+        ] {
+            let got = dihedral_angle_iupac_f64(&a, &b, &c, &d).to_degrees();
+            assert!(
+                (got - want_deg).abs() < 1e-10,
+                "f64: D={d:?} got {got}, want {want_deg}"
+            );
+            let to32 = |p: [f64; 3]| [p[0] as f32, p[1] as f32, p[2] as f32];
+            let got32 = dihedral_angle_iupac(&to32(a), &to32(b), &to32(c), &to32(d)).to_degrees();
+            assert!(
+                (got32 - want_deg as f32).abs() < 1e-4,
+                "f32: D={d:?} got {got32}, want {want_deg}"
+            );
+        }
+    }
+
+    /// Debt #3230: callers that used to negate by hand get identical bits.
+    #[test]
+    #[allow(deprecated)] // pins the raw -IUPAC sign
+    fn test_dihedral_angle_iupac_is_exact_negation() {
+        let a = [0.2, 1.5, -0.3];
+        let b = [0.0, 0.0, 0.0];
+        let c = [1.4, 0.0, 0.0];
+        let d = [1.9, 0.7, 1.2];
+        let raw = dihedral_angle_f64(&a, &b, &c, &d);
+        let iupac = dihedral_angle_iupac_f64(&a, &b, &c, &d);
+        assert_eq!(iupac.to_bits(), (-raw).to_bits());
+        assert_eq!(iupac.to_degrees().to_bits(), (-raw.to_degrees()).to_bits());
+        assert!(
+            iupac > 0.0,
+            "asymmetric case is positive under IUPAC, got {iupac}"
+        );
+    }
+
     #[test]
     fn test_bond_angle() {
         // 90 degree angle
@@ -419,6 +507,67 @@ mod tests {
         assert!((angle - PI_F64 / 2.0).abs() < 1e-9);
     }
 
+    /// Two residues whose C(0), N(1), CA(1), C(1) is #3216's +90 quadruple, so
+    /// residue 1's IUPAC phi is +90 deg.
+    fn plus_90_phi_backbone() -> [[[f64; 3]; 3]; 2] {
+        [
+            [[-1.0, 2.0, 0.0], [-0.5, 1.5, 0.0], [0.0, 1.0, 0.0]],
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 1.0]],
+        ]
+    }
+
+    /// Debt #3230: the IUPAC backbone functions return IUPAC phi in both precisions.
+    #[test]
+    fn test_backbone_dihedrals_iupac_phi_sign() {
+        let bb = plus_90_phi_backbone();
+        let phi = compute_backbone_dihedrals_iupac_f64(&bb)[1]
+            .phi
+            .expect("phi");
+        assert!(
+            (phi.to_degrees() - 90.0).abs() < 1e-10,
+            "f64 phi = {}",
+            phi.to_degrees()
+        );
+
+        let bb32 = bb.map(|r| r.map(|p| p.map(|v| v as f32)));
+        let phi32 = compute_backbone_dihedrals_iupac(&bb32)[1].phi.expect("phi");
+        assert!(
+            (phi32.to_degrees() - 90.0).abs() < 1e-4,
+            "f32 phi = {}",
+            phi32.to_degrees()
+        );
+    }
+
+    /// Debt #3230: the IUPAC backbone functions are the exact negation of the
+    /// deprecated ones, field by field, including None at the termini.
+    #[test]
+    #[allow(deprecated)] // compares against the raw -IUPAC functions
+    fn test_backbone_dihedrals_iupac_negates_deprecated() {
+        let bb = [
+            [[0.2, 1.5, -0.3], [1.1, 0.9, 0.2], [2.0, 1.4, 0.8]],
+            [[2.9, 0.7, 1.2], [4.1, 1.3, 1.0], [4.8, 0.2, 1.9]],
+            [[5.9, 0.6, 2.4], [6.6, -0.5, 3.1], [7.9, 0.1, 3.3]],
+        ];
+        let new = compute_backbone_dihedrals_iupac_f64(&bb);
+        let old = compute_backbone_dihedrals_f64(&bb);
+        assert_eq!(new.len(), 3);
+        for (n, o) in new.iter().zip(&old) {
+            for (a, b) in [(n.phi, o.phi), (n.psi, o.psi), (n.omega, o.omega)] {
+                assert_eq!(a.map(f64::to_bits), b.map(|v| (-v).to_bits()));
+            }
+        }
+        assert!(new[0].phi.is_none() && new[0].omega.is_none() && new[2].psi.is_none());
+
+        let bb32 = bb.map(|r| r.map(|p| p.map(|v| v as f32)));
+        let new32 = compute_backbone_dihedrals_iupac(&bb32);
+        let old32 = compute_backbone_dihedrals(&bb32);
+        for (n, o) in new32.iter().zip(&old32) {
+            for (a, b) in [(n.phi, o.phi), (n.psi, o.psi), (n.omega, o.omega)] {
+                assert_eq!(a.map(f32::to_bits), b.map(|v| (-v).to_bits()));
+            }
+        }
+    }
+
     #[test]
     fn test_backbone_dihedrals() {
         // Simple 3-residue backbone
@@ -428,7 +577,7 @@ mod tests {
             [[6.0, 0.0, 0.0], [7.0, 0.0, 0.0], [8.0, 0.0, 0.0]], // Residue 2
         ];
 
-        let dihedrals = compute_backbone_dihedrals(&backbone);
+        let dihedrals = compute_backbone_dihedrals_iupac(&backbone);
 
         assert_eq!(dihedrals.len(), 3);
 

@@ -2,6 +2,7 @@
 mod helpers;
 
 use helpers::committed_rotlib_path;
+use proxide_geometry::geometry::angles::dihedral_angle_iupac_f64;
 use proxide_rotlib::pb::rotlib_v1::{
     Bin, GeometryMode, ResidueEntry, Rotamer, RotamerLibrary as PbLib, Vec3,
 };
@@ -110,30 +111,6 @@ fn make_placement_lib() -> RotamerLibrary {
 const N: [f64; 3] = [0.0, 0.0, 0.0];
 const CA: [f64; 3] = [1.458, 0.0, 0.0];
 const C: [f64; 3] = [1.980, 1.418, 0.0];
-
-fn dihedral_angle(p1: [f64; 3], p2: [f64; 3], p3: [f64; 3], p4: [f64; 3]) -> f64 {
-    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-    let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
-        [
-            a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0],
-        ]
-    };
-    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    let norm = |a: [f64; 3]| dot(a, a).sqrt();
-    let b1 = sub(p2, p1);
-    let b2 = sub(p3, p2);
-    let b3 = sub(p4, p3);
-    let n1 = cross(b1, b2);
-    let n2 = cross(b2, b3);
-    let b2n = {
-        let s = 1.0 / norm(b2);
-        [b2[0] * s, b2[1] * s, b2[2] * s]
-    };
-    let m1 = cross(n1, b2n);
-    f64::atan2(dot(m1, n2), dot(n1, n2))
-}
 
 #[test]
 fn test_place_ala_one_atom() {
@@ -383,8 +360,10 @@ fn test_place_met_real_phi_psi_small_pdb() {
     let res2 = find_res('A', 2);
     let res3 = find_res('A', 3);
 
-    let phi = dihedral_angle(res1.c, res2.n, res2.ca, res2.c).to_degrees();
-    let psi = dihedral_angle(res2.n, res2.ca, res2.c, res3.n).to_degrees();
+    // place_rotamer bins by IUPAC phi/psi (debt #3230: this test's private helper
+    // returned -IUPAC, the #3229 bug class; its assertions are sign-agnostic).
+    let phi = dihedral_angle_iupac_f64(&res1.c, &res2.n, &res2.ca, &res2.c).to_degrees();
+    let psi = dihedral_angle_iupac_f64(&res2.n, &res2.ca, &res2.c, &res3.n).to_degrees();
 
     // Sanity-check: angles are real backbone-derived values.
     assert!(phi.abs() < 500.0, "phi looks invalid: {phi}");
