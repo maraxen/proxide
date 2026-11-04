@@ -1,0 +1,68 @@
+[package]
+name = "proxide_py_gpl"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "proxide Python extension built with the GPL-2.0-or-later GAFF2 and ligand-frame engines (source builds only)"
+# The extension this builds links proxide-gaff2 (GPL-2.0-or-later, see
+# crates/proxide-gaff2/NOTICE), so the built binary is a GPL combined work.
+license = "GPL-2.0-or-later"
+publish = false
+
+# Opt-in source build of the Python extension with the GPL engines. It compiles
+# the same sources as crates/proxide_py (the MIT-only manifest the wheels and the
+# sdist are built from), adding the `gaff2-engine` and `ligand-frame` features.
+# Keeping these features out of proxide_py's manifest is what lets the MIT-only
+# sdist build (debt #3181). Nothing here is published or packaged.
+#
+# Build from the repo root so pyproject's [tool.maturin] table still applies
+# (module-name proxide._proxider, python-source src):
+#
+#   maturin develop --release -m crates/proxide_py_gpl/Cargo.toml --features ligand-frame
+#
+# `ligand-frame` implies `gaff2-engine`. The library is named `_proxider_gpl` only so
+# its file does not collide with proxide_py's in a workspace build; maturin installs
+# it as proxide/_proxider (the PyInit symbol comes from `#[pymodule] fn _proxider`).
+#
+# Keep [dependencies] and [features] a superset of proxide_py's: a feature that
+# exists only there would silently never be compiled here (and vice versa).
+# tests/test_py_manifests_agree.py checks this.
+
+[lib]
+name = "_proxider_gpl"
+path = "../proxide_py/src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+proxide_rs = { workspace = true }
+proxide-units = { workspace = true }
+proxide-gaff = { workspace = true }
+proxide-gaff2 = { workspace = true, optional = true }
+proxide-ligand-frame = { workspace = true, optional = true }
+proxide-geometry = { workspace = true }
+proxide-jaccard = { workspace = true }
+proxide-tmalign = { workspace = true }
+bytemuck = "1.21.0"
+pyo3 = { workspace = true, features = ["extension-module"] }
+numpy = { workspace = true }
+nalgebra.workspace = true
+pyo3-log = { workspace = true }
+log = "0.4"
+molly = { workspace = true, optional = true }
+
+[features]
+# Default includes the GPL engines, so workspace builds (CI clippy and tests)
+# compile the gated code instead of letting it rot unbuilt.
+default = ["full", "ligand-frame"]
+fetching = ["proxide_rs/fetching"]
+hdf5 = ["proxide_rs/hdf5"]
+xtc = ["proxide_rs/xtc", "dep:molly"]
+parallel = ["proxide_rs/parallel"]
+foldcomp = ["proxide_rs/foldcomp"]
+full = ["fetching", "hdf5", "xtc", "parallel", "foldcomp"]
+# The real, validated GAFF2 typer wired into assign_gaff_atom_types (instead of
+# the MIT heuristic). See src/py_chemistry.rs and
+# .praxia/docs/reference/260821_gaff2-rust-port-lessons.md's Cutover section.
+gaff2-engine = ["dep:proxide-gaff2"]
+# The ligand reference-frame builder; requires the real GAFF2 typer too.
+ligand-frame = ["dep:proxide-ligand-frame", "gaff2-engine"]

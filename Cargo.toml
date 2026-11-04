@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/proxide_rs",
     "crates/proxide_py",
+    "crates/proxide_py_gpl",
     "crates/proxide_fixer",
     "crates/proxide-core",
     "crates/proxide-geometry",

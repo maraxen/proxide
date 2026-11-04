@@ -1,8 +1,9 @@
 """Canonical ligand reference frame: topology-derived atom ordering plus
 per-frame torsion/pucker/geometry extraction.
 
-Wraps proxide's native `proxide-ligand-frame` Rust crate (built with
-`--features ligand-frame`). This is proxide's ligand-analog of what
+Wraps proxide's native `proxide-ligand-frame` Rust crate (GPL-2.0-or-later;
+present only in source builds from `crates/proxide_py_gpl` with
+`--features ligand-frame`, never in the wheels or sdist). This is proxide's ligand-analog of what
 `ReplicaSet` loading does for proteins today (`replicas.py`, producing
 `(angles, feature_mask, names)`): demistify's ligand pipeline calls
 `build_ligand_reference_frame`, then flattens `LigandFrameCoordinates`
