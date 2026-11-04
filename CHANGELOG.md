@@ -11,6 +11,8 @@ they exist only in source builds that opt in.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-04
+
 ### Added
 - `proxide-geometry`: `dihedral_angle_iupac`, `dihedral_angle_iupac_f64`, `compute_backbone_dihedrals_iupac` and `compute_backbone_dihedrals_iupac_f64` return the right-handed IUPAC (MDTraj) torsion. For example, an α-helix gives phi ≈ −60°.
 
