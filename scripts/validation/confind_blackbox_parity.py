@@ -5,12 +5,14 @@ Black-box parity testing harness comparing an upstream reference confind binary
 on standard benchmark structures (1CRN, 1UBQ, a multi-chain complex, and a
 segmented chain break).
 
-Pre-registered under bathos (scripts/validation/confind_blackbox_parity.bth.toml).
-Task ID: 261102_proxide-mosaist-cleanroom
+Pre-registered under bathos:
+- v1: scripts/validation/confind_blackbox_parity.bth.toml (run ea7e91ff)
+- v2: scripts/validation/confind_blackbox_parity_v2.bth.toml (debt #3217)
 
 Required locations have no built-in default path. Pass a flag or set the matching
 environment variable. An explicit flag wins when both are present:
 
+  --out               CONFIND_PARITY_OUT                output result JSON path (not /tmp)
   --reference-bin     CONFIND_PARITY_REFERENCE_BIN      upstream reference binary
   --reference-rotlib  CONFIND_PARITY_REFERENCE_ROTLIB   upstream rotamer library
   --clean-bin         CONFIND_PARITY_CLEAN_BIN          clean-room confind binary
@@ -23,6 +25,7 @@ chain_break.pdb. A missing required location is an error that names the argument
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -30,6 +33,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+ENV_OUT = "CONFIND_PARITY_OUT"
 ENV_REFERENCE_BIN = "CONFIND_PARITY_REFERENCE_BIN"
 ENV_REFERENCE_ROTLIB = "CONFIND_PARITY_REFERENCE_ROTLIB"
 ENV_CLEAN_BIN = "CONFIND_PARITY_CLEAN_BIN"
@@ -41,6 +45,9 @@ PDB_CRN_NAME = "1CRN.pdb"
 PDB_UBQ_NAME = "ubiquitin_1ubq_A.pdb"
 PDB_MULTICHAIN_NAME = "f2c006r13.pdb"
 PDB_BREAK_NAME = "chain_break.pdb"
+
+PARITY_ARM_LABEL = "mosaist_parity_ala_only_pruned_count_fraction"
+DEFAULT_ARM_LABEL = "spec_2_4_all_residues_probability_weighted"
 
 # Filled by main() from flags or the environment variables above. No default path.
 SCRATCH = None
@@ -84,12 +91,39 @@ def _require_dir(path, flag, env_var):
   return Path(path)
 
 
+def _file_sha256(path: Path) -> str:
+  h = hashlib.sha256()
+  with open(path, "rb") as f:
+    while chunk := f.read(65536):
+      h.update(chunk)
+  return h.hexdigest()
+
+
+def _stamp_path(output_path: Path) -> Path:
+  return output_path.with_name(output_path.name + ".stamp.json")
+
+
+def _write_completion_stamp(output_path: Path, pdb_path: Path, extra_flags=None) -> dict:
+  stamp = {
+    "completed": True,
+    "input_sha256": _file_sha256(pdb_path),
+    "output_sha256": _file_sha256(output_path),
+    "extra_flags": list(extra_flags) if extra_flags else [],
+  }
+  stamp_file = _stamp_path(output_path)
+  tmp_stamp = stamp_file.with_name(stamp_file.name + ".tmp")
+  with open(tmp_stamp, "w", encoding="utf-8") as f:
+    json.dump(stamp, f, indent=2)
+  tmp_stamp.replace(stamp_file)
+  return stamp
+
+
 def parse_confind_output(path: Path, is_upstream: bool = False):
   """
   Parse confind output format:
-  contact\\t<chain_a>,<res_a>\\t<chain_b>,<res_b>\\t<cd>\\t<name_a>\\t<name_b>
-  crwdnes/crowdedness\\t<chain>,<res>\\t<cr>\\t...
-  freedom\\t<chain>,<res>\\t<fr>\\t...
+  contact\t<chain_a>,<res_a>\t<chain_b>,<res_b>\t<cd>\t<name_a>\t<name_b>
+  crwdnes/crowdedness\t<chain>,<res>\t<cr>\t...
+  freedom\t<chain>,<res>\t<fr>\t...
   """
   contacts = {}
   crowdedness = {}
@@ -132,21 +166,63 @@ def parse_confind_output(path: Path, is_upstream: bool = False):
   return contacts, crowdedness, freedom, dihedrals
 
 
-def _upstream_cache_reusable(path: Path, binary: Path) -> bool:
-  """Reuse a scratch output only when it is non-empty, parseable, and newer than the binary."""
+def _cache_reusable(
+  path: Path,
+  binary: Path,
+  pdb_path: Path | None = None,
+  *,
+  is_upstream: bool = True,
+  extra_flags=None,
+) -> bool:
+  """
+  Reuse a cached output only when it is non-empty, parseable, newer than the binary,
+  and carries a valid completion stamp whose input_sha256 matches pdb_path.
+  """
   if not path.is_file() or path.stat().st_size == 0:
     return False
   if path.stat().st_mtime <= binary.stat().st_mtime:
     return False
+  stamp_file = _stamp_path(path)
+  if not stamp_file.is_file():
+    return False
   try:
-    contacts, crowdedness, freedom, _dihedrals = parse_confind_output(path, is_upstream=True)
+    stamp = json.loads(stamp_file.read_text(encoding="utf-8"))
+  except (OSError, ValueError, UnicodeError):
+    return False
+  if not isinstance(stamp, dict) or stamp.get("completed") is not True:
+    return False
+  expected_flags = list(extra_flags) if extra_flags else []
+  if stamp.get("extra_flags", []) != expected_flags:
+    return False
+  if pdb_path is not None:
+    if not Path(pdb_path).is_file():
+      return False
+    if stamp.get("input_sha256") != _file_sha256(Path(pdb_path)):
+      return False
+  if stamp.get("output_sha256") != _file_sha256(path):
+    return False
+  try:
+    contacts, crowdedness, freedom, _dihedrals = parse_confind_output(path, is_upstream=is_upstream)
   except (OSError, ValueError, IndexError, UnicodeError):
     return False
   return bool(contacts or crowdedness or freedom)
 
 
+def _upstream_cache_reusable(path: Path, binary: Path, pdb_path: Path | None = None) -> bool:
+  return _cache_reusable(path, binary, pdb_path, is_upstream=True, extra_flags=None)
+
+
+def _clean_cache_reusable(
+  path: Path, binary: Path, pdb_path: Path | None = None, extra_flags=None
+) -> bool:
+  return _cache_reusable(path, binary, pdb_path, is_upstream=False, extra_flags=extra_flags)
+
+
 def run_benchmark(pdb_path: Path, tag: str, extra_flags=None):
-  """Run upstream and clean confind, returning parsed outputs."""
+  """
+  Run upstream and clean confind with preemption-safe completion stamps,
+  reusing cached outputs only when the completion stamp and input PDB sha256 match.
+  """
   scratch = _require_dir(SCRATCH, "--scratch", ENV_SCRATCH)
   upstream_bin = _require_file(UPSTREAM_BIN, "--reference-bin", ENV_REFERENCE_BIN)
   upstream_rlib = _require_file(UPSTREAM_RLIB, "--reference-rotlib", ENV_REFERENCE_ROTLIB)
@@ -158,9 +234,11 @@ def run_benchmark(pdb_path: Path, tag: str, extra_flags=None):
   suffix = "_" + "_".join(flag.lstrip("-") for flag in extra_flags) if extra_flags else ""
   clean_out = scratch / f"{tag}_clean{suffix}.out"
 
-  if not _upstream_cache_reusable(up_out, upstream_bin):
+  if not _upstream_cache_reusable(up_out, upstream_bin, pdb_path):
     if up_out.exists():
       up_out.unlink()
+    if _stamp_path(up_out).exists():
+      _stamp_path(up_out).unlink()
     subprocess.run(
       [
         str(upstream_bin),
@@ -178,32 +256,68 @@ def run_benchmark(pdb_path: Path, tag: str, extra_flags=None):
       stdout=subprocess.DEVNULL,
       stderr=subprocess.PIPE,
     )
+    _write_completion_stamp(up_out, pdb_path, extra_flags=None)
 
-  cmd = [
-    str(clean_bin),
-    "--p",
-    str(pdb_path),
-    "--rLib",
-    str(clean_rlib),
-    "--o",
-    str(clean_out),
-    "--cdcut",
-    "0.0",
-    "--incut",
-    "0.0",
-  ]
-  if extra_flags:
-    cmd.extend(extra_flags)
-  subprocess.run(
-    cmd,
-    check=True,
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.PIPE,
-  )
+  if not _clean_cache_reusable(clean_out, clean_bin, pdb_path, extra_flags=extra_flags):
+    if clean_out.exists():
+      clean_out.unlink()
+    if _stamp_path(clean_out).exists():
+      _stamp_path(clean_out).unlink()
+    cmd = [
+      str(clean_bin),
+      "--p",
+      str(pdb_path),
+      "--rLib",
+      str(clean_rlib),
+      "--o",
+      str(clean_out),
+      "--cdcut",
+      "0.0",
+      "--incut",
+      "0.0",
+    ]
+    if extra_flags:
+      cmd.extend(extra_flags)
+    subprocess.run(
+      cmd,
+      check=True,
+      stdout=subprocess.DEVNULL,
+      stderr=subprocess.PIPE,
+    )
+    _write_completion_stamp(clean_out, pdb_path, extra_flags=extra_flags)
 
   up_c, up_cr, up_fr, up_dih = parse_confind_output(up_out, is_upstream=True)
   cl_c, cl_cr, cl_fr, _ = parse_confind_output(clean_out, is_upstream=False)
+
+  # Persist per-structure completion record in scratch for preemption inspection
+  struct_record_path = scratch / f"{tag}{suffix}_structure_result.json"
+  struct_record = {
+    "completed": True,
+    "tag": tag,
+    "input_pdb": str(pdb_path),
+    "input_sha256": _file_sha256(pdb_path),
+    "upstream_output_sha256": _file_sha256(up_out),
+    "clean_output_sha256": _file_sha256(clean_out),
+    "extra_flags": list(extra_flags) if extra_flags else [],
+    "n_upstream_contacts": len(up_c),
+    "n_clean_contacts": len(cl_c),
+    "n_upstream_residues": len(up_cr),
+    "n_clean_residues": len(cl_cr),
+  }
+  with open(struct_record_path, "w", encoding="utf-8") as f:
+    json.dump(struct_record, f, indent=2)
+
   return up_c, up_cr, up_fr, up_dih, cl_c, cl_cr, cl_fr
+
+
+def _quantile_from_sorted(sorted_deltas: list[float], q: float = 0.95) -> float:
+  if not sorted_deltas:
+    raise ValueError("empty delta sequence for quantile")
+  if not (0.0 <= q <= 1.0):
+    raise ValueError(f"quantile must be in [0, 1], got {q!r}")
+  n = len(sorted_deltas)
+  idx = min(n - 1, max(0, math.ceil(q * n) - 1))
+  return float(sorted_deltas[idx])
 
 
 def compute_contact_deltas(up_c, cl_c):
@@ -233,6 +347,12 @@ def compute_contact_deltas(up_c, cl_c):
   return median_val, mean_val, max_val, pct_1e4, pct_005, len(all_pairs), len(common)
 
 
+def compute_contact_p95_delta(up_c, cl_c) -> float:
+  compute_contact_deltas(up_c, cl_c)
+  deltas = sorted(abs(up_c[pair] - cl_c[pair]) for pair in up_c)
+  return _quantile_from_sorted(deltas, 0.95)
+
+
 def compute_metric_deltas(up_m, cl_m):
   up_keys = set(up_m)
   cl_keys = set(cl_m)
@@ -249,6 +369,12 @@ def compute_metric_deltas(up_m, cl_m):
   deltas = sorted(abs(up_m[key] - cl_m[key]) for key in up_keys)
   n = len(deltas)
   return deltas[n // 2], sum(deltas) / n, max(deltas)
+
+
+def compute_metric_p95_delta(up_m, cl_m) -> float:
+  compute_metric_deltas(up_m, cl_m)
+  deltas = sorted(abs(up_m[key] - cl_m[key]) for key in up_m)
+  return _quantile_from_sorted(deltas, 0.95)
 
 
 def assess_omega_sign(pdb_path: Path, up_dih):
@@ -371,8 +497,8 @@ def _parser():
   parser = argparse.ArgumentParser(description="ConFind black-box parity validation")
   parser.add_argument(
     "--out",
-    default="outputs/parity/confind_parity_results.json",
-    help="JSON result path",
+    default=None,
+    help=f"JSON result path (env: {ENV_OUT}); no default path",
   )
   parser.add_argument("--reference-bin", default=None, help=f"env: {ENV_REFERENCE_BIN}")
   parser.add_argument("--reference-rotlib", default=None, help=f"env: {ENV_REFERENCE_ROTLIB}")
@@ -383,11 +509,34 @@ def _parser():
   return parser
 
 
+def _is_disallowed_tmp_out(path: Path) -> bool:
+  """Reject ephemeral /tmp or /var/tmp output paths, while allowing pytest tmp_path fixtures."""
+  try:
+    resolved = path.resolve()
+  except OSError:
+    resolved = path
+  parts = resolved.parts
+  if any(part.startswith("pytest-") for part in parts):
+    return False
+  if len(parts) >= 2 and parts[0] == "/" and parts[1] == "tmp":
+    return True
+  if len(parts) >= 3 and parts[0] == "/" and parts[1] == "var" and parts[2] == "tmp":
+    return True
+  return False
+
+
 def _resolve(parser, flag_value, flag, env_var, kind):
   raw = flag_value if flag_value else os.environ.get(env_var)
   if raw is None or str(raw).strip() == "":
     parser.error(f"missing required location: {flag} (or {env_var})")
   path = Path(raw)
+  if kind == "out":
+    if _is_disallowed_tmp_out(path):
+      parser.error(
+        f"refusing ephemeral /tmp result location for {flag} (or {env_var}): {path}; "
+        "use a tracked/configured project path instead"
+      )
+    return path
   if kind == "file" and not path.is_file():
     parser.error(f"missing required location for {flag} (or {env_var}): {path}")
   if kind == "dir" and not path.is_dir():
@@ -402,6 +551,103 @@ def _pdb_file(parser, pdb_dir, filename):
   return path
 
 
+def evaluate_outcome(result: dict) -> str:
+  """
+  Evaluate the pre-registered v2 outcome partition
+  (scripts/validation/confind_blackbox_parity_v2.bth.toml).
+  pass, marginal, and fail are mutually exclusive and collectively exhaustive;
+  any invariant failure forces 'fail' (never 'marginal').
+  """
+  invariants_ok = (
+    result["omega_opposite_sign_count"] == 0
+    and result["chain_break_prevented_spurious_contacts"] is True
+    and result["default_options_valid"] is True
+  )
+  if not invariants_ok:
+    return "fail"
+
+  default_arm_valid = (
+    result["default_arm_crowdedness_expected_to_differ_by_design"] is True
+    and 0.0 <= result["median_crowdedness_delta_1crn_default"] <= 1.0
+    and 0.0 <= result["median_crowdedness_delta_1ubq_default"] <= 1.0
+  )
+  if not default_arm_valid:
+    return "fail"
+
+  tight_pass = (
+    result["median_contact_delta_1crn"] <= 0.0001
+    and result["p95_contact_delta_1crn"] <= 0.05
+    and result["max_contact_delta_1crn"] <= 0.25
+    and result["median_contact_delta_1ubq"] <= 0.0001
+    and result["p95_contact_delta_1ubq"] <= 0.05
+    and result["max_contact_delta_1ubq"] <= 0.25
+    and result["median_contact_delta_multichain"] <= 0.0001
+    and result["p95_contact_delta_multichain"] <= 0.05
+    and result["max_contact_delta_multichain"] <= 0.35
+    and result["median_crowdedness_delta_1crn"] <= 0.035
+    and result["p95_crowdedness_delta_1crn"] <= 0.15
+    and result["max_crowdedness_delta_1crn"] <= 0.35
+    and result["median_crowdedness_delta_1ubq"] <= 0.035
+    and result["p95_crowdedness_delta_1ubq"] <= 0.15
+    and result["max_crowdedness_delta_1ubq"] <= 0.35
+    and result["median_crowdedness_delta_multichain"] <= 0.035
+    and result["p95_crowdedness_delta_multichain"] <= 0.15
+    and result["max_crowdedness_delta_multichain"] <= 0.50
+    and result["median_freedom_delta_1crn"] <= 0.05
+    and result["p95_freedom_delta_1crn"] <= 0.15
+    and result["max_freedom_delta_1crn"] <= 0.35
+    and result["median_freedom_delta_1ubq"] <= 0.05
+    and result["p95_freedom_delta_1ubq"] <= 0.15
+    and result["max_freedom_delta_1ubq"] <= 0.35
+    and result["median_freedom_delta_multichain"] <= 0.05
+    and result["p95_freedom_delta_multichain"] <= 0.15
+    and result["max_freedom_delta_multichain"] <= 0.50
+    and result["median_contact_delta_1crn_default"] <= 0.0001
+    and result["median_contact_delta_1ubq_default"] <= 0.0001
+    and result["median_freedom_delta_1crn_default"] <= 0.05
+    and result["median_freedom_delta_1ubq_default"] <= 0.05
+  )
+  if tight_pass:
+    return "pass"
+
+  marginal_bounds = (
+    result["median_contact_delta_1crn"] <= 0.0002
+    and result["p95_contact_delta_1crn"] <= 0.10
+    and result["max_contact_delta_1crn"] <= 0.40
+    and result["median_contact_delta_1ubq"] <= 0.0002
+    and result["p95_contact_delta_1ubq"] <= 0.10
+    and result["max_contact_delta_1ubq"] <= 0.40
+    and result["median_contact_delta_multichain"] <= 0.0002
+    and result["p95_contact_delta_multichain"] <= 0.10
+    and result["max_contact_delta_multichain"] <= 0.50
+    and result["median_crowdedness_delta_1crn"] <= 0.06
+    and result["p95_crowdedness_delta_1crn"] <= 0.25
+    and result["max_crowdedness_delta_1crn"] <= 0.50
+    and result["median_crowdedness_delta_1ubq"] <= 0.06
+    and result["p95_crowdedness_delta_1ubq"] <= 0.25
+    and result["max_crowdedness_delta_1ubq"] <= 0.50
+    and result["median_crowdedness_delta_multichain"] <= 0.06
+    and result["p95_crowdedness_delta_multichain"] <= 0.25
+    and result["max_crowdedness_delta_multichain"] <= 0.70
+    and result["median_freedom_delta_1crn"] <= 0.10
+    and result["p95_freedom_delta_1crn"] <= 0.25
+    and result["max_freedom_delta_1crn"] <= 0.50
+    and result["median_freedom_delta_1ubq"] <= 0.10
+    and result["p95_freedom_delta_1ubq"] <= 0.25
+    and result["max_freedom_delta_1ubq"] <= 0.50
+    and result["median_freedom_delta_multichain"] <= 0.10
+    and result["p95_freedom_delta_multichain"] <= 0.25
+    and result["max_freedom_delta_multichain"] <= 0.70
+    and result["median_contact_delta_1crn_default"] <= 0.0002
+    and result["median_contact_delta_1ubq_default"] <= 0.0002
+    and result["median_freedom_delta_1crn_default"] <= 0.10
+    and result["median_freedom_delta_1ubq_default"] <= 0.10
+  )
+  if marginal_bounds:
+    return "marginal"
+  return "fail"
+
+
 def exit_code_for_outcome(outcome):
   if outcome == "pass":
     return 0
@@ -414,6 +660,7 @@ def main():
 
   parser = _parser()
   args = parser.parse_args()
+  out_path = _resolve(parser, args.out, "--out", ENV_OUT, "out")
   UPSTREAM_BIN = _resolve(parser, args.reference_bin, "--reference-bin", ENV_REFERENCE_BIN, "file")
   UPSTREAM_RLIB = _resolve(
     parser, args.reference_rotlib, "--reference-rotlib", ENV_REFERENCE_ROTLIB, "file"
@@ -429,41 +676,62 @@ def main():
 
   parity_flags = ["--cbclash", "ala-only", "--crowdmode", "pruned-count-fraction"]
 
-  print("Running Benchmark 1 (parity flags: ala-only + pruned-count-fraction): 1CRN...")
-  up_c_crn, up_cr_crn, up_fr_crn, up_dih_crn, cl_c_crn, cl_cr_crn, _cl_fr_crn = run_benchmark(
+  print("Running Benchmark 1 (parity arm: ala-only + pruned-count-fraction): 1CRN...")
+  up_c_crn, up_cr_crn, up_fr_crn, up_dih_crn, cl_c_crn, cl_cr_crn, cl_fr_crn = run_benchmark(
     CRN_PDB, "1crn", parity_flags
   )
   med_cd_crn, mean_cd_crn, max_cd_crn, pct_1e4_crn, pct_005_crn, _, _ = compute_contact_deltas(
     up_c_crn, cl_c_crn
   )
-  med_cr_crn, _, _ = compute_metric_deltas(up_cr_crn, cl_cr_crn)
-  med_fr_crn, _, _ = compute_metric_deltas(up_fr_crn, _cl_fr_crn)
+  p95_cd_crn = compute_contact_p95_delta(up_c_crn, cl_c_crn)
+  med_cr_crn, _, max_cr_crn = compute_metric_deltas(up_cr_crn, cl_cr_crn)
+  p95_cr_crn = compute_metric_p95_delta(up_cr_crn, cl_cr_crn)
+  med_fr_crn, _, max_fr_crn = compute_metric_deltas(up_fr_crn, cl_fr_crn)
+  p95_fr_crn = compute_metric_p95_delta(up_fr_crn, cl_fr_crn)
 
-  print("Running Benchmark 1b (default flags: all-residues + probability-weighted): 1CRN...")
-  _, _, _, _, cl_c_crn_def, cl_cr_crn_def, _ = run_benchmark(CRN_PDB, "1crn", None)
-  med_cd_crn_def, _, _, _, _, _, _ = compute_contact_deltas(up_c_crn, cl_c_crn_def)
-  med_cr_crn_def, _, _ = compute_metric_deltas(up_cr_crn, cl_cr_crn_def)
+  print("Running Benchmark 1b (default arm: all-residues + probability-weighted): 1CRN...")
+  _, _, _, _, cl_c_crn_def, cl_cr_crn_def, cl_fr_crn_def = run_benchmark(CRN_PDB, "1crn", None)
+  med_cd_crn_def, _, max_cd_crn_def, _, _, _, _ = compute_contact_deltas(up_c_crn, cl_c_crn_def)
+  p95_cd_crn_def = compute_contact_p95_delta(up_c_crn, cl_c_crn_def)
+  med_cr_crn_def, _, max_cr_crn_def = compute_metric_deltas(up_cr_crn, cl_cr_crn_def)
+  p95_cr_crn_def = compute_metric_p95_delta(up_cr_crn, cl_cr_crn_def)
+  med_fr_crn_def, _, max_fr_crn_def = compute_metric_deltas(up_fr_crn, cl_fr_crn_def)
+  p95_fr_crn_def = compute_metric_p95_delta(up_fr_crn, cl_fr_crn_def)
 
-  print("Running Benchmark 2 (parity flags: ala-only + pruned-count-fraction): 1UBQ...")
+  print("Running Benchmark 2 (parity arm: ala-only + pruned-count-fraction): 1UBQ...")
   up_c_ubq, up_cr_ubq, up_fr_ubq, _up_dih_ubq, cl_c_ubq, cl_cr_ubq, cl_fr_ubq = run_benchmark(
     UBQ_PDB, "1ubq", parity_flags
   )
   med_cd_ubq, mean_cd_ubq, max_cd_ubq, pct_1e4_ubq, pct_005_ubq, _, _ = compute_contact_deltas(
     up_c_ubq, cl_c_ubq
   )
-  med_cr_ubq, _, _ = compute_metric_deltas(up_cr_ubq, cl_cr_ubq)
-  med_fr_ubq, _, _ = compute_metric_deltas(up_fr_ubq, cl_fr_ubq)
+  p95_cd_ubq = compute_contact_p95_delta(up_c_ubq, cl_c_ubq)
+  med_cr_ubq, _, max_cr_ubq = compute_metric_deltas(up_cr_ubq, cl_cr_ubq)
+  p95_cr_ubq = compute_metric_p95_delta(up_cr_ubq, cl_cr_ubq)
+  med_fr_ubq, _, max_fr_ubq = compute_metric_deltas(up_fr_ubq, cl_fr_ubq)
+  p95_fr_ubq = compute_metric_p95_delta(up_fr_ubq, cl_fr_ubq)
 
-  print("Running Benchmark 2b (default flags: all-residues + probability-weighted): 1UBQ...")
-  _, _, _, _, cl_c_ubq_def, cl_cr_ubq_def, _ = run_benchmark(UBQ_PDB, "1ubq", None)
-  med_cd_ubq_def, _, _, _, _, _, _ = compute_contact_deltas(up_c_ubq, cl_c_ubq_def)
-  med_cr_ubq_def, _, _ = compute_metric_deltas(up_cr_ubq, cl_cr_ubq_def)
+  print("Running Benchmark 2b (default arm: all-residues + probability-weighted): 1UBQ...")
+  _, _, _, _, cl_c_ubq_def, cl_cr_ubq_def, cl_fr_ubq_def = run_benchmark(UBQ_PDB, "1ubq", None)
+  med_cd_ubq_def, _, max_cd_ubq_def, _, _, _, _ = compute_contact_deltas(up_c_ubq, cl_c_ubq_def)
+  p95_cd_ubq_def = compute_contact_p95_delta(up_c_ubq, cl_c_ubq_def)
+  med_cr_ubq_def, _, max_cr_ubq_def = compute_metric_deltas(up_cr_ubq, cl_cr_ubq_def)
+  p95_cr_ubq_def = compute_metric_p95_delta(up_cr_ubq, cl_cr_ubq_def)
+  med_fr_ubq_def, _, max_fr_ubq_def = compute_metric_deltas(up_fr_ubq, cl_fr_ubq_def)
+  p95_fr_ubq_def = compute_metric_p95_delta(up_fr_ubq, cl_fr_ubq_def)
 
-  print("Running Benchmark 3: Multi-chain complex (f2c006r13.pdb)...")
-  up_c_mc, _, _, _, cl_c_mc, _, _ = run_benchmark(MULTICHAIN_PDB, "multichain", parity_flags)
-  med_cd_mc, _mean_cd_mc, _max_cd_mc, pct_1e4_mc, pct_005_mc, n_pairs_mc, com_pairs_mc = (
+  print("Running Benchmark 3 (parity arm): Multi-chain complex (f2c006r13.pdb)...")
+  up_c_mc, up_cr_mc, up_fr_mc, _, cl_c_mc, cl_cr_mc, cl_fr_mc = run_benchmark(
+    MULTICHAIN_PDB, "multichain", parity_flags
+  )
+  med_cd_mc, _mean_cd_mc, max_cd_mc, pct_1e4_mc, pct_005_mc, n_pairs_mc, com_pairs_mc = (
     compute_contact_deltas(up_c_mc, cl_c_mc)
   )
+  p95_cd_mc = compute_contact_p95_delta(up_c_mc, cl_c_mc)
+  med_cr_mc, _, max_cr_mc = compute_metric_deltas(up_cr_mc, cl_cr_mc)
+  p95_cr_mc = compute_metric_p95_delta(up_cr_mc, cl_cr_mc)
+  med_fr_mc, _, max_fr_mc = compute_metric_deltas(up_fr_mc, cl_fr_mc)
+  p95_fr_mc = compute_metric_p95_delta(up_fr_mc, cl_fr_mc)
 
   print("Assessing Debt #1903 (Omega Dihedral Sign)...")
   same_sign, opp_sign, max_omg_delta = assess_omega_sign(CRN_PDB, up_dih_crn)
@@ -479,53 +747,74 @@ def main():
     and len(cl_cr_ubq_def) == len(cl_cr_ubq)
   )
 
-  passed = (
-    med_cd_crn <= 0.0001
-    and med_cd_ubq <= 0.0001
-    and opp_sign == 0
-    and prevented
-    and default_options_valid
-  )
-  if passed:
-    outcome_label = "pass"
-  elif med_cd_crn <= 0.0002 and med_cd_ubq <= 0.0002:
-    outcome_label = "marginal"
-  else:
-    outcome_label = "fail"
-
   result = {
+    "parity_arm_label": PARITY_ARM_LABEL,
     "median_contact_delta_1crn": round(float(med_cd_crn), 6),
     "mean_contact_delta_1crn": round(float(mean_cd_crn), 6),
+    "p95_contact_delta_1crn": round(float(p95_cd_crn), 6),
     "max_contact_delta_1crn": round(float(max_cd_crn), 6),
     "pct_within_1e4_1crn": round(float(pct_1e4_crn), 4),
     "pct_within_005_1crn": round(float(pct_005_crn), 4),
     "median_crowdedness_delta_1crn": round(float(med_cr_crn), 6),
+    "p95_crowdedness_delta_1crn": round(float(p95_cr_crn), 6),
+    "max_crowdedness_delta_1crn": round(float(max_cr_crn), 6),
     "median_freedom_delta_1crn": round(float(med_fr_crn), 6),
-    "median_contact_delta_1crn_default": round(float(med_cd_crn_def), 6),
-    "median_crowdedness_delta_1crn_default": round(float(med_cr_crn_def), 6),
+    "p95_freedom_delta_1crn": round(float(p95_fr_crn), 6),
+    "max_freedom_delta_1crn": round(float(max_fr_crn), 6),
     "median_contact_delta_1ubq": round(float(med_cd_ubq), 6),
     "mean_contact_delta_1ubq": round(float(mean_cd_ubq), 6),
+    "p95_contact_delta_1ubq": round(float(p95_cd_ubq), 6),
     "max_contact_delta_1ubq": round(float(max_cd_ubq), 6),
     "pct_within_1e4_1ubq": round(float(pct_1e4_ubq), 4),
     "pct_within_005_1ubq": round(float(pct_005_ubq), 4),
     "median_crowdedness_delta_1ubq": round(float(med_cr_ubq), 6),
+    "p95_crowdedness_delta_1ubq": round(float(p95_cr_ubq), 6),
+    "max_crowdedness_delta_1ubq": round(float(max_cr_ubq), 6),
     "median_freedom_delta_1ubq": round(float(med_fr_ubq), 6),
-    "median_contact_delta_1ubq_default": round(float(med_cd_ubq_def), 6),
-    "median_crowdedness_delta_1ubq_default": round(float(med_cr_ubq_def), 6),
+    "p95_freedom_delta_1ubq": round(float(p95_fr_ubq), 6),
+    "max_freedom_delta_1ubq": round(float(max_fr_ubq), 6),
     "multichain_contacts_count": int(n_pairs_mc),
     "multichain_common_pairs": int(com_pairs_mc),
     "median_contact_delta_multichain": round(float(med_cd_mc), 6),
+    "p95_contact_delta_multichain": round(float(p95_cd_mc), 6),
+    "max_contact_delta_multichain": round(float(max_cd_mc), 6),
     "pct_within_1e4_multichain": round(float(pct_1e4_mc), 4),
     "pct_within_005_multichain": round(float(pct_005_mc), 4),
+    "median_crowdedness_delta_multichain": round(float(med_cr_mc), 6),
+    "p95_crowdedness_delta_multichain": round(float(p95_cr_mc), 6),
+    "max_crowdedness_delta_multichain": round(float(max_cr_mc), 6),
+    "median_freedom_delta_multichain": round(float(med_fr_mc), 6),
+    "p95_freedom_delta_multichain": round(float(p95_fr_mc), 6),
+    "max_freedom_delta_multichain": round(float(max_fr_mc), 6),
+    "default_arm_label": DEFAULT_ARM_LABEL,
+    "default_arm_crowdedness_expected_to_differ_by_design": True,
+    "median_contact_delta_1crn_default": round(float(med_cd_crn_def), 6),
+    "p95_contact_delta_1crn_default": round(float(p95_cd_crn_def), 6),
+    "max_contact_delta_1crn_default": round(float(max_cd_crn_def), 6),
+    "median_crowdedness_delta_1crn_default": round(float(med_cr_crn_def), 6),
+    "p95_crowdedness_delta_1crn_default": round(float(p95_cr_crn_def), 6),
+    "max_crowdedness_delta_1crn_default": round(float(max_cr_crn_def), 6),
+    "median_freedom_delta_1crn_default": round(float(med_fr_crn_def), 6),
+    "p95_freedom_delta_1crn_default": round(float(p95_fr_crn_def), 6),
+    "max_freedom_delta_1crn_default": round(float(max_fr_crn_def), 6),
+    "median_contact_delta_1ubq_default": round(float(med_cd_ubq_def), 6),
+    "p95_contact_delta_1ubq_default": round(float(p95_cd_ubq_def), 6),
+    "max_contact_delta_1ubq_default": round(float(max_cd_ubq_def), 6),
+    "median_crowdedness_delta_1ubq_default": round(float(med_cr_ubq_def), 6),
+    "p95_crowdedness_delta_1ubq_default": round(float(p95_cr_ubq_def), 6),
+    "max_crowdedness_delta_1ubq_default": round(float(max_cr_ubq_def), 6),
+    "median_freedom_delta_1ubq_default": round(float(med_fr_ubq_def), 6),
+    "p95_freedom_delta_1ubq_default": round(float(p95_fr_ubq_def), 6),
+    "max_freedom_delta_1ubq_default": round(float(max_fr_ubq_def), 6),
     "omega_same_sign_count": int(same_sign),
     "omega_opposite_sign_count": int(opp_sign),
     "max_omega_delta_deg": round(float(max_omg_delta), 6),
     "chain_break_prevented_spurious_contacts": bool(prevented),
     "default_options_valid": bool(default_options_valid),
-    "outcome": outcome_label,
   }
+  outcome_label = evaluate_outcome(result)
+  result["outcome"] = outcome_label
 
-  out_path = Path(args.out)
   out_path.parent.mkdir(parents=True, exist_ok=True)
   with open(out_path, "w", encoding="utf-8") as f:
     json.dump(result, f, indent=2)
