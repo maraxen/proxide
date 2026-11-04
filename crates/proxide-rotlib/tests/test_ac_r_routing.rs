@@ -12,6 +12,7 @@
 //! - AC-R(3): real data (artifact-gated, #[ignore])
 
 use prost::Message;
+use proxide_geometry::geometry::angles::dihedral_angle_iupac_f64;
 use proxide_rotlib::pb::rotlib_v1::{
     Bin, GeometryMode, ResidueEntry, Rotamer, RotamerLibrary as PbLib, Vec3,
 };
@@ -530,20 +531,20 @@ fn test_cpr_fallback_when_cpro_absent() {
 #[ignore = "artifact-gated: requires data/rotlibs/proxide-rotlib-bbdep2010.pb.zst"]
 fn test_ac_r3_real_data_cis_chi1() {
     // Locate the artifact relative to the crate's CARGO_MANIFEST_DIR.
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    let pb_path = std::path::PathBuf::from(&manifest_dir)
-        .join("data")
+    // The artifact lives in the workspace-root data/rotlibs/ (gitignored), not under
+    // this crate; the old crate-relative path never existed, so the test always skipped.
+    let pb_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../data")
         .join("rotlibs")
         .join("proxide-rotlib-bbdep2010.pb.zst");
 
-    // Graceful skip if artifact is absent (gitignored, not present in CI).
-    if !pb_path.exists() {
-        eprintln!(
-            "AC-R(3) skipped: artifact not found at {}",
-            pb_path.display()
-        );
-        return;
-    }
+    // #[ignore] already keeps CI green without the artifact. When someone asks for this
+    // test, a missing artifact is a failure, not a silent pass (AGENTS.md B3).
+    assert!(
+        pb_path.exists(),
+        "AC-R(3): artifact not found at {}; generate it with convert_rotlib",
+        pb_path.display()
+    );
 
     let lib = RotamerLibrary::load_pb(&pb_path).expect("load_pb real library failed");
 
@@ -579,7 +580,9 @@ fn test_ac_r3_real_data_cis_chi1() {
         .expect("placed cis-PRO must have a CG atom");
 
     // Compute χ1 = N-CA-CB-CG dihedral.
-    let chi1_rad = dihedral_angle_rad(n, ca, cb.xyz, cg.xyz);
+    // IUPAC chi1 (debt #3230: the private helper this replaces returned -IUPAC,
+    // so this assertion failed whenever the artifact was actually found).
+    let chi1_rad = dihedral_angle_iupac_f64(&n, &ca, &cb.xyz, &cg.xyz);
     let chi1_deg = chi1_rad.to_degrees();
 
     // AC-R(3) criterion: χ1 must be closer to 32.5° than to 27.3°.
@@ -597,29 +600,4 @@ fn test_ac_r3_real_data_cis_chi1() {
         dist_to_32_5,
         dist_to_27_3
     );
-}
-
-/// Compute the signed dihedral angle (radians) for atoms p1-p2-p3-p4.
-fn dihedral_angle_rad(p1: [f64; 3], p2: [f64; 3], p3: [f64; 3], p4: [f64; 3]) -> f64 {
-    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-    let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
-        [
-            a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0],
-        ]
-    };
-    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    let norm = |a: [f64; 3]| dot(a, a).sqrt();
-    let b1 = sub(p2, p1);
-    let b2 = sub(p3, p2);
-    let b3 = sub(p4, p3);
-    let n1 = cross(b1, b2);
-    let n2 = cross(b2, b3);
-    let b2n = {
-        let s = 1.0 / norm(b2);
-        [b2[0] * s, b2[1] * s, b2[2] * s]
-    };
-    let m1 = cross(n1, b2n);
-    f64::atan2(dot(m1, n2), dot(n1, n2))
 }
