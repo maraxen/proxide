@@ -53,6 +53,7 @@ mod tests {
                 num_atoms: 2,
                 first_atom_index: 0,
             }],
+            ter_positions: Vec::new(),
         }
     }
 

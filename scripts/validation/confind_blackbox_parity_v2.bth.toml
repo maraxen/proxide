@@ -1,0 +1,243 @@
+# Pre-registration v2 for clean-room proxide-confind black-box parity against upstream Mosaist.
+# Task ID: 261103_proxide-debts-3215-3218 (Debt #3217). NOT YET RUN when this text was committed.
+#
+# PRIOR KNOWLEDGE seen before registration. Bounds below were set with these numbers in view.
+# From v1 run ea7e91ff-1dfb-4bf6-a51c-e83c768f91f1:
+# - Default mode (--cbclash all-residues --crowdmode probability-weighted): crowdedness median
+#   delta 0.14-0.18 (0.176373 on 1CRN, 0.138695 on 1UBQ).
+# - Mosaist-equivalent parity mode (--cbclash ala-only --crowdmode pruned-count-fraction):
+#   crowdedness median delta 0.019-0.025 (0.024529 on 1CRN, 0.018868 on 1UBQ).
+# - Parity-mode contact-degree median delta 7.0e-5 (1CRN), 3.8e-5 (1UBQ), 4.4e-5 (f2c006r13);
+#   max contact-degree delta 0.17568 (1CRN), 0.15369 (1UBQ); freedom median delta 0.035698
+#   (1CRN), 0.017343 (1UBQ).
+# From inspecting the v1 parity-mode outputs (exploratory, not a registered finding):
+# - One-sided contact pairs: 1CRN 50 Mosaist-only (max degree 0.170, 4 above 0.05) and 10
+#   proxide-only (all printed as 0.000000), 16.5% of 363 pairs. 1UBQ 52 Mosaist-only (max 0.083,
+#   1 above 0.05) and 39 proxide-only (all 0.000000), 12.1% of 752 pairs. f2c006r13 16.8% of
+#   3589 pairs. The source of these pairs is unexplained (debt #3223).
+# - The default and parity outputs differ in crowdedness, so crowdmode_effect_residues >= 1 is
+#   expected from v1 but confounded there (both factors changed); the factorial arms separate them.
+# Chosen WITHOUT consulting any crowdedness output: the d_clash sweep 2.0/2.5/3.0/3.5 A, from
+# backbone geometry (CB(i) to N(i+1) is typically ~3.3-3.4 A). Whether a CB clash ever occurs at
+# the default 2.0 A is unverified, so the cbclash effect is gated over the sweep, not at 2.0 A.
+#
+# DESIGN. Arms:
+# 1. Parity arm A (ala-only / pruned-count-fraction) vs Mosaist: gated on median, p95 and max for
+#    contact degree, crowdedness and freedom on 1CRN, 1UBQ and multichain f2c006r13.
+# 2. Default arm B (spec 2.4, all-residues / probability-weighted, run with no flags) vs Mosaist:
+#    median contact degree and freedom are gated. Crowdedness differs from unweighted Mosaist by
+#    design, so its deltas are REPORTED AND NOT GATED; no absolute-delta check can fail for a
+#    fraction in [0, 1], and any fitted bound would be post hoc.
+# 3. Clean-only factorial arms C (all-residues / count) and D (ala-only / weighted) on 1CRN and
+#    1UBQ, completing a 2x2 design. These gate relationships that hold by construction:
+#    C(all) >= C(ala) per residue at fixed crowdmode (cache.rs:171-176, 184-186); contact degree
+#    and freedom unchanged by crowdmode (parallel.rs:99, freedom.rs:32), to 1 printed unit;
+#    count-mode endpoints coincide with weighted-mode endpoints (cache.rs:184-186).
+# 4. Clean-only d_clash sweep on 1CRN (count mode, both cbclash policies): crowdedness
+#    non-decreasing in d_clash (grid.rs:110), and at least one residue where all-residues exceeds
+#    ala-only at some d_clash, so an ignored --cbclash flag fails.
+#
+# One-sided contact pairs (a pair only one program considered) are never filled with a stand-in
+# degree. Deltas use pairs present in both outputs. The largest present-side degree is gated with
+# the same bounds as max_contact_delta (owner decision 2026-11-03); counts and the one-sided
+# fraction are reported, not gated, so no bound is fitted to the 12-17% already seen.
+#
+# reference_omega_* DOES NOT TEST PROXIDE. It compares the Mosaist binary with an IUPAC omega the
+# harness computes from the PDB, because confind outputs no dihedrals (debt #3224). It stays an
+# invariant as a check of the reference binary and the harness only.
+#
+# Removed from the first v2 draft because they could not fail (AGENTS.md B6; oracle review
+# 2026-11-04): default_arm_crowdedness_expected_to_differ_by_design (a constant the harness wrote),
+# 0 <= median_crowdedness_delta_*_default <= 1 (always true), and default_options_valid (its length
+# terms could not fail and its median terms made the default-contact marginal band unreachable).
+# The default arm is now pinned by arm_header_mismatch_count over all 18 clean outputs.
+#
+# OUTCOME PARTITION. Conditions are rendered from INVARIANT_TERMS, TIGHT_TERMS and MARGINAL_TERMS in
+# scripts/validation/confind_blackbox_parity.py, and a test asserts this text matches them:
+#   pass = INV AND TIGHT; marginal = INV AND MARG AND NOT TIGHT; fail = NOT INV OR NOT MARG.
+# Every TIGHT bound is at least as strict as its MARG bound, so the three are mutually exclusive and
+# exhaustive, and every invariant failure is fail. Harness comparisons raise on unequal key sets, so
+# each n_compared is the full residue or pair count; the >= 1 terms reject an empty comparison.
+#
+# PREEMPTION. Each output is persisted with a completion stamp (input and output sha256, flags) as
+# it finishes and is reused only when these match. Each binary invocation is its own process.
+# Expected wall time: under one minute (v1 took 5.7 s for 6 runs), not profiled for all 18.
+
+[experiment]
+hypothesis = "In Mosaist-equivalent parity mode (--cbclash ala-only --crowdmode pruned-count-fraction), clean-room proxide-confind matches upstream Mosaist on 1CRN, 1UBQ and multichain f2c006r13 within pre-registered median, p95 and max bounds on contact degree, crowdedness and freedom, with the largest one-sided contact degree within the max-contact bounds. The shipped default mode keeps contact-degree and freedom medians within bounds, and proxide's own arms satisfy the cbclash, crowdmode, endpoint and d_clash relationships that hold by construction."
+stage_name = "validation"
+novel = true
+
+[reproduction]
+reproduces_run = "ea7e91ff-1dfb-4bf6-a51c-e83c768f91f1"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail", "marginal"]
+
+[breakdown]
+unit = "residue_or_contact_pair"
+waive = "Per-structure median, p95 and max deltas are decomposed explicitly across 1CRN, 1UBQ and multichain f2c006r13 in result_schema."
+
+[outcomes.pass]
+condition = "(reference_omega_opposite_sign_count = 0 AND chain_break_prevented_spurious_contacts = true AND arm_header_mismatch_count = 0 AND n_headers_checked = 18 AND cbclash_mono_violations_1crn_count = 0 AND cbclash_mono_n_compared_1crn_count >= 1 AND cbclash_mono_violations_1crn_weighted = 0 AND cbclash_mono_n_compared_1crn_weighted >= 1 AND cbclash_mono_violations_1ubq_count = 0 AND cbclash_mono_n_compared_1ubq_count >= 1 AND cbclash_mono_violations_1ubq_weighted = 0 AND cbclash_mono_n_compared_1ubq_weighted >= 1 AND crowdmode_contact_max_micro_diff_1crn_all <= 1 AND crowdmode_contact_n_compared_1crn_all >= 1 AND crowdmode_freedom_max_micro_diff_1crn_all <= 1 AND crowdmode_freedom_n_compared_1crn_all >= 1 AND crowdmode_contact_max_micro_diff_1crn_ala <= 1 AND crowdmode_contact_n_compared_1crn_ala >= 1 AND crowdmode_freedom_max_micro_diff_1crn_ala <= 1 AND crowdmode_freedom_n_compared_1crn_ala >= 1 AND crowdmode_contact_max_micro_diff_1ubq_all <= 1 AND crowdmode_contact_n_compared_1ubq_all >= 1 AND crowdmode_freedom_max_micro_diff_1ubq_all <= 1 AND crowdmode_freedom_n_compared_1ubq_all >= 1 AND crowdmode_contact_max_micro_diff_1ubq_ala <= 1 AND crowdmode_contact_n_compared_1ubq_ala >= 1 AND crowdmode_freedom_max_micro_diff_1ubq_ala <= 1 AND crowdmode_freedom_n_compared_1ubq_ala >= 1 AND crowdmode_effect_residues_1crn >= 1 AND endpoint_violations_1crn = 0 AND endpoint_n_eligible_1crn >= 1 AND crowdmode_effect_residues_1ubq >= 1 AND endpoint_violations_1ubq = 0 AND endpoint_n_eligible_1ubq >= 1 AND dclash_mono_violations_1crn = 0 AND dclash_mono_n_compared_1crn >= 1 AND cbclash_effect_max_over_sweep_1crn >= 1) AND (median_contact_delta_1crn <= 0.0001 AND p95_contact_delta_1crn <= 0.05 AND max_contact_delta_1crn <= 0.25 AND max_one_sided_contact_degree_1crn <= 0.25 AND median_contact_delta_1ubq <= 0.0001 AND p95_contact_delta_1ubq <= 0.05 AND max_contact_delta_1ubq <= 0.25 AND max_one_sided_contact_degree_1ubq <= 0.25 AND median_contact_delta_multichain <= 0.0001 AND p95_contact_delta_multichain <= 0.05 AND max_contact_delta_multichain <= 0.35 AND max_one_sided_contact_degree_multichain <= 0.35 AND median_crowdedness_delta_1crn <= 0.035 AND p95_crowdedness_delta_1crn <= 0.15 AND max_crowdedness_delta_1crn <= 0.35 AND median_crowdedness_delta_1ubq <= 0.035 AND p95_crowdedness_delta_1ubq <= 0.15 AND max_crowdedness_delta_1ubq <= 0.35 AND median_crowdedness_delta_multichain <= 0.035 AND p95_crowdedness_delta_multichain <= 0.15 AND max_crowdedness_delta_multichain <= 0.5 AND median_freedom_delta_1crn <= 0.05 AND p95_freedom_delta_1crn <= 0.15 AND max_freedom_delta_1crn <= 0.35 AND median_freedom_delta_1ubq <= 0.05 AND p95_freedom_delta_1ubq <= 0.15 AND max_freedom_delta_1ubq <= 0.35 AND median_freedom_delta_multichain <= 0.05 AND p95_freedom_delta_multichain <= 0.15 AND max_freedom_delta_multichain <= 0.5 AND median_contact_delta_1crn_default <= 0.0001 AND median_contact_delta_1ubq_default <= 0.0001 AND median_freedom_delta_1crn_default <= 0.05 AND median_freedom_delta_1ubq_default <= 0.05)"
+decision = "accept_clean_room_confind_v2"
+reasoning = "All invariants hold, including the by-construction relationships among proxide's own arms and both flag-effect controls. Parity-mode deltas and one-sided degrees satisfy the tight bounds, and default-mode contact and freedom medians hold."
+is_residual = false
+
+[outcomes.marginal]
+condition = "(reference_omega_opposite_sign_count = 0 AND chain_break_prevented_spurious_contacts = true AND arm_header_mismatch_count = 0 AND n_headers_checked = 18 AND cbclash_mono_violations_1crn_count = 0 AND cbclash_mono_n_compared_1crn_count >= 1 AND cbclash_mono_violations_1crn_weighted = 0 AND cbclash_mono_n_compared_1crn_weighted >= 1 AND cbclash_mono_violations_1ubq_count = 0 AND cbclash_mono_n_compared_1ubq_count >= 1 AND cbclash_mono_violations_1ubq_weighted = 0 AND cbclash_mono_n_compared_1ubq_weighted >= 1 AND crowdmode_contact_max_micro_diff_1crn_all <= 1 AND crowdmode_contact_n_compared_1crn_all >= 1 AND crowdmode_freedom_max_micro_diff_1crn_all <= 1 AND crowdmode_freedom_n_compared_1crn_all >= 1 AND crowdmode_contact_max_micro_diff_1crn_ala <= 1 AND crowdmode_contact_n_compared_1crn_ala >= 1 AND crowdmode_freedom_max_micro_diff_1crn_ala <= 1 AND crowdmode_freedom_n_compared_1crn_ala >= 1 AND crowdmode_contact_max_micro_diff_1ubq_all <= 1 AND crowdmode_contact_n_compared_1ubq_all >= 1 AND crowdmode_freedom_max_micro_diff_1ubq_all <= 1 AND crowdmode_freedom_n_compared_1ubq_all >= 1 AND crowdmode_contact_max_micro_diff_1ubq_ala <= 1 AND crowdmode_contact_n_compared_1ubq_ala >= 1 AND crowdmode_freedom_max_micro_diff_1ubq_ala <= 1 AND crowdmode_freedom_n_compared_1ubq_ala >= 1 AND crowdmode_effect_residues_1crn >= 1 AND endpoint_violations_1crn = 0 AND endpoint_n_eligible_1crn >= 1 AND crowdmode_effect_residues_1ubq >= 1 AND endpoint_violations_1ubq = 0 AND endpoint_n_eligible_1ubq >= 1 AND dclash_mono_violations_1crn = 0 AND dclash_mono_n_compared_1crn >= 1 AND cbclash_effect_max_over_sweep_1crn >= 1) AND (median_contact_delta_1crn <= 0.0002 AND p95_contact_delta_1crn <= 0.1 AND max_contact_delta_1crn <= 0.4 AND max_one_sided_contact_degree_1crn <= 0.4 AND median_contact_delta_1ubq <= 0.0002 AND p95_contact_delta_1ubq <= 0.1 AND max_contact_delta_1ubq <= 0.4 AND max_one_sided_contact_degree_1ubq <= 0.4 AND median_contact_delta_multichain <= 0.0002 AND p95_contact_delta_multichain <= 0.1 AND max_contact_delta_multichain <= 0.5 AND max_one_sided_contact_degree_multichain <= 0.5 AND median_crowdedness_delta_1crn <= 0.06 AND p95_crowdedness_delta_1crn <= 0.25 AND max_crowdedness_delta_1crn <= 0.5 AND median_crowdedness_delta_1ubq <= 0.06 AND p95_crowdedness_delta_1ubq <= 0.25 AND max_crowdedness_delta_1ubq <= 0.5 AND median_crowdedness_delta_multichain <= 0.06 AND p95_crowdedness_delta_multichain <= 0.25 AND max_crowdedness_delta_multichain <= 0.7 AND median_freedom_delta_1crn <= 0.1 AND p95_freedom_delta_1crn <= 0.25 AND max_freedom_delta_1crn <= 0.5 AND median_freedom_delta_1ubq <= 0.1 AND p95_freedom_delta_1ubq <= 0.25 AND max_freedom_delta_1ubq <= 0.5 AND median_freedom_delta_multichain <= 0.1 AND p95_freedom_delta_multichain <= 0.25 AND max_freedom_delta_multichain <= 0.7 AND median_contact_delta_1crn_default <= 0.0002 AND median_contact_delta_1ubq_default <= 0.0002 AND median_freedom_delta_1crn_default <= 0.1 AND median_freedom_delta_1ubq_default <= 0.1) AND NOT (median_contact_delta_1crn <= 0.0001 AND p95_contact_delta_1crn <= 0.05 AND max_contact_delta_1crn <= 0.25 AND max_one_sided_contact_degree_1crn <= 0.25 AND median_contact_delta_1ubq <= 0.0001 AND p95_contact_delta_1ubq <= 0.05 AND max_contact_delta_1ubq <= 0.25 AND max_one_sided_contact_degree_1ubq <= 0.25 AND median_contact_delta_multichain <= 0.0001 AND p95_contact_delta_multichain <= 0.05 AND max_contact_delta_multichain <= 0.35 AND max_one_sided_contact_degree_multichain <= 0.35 AND median_crowdedness_delta_1crn <= 0.035 AND p95_crowdedness_delta_1crn <= 0.15 AND max_crowdedness_delta_1crn <= 0.35 AND median_crowdedness_delta_1ubq <= 0.035 AND p95_crowdedness_delta_1ubq <= 0.15 AND max_crowdedness_delta_1ubq <= 0.35 AND median_crowdedness_delta_multichain <= 0.035 AND p95_crowdedness_delta_multichain <= 0.15 AND max_crowdedness_delta_multichain <= 0.5 AND median_freedom_delta_1crn <= 0.05 AND p95_freedom_delta_1crn <= 0.15 AND max_freedom_delta_1crn <= 0.35 AND median_freedom_delta_1ubq <= 0.05 AND p95_freedom_delta_1ubq <= 0.15 AND max_freedom_delta_1ubq <= 0.35 AND median_freedom_delta_multichain <= 0.05 AND p95_freedom_delta_multichain <= 0.15 AND max_freedom_delta_multichain <= 0.5 AND median_contact_delta_1crn_default <= 0.0001 AND median_contact_delta_1ubq_default <= 0.0001 AND median_freedom_delta_1crn_default <= 0.05 AND median_freedom_delta_1ubq_default <= 0.05)"
+decision = "review_divergences_and_park"
+reasoning = "All invariants hold, but at least one delta or one-sided degree falls between the tight bounds and the outer bounds."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (reference_omega_opposite_sign_count = 0 AND chain_break_prevented_spurious_contacts = true AND arm_header_mismatch_count = 0 AND n_headers_checked = 18 AND cbclash_mono_violations_1crn_count = 0 AND cbclash_mono_n_compared_1crn_count >= 1 AND cbclash_mono_violations_1crn_weighted = 0 AND cbclash_mono_n_compared_1crn_weighted >= 1 AND cbclash_mono_violations_1ubq_count = 0 AND cbclash_mono_n_compared_1ubq_count >= 1 AND cbclash_mono_violations_1ubq_weighted = 0 AND cbclash_mono_n_compared_1ubq_weighted >= 1 AND crowdmode_contact_max_micro_diff_1crn_all <= 1 AND crowdmode_contact_n_compared_1crn_all >= 1 AND crowdmode_freedom_max_micro_diff_1crn_all <= 1 AND crowdmode_freedom_n_compared_1crn_all >= 1 AND crowdmode_contact_max_micro_diff_1crn_ala <= 1 AND crowdmode_contact_n_compared_1crn_ala >= 1 AND crowdmode_freedom_max_micro_diff_1crn_ala <= 1 AND crowdmode_freedom_n_compared_1crn_ala >= 1 AND crowdmode_contact_max_micro_diff_1ubq_all <= 1 AND crowdmode_contact_n_compared_1ubq_all >= 1 AND crowdmode_freedom_max_micro_diff_1ubq_all <= 1 AND crowdmode_freedom_n_compared_1ubq_all >= 1 AND crowdmode_contact_max_micro_diff_1ubq_ala <= 1 AND crowdmode_contact_n_compared_1ubq_ala >= 1 AND crowdmode_freedom_max_micro_diff_1ubq_ala <= 1 AND crowdmode_freedom_n_compared_1ubq_ala >= 1 AND crowdmode_effect_residues_1crn >= 1 AND endpoint_violations_1crn = 0 AND endpoint_n_eligible_1crn >= 1 AND crowdmode_effect_residues_1ubq >= 1 AND endpoint_violations_1ubq = 0 AND endpoint_n_eligible_1ubq >= 1 AND dclash_mono_violations_1crn = 0 AND dclash_mono_n_compared_1crn >= 1 AND cbclash_effect_max_over_sweep_1crn >= 1) OR NOT (median_contact_delta_1crn <= 0.0002 AND p95_contact_delta_1crn <= 0.1 AND max_contact_delta_1crn <= 0.4 AND max_one_sided_contact_degree_1crn <= 0.4 AND median_contact_delta_1ubq <= 0.0002 AND p95_contact_delta_1ubq <= 0.1 AND max_contact_delta_1ubq <= 0.4 AND max_one_sided_contact_degree_1ubq <= 0.4 AND median_contact_delta_multichain <= 0.0002 AND p95_contact_delta_multichain <= 0.1 AND max_contact_delta_multichain <= 0.5 AND max_one_sided_contact_degree_multichain <= 0.5 AND median_crowdedness_delta_1crn <= 0.06 AND p95_crowdedness_delta_1crn <= 0.25 AND max_crowdedness_delta_1crn <= 0.5 AND median_crowdedness_delta_1ubq <= 0.06 AND p95_crowdedness_delta_1ubq <= 0.25 AND max_crowdedness_delta_1ubq <= 0.5 AND median_crowdedness_delta_multichain <= 0.06 AND p95_crowdedness_delta_multichain <= 0.25 AND max_crowdedness_delta_multichain <= 0.7 AND median_freedom_delta_1crn <= 0.1 AND p95_freedom_delta_1crn <= 0.25 AND max_freedom_delta_1crn <= 0.5 AND median_freedom_delta_1ubq <= 0.1 AND p95_freedom_delta_1ubq <= 0.25 AND max_freedom_delta_1ubq <= 0.5 AND median_freedom_delta_multichain <= 0.1 AND p95_freedom_delta_multichain <= 0.25 AND max_freedom_delta_multichain <= 0.7 AND median_contact_delta_1crn_default <= 0.0002 AND median_contact_delta_1ubq_default <= 0.0002 AND median_freedom_delta_1crn_default <= 0.1 AND median_freedom_delta_1ubq_default <= 0.1)"
+decision = "reject_and_investigate"
+reasoning = "An invariant failed (reference omega sign, chain-break segmentation, arm header, or a by-construction relationship or flag-effect control among proxide's arms), or a delta or one-sided degree exceeded the outer bound."
+is_residual = true
+
+[result_schema]
+parity_arm_label = "string"
+default_arm_label = "string"
+median_contact_delta_1crn = "float"
+p95_contact_delta_1crn = "float"
+max_contact_delta_1crn = "float"
+median_crowdedness_delta_1crn = "float"
+p95_crowdedness_delta_1crn = "float"
+max_crowdedness_delta_1crn = "float"
+median_freedom_delta_1crn = "float"
+p95_freedom_delta_1crn = "float"
+max_freedom_delta_1crn = "float"
+pct_within_1e4_1crn = "float"
+pct_within_005_1crn = "float"
+median_contact_delta_1ubq = "float"
+p95_contact_delta_1ubq = "float"
+max_contact_delta_1ubq = "float"
+median_crowdedness_delta_1ubq = "float"
+p95_crowdedness_delta_1ubq = "float"
+max_crowdedness_delta_1ubq = "float"
+median_freedom_delta_1ubq = "float"
+p95_freedom_delta_1ubq = "float"
+max_freedom_delta_1ubq = "float"
+pct_within_1e4_1ubq = "float"
+pct_within_005_1ubq = "float"
+median_contact_delta_multichain = "float"
+p95_contact_delta_multichain = "float"
+max_contact_delta_multichain = "float"
+median_crowdedness_delta_multichain = "float"
+p95_crowdedness_delta_multichain = "float"
+max_crowdedness_delta_multichain = "float"
+median_freedom_delta_multichain = "float"
+p95_freedom_delta_multichain = "float"
+max_freedom_delta_multichain = "float"
+pct_within_1e4_multichain = "float"
+pct_within_005_multichain = "float"
+mean_contact_delta_1crn = "float"
+median_contact_delta_1crn_default = "float"
+p95_contact_delta_1crn_default = "float"
+max_contact_delta_1crn_default = "float"
+median_crowdedness_delta_1crn_default = "float"
+p95_crowdedness_delta_1crn_default = "float"
+max_crowdedness_delta_1crn_default = "float"
+median_freedom_delta_1crn_default = "float"
+p95_freedom_delta_1crn_default = "float"
+max_freedom_delta_1crn_default = "float"
+mean_contact_delta_1ubq = "float"
+median_contact_delta_1ubq_default = "float"
+p95_contact_delta_1ubq_default = "float"
+max_contact_delta_1ubq_default = "float"
+median_crowdedness_delta_1ubq_default = "float"
+p95_crowdedness_delta_1ubq_default = "float"
+max_crowdedness_delta_1ubq_default = "float"
+median_freedom_delta_1ubq_default = "float"
+p95_freedom_delta_1ubq_default = "float"
+max_freedom_delta_1ubq_default = "float"
+multichain_contacts_count = "int"
+multichain_common_pairs = "int"
+ref_only_contact_count_1crn = "int"
+clean_only_contact_count_1crn = "int"
+one_sided_contact_fraction_1crn = "float"
+max_ref_only_contact_degree_1crn = "float"
+max_clean_only_contact_degree_1crn = "float"
+max_one_sided_contact_degree_1crn = "float"
+ref_only_contact_count_1ubq = "int"
+clean_only_contact_count_1ubq = "int"
+one_sided_contact_fraction_1ubq = "float"
+max_ref_only_contact_degree_1ubq = "float"
+max_clean_only_contact_degree_1ubq = "float"
+max_one_sided_contact_degree_1ubq = "float"
+ref_only_contact_count_multichain = "int"
+clean_only_contact_count_multichain = "int"
+one_sided_contact_fraction_multichain = "float"
+max_ref_only_contact_degree_multichain = "float"
+max_clean_only_contact_degree_multichain = "float"
+max_one_sided_contact_degree_multichain = "float"
+ref_only_contact_count_1crn_default = "int"
+clean_only_contact_count_1crn_default = "int"
+one_sided_contact_fraction_1crn_default = "float"
+max_ref_only_contact_degree_1crn_default = "float"
+max_clean_only_contact_degree_1crn_default = "float"
+max_one_sided_contact_degree_1crn_default = "float"
+ref_only_contact_count_1ubq_default = "int"
+clean_only_contact_count_1ubq_default = "int"
+one_sided_contact_fraction_1ubq_default = "float"
+max_ref_only_contact_degree_1ubq_default = "float"
+max_clean_only_contact_degree_1ubq_default = "float"
+max_one_sided_contact_degree_1ubq_default = "float"
+n_residues_1crn = "int"
+cbclash_mono_violations_1crn_count = "int"
+cbclash_mono_n_compared_1crn_count = "int"
+cbclash_mono_violations_1crn_weighted = "int"
+cbclash_mono_n_compared_1crn_weighted = "int"
+crowdmode_contact_max_micro_diff_1crn_all = "int"
+crowdmode_contact_n_compared_1crn_all = "int"
+crowdmode_freedom_max_micro_diff_1crn_all = "int"
+crowdmode_freedom_n_compared_1crn_all = "int"
+crowdmode_contact_max_micro_diff_1crn_ala = "int"
+crowdmode_contact_n_compared_1crn_ala = "int"
+crowdmode_freedom_max_micro_diff_1crn_ala = "int"
+crowdmode_freedom_n_compared_1crn_ala = "int"
+crowdmode_effect_residues_1crn = "int"
+endpoint_violations_1crn = "int"
+endpoint_n_eligible_1crn = "int"
+crowdedness_shift_default_minus_parity_median_signed_1crn = "float"
+crowdedness_shift_cbclash_part_median_signed_1crn = "float"
+crowdedness_shift_crowdmode_part_median_signed_1crn = "float"
+n_residues_1ubq = "int"
+cbclash_mono_violations_1ubq_count = "int"
+cbclash_mono_n_compared_1ubq_count = "int"
+cbclash_mono_violations_1ubq_weighted = "int"
+cbclash_mono_n_compared_1ubq_weighted = "int"
+crowdmode_contact_max_micro_diff_1ubq_all = "int"
+crowdmode_contact_n_compared_1ubq_all = "int"
+crowdmode_freedom_max_micro_diff_1ubq_all = "int"
+crowdmode_freedom_n_compared_1ubq_all = "int"
+crowdmode_contact_max_micro_diff_1ubq_ala = "int"
+crowdmode_contact_n_compared_1ubq_ala = "int"
+crowdmode_freedom_max_micro_diff_1ubq_ala = "int"
+crowdmode_freedom_n_compared_1ubq_ala = "int"
+crowdmode_effect_residues_1ubq = "int"
+endpoint_violations_1ubq = "int"
+endpoint_n_eligible_1ubq = "int"
+crowdedness_shift_default_minus_parity_median_signed_1ubq = "float"
+crowdedness_shift_cbclash_part_median_signed_1ubq = "float"
+crowdedness_shift_crowdmode_part_median_signed_1ubq = "float"
+dclash_mono_violations_1crn = "int"
+dclash_mono_n_compared_1crn = "int"
+cbclash_effect_residues_1crn_dclash_2p0 = "int"
+ala_only_saturated_residues_1crn_dclash_2p0 = "int"
+cbclash_effect_residues_1crn_dclash_2p5 = "int"
+ala_only_saturated_residues_1crn_dclash_2p5 = "int"
+cbclash_effect_residues_1crn_dclash_3p0 = "int"
+ala_only_saturated_residues_1crn_dclash_3p0 = "int"
+cbclash_effect_residues_1crn_dclash_3p5 = "int"
+ala_only_saturated_residues_1crn_dclash_3p5 = "int"
+cbclash_effect_max_over_sweep_1crn = "int"
+arm_header_mismatch_count = "int"
+n_headers_checked = "int"
+reference_omega_same_sign_count = "int"
+reference_omega_opposite_sign_count = "int"
+max_reference_omega_delta_deg = "float"
+chain_break_prevented_spurious_contacts = "bool"
+outcome = "string"

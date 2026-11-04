@@ -456,6 +456,7 @@ mod tests {
             ion_atoms: Vec::new(),
             num_residues: 1,
             num_chains: 1,
+            ter_positions: Vec::new(),
         }
     }
 
@@ -565,6 +566,7 @@ mod tests {
             ion_atoms: Vec::new(),
             num_residues: 1,
             num_chains: 1,
+            ter_positions: Vec::new(),
         };
         let mut sat_bonds = vec![[0, 1], [0, 2], [0, 3], [0, 4]];
         let added_sat = add_hydrogens(&mut sat_structure, &mut sat_bonds).expect("Failed");
@@ -614,6 +616,7 @@ mod tests {
             ion_atoms: Vec::new(),
             num_residues: 1,
             num_chains: 1,
+            ter_positions: Vec::new(),
         };
         let mut disj_bonds = vec![];
         let added_disj = add_hydrogens(&mut disj_structure, &mut disj_bonds).expect("Failed");

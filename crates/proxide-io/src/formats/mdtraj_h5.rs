@@ -167,6 +167,7 @@ pub fn mdtraj_to_raw_atom_data(metadata: &MdtrajH5Result, frame: &MdtrajFrame) -
         epsilons: None,
         num_atoms: metadata.num_atoms,
         is_hetatm: vec![false; metadata.num_atoms],
+        ter_atom_indices: Vec::new(),
     }
 }
 

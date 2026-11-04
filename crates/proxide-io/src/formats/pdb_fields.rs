@@ -217,6 +217,10 @@ pub struct PdbAtomRecord {
     pub charge: Option<f32>,
     pub radius: Option<f32>,
     pub is_hetatm: bool,
+    /// True when an explicit `TER` record occurred between the preceding atom
+    /// and this atom, including across a `MODEL`/`ENDMDL` boundary (debt #3215).
+    /// A `TER` before the file's first atom marks nothing.
+    pub ter_before: bool,
 }
 
 // ---------------------------------------------------------------------
@@ -552,6 +556,7 @@ fn parse_atom_record(
         charge: None,
         radius: None,
         is_hetatm: record == "HETATM",
+        ter_before: false,
     })
 }
 
@@ -576,16 +581,18 @@ fn parse_model_number(line_bytes: &[u8], line_no: usize) -> Result<usize, PdbFie
 }
 
 /// Parse every ATOM/HETATM record from `reader`, in order, tracking MODEL
-/// boundaries and residue-reappearance (decision d) as it goes. The first
-/// malformed record anywhere in the file aborts the whole parse with a
-/// [`PdbFieldError`] naming exactly where and what -- there is no partial
-/// result and no silent drop.
+/// boundaries, TER records (debt #3215), and residue-reappearance (decision d)
+/// as it goes. The first malformed record anywhere in the file aborts the whole
+/// parse with a [`PdbFieldError`] naming exactly where and what -- there is no
+/// partial result and no silent drop.
 pub fn parse_pdb_records<R: BufRead>(mut reader: R) -> Result<Vec<PdbAtomRecord>, PdbFieldError> {
     let mut records = Vec::new();
     let mut current_model: usize = 1;
     let mut trackers: HashMap<(usize, String), ResidueTracker> = HashMap::new();
     let mut line_no: usize = 0;
     let mut buf: Vec<u8> = Vec::new();
+    let mut pending_ter = false;
+    let mut seen_atom = false;
 
     loop {
         buf.clear();
@@ -608,15 +615,23 @@ pub fn parse_pdb_records<R: BufRead>(mut reader: R) -> Result<Vec<PdbAtomRecord>
 
         match record_str.as_ref() {
             "ATOM" | "HETATM" => {
-                let rec =
+                let mut rec =
                     parse_atom_record(line_bytes, line_no, current_model, record_str.as_ref())?;
+                rec.ter_before = pending_ter;
+                pending_ter = false;
+                seen_atom = true;
                 check_residue_reappearance(&mut trackers, current_model, &rec, line_bytes)?;
                 records.push(rec);
             }
             "MODEL" => {
                 current_model = parse_model_number(line_bytes, line_no)?;
             }
-            "ENDMDL" | "TER" | "ANISOU" => {
+            "TER" => {
+                if seen_atom {
+                    pending_ter = true;
+                }
+            }
+            "ENDMDL" | "ANISOU" => {
                 // Explicitly ignored, matching pdb.rs's existing behaviour.
             }
             _ => {
@@ -809,6 +824,41 @@ ATOM      3  N   ALA A   2      2.000   0.000   0.000  1.00  0.00           N
         let content = format!("MODEL 1\n{BASE_LINE}\nENDMDL\n");
         let recs = records(&content).unwrap();
         assert_eq!(recs[0].model, 1);
+    }
+
+    /// Debt #3215 regression: a TER before ENDMDL must still mark the next
+    /// model's first atom, as the line scan it replaced did.
+    #[test]
+    fn ter_before_endmdl_marks_first_atom_of_next_model() {
+        let content = format!("MODEL 1\n{BASE_LINE}\nTER\nENDMDL\nMODEL 2\n{BASE_LINE}\nENDMDL\n");
+        let recs = records(&content).unwrap();
+        assert_eq!(recs.len(), 2);
+        assert!(!recs[0].ter_before);
+        assert!(recs[1].ter_before);
+        assert_eq!(recs[1].model, 2);
+    }
+
+    #[test]
+    fn ter_is_consumed_by_the_next_atom_only() {
+        let content = format!("{BASE_LINE}\nTER\n{BASE_LINE}\n{BASE_LINE}\n");
+        let flags: Vec<bool> = records(&content)
+            .unwrap()
+            .iter()
+            .map(|r| r.ter_before)
+            .collect();
+        assert_eq!(flags, vec![false, true, false]);
+    }
+
+    #[test]
+    fn ter_before_any_atom_marks_nothing() {
+        let content = format!("TER\nMODEL 1\nTER\n{BASE_LINE}\nENDMDL\n");
+        assert!(!records(&content).unwrap()[0].ter_before);
+    }
+
+    #[test]
+    fn model_boundary_without_ter_marks_nothing() {
+        let content = format!("MODEL 1\n{BASE_LINE}\nENDMDL\nMODEL 2\n{BASE_LINE}\nENDMDL\n");
+        assert!(!records(&content).unwrap()[1].ter_before);
     }
 
     #[test]

@@ -40,6 +40,9 @@ pub fn parse_pdb_from_reader<R: BufRead>(
     let mut model_ids: Vec<usize> = Vec::with_capacity(records.len());
 
     for rec in records {
+        if rec.ter_before && raw_data.num_atoms > 0 {
+            raw_data.ter_atom_indices.push(raw_data.num_atoms);
+        }
         model_ids.push(rec.model);
         raw_data.add_atom(AtomRecord {
             serial: rec.serial,
@@ -269,5 +272,28 @@ ATOM      3  N   ALA B   1      10.000   0.000   0.000  1.00  0.00           N";
         assert_eq!(raw_data.chain_ids[1], "B");
         assert_eq!(raw_data.res_ids[0], 1);
         assert_eq!(raw_data.res_ids[1], 1);
+        assert_eq!(raw_data.ter_atom_indices, vec![1]);
+
+        let processed = proxide_core::processing::ProcessedStructure::from_raw(raw_data).unwrap();
+        assert_eq!(processed.ter_positions, vec![1]);
+    }
+
+    #[test]
+    fn test_internal_ter_same_chain_populates_ter_positions() {
+        let pdb_content = "\
+ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N
+ATOM      2  CA  ALA A   1       1.458   0.000   0.000  1.00  0.00           C
+ATOM      3  N   ALA A   2       2.000   1.000   0.000  1.00  0.00           N
+ATOM      4  CA  ALA A   2       3.458   1.000   0.000  1.00  0.00           C
+TER       5      ALA A   2
+ATOM      6  N   ALA A   3       4.000   2.000   0.000  1.00  0.00           N
+ATOM      7  CA  ALA A   3       5.458   2.000   0.000  1.00  0.00           C
+END
+";
+        let (raw_data, _) = parse_pdb_from_reader(pdb_content.as_bytes()).unwrap();
+        assert_eq!(raw_data.ter_atom_indices, vec![4]);
+        let processed = proxide_core::processing::ProcessedStructure::from_raw(raw_data).unwrap();
+        assert_eq!(processed.num_residues, 3);
+        assert_eq!(processed.ter_positions, vec![2]);
     }
 }

@@ -1,4 +1,4 @@
-use proxide_confind::extract_f64_backbone;
+use proxide_confind::{extract_f64_backbone, load_pdb_f64, ResidueIndex};
 use proxide_core::processing::residues::ProcessedStructure;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -302,4 +302,173 @@ END
     angle(backbone.bb[3].phi, 90.0, "phi3");
     angle(backbone.bb[3].omega, -180.0, "omega3");
     assert!(!backbone.bb[3].is_cis_peptide);
+}
+
+/// Debt #3215: an explicit `TER` record between two residues with the SAME
+/// chain ID ('A') and consecutive CA–CA distance <= 4.5 Å (here 1.0 Å)
+/// must be retained on `ProcessedStructure::ter_positions` and sever `psi` of
+/// the pre-TER residue as well as `phi`, `omega`, and `is_cis_peptide` of the
+/// post-TER residue in `extract_f64_backbone`.
+#[test]
+fn internal_ter_same_chain_close_ca_severs_dihedrals() {
+    let pdb_content = "\
+ATOM      1  N   ALA A   1       0.000   1.000  -1.000  1.00  0.00           N
+ATOM      2  CA  ALA A   1       0.000   1.000   0.000  1.00  0.00           C
+ATOM      3  C   ALA A   1       0.000   0.000   0.000  1.00  0.00           C
+ATOM      4  O   ALA A   1      -1.000   0.000   0.000  1.00  0.00           O
+ATOM      5  N   ALA A   2       1.000   0.000   0.000  1.00  0.00           N
+ATOM      6  CA  ALA A   2       1.000   0.000   1.000  1.00  0.00           C
+ATOM      7  C   ALA A   2       1.000   1.000   1.000  1.00  0.00           C
+ATOM      8  O   ALA A   2       2.000   1.000   1.000  1.00  0.00           O
+TER       9      ALA A   2
+ATOM     10  N   ALA A   3       0.000   1.000   1.000  1.00  0.00           N
+ATOM     11  CA  ALA A   3       0.000   0.000   1.000  1.00  0.00           C
+ATOM     12  C   ALA A   3       0.000   0.000   0.000  1.00  0.00           C
+ATOM     13  O   ALA A   3       0.000  -1.000   0.000  1.00  0.00           O
+ATOM     14  N   ALA A   4       1.000   0.000   0.000  1.00  0.00           N
+ATOM     15  CA  ALA A   4       1.000   0.000  -1.000  1.00  0.00           C
+ATOM     16  C   ALA A   4       1.000   1.000  -1.000  1.00  0.00           C
+ATOM     17  O   ALA A   4       2.000   1.000  -1.000  1.00  0.00           O
+END
+";
+
+    let mut temp_file = NamedTempFile::new().expect("failed to create temp file");
+    temp_file
+        .write_all(pdb_content.as_bytes())
+        .expect("failed to write PDB content");
+    let (raw, _) =
+        proxide_io::formats::pdb::parse_pdb_file(temp_file.path()).expect("failed to parse PDB");
+    let processed = ProcessedStructure::from_raw(raw).expect("failed to create ProcessedStructure");
+    assert_eq!(
+        processed.ter_positions,
+        vec![2],
+        "ProcessedStructure must retain residue boundary index 2 for the internal TER"
+    );
+
+    let via_processed = extract_f64_backbone(&processed).expect("failed to extract backbone");
+    let via_direct = load_pdb_f64(temp_file.path()).expect("failed to load_pdb_f64");
+    assert_eq!(via_processed.bb.len(), 4);
+
+    // Pre-TER residue (index 1, res_seq 2): phi and omega intact, psi severed at TER.
+    assert!(via_processed.bb[1].phi.is_some());
+    assert!(via_processed.bb[1].omega.is_some());
+    assert_eq!(
+        via_processed.bb[1].psi, None,
+        "psi before internal TER must be severed (None)"
+    );
+
+    // Post-TER residue (index 2, res_seq 3): phi and omega severed at TER (even though
+    // without TER omega would be 0.0° cis and CA-CA is only 1.0 Å <= 4.5 Å), psi intact.
+    assert_eq!(
+        via_processed.bb[2].phi, None,
+        "phi after internal TER must be severed (None)"
+    );
+    assert_eq!(
+        via_processed.bb[2].omega, None,
+        "omega after internal TER must be severed (None)"
+    );
+    assert!(
+        !via_processed.bb[2].is_cis_peptide,
+        "is_cis_peptide after internal TER must be false when omega is severed"
+    );
+    assert!(via_processed.bb[2].psi.is_some());
+
+    // Exact parity between extract_f64_backbone and load_pdb_f64 across all 4 residues.
+    for i in 0..4 {
+        assert_eq!(via_processed.bb[i].phi, via_direct.bb[i].phi, "phi[{i}]");
+        assert_eq!(via_processed.bb[i].psi, via_direct.bb[i].psi, "psi[{i}]");
+        assert_eq!(
+            via_processed.bb[i].omega, via_direct.bb[i].omega,
+            "omega[{i}]"
+        );
+        assert_eq!(
+            via_processed.bb[i].is_cis_peptide, via_direct.bb[i].is_cis_peptide,
+            "is_cis_peptide[{i}]"
+        );
+    }
+}
+
+/// Debt #3215 regression: `load_pdb_f64` concatenates models, so a `TER` before
+/// `ENDMDL` is what severs the boundary when the models' termini are within
+/// 4.5 Å of each other. The line scan removed in #3215 did this.
+#[test]
+fn ter_before_endmdl_severs_dihedrals_between_models() {
+    let pdb_content = "\
+MODEL        1
+ATOM      1  N   ALA A   1       0.000   1.000  -1.000  1.00  0.00           N
+ATOM      2  CA  ALA A   1       0.000   1.000   0.000  1.00  0.00           C
+ATOM      3  C   ALA A   1       0.000   0.000   0.000  1.00  0.00           C
+ATOM      4  O   ALA A   1      -1.000   0.000   0.000  1.00  0.00           O
+ATOM      5  N   ALA A   2       1.000   0.000   0.000  1.00  0.00           N
+ATOM      6  CA  ALA A   2       1.000   0.000   1.000  1.00  0.00           C
+ATOM      7  C   ALA A   2       1.000   1.000   1.000  1.00  0.00           C
+ATOM      8  O   ALA A   2       2.000   1.000   1.000  1.00  0.00           O
+TER       9      ALA A   2
+ENDMDL
+MODEL        2
+ATOM     10  N   ALA A   1       0.000   1.000   1.000  1.00  0.00           N
+ATOM     11  CA  ALA A   1       0.000   0.000   1.000  1.00  0.00           C
+ATOM     12  C   ALA A   1       0.000   0.000   0.000  1.00  0.00           C
+ATOM     13  O   ALA A   1       0.000  -1.000   0.000  1.00  0.00           O
+ATOM     14  N   ALA A   2       1.000   0.000   0.000  1.00  0.00           N
+ATOM     15  CA  ALA A   2       1.000   0.000  -1.000  1.00  0.00           C
+ATOM     16  C   ALA A   2       1.000   1.000  -1.000  1.00  0.00           C
+ATOM     17  O   ALA A   2       2.000   1.000  -1.000  1.00  0.00           O
+TER      18      ALA A   2
+ENDMDL
+END
+";
+
+    let mut temp_file = NamedTempFile::new().expect("failed to create temp file");
+    temp_file
+        .write_all(pdb_content.as_bytes())
+        .expect("failed to write PDB content");
+    let backbone = load_pdb_f64(temp_file.path()).expect("failed to load_pdb_f64");
+    assert_eq!(backbone.bb.len(), 4);
+
+    assert_eq!(backbone.bb[1].psi, None, "psi before the model boundary");
+    assert_eq!(backbone.bb[2].phi, None, "phi after the model boundary");
+    assert_eq!(backbone.bb[2].omega, None, "omega after the model boundary");
+    assert!(!backbone.bb[2].is_cis_peptide);
+    // Positive control: dihedrals inside each model are still computed.
+    assert!(backbone.bb[1].phi.is_some());
+    assert!(backbone.bb[2].psi.is_some());
+    assert!(backbone.bb[3].phi.is_some());
+}
+
+/// Debt #3215: `extract_f64_backbone` must reject non-finite (NaN / ±∞) f32
+/// coordinates on `ProcessedStructure` at the f32->f64 copy boundary with
+/// `ConFindError::NonFiniteCoordinate`.
+#[test]
+fn non_finite_coordinate_in_processed_structure_errors() {
+    let pdb_content = "\
+ATOM      1  N   ALA A   1       0.000   1.000  -1.000  1.00  0.00           N
+ATOM      2  CA  ALA A   1       0.000   1.000   0.000  1.00  0.00           C
+ATOM      3  C   ALA A   1       0.000   0.000   0.000  1.00  0.00           C
+ATOM      4  O   ALA A   1      -1.000   0.000   0.000  1.00  0.00           O
+ATOM      5  N   ALA A   2       1.000   0.000   0.000  1.00  0.00           N
+ATOM      6  CA  ALA A   2       1.000   0.000   1.000  1.00  0.00           C
+ATOM      7  C   ALA A   2       1.000   1.000   1.000  1.00  0.00           C
+ATOM      8  O   ALA A   2       2.000   1.000   1.000  1.00  0.00           O
+END
+";
+    let (raw, _) = proxide_io::formats::pdb::parse_pdb_from_reader(pdb_content.as_bytes())
+        .expect("failed to parse PDB");
+
+    for bad_val in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut bad_raw = raw.clone();
+        // Atom index 5 is residue 1's CA atom; corrupt its y coordinate.
+        bad_raw.coords[5 * 3 + 1] = bad_val;
+        let processed =
+            ProcessedStructure::from_raw(bad_raw).expect("failed to create ProcessedStructure");
+        let err = extract_f64_backbone(&processed)
+            .expect_err("non-finite coordinate must error in extract_f64_backbone");
+        match err {
+            proxide_confind::error::ConFindError::NonFiniteCoordinate { residue, atom_name } => {
+                assert_eq!(residue, ResidueIndex(1));
+                assert_eq!(atom_name, "CA");
+            }
+            other => panic!("expected NonFiniteCoordinate, got {other:?}"),
+        }
+    }
 }
