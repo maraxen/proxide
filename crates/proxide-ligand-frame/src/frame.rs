@@ -1,4 +1,4 @@
-use proxide_geometry::geometry::angles::{bond_angle_f64, dihedral_angle_f64};
+use proxide_geometry::geometry::angles::{bond_angle_f64, dihedral_angle_iupac_f64};
 
 use crate::errors::LigandFrameError;
 use crate::pucker::cremer_pople_phase;
@@ -7,6 +7,9 @@ use crate::typing::LigandTopology;
 #[derive(Debug, Clone)]
 pub struct LigandFrameCoordinates {
     pub positions: Vec<Vec<[f64; 3]>>,
+    /// `[torsion][frame]`, radians in `[-π, π]`, right-handed IUPAC sign (the
+    /// convention of MDTraj). `NaN` where the frame is invalid. Before
+    /// debt #3230 these were `-τ_IUPAC`.
     pub torsions: Vec<Vec<f64>>,
     pub feature_mask: Vec<bool>,
     pub frame_validity: Vec<bool>,
@@ -107,7 +110,8 @@ pub fn extract_ligand_frame_coordinates(
                 torsions[t_idx][f] = f64::NAN;
                 continue;
             }
-            torsions[t_idx][f] = dihedral_angle_f64(&frame[a], &frame[b], &frame[c], &frame[d]);
+            torsions[t_idx][f] =
+                dihedral_angle_iupac_f64(&frame[a], &frame[b], &frame[c], &frame[d]);
         }
     }
     let feature_mask = vec![true; n_torsions];
@@ -265,7 +269,13 @@ mod tests {
 
         let result =
             extract_ligand_frame_coordinates(&topology, &positions, &input_elements).unwrap();
-        assert!((result.torsions[0][0].abs() - std::f64::consts::FRAC_PI_2).abs() < 0.1);
+        // Debt #3230: torsions are IUPAC. This fixture is +90 deg under IUPAC; the
+        // old abs()-only check passed with either sign (AGENTS.md B4).
+        let got = result.torsions[0][0];
+        assert!(
+            (got - std::f64::consts::FRAC_PI_2).abs() < 1e-12,
+            "expected +pi/2 (IUPAC), got {got}"
+        );
     }
 
     #[test]
