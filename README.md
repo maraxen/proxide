@@ -186,7 +186,7 @@ confind, rotlib and CCD/fixer are experimental too; they have no top-level Pytho
 proxide's own code in the PyPI wheels and sdist is MIT. They also ship files under other terms: `src/proxide/chem/residues.py` is Apache-2.0 (DeepMind AlphaFold residue constants; see its header), the force-field files under `src/proxide/assets` keep their upstream licences (see `src/proxide/assets/README.md`), and `CHANGELOG.md` records further data notes. Some crates in this repository are not part of the wheels or sdist and carry different terms:
 
 - `crates/proxide-confind`, `crates/proxide-rotlib` and `crates/proxide_fixer` derive from, or depend on code derived from, [Mosaist](https://github.com/Grigoryanlab/Mosaist), which is CC BY-NC-SA 4.0. This is unresolved. Read each crate's `NOTICE` before using it, and do not use these crates for commercial purposes.
-- `crates/proxide-gaff2` is GPL-2.0-or-later and opt-in at build time.
+- `crates/proxide-gaff2` and `crates/proxide-ligand-frame` are GPL-2.0-or-later and opt-in at build time. The wheels and sdist are built from `crates/proxide_py`, which does not reference them. To build the extension with them, use the separate manifest `crates/proxide_py_gpl` from the repo root: `maturin develop --release -m crates/proxide_py_gpl/Cargo.toml --features ligand-frame`. The resulting binary is a GPL-2.0-or-later combined work.
 
 ## 🔧 Development
 

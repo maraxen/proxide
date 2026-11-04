@@ -10,7 +10,7 @@ def _require_ligand_frame():
   try:
     from proxide._proxider import canonicalize_ligand_topology  # noqa: F401
   except ImportError:
-    pytest.skip("proxide built without --features ligand-frame")
+    pytest.skip("proxide built without ligand-frame (build crates/proxide_py_gpl)")
 
 
 @pytest.mark.ligand_frame

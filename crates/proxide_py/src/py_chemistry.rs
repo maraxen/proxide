@@ -20,8 +20,10 @@ pub fn assign_masses(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
 /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
 ///
 /// **Two structurally different implementations, selected at build time by
-/// the `gaff2-engine` Cargo feature** (off by default -- see this crate's
-/// Cargo.toml). This is not a stopgap; it is the deliberate outcome of the
+/// the `gaff2-engine` Cargo feature**, which only the opt-in
+/// `crates/proxide_py_gpl` manifest declares (the MIT `crates/proxide_py`
+/// manifest the wheels and sdist are built from does not; debt #3181).
+/// This is not a stopgap; it is the deliberate outcome of the
 /// `gaff2-rust-port` Cutover decision
 /// (`.praxia/docs/reference/260821_gaff2-rust-port-lessons.md`): the real,
 /// geostd-corpus-validated GAFF2 engine (`proxide-gaff2`, 100% Rust-vs-Python
@@ -29,7 +31,7 @@ pub fn assign_masses(atom_names: Vec<String>) -> PyResult<Vec<f32>> {
 /// `crates/proxide-gaff2/NOTICE`), and linking it into this crate's cdylib
 /// output makes the distributed `_proxider.so` wheel a GPL-encumbered
 /// combined work -- not acceptable as the *default* published build. Building
-/// with `--features gaff2-engine` opts into that tradeoff deliberately; the
+/// `crates/proxide_py_gpl` opts into that tradeoff deliberately; the
 /// default build keeps `proxide-gaff`'s coordinate-only heuristic typer
 /// (MIT, unchanged behavior, but NOT a validated port of any reference
 /// implementation -- see that crate's own module docs).

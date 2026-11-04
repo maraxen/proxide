@@ -146,8 +146,9 @@ jobs:
       - name: WASM Compatibility Check
         # proxide_py binds CPython via PyO3 (pyo3-ffi needs libc types that
         # don't exist on wasm32-unknown-unknown) and was never meant to be
-        # wasm-compatible; exclude it from this check.
-        run: cargo hack check --target wasm32-unknown-unknown --no-default-features --exclude proxide_py
+        # wasm-compatible; exclude it (and proxide_py_gpl, which builds the
+        # same sources) from this check.
+        run: cargo hack check --target wasm32-unknown-unknown --no-default-features --exclude proxide_py --exclude proxide_py_gpl
       - name: Set up Python (for numpy, used by xtc_tests' MDA fixture)
         uses: actions/setup-python@v5
         with:

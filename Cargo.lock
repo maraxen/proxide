@@ -2990,6 +2990,25 @@ dependencies = [
  "nalgebra",
  "numpy",
  "proxide-gaff",
+ "proxide-geometry",
+ "proxide-jaccard",
+ "proxide-tmalign",
+ "proxide-units",
+ "proxide_rs",
+ "pyo3",
+ "pyo3-log",
+]
+
+[[package]]
+name = "proxide_py_gpl"
+version = "0.1.1-dev.0"
+dependencies = [
+ "bytemuck",
+ "log",
+ "molly",
+ "nalgebra",
+ "numpy",
+ "proxide-gaff",
  "proxide-gaff2",
  "proxide-geometry",
  "proxide-jaccard",
