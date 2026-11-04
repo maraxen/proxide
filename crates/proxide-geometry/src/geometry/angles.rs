@@ -41,6 +41,18 @@ pub fn dihedral_angle(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3], d: &[f32; 3]) ->
     y.atan2(x)
 }
 
+/// Compute the right-handed IUPAC torsion angle of `(A, B, C, D)` in `f32`
+/// precision, in radians in `[-π, π]`.
+///
+/// This is the convention of IUPAC, MDTraj, Mosaist and the Dunbrack rotamer
+/// library: looking down `B → C`, the angle is positive when `D` is rotated
+/// clockwise from `A`. For `A = (0, 1, 0)`, `B = 0`, `C = (1, 0, 0)`,
+/// `D = (1, 0, 1)` it returns `+π/2`. Exactly the negation of
+/// [`dihedral_angle`], so values match bit for bit with a hand-negated call.
+pub fn dihedral_angle_iupac(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3], d: &[f32; 3]) -> f32 {
+    -dihedral_angle(a, b, c, d)
+}
+
 /// Compute the angle between three points (A, B, C)
 /// Returns angle at B in radians
 pub fn bond_angle(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3]) -> f32 {
@@ -190,6 +202,15 @@ pub fn dihedral_angle_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3], d: &[f64; 3]
     let y = dot_f64(&m1, &n2);
 
     y.atan2(x)
+}
+
+/// Compute the right-handed IUPAC torsion angle of `(A, B, C, D)` in `f64`
+/// precision, in radians in `[-π, π]`.
+///
+/// Same convention as [`dihedral_angle_iupac`]; `+π/2` for the worked example
+/// on [`dihedral_angle_f64`]. Exactly the negation of [`dihedral_angle_f64`].
+pub fn dihedral_angle_iupac_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3], d: &[f64; 3]) -> f64 {
+    -dihedral_angle_f64(a, b, c, d)
 }
 
 /// Compute the angle between three points (A, B, C) using f64 precision.
@@ -396,6 +417,49 @@ mod tests {
         assert!(
             (asym_val + asym_mirror_val).abs() < 1e-12,
             "chiral reflection must negate dihedral: {asym_val} vs {asym_mirror_val}"
+        );
+    }
+
+    /// Debt #3230: the IUPAC functions return the right-handed torsion, pinned on
+    /// #3216's quadruples (+90, +45, -45) in both precisions.
+    #[test]
+    fn test_dihedral_angle_iupac_sign() {
+        let a = [0.0, 1.0, 0.0];
+        let b = [0.0, 0.0, 0.0];
+        let c = [1.0, 0.0, 0.0];
+        for (d, want_deg) in [
+            ([1.0, 0.0, 1.0], 90.0),
+            ([1.0, 1.0, 1.0], 45.0),
+            ([1.0, 1.0, -1.0], -45.0),
+        ] {
+            let got = dihedral_angle_iupac_f64(&a, &b, &c, &d).to_degrees();
+            assert!(
+                (got - want_deg).abs() < 1e-10,
+                "f64: D={d:?} got {got}, want {want_deg}"
+            );
+            let to32 = |p: [f64; 3]| [p[0] as f32, p[1] as f32, p[2] as f32];
+            let got32 = dihedral_angle_iupac(&to32(a), &to32(b), &to32(c), &to32(d)).to_degrees();
+            assert!(
+                (got32 - want_deg as f32).abs() < 1e-4,
+                "f32: D={d:?} got {got32}, want {want_deg}"
+            );
+        }
+    }
+
+    /// Debt #3230: callers that used to negate by hand get identical bits.
+    #[test]
+    fn test_dihedral_angle_iupac_is_exact_negation() {
+        let a = [0.2, 1.5, -0.3];
+        let b = [0.0, 0.0, 0.0];
+        let c = [1.4, 0.0, 0.0];
+        let d = [1.9, 0.7, 1.2];
+        let raw = dihedral_angle_f64(&a, &b, &c, &d);
+        let iupac = dihedral_angle_iupac_f64(&a, &b, &c, &d);
+        assert_eq!(iupac.to_bits(), (-raw).to_bits());
+        assert_eq!(iupac.to_degrees().to_bits(), (-raw.to_degrees()).to_bits());
+        assert!(
+            iupac > 0.0,
+            "asymmetric case is positive under IUPAC, got {iupac}"
         );
     }
 

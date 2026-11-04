@@ -425,17 +425,14 @@ mod tests {
         // Placement order for CB (parent=CA): resolve_parent_chain maps
         // parent_idx=1(CA) -> B=0(N), A=2(C), i.e. the improper C-N-CA-CB.
         //
-        // NOTE: this crate's `torsion_deg` field (consumed by Nerf::place_atom) uses the
-        // OPPOSITE sign convention from `proxide_geometry::geometry::angles::dihedral_angle`.
-        // Verified empirically: building SER with chi1=60.0 and independently measuring
-        // dihedral_angle(N, CA, CB, OG) returns -60.0, not +60.0. So a BondDef's
-        // torsion_deg of -119.7 must read back as dihedral_angle(...) == +119.7 here;
-        // negate to compare directly against the template's own torsion_deg convention.
+        // This crate's `torsion_deg` (consumed by Nerf::place_atom) is IUPAC: building
+        // SER with chi1=60.0 measures +60.0 with `dihedral_angle_iupac` (and -60.0 with
+        // the raw `dihedral_angle`, which returns -IUPAC; debt #3230).
         let c = coords[2];
         let n = coords[0];
         let ca = coords[1];
         let cb = coords[4];
-        -proxide_geometry::geometry::angles::dihedral_angle(&c, &n, &ca, &cb).to_degrees()
+        proxide_geometry::geometry::angles::dihedral_angle_iupac(&c, &n, &ca, &cb).to_degrees()
     }
 
     #[test]
