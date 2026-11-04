@@ -9,9 +9,13 @@
 
 use std::f32::consts::PI;
 
-/// Compute the dihedral angle between four points (A, B, C, D)
-/// The dihedral is the angle between planes ABC and BCD
-/// Returns angle in radians in range [-π, π]
+/// Compute the dihedral angle between four points `(A, B, C, D)` in `f32`
+/// precision, returning a value in radians in `[-π, π]`.
+///
+/// Note: returns the **negative** of the right-handed IUPAC / MDTraj torsion
+/// angle (`-τ_IUPAC`); see [`dihedral_angle_f64`] for the full derivation and
+/// worked example. Callers requiring standard IUPAC torsion angles must negate
+/// the returned value.
 pub fn dihedral_angle(a: &[f32; 3], b: &[f32; 3], c: &[f32; 3], d: &[f32; 3]) -> f32 {
     // Vectors
     let b1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
@@ -64,8 +68,12 @@ pub struct BackboneDihedrals {
     pub omega: Option<f32>, // CA(i-1)-C(i-1)-N-CA
 }
 
-/// Compute backbone dihedrals for a chain of residues
-/// backbone_coords should be organized as [[N, CA, C], ...] for each residue
+/// Compute backbone dihedrals for a chain of residues.
+/// `backbone_coords` should be organized as `[[N, CA, C], ...]` for each residue.
+///
+/// Note: delegates directly to [`dihedral_angle`] without sign negation, so the
+/// returned `phi`, `psi`, and `omega` values have the negative-IUPAC sign
+/// convention (`-τ_IUPAC`).
 pub fn compute_backbone_dihedrals(backbone_coords: &[[[f32; 3]; 3]]) -> Vec<BackboneDihedrals> {
     let n_residues = backbone_coords.len();
     let mut dihedrals = Vec::with_capacity(n_residues);
@@ -139,12 +147,35 @@ fn normalize(v: &[f32; 3]) -> [f32; 3] {
 }
 
 // =============================================================================
-// f64 versions for high-precision dihedral calculations (MDTraj parity)
+// f64 versions for high-precision dihedral calculations
+// (Note: dihedral_angle_f64 and compute_backbone_dihedrals_f64 return the
+// NEGATIVE of the right-handed IUPAC/MDTraj torsion angle; negate for IUPAC.)
 // =============================================================================
 
 use std::f64::consts::PI as PI_F64;
 
-/// Compute dihedral angle using f64 precision (for MDTraj parity)
+/// Compute the dihedral angle between four points `(A, B, C, D)` in `f64`
+/// precision, returning a value in radians in `[-π, π]`.
+///
+/// # Sign convention (negative IUPAC)
+///
+/// With bond vectors `b1 = B - A`, `b2 = C - B`, `b3 = D - C` and plane
+/// normals `n1 = b1 × b2`, `n2 = b2 × b3`, this function evaluates
+/// `m1 = n1 × normalize(b2)` and returns `atan2(m1 · n2, n1 · n2)`. Because
+/// `n1 × b̂2 = -(b̂2 × n1)`, the returned angle has the **opposite sign** to
+/// the right-handed IUPAC / Praxeolitic / MDTraj torsion convention
+/// (`dihedral_angle_f64(A, B, C, D) = -τ_IUPAC(A, B, C, D)`). Callers that
+/// require standard IUPAC/MDTraj torsion angles must negate the result.
+///
+/// # Worked example
+///
+/// For `A = (0, 1, 0)`, `B = (0, 0, 0)`, `C = (1, 0, 0)`, `D = (1, 0, 1)`:
+/// - `b1 = (0, -1, 0)`, `b2 = (1, 0, 0)`, `b3 = (0, 0, 1)`
+/// - `n1 = b1 × b2 = (0, 0, 1)`, `n2 = b2 × b3 = (0, -1, 0)`
+/// - `m1 = n1 × b̂2 = (0, 1, 0)`
+/// - `x = n1 · n2 = 0`, `y = m1 · n2 = -1`
+/// - `dihedral_angle_f64` returns `atan2(-1, 0) = -π/2` (`-90°`), whereas the
+///   IUPAC / MDTraj torsion angle is `+π/2` (`+90°`).
 pub fn dihedral_angle_f64(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3], d: &[f64; 3]) -> f64 {
     let b1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     let b2 = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
@@ -189,7 +220,12 @@ pub struct BackboneDihedrals64 {
     pub omega: Option<f64>,
 }
 
-/// Compute backbone dihedrals with f64 precision
+/// Compute backbone dihedrals with `f64` precision.
+///
+/// Note: delegates directly to [`dihedral_angle_f64`] without sign negation,
+/// so the returned `phi`, `psi`, and `omega` values have the negative-IUPAC
+/// sign convention (`-τ_IUPAC`). Callers requiring standard IUPAC torsion
+/// angles must negate the values.
 pub fn compute_backbone_dihedrals_f64(
     backbone_coords: &[[[f64; 3]; 3]],
 ) -> Vec<BackboneDihedrals64> {
@@ -286,6 +322,81 @@ mod tests {
 
         let angle = dihedral_angle(&a, &b, &c, &d);
         assert!((angle - PI / 2.0).abs() < 0.1 || (angle + PI / 2.0).abs() < 0.1);
+    }
+
+    /// Debt #3216: Pin the worked example `A=(0,1,0), B=(0,0,0), C=(1,0,0), D=(1,0,1)`
+    /// which yields `-π/2` (`-90°`), the negative of the IUPAC/MDTraj `+90°` torsion.
+    #[test]
+    fn test_dihedral_angle_f64_worked_example_minus_90_deg() {
+        let a = [0.0, 1.0, 0.0];
+        let b = [0.0, 0.0, 0.0];
+        let c = [1.0, 0.0, 0.0];
+        let d = [1.0, 0.0, 1.0];
+
+        let angle_rad = dihedral_angle_f64(&a, &b, &c, &d);
+        assert!(
+            (angle_rad - (-PI_F64 / 2.0)).abs() < 1e-12,
+            "expected -π/2 (-90°), got {angle_rad} rad ({} deg)",
+            angle_rad.to_degrees()
+        );
+        assert!((angle_rad.to_degrees() - (-90.0)).abs() < 1e-10);
+
+        let a32 = [0.0_f32, 1.0, 0.0];
+        let b32 = [0.0_f32, 0.0, 0.0];
+        let c32 = [1.0_f32, 0.0, 0.0];
+        let d32 = [1.0_f32, 0.0, 1.0];
+        let angle32_rad = dihedral_angle(&a32, &b32, &c32, &d32);
+        assert!(
+            (angle32_rad - (-PI / 2.0)).abs() < 1e-6,
+            "expected -π/2 (-90°) for f32 dihedral_angle, got {angle32_rad}"
+        );
+    }
+
+    /// Debt #3216: Pin an asymmetric non-orthogonal dihedral case (`-45°` for
+    /// `D=(1,1,1)` vs `+45°` for `D=(1,1,-1)`, and a general asymmetric 4-point
+    /// configuration) to verify sign sensitivity away from ±90°.
+    #[test]
+    fn test_dihedral_angle_f64_asymmetric_sign() {
+        let a = [0.0, 1.0, 0.0];
+        let b = [0.0, 0.0, 0.0];
+        let c = [1.0, 0.0, 0.0];
+        // Under right-handed IUPAC, D=(1,1,1) has torsion +45° (+π/4);
+        // dihedral_angle_f64 returns -π/4 (-45°).
+        let d_pos_iupac = [1.0, 1.0, 1.0];
+        let angle_neg = dihedral_angle_f64(&a, &b, &c, &d_pos_iupac);
+        assert!(
+            (angle_neg - (-PI_F64 / 4.0)).abs() < 1e-12,
+            "expected -π/4 (-45°), got {} deg",
+            angle_neg.to_degrees()
+        );
+
+        // Mirror image across the xy-plane flips the sign to +π/4 (+45°).
+        let d_neg_iupac = [1.0, 1.0, -1.0];
+        let angle_pos = dihedral_angle_f64(&a, &b, &c, &d_neg_iupac);
+        assert!(
+            (angle_pos - (PI_F64 / 4.0)).abs() < 1e-12,
+            "expected +π/4 (+45°), got {} deg",
+            angle_pos.to_degrees()
+        );
+
+        // General asymmetric 4-point configuration with unequal bond lengths and angles.
+        let a_asym = [0.2, 1.5, -0.3];
+        let b_asym = [0.0, 0.0, 0.0];
+        let c_asym = [1.4, 0.0, 0.0];
+        let d_asym = [1.9, 0.7, 1.2];
+        let d_asym_mirror = [1.9, 0.7, -1.2];
+        let a_asym_mirror = [0.2, 1.5, 0.3];
+
+        let asym_val = dihedral_angle_f64(&a_asym, &b_asym, &c_asym, &d_asym);
+        let asym_mirror_val = dihedral_angle_f64(&a_asym_mirror, &b_asym, &c_asym, &d_asym_mirror);
+        assert!(
+            asym_val < 0.0,
+            "expected negative raw angle, got {asym_val}"
+        );
+        assert!(
+            (asym_val + asym_mirror_val).abs() < 1e-12,
+            "chiral reflection must negate dihedral: {asym_val} vs {asym_mirror_val}"
+        );
     }
 
     #[test]
