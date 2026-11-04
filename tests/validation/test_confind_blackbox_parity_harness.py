@@ -666,3 +666,21 @@ def test_clean_runs_are_registered_once_for_the_header_check(monkeypatch, tmp_pa
   harness.run_clean(pdb, "1crn", harness.ALL_COUNT_FLAGS)
   assert len(harness._CLEAN_RUNS) == 1
   harness._CLEAN_RUNS.clear()
+
+
+def test_v2_entry_point_binds_the_v2_sidecar_and_reports_the_harness_usage(tmp_path):
+  """bth binds <stem>.bth.toml, so the v2 sidecar needs a script with its stem."""
+  entry = SCRIPT.with_name("confind_blackbox_parity_v2.py")
+  assert entry.with_suffix(".bth.toml") == SIDECAR_V2
+  assert SIDECAR_V2.is_file()
+  env = {k: v for k, v in os.environ.items() if not k.startswith("CONFIND_PARITY_")}
+  done = subprocess.run(
+    [sys.executable, str(entry), "--out", str(tmp_path / "r.json")],
+    capture_output=True,
+    text=True,
+    env=env,
+    check=False,
+  )
+  # Delegation reached the harness: its argument resolution names the missing location.
+  assert done.returncode not in (0, None)
+  assert "--reference-bin" in done.stderr
