@@ -165,42 +165,25 @@ fn find_atom(residue: &Residue, name: &str) -> Option<[f32; 3]> {
         .map(|a| a.coords)
 }
 
-/// Calculate a dihedral angle from four points (in degrees).
-/// Returns `None` if the points are collinear or degenerate (normal length < 1e-6).
+/// IUPAC dihedral angle of four points, in degrees, in `(-180, 180]`.
+/// Returns `None` if either plane is undefined (normal length < 1e-6), so a
+/// degenerate backbone routes to the library's default bin instead of an angle.
+///
+/// Delegates to the shared [`proxide_geometry::geometry::angles::dihedral_angle`],
+/// which returns `-τ_IUPAC` (pinned by #3216's tests), and negates it. The private
+/// implementation this replaces built its first bond vector from p2 to p1, which
+/// returned `τ_IUPAC + 180°`: helix phi read about +120° and rotamer bins were
+/// looked up at the wrong backbone (debt #3229).
 fn dihedral_angle(p1: [f32; 3], p2: [f32; 3], p3: [f32; 3], p4: [f32; 3]) -> Option<f64> {
-    // Vector from p2 to p1
-    let v1 = [p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]];
-    // Vector from p2 to p3
-    let v2 = [p3[0] - p2[0], p3[1] - p2[1], p3[2] - p2[2]];
-    // Vector from p3 to p4
-    let v3 = [p4[0] - p3[0], p4[1] - p3[1], p4[2] - p3[2]];
-
-    // Normals to planes
-    let n1 = cross_product(v1, v2);
-    let n2 = cross_product(v2, v3);
-
-    // Dihedral angle
-    let dot = n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2];
-    let len_n1 = (n1[0] * n1[0] + n1[1] * n1[1] + n1[2] * n1[2]).sqrt();
-    let len_n2 = (n2[0] * n2[0] + n2[1] * n2[1] + n2[2] * n2[2]).sqrt();
-
-    if len_n1 < 1e-6 || len_n2 < 1e-6 {
+    let b1 = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+    let b2 = [p3[0] - p2[0], p3[1] - p2[1], p3[2] - p2[2]];
+    let b3 = [p4[0] - p3[0], p4[1] - p3[1], p4[2] - p3[2]];
+    let norm = |v: [f32; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if norm(cross_product(b1, b2)) < 1e-6 || norm(cross_product(b2, b3)) < 1e-6 {
         return None;
     }
-
-    let cos_angle = (dot / (len_n1 * len_n2)).clamp(-1.0, 1.0);
-    let angle_rad = (cos_angle as f64).acos();
-    let pi = std::f32::consts::PI as f64;
-    let mut angle_deg = angle_rad * 180.0 / pi;
-
-    // Adjust sign using cross product
-    let cross = cross_product(n1, n2);
-    let dot_v2 = cross[0] * v2[0] + cross[1] * v2[1] + cross[2] * v2[2];
-    if dot_v2 < 0.0 {
-        angle_deg = -angle_deg;
-    }
-
-    Some(angle_deg)
+    let neg_iupac = proxide_geometry::geometry::angles::dihedral_angle(&p1, &p2, &p3, &p4);
+    Some(-(neg_iupac as f64).to_degrees())
 }
 
 /// Compute cross product of two 3D vectors.
@@ -1043,6 +1026,114 @@ mod tests {
     use super::*;
     use proxide_io::formats::pdb;
     use std::path::Path;
+
+    fn atom_at(name: &str, coords: [f32; 3]) -> Atom {
+        Atom {
+            name: name.to_string(),
+            element: name[..1].to_string(),
+            coords,
+            alt_loc: ' ',
+            serial: 0,
+            b_factor: 0.0,
+            occupancy: 1.0,
+            is_hetatm: false,
+        }
+    }
+
+    fn residue_with(res_id: i32, atoms: Vec<Atom>) -> Residue {
+        Residue {
+            name: "ALA".to_string(),
+            res_id,
+            insertion_code: ' ',
+            atoms,
+        }
+    }
+
+    /// Debt #3229: phi must follow the IUPAC sign. For the quadruple
+    /// A=(0,1,0), B=0, C=(1,0,0), D=(1,0,1) IUPAC gives +90 deg (pinned for the
+    /// shared geometry by #3216's tests, where dihedral_angle_f64 returns -90).
+    #[test]
+    fn derive_backbone_angles_uses_the_iupac_sign() {
+        let prev = residue_with(1, vec![atom_at("C", [0.0, 1.0, 0.0])]);
+        let curr = residue_with(
+            2,
+            vec![
+                atom_at("N", [0.0, 0.0, 0.0]),
+                atom_at("CA", [1.0, 0.0, 0.0]),
+                atom_at("C", [1.0, 0.0, 1.0]),
+            ],
+        );
+        let (phi, psi) = derive_backbone_angles(Some(&prev), &curr, None);
+        let phi = phi.expect("phi defined");
+        assert!(
+            (phi - 90.0).abs() < 1e-3,
+            "phi = {phi}, expected +90 (IUPAC)"
+        );
+        assert_eq!(psi, None);
+    }
+
+    #[test]
+    fn derive_backbone_angles_is_none_for_degenerate_geometry() {
+        // N, CA and C collinear: the first plane is undefined.
+        let prev = residue_with(1, vec![atom_at("C", [-1.0, 1.0, 0.0])]);
+        let curr = residue_with(
+            2,
+            vec![
+                atom_at("N", [0.0, 0.0, 0.0]),
+                atom_at("CA", [1.0, 0.0, 0.0]),
+                atom_at("C", [2.0, 0.0, 0.0]),
+            ],
+        );
+        assert_eq!(derive_backbone_angles(Some(&prev), &curr, None).0, None);
+    }
+
+    /// Debt #3229: on a real structure, repack's phi/psi must equal confind's IUPAC
+    /// phi/psi residue by residue, so rotamer bins are looked up at the true backbone.
+    /// 1CRN residues 7-19 are helical; IUPAC phi there is near -60 deg.
+    #[test]
+    fn derive_backbone_angles_matches_confind_on_1crn() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../proxide-io/tests/data/1CRN.pdb");
+        let (raw, _) = pdb::parse_pdb_file(&path).expect("parse 1CRN");
+        let topology = Topology::from_raw_atom_data(&raw);
+        let reference = proxide_confind::load_pdb_f64(&path).expect("confind load 1CRN");
+        assert_eq!(topology.chains.len(), 1);
+        let residues = &topology.chains[0].residues;
+        assert_eq!(residues.len(), reference.bb.len());
+
+        let mut compared = 0;
+        for i in 0..residues.len() {
+            let prev = i.checked_sub(1).map(|j| &residues[j]);
+            let next = residues.get(i + 1);
+            let (phi, psi) = derive_backbone_angles(prev, &residues[i], next);
+            for (name, got, want) in [
+                ("phi", phi, reference.bb[i].phi),
+                ("psi", psi, reference.bb[i].psi),
+            ] {
+                assert_eq!(
+                    got.is_some(),
+                    want.is_some(),
+                    "{name} definedness at residue {i}"
+                );
+                if let (Some(g), Some(w)) = (got, want) {
+                    let d = (g - w + 540.0).rem_euclid(360.0) - 180.0;
+                    assert!(
+                        d.abs() < 0.01,
+                        "{name} at residue {i}: repack {g:.3}, IUPAC {w:.3}"
+                    );
+                    compared += 1;
+                }
+            }
+        }
+        assert_eq!(compared, 2 * (residues.len() - 1));
+        let helix_phi =
+            derive_backbone_angles(Some(&residues[9]), &residues[10], Some(&residues[11]))
+                .0
+                .expect("helix phi");
+        assert!(
+            (-90.0..-40.0).contains(&helix_phi),
+            "1CRN residue 11 phi = {helix_phi}"
+        );
+    }
 
     fn load_test_topology(fixture_name: &str) -> Topology {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
