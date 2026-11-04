@@ -268,7 +268,7 @@ def test_cache_older_than_the_binary_is_regenerated(monkeypatch, tmp_path):
   cache.write_text(CONTACT_LINE)
   pdb = tmp_path / "in.pdb"
   pdb.write_text("END\n")
-  harness._write_completion_stamp(cache, pdb)
+  harness._write_completion_stamp(cache, pdb, locations["reference_bin"], locations["reference_rotlib"])
   calls = _point_run_at(monkeypatch, locations, pdb)
   binary = locations["reference_bin"]
   os.utime(cache, (50, 50))
@@ -284,7 +284,7 @@ def test_fresh_parseable_cache_is_reused(monkeypatch, tmp_path):
   cache.write_text(CONTACT_LINE)
   pdb = tmp_path / "in.pdb"
   pdb.write_text("END\n")
-  harness._write_completion_stamp(cache, pdb)
+  harness._write_completion_stamp(cache, pdb, locations["reference_bin"], locations["reference_rotlib"])
   calls = _point_run_at(monkeypatch, locations, pdb)
   binary = locations["reference_bin"]
   os.utime(binary, (100, 100))
@@ -316,7 +316,7 @@ def test_cache_with_mismatched_input_sha256_is_regenerated(monkeypatch, tmp_path
   cache.write_text(CONTACT_LINE)
   pdb = tmp_path / "in.pdb"
   pdb.write_text("END\n")
-  harness._write_completion_stamp(cache, pdb)
+  harness._write_completion_stamp(cache, pdb, locations["reference_bin"], locations["reference_rotlib"])
   # Mutate the input PDB after the completion stamp was written.
   pdb.write_text("ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N\nEND\n")
   calls = _point_run_at(monkeypatch, locations, pdb)
@@ -684,3 +684,136 @@ def test_v2_entry_point_binds_the_v2_sidecar_and_reports_the_harness_usage(tmp_p
   # Delegation reached the harness: its argument resolution names the missing location.
   assert done.returncode not in (0, None)
   assert "--reference-bin" in done.stderr
+
+
+@pytest.mark.parametrize("swap", ["clean_rotlib", "clean_bin"])
+def test_swapping_the_library_or_binary_invalidates_the_clean_cache(monkeypatch, tmp_path, swap):
+  """Otherwise a library swap reuses old outputs and reports identical numbers (a false null)."""
+  locations = _provision_locations(monkeypatch, tmp_path)
+  pdb = tmp_path / "in.pdb"
+  pdb.write_text("END\n")
+  calls = _point_run_at(monkeypatch, locations, pdb)
+  harness.run_clean(pdb, "tag", harness.PARITY_FLAGS)
+  assert len(calls) == 1
+  for out_file in locations["scratch"].glob("tag*.out"):
+    os.utime(out_file, (500, 500))
+  os.utime(locations["clean_bin"], (100, 100))
+
+  calls.clear()
+  harness.run_clean(pdb, "tag", harness.PARITY_FLAGS)
+  assert calls == [], "positive control: an unchanged library and binary reuse the cache"
+
+  locations[swap].write_text("different bytes")
+  os.utime(locations["clean_bin"], (100, 100))
+  harness.run_clean(pdb, "tag", harness.PARITY_FLAGS)
+  assert len(calls) == 1
+
+
+def test_swapping_the_reference_library_invalidates_the_reference_cache(monkeypatch, tmp_path):
+  locations = _provision_locations(monkeypatch, tmp_path)
+  pdb = tmp_path / "in.pdb"
+  pdb.write_text("END\n")
+  calls = _point_run_at(monkeypatch, locations, pdb)
+  harness.run_benchmark(pdb, "tag")
+  for out_file in locations["scratch"].glob("tag*.out"):
+    os.utime(out_file, (500, 500))
+  os.utime(locations["reference_bin"], (100, 100))
+  os.utime(locations["clean_bin"], (100, 100))
+  locations["reference_rotlib"].write_text("different bytes")
+  calls.clear()
+  harness.run_benchmark(pdb, "tag")
+  assert [cmd[0] for cmd in calls] == [str(locations["reference_bin"])]
+
+
+def test_every_binary_invocation_has_a_timeout(monkeypatch, tmp_path):
+  locations = _provision_locations(monkeypatch, tmp_path)
+  pdb = tmp_path / "in.pdb"
+  pdb.write_text("END\n")
+  _point_run_at(monkeypatch, locations, pdb)
+  timeouts = []
+
+  def fake_run(cmd, **kwargs):
+    timeouts.append(kwargs.get("timeout"))
+    Path(cmd[cmd.index("--o") + 1]).write_text(CONTACT_LINE)
+    return subprocess.CompletedProcess(cmd, 0)
+
+  monkeypatch.setattr(harness.subprocess, "run", fake_run)
+  harness.run_benchmark(pdb, "tag")
+  assert timeouts == [harness.UNIT_TIMEOUT_S, harness.UNIT_TIMEOUT_S]
+
+
+def test_a_hung_binary_fails_loudly_and_leaves_no_stamp(monkeypatch, tmp_path):
+  locations = _provision_locations(monkeypatch, tmp_path)
+  pdb = tmp_path / "in.pdb"
+  pdb.write_text("END\n")
+  _point_run_at(monkeypatch, locations, pdb)
+
+  def hang(cmd, **kwargs):
+    raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+  monkeypatch.setattr(harness.subprocess, "run", hang)
+  with pytest.raises(subprocess.TimeoutExpired):
+    harness.run_clean(pdb, "tag", harness.PARITY_FLAGS)
+  assert list(locations["scratch"].glob("*.stamp.json")) == []
+
+
+def test_output_ledger_records_fresh_and_reused_outputs(monkeypatch, tmp_path):
+  locations = _provision_locations(monkeypatch, tmp_path)
+  pdb = tmp_path / "in.pdb"
+  pdb.write_text("END\n")
+  calls = _point_run_at(monkeypatch, locations, pdb)
+  harness._OUTPUT_LEDGER.clear()
+  harness.run_clean(pdb, "tag", harness.PARITY_FLAGS)
+  assert calls
+  entry = next(iter(harness._OUTPUT_LEDGER.values()))
+  assert entry["reused_from_cache"] is False
+  assert entry["rotlib_sha256"] == harness._file_sha256(locations["clean_rotlib"])
+  assert entry["binary_sha256"] == harness._file_sha256(locations["clean_bin"])
+
+  for out_file in locations["scratch"].glob("tag*.out"):
+    os.utime(out_file, (500, 500))
+  os.utime(locations["clean_bin"], (100, 100))
+  harness._OUTPUT_LEDGER.clear()
+  harness.run_clean(pdb, "tag", harness.PARITY_FLAGS)
+  assert next(iter(harness._OUTPUT_LEDGER.values()))["reused_from_cache"] is True
+  harness._OUTPUT_LEDGER.clear()
+
+
+def test_main_writes_the_output_ledger_beside_the_result(monkeypatch, tmp_path):
+  _provision_locations(monkeypatch, tmp_path)
+  _install_benchmark_stubs(monkeypatch)
+  out = tmp_path / "r.json"
+  monkeypatch.setattr(sys, "argv", ["confind_blackbox_parity", "--out", str(out)])
+  assert harness.main() == 0
+  assert (tmp_path / "r.json.outputs.json").is_file()
+
+
+def test_key_set_error_lists_every_difference():
+  first = {f"A,{i}": 0.5 for i in range(25)}
+  with pytest.raises(ValueError) as caught:
+    harness.cbclash_monotonicity(first, {"A,0": 0.5})
+  assert "A,24" in str(caught.value) and "A,9" in str(caught.value)
+
+
+def test_tracked_direct_run_of_the_harness_is_refused(tmp_path):
+  """Under bth, the harness script binds the v1 sidecar; only the v2 entry point may run."""
+  env = {k: v for k, v in os.environ.items() if not k.startswith("CONFIND_PARITY_")}
+  env["BTH_RESULTS_PATH"] = str(tmp_path / "bth.json")
+  done = subprocess.run(
+    [sys.executable, str(SCRIPT), "--out", str(tmp_path / "r.json")],
+    capture_output=True,
+    text=True,
+    env=env,
+    check=False,
+  )
+  assert done.returncode != 0
+  assert "confind_blackbox_parity_v2.py" in done.stderr
+  entry = SCRIPT.with_name("confind_blackbox_parity_v2.py")
+  via_entry = subprocess.run(
+    [sys.executable, str(entry), "--out", str(tmp_path / "r.json")],
+    capture_output=True,
+    text=True,
+    env=env,
+    check=False,
+  )
+  assert "--reference-bin" in via_entry.stderr, "the v2 entry point must reach the harness"

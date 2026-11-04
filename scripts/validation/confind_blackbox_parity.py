@@ -68,6 +68,13 @@ SWEEP_POLICIES = ("all-residues", "ala-only")
 # + factorial (2 arms x 1crn, 1ubq) + sweep (2 policies x 4 d_clash on 1crn)
 N_CLEAN_RUNS = 3 + 2 + 1 + 4 + len(SWEEP_POLICIES) * len(DCLASH_SWEEP)
 
+# Every binary invocation is its own process with this limit, so a hung binary fails
+# loudly. An interrupted output has no completion stamp and is regenerated on resume.
+UNIT_TIMEOUT_S = 900
+
+# What each output was, for the <out>.outputs.json ledger: fresh or reused, and from what.
+_OUTPUT_LEDGER: dict = {}
+
 # Clean outputs produced this process, for the header check: (path, extra_flags).
 _CLEAN_RUNS: list = []
 
@@ -267,11 +274,15 @@ def _stamp_path(output_path: Path) -> Path:
   return output_path.with_name(output_path.name + ".stamp.json")
 
 
-def _write_completion_stamp(output_path: Path, pdb_path: Path, extra_flags=None) -> dict:
+def _write_completion_stamp(
+  output_path: Path, pdb_path: Path, binary: Path, rotlib: Path, extra_flags=None
+) -> dict:
   stamp = {
     "completed": True,
     "input_sha256": _file_sha256(pdb_path),
     "output_sha256": _file_sha256(output_path),
+    "binary_sha256": _file_sha256(binary),
+    "rotlib_sha256": _file_sha256(rotlib),
     "extra_flags": list(extra_flags) if extra_flags else [],
   }
   stamp_file = _stamp_path(output_path)
@@ -333,6 +344,7 @@ def parse_confind_output(path: Path, is_upstream: bool = False):
 def _cache_reusable(
   path: Path,
   binary: Path,
+  rotlib: Path,
   pdb_path: Path | None = None,
   *,
   is_upstream: bool = True,
@@ -340,7 +352,8 @@ def _cache_reusable(
 ) -> bool:
   """
   Reuse a cached output only when it is non-empty, parseable, newer than the binary,
-  and carries a valid completion stamp whose input_sha256 matches pdb_path.
+  and carries a valid completion stamp matching this input, binary, rotamer library and
+  flags. Filenames do not encode the library, so swapping one must not reuse old output.
   """
   if not path.is_file() or path.stat().st_size == 0:
     return False
@@ -365,6 +378,10 @@ def _cache_reusable(
       return False
   if stamp.get("output_sha256") != _file_sha256(path):
     return False
+  if stamp.get("binary_sha256") != _file_sha256(binary):
+    return False
+  if stamp.get("rotlib_sha256") != _file_sha256(rotlib):
+    return False
   try:
     contacts, crowdedness, freedom, _dihedrals = parse_confind_output(path, is_upstream=is_upstream)
   except (OSError, ValueError, IndexError, UnicodeError):
@@ -372,14 +389,24 @@ def _cache_reusable(
   return bool(contacts or crowdedness or freedom)
 
 
-def _upstream_cache_reusable(path: Path, binary: Path, pdb_path: Path | None = None) -> bool:
-  return _cache_reusable(path, binary, pdb_path, is_upstream=True, extra_flags=None)
+def _upstream_cache_reusable(
+  path: Path, binary: Path, rotlib: Path, pdb_path: Path | None = None
+) -> bool:
+  return _cache_reusable(path, binary, rotlib, pdb_path, is_upstream=True, extra_flags=None)
 
 
 def _clean_cache_reusable(
-  path: Path, binary: Path, pdb_path: Path | None = None, extra_flags=None
+  path: Path, binary: Path, rotlib: Path, pdb_path: Path | None = None, extra_flags=None
 ) -> bool:
-  return _cache_reusable(path, binary, pdb_path, is_upstream=False, extra_flags=extra_flags)
+  return _cache_reusable(path, binary, rotlib, pdb_path, is_upstream=False, extra_flags=extra_flags)
+
+
+def _record_output(path: Path, *, reused: bool) -> None:
+  """Note whether an output was computed or reused; the first use in this process wins."""
+  if str(path) in _OUTPUT_LEDGER:
+    return
+  stamp = json.loads(_stamp_path(path).read_text(encoding="utf-8"))
+  _OUTPUT_LEDGER[str(path)] = {"reused_from_cache": reused, **stamp}
 
 
 def _clean_out_path(scratch: Path, tag: str, extra_flags) -> Path:
@@ -392,7 +419,10 @@ def _ensure_clean_output(clean_out, clean_bin, clean_rlib, pdb_path, extra_flags
 
   Every clean output is registered in _CLEAN_RUNS for the arm-header check.
   """
-  if not _clean_cache_reusable(clean_out, clean_bin, pdb_path, extra_flags=extra_flags):
+  reused = _clean_cache_reusable(
+    clean_out, clean_bin, clean_rlib, pdb_path, extra_flags=extra_flags
+  )
+  if not reused:
     if clean_out.exists():
       clean_out.unlink()
     if _stamp_path(clean_out).exists():
@@ -417,8 +447,10 @@ def _ensure_clean_output(clean_out, clean_bin, clean_rlib, pdb_path, extra_flags
       check=True,
       stdout=subprocess.DEVNULL,
       stderr=subprocess.PIPE,
+      timeout=UNIT_TIMEOUT_S,
     )
-    _write_completion_stamp(clean_out, pdb_path, extra_flags=extra_flags)
+    _write_completion_stamp(clean_out, pdb_path, clean_bin, clean_rlib, extra_flags=extra_flags)
+  _record_output(clean_out, reused=reused)
   key = str(clean_out)
   if key not in {p for p, _ in _CLEAN_RUNS}:
     _CLEAN_RUNS.append((key, list(extra_flags) if extra_flags else []))
@@ -457,7 +489,8 @@ def run_benchmark(pdb_path: Path, tag: str, extra_flags=None):
   suffix = "_" + "_".join(flag.lstrip("-") for flag in extra_flags) if extra_flags else ""
   clean_out = _clean_out_path(scratch, tag, extra_flags)
 
-  if not _upstream_cache_reusable(up_out, upstream_bin, pdb_path):
+  up_reused = _upstream_cache_reusable(up_out, upstream_bin, upstream_rlib, pdb_path)
+  if not up_reused:
     if up_out.exists():
       up_out.unlink()
     if _stamp_path(up_out).exists():
@@ -478,8 +511,10 @@ def run_benchmark(pdb_path: Path, tag: str, extra_flags=None):
       cwd=str(scratch),
       stdout=subprocess.DEVNULL,
       stderr=subprocess.PIPE,
+      timeout=UNIT_TIMEOUT_S,
     )
-    _write_completion_stamp(up_out, pdb_path, extra_flags=None)
+    _write_completion_stamp(up_out, pdb_path, upstream_bin, upstream_rlib, extra_flags=None)
+  _record_output(up_out, reused=up_reused)
 
   _ensure_clean_output(clean_out, clean_bin, clean_rlib, pdb_path, extra_flags)
 
@@ -596,8 +631,8 @@ def compute_one_sided_contacts(up_c, cl_c) -> dict:
 def _require_same_keys(a: dict, b: dict, label: str) -> list:
   if set(a) != set(b):
     raise ValueError(
-      f"{label}: key sets differ: only_first={sorted(set(a) - set(b))[:10]} "
-      f"only_second={sorted(set(b) - set(a))[:10]}"
+      f"{label}: key sets differ: only_first={sorted(set(a) - set(b))} "
+      f"only_second={sorted(set(b) - set(a))}"
     )
   if not a:
     raise ValueError(f"{label}: empty comparison set")
@@ -1025,6 +1060,7 @@ def main():
 
   parity_flags = list(PARITY_FLAGS)
   _CLEAN_RUNS.clear()
+  _OUTPUT_LEDGER.clear()
 
   print("Running Benchmark 1 (parity arm: ala-only + pruned-count-fraction): 1CRN...")
   up_c_crn, up_cr_crn, up_fr_crn, up_dih_crn, cl_c_crn, cl_cr_crn, cl_fr_crn = run_benchmark(
@@ -1218,6 +1254,9 @@ def main():
   out_path.parent.mkdir(parents=True, exist_ok=True)
   with open(out_path, "w", encoding="utf-8") as f:
     json.dump(result, f, indent=2)
+  ledger_path = out_path.with_name(out_path.name + ".outputs.json")
+  with open(ledger_path, "w", encoding="utf-8") as f:
+    json.dump(_OUTPUT_LEDGER, f, indent=2)
 
   bth_results_path = os.environ.get("BTH_RESULTS_PATH")
   if bth_results_path:
@@ -1230,4 +1269,11 @@ def main():
 
 
 if __name__ == "__main__":
+  if os.environ.get("BTH_RESULTS_PATH"):
+    # bth binds the sidecar next to the invoked script: here, v1, whose schema this
+    # harness no longer emits. Refuse instead of recording a meaningless outcome.
+    sys.exit(
+      "refusing: a tracked run of this script binds the v1 sidecar; "
+      "run scripts/validation/confind_blackbox_parity_v2.py instead"
+    )
   sys.exit(main())
