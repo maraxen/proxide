@@ -8,6 +8,11 @@ pub enum ConFindError {
     NotCached(ResidueIndex),
     #[error("residue {0:?} missing backbone atom {1}")]
     MissingBackbone(ResidueIndex, &'static str),
+    #[error("residue {residue:?} atom '{atom_name}' has a non-finite coordinate")]
+    NonFiniteCoordinate {
+        residue: ResidueIndex,
+        atom_name: String,
+    },
     #[error("residue {0:?} is not in the configured analysis scope")]
     OutOfScope(ResidueIndex),
     #[error("invalid configuration: {0}")]

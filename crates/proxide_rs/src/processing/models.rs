@@ -27,6 +27,9 @@ pub fn split_by_model(raw: &RawAtomData, model_ids: &[usize]) -> Vec<RawAtomData
 
             for i in 0..raw.num_atoms {
                 if model_ids[i] == target_model {
+                    if raw.ter_atom_indices.contains(&i) && model_data.num_atoms > 0 {
+                        model_data.ter_atom_indices.push(model_data.num_atoms);
+                    }
                     // Copy atom data
                     model_data.coords.push(raw.coords[i * 3]);
                     model_data.coords.push(raw.coords[i * 3 + 1]);
@@ -86,6 +89,9 @@ pub fn filter_models(raw: &RawAtomData, model_ids: &[usize], keep_models: &[usiz
 
     for i in 0..raw.num_atoms {
         if keep_models.contains(&model_ids[i]) {
+            if raw.ter_atom_indices.contains(&i) && filtered.num_atoms > 0 {
+                filtered.ter_atom_indices.push(filtered.num_atoms);
+            }
             // Copy atom data
             filtered.coords.push(raw.coords[i * 3]);
             filtered.coords.push(raw.coords[i * 3 + 1]);

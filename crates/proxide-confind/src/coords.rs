@@ -4,7 +4,7 @@ use proxide_core::processing::residues::{ProcessedStructure, ResidueId};
 use proxide_geometry::geometry::angles::{compute_backbone_dihedrals_f64, dihedral_angle_f64};
 use proxide_io::formats::pdb_fields::parse_pdb_records;
 use std::collections::{HashMap, HashSet};
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::Path;
 
 /// Flat dense index into ProteinBackbone::bb (0-based, protein residues only).
@@ -129,12 +129,16 @@ pub fn extract_f64_backbone_with_options(
     let mut bb: Vec<ResidueBackbone> = Vec::new();
     let mut ids: Vec<ResidueId> = Vec::new();
     let mut chain_map: Vec<usize> = Vec::new();
+    let mut ter_before: Vec<bool> = Vec::new();
     let mut skipped_before: Vec<bool> = Vec::new();
+    let mut pending_ter = false;
     let mut pending_skip = false;
 
-    for resinfo in &s.residue_info {
+    for (res_idx, resinfo) in s.residue_info.iter().enumerate() {
+        let has_ter = s.ter_positions.contains(&res_idx);
         if s.molecule_type[resinfo.start_atom] != 0 && !is_capping_group(&resinfo.res_name) {
             pending_skip = true;
+            pending_ter |= has_ter;
             continue;
         }
         let mut n_pos = None;
@@ -144,11 +148,18 @@ pub fn extract_f64_backbone_with_options(
 
         for atom_idx in resinfo.start_atom..(resinfo.start_atom + resinfo.num_atoms) {
             let name = s.raw_atoms.atom_names[atom_idx].as_str();
-            let xyz = [
-                s.raw_atoms.coords[3 * atom_idx] as f64,
-                s.raw_atoms.coords[3 * atom_idx + 1] as f64,
-                s.raw_atoms.coords[3 * atom_idx + 2] as f64,
+            let raw_xyz = [
+                s.raw_atoms.coords[3 * atom_idx],
+                s.raw_atoms.coords[3 * atom_idx + 1],
+                s.raw_atoms.coords[3 * atom_idx + 2],
             ];
+            if !raw_xyz[0].is_finite() || !raw_xyz[1].is_finite() || !raw_xyz[2].is_finite() {
+                return Err(ConFindError::NonFiniteCoordinate {
+                    residue: ResidueIndex(bb.len() as u32),
+                    atom_name: name.to_string(),
+                });
+            }
+            let xyz = [raw_xyz[0] as f64, raw_xyz[1] as f64, raw_xyz[2] as f64];
             match name {
                 "N" => n_pos = Some(xyz),
                 "CA" => ca_pos = Some(xyz),
@@ -159,6 +170,7 @@ pub fn extract_f64_backbone_with_options(
         }
 
         let chain_idx = *s.chain_indices.get(&resinfo.chain_id).unwrap_or(&0);
+        let had_ter = !bb.is_empty() && (has_ter || pending_ter);
         bb.push(ResidueBackbone {
             res_name: resinfo.res_name.clone(),
             n: n_pos,
@@ -176,11 +188,12 @@ pub fn extract_f64_backbone_with_options(
             insertion_code: resinfo.insertion_code,
         });
         chain_map.push(chain_idx);
+        ter_before.push(had_ter);
         skipped_before.push(pending_skip);
+        pending_ter = false;
         pending_skip = false;
     }
 
-    let ter_before = vec![false; bb.len()];
     fill_dihedrals(&mut bb, &chain_map, &ter_before, &skipped_before, opts)?;
     Ok(ProteinBackbone { bb, ids, chain_map })
 }
@@ -196,27 +209,16 @@ pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
     path: P,
     opts: &BackboneOptions,
 ) -> Result<ProteinBackbone, ConFindError> {
-    // 1. Scan file to record line numbers of explicit TER records
+    // 1. Parse records in f64 precision (includes TER boundary flags from parse_pdb_records)
     let file = std::fs::File::open(path.as_ref())?;
-    let reader = BufReader::new(file);
-    let mut ter_lines: HashSet<usize> = HashSet::new();
-    for (line_idx, line_res) in reader.lines().enumerate() {
-        let line = line_res?;
-        if line.starts_with("TER") {
-            ter_lines.insert(line_idx + 1); // 1-based line number
-        }
-    }
-
-    // 2. Parse records in f64 precision
-    let file2 = std::fs::File::open(path.as_ref())?;
-    let records = parse_pdb_records(BufReader::new(file2))
+    let records = parse_pdb_records(BufReader::new(file))
         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
     if records.is_empty() {
         return Err(std::io::Error::other("No atoms found in PDB file").into());
     }
 
-    // 3. Group atoms by residue in encounter order (preserving file order, Debt #1904)
+    // 2. Group atoms by residue in encounter order (preserving file order, Debt #1904)
     struct ResidueBuilder {
         id: ResidueId,
         res_name: String,
@@ -224,8 +226,7 @@ pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
         ca: Option<[f64; 3]>,
         c: Option<[f64; 3]>,
         o: Option<[f64; 3]>,
-        first_line: usize,
-        last_line: usize,
+        ter_before: bool,
         is_protein: bool,
     }
 
@@ -257,14 +258,13 @@ pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
                 ca: None,
                 c: None,
                 o: None,
-                first_line: rec.line,
-                last_line: rec.line,
+                ter_before: rec.ter_before,
                 is_protein: is_prot,
             });
         }
 
         let builder = current_builder.as_mut().unwrap();
-        builder.last_line = rec.line;
+        builder.ter_before |= rec.ter_before;
         let xyz = [rec.x64, rec.y64, rec.z64];
         match rec.atom_name.as_str() {
             "N" => {
@@ -286,20 +286,20 @@ pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
         residues.push(b);
     }
 
-    // 4. Construct ProteinBackbone vectors in preserved file order
+    // 3. Construct ProteinBackbone vectors in preserved file order
     let mut bb: Vec<ResidueBackbone> = Vec::new();
     let mut ids: Vec<ResidueId> = Vec::new();
     let mut chain_map: Vec<usize> = Vec::new();
     let mut ter_before: Vec<bool> = Vec::new();
     let mut skipped_before: Vec<bool> = Vec::new();
+    let mut pending_ter = false;
     let mut pending_skip = false;
     let mut chain_indices: HashMap<String, usize> = HashMap::new();
-    let mut prev_last_line = 0usize;
 
     for r in residues {
         if !r.is_protein {
             pending_skip = true;
-            prev_last_line = r.last_line;
+            pending_ter |= r.ter_before;
             continue;
         }
 
@@ -308,8 +308,7 @@ pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
             .entry(r.id.chain_id.clone())
             .or_insert(next_chain_idx);
 
-        // Check if an explicit TER record was encountered between previous residue and this one
-        let had_ter = (prev_last_line..r.first_line).any(|line| ter_lines.contains(&line));
+        let had_ter = !bb.is_empty() && (r.ter_before || pending_ter);
 
         bb.push(ResidueBackbone {
             res_name: r.res_name,
@@ -326,8 +325,8 @@ pub(crate) fn load_pdb_f64_with_options<P: AsRef<Path>>(
         chain_map.push(chain_idx);
         ter_before.push(had_ter);
         skipped_before.push(pending_skip);
+        pending_ter = false;
         pending_skip = false;
-        prev_last_line = r.last_line;
     }
 
     fill_dihedrals(&mut bb, &chain_map, &ter_before, &skipped_before, opts)?;

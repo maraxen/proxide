@@ -88,6 +88,11 @@ pub struct ProcessedStructure {
 
     pub num_residues: usize,
     pub num_chains: usize,
+
+    /// Residue-boundary indices (0-based indices `r` into `residue_info`, with
+    /// `1 <= r < residue_info.len()`) immediately preceded by an explicit PDB
+    /// `TER` record (debt #3215). Empty when no `TER` records were present.
+    pub ter_positions: Vec<usize>,
 }
 
 impl ProcessedStructure {
@@ -263,6 +268,25 @@ impl ProcessedStructure {
         let num_residues = residue_info.len();
         let num_chains = chain_indices.len();
 
+        // Map atom-level TER indices onto residue-boundary indices (1..num_residues).
+        let mut ter_positions = Vec::new();
+        if !raw_atoms.ter_atom_indices.is_empty() && num_residues > 1 {
+            for r in 1..num_residues {
+                let prev = &residue_info[r - 1];
+                let curr = &residue_info[r];
+                let prev_last = prev.start_atom + prev.num_atoms.saturating_sub(1);
+                let curr_first = curr.start_atom;
+                if prev_last < curr_first
+                    && raw_atoms
+                        .ter_atom_indices
+                        .iter()
+                        .any(|&t| prev_last < t && t <= curr_first)
+                {
+                    ter_positions.push(r);
+                }
+            }
+        }
+
         log::debug!(
             "Processed structure: {} atoms -> {} residues, {} ligands, {} solvent atoms",
             raw_atoms.num_atoms,
@@ -281,6 +305,7 @@ impl ProcessedStructure {
             molecule_type,
             num_residues,
             num_chains,
+            ter_positions,
         })
     }
 
@@ -545,6 +570,14 @@ pub fn rebuild_topology(
             new_raw.epsilons.as_mut().unwrap().push(e[idx]);
         }
     }
+
+    new_raw.ter_atom_indices = old_raw
+        .ter_atom_indices
+        .iter()
+        .copied()
+        .filter(|&t| t < n)
+        .map(|t| old_to_new[t])
+        .collect();
 
     // 4. Remap Bonds
     let mut new_bonds = Vec::with_capacity(bonds.len());

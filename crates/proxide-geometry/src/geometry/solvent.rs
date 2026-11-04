@@ -37,9 +37,17 @@ pub fn is_ion(res_name: &str) -> bool {
 /// Returns a new RawAtomData with solvent atoms removed.
 pub fn remove_solvent(raw: &RawAtomData) -> RawAtomData {
     let mut filtered = RawAtomData::new();
+    let mut pending_ter = false;
 
     for i in 0..raw.num_atoms {
+        if raw.ter_atom_indices.contains(&i) {
+            pending_ter = true;
+        }
         if !is_solvent(&raw.res_names[i]) {
+            if pending_ter && filtered.num_atoms > 0 {
+                filtered.ter_atom_indices.push(filtered.num_atoms);
+            }
+            pending_ter = false;
             // Copy atom data
             filtered.coords.push(raw.coords[i * 3]);
             filtered.coords.push(raw.coords[i * 3 + 1]);
@@ -94,10 +102,18 @@ pub fn remove_solvent(raw: &RawAtomData) -> RawAtomData {
 /// Remove both solvent and ion atoms from RawAtomData
 pub fn remove_solvent_and_ions(raw: &RawAtomData) -> RawAtomData {
     let mut filtered = RawAtomData::new();
+    let mut pending_ter = false;
 
     for i in 0..raw.num_atoms {
+        if raw.ter_atom_indices.contains(&i) {
+            pending_ter = true;
+        }
         let res_name = &raw.res_names[i];
         if !is_solvent(res_name) && !is_ion(res_name) {
+            if pending_ter && filtered.num_atoms > 0 {
+                filtered.ter_atom_indices.push(filtered.num_atoms);
+            }
+            pending_ter = false;
             // Copy atom data (same as above)
             filtered.coords.push(raw.coords[i * 3]);
             filtered.coords.push(raw.coords[i * 3 + 1]);

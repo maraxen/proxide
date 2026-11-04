@@ -217,6 +217,9 @@ pub struct PdbAtomRecord {
     pub charge: Option<f32>,
     pub radius: Option<f32>,
     pub is_hetatm: bool,
+    /// True when an explicit `TER` record occurred between the preceding atom
+    /// in the same model and this atom (debt #3215).
+    pub ter_before: bool,
 }
 
 // ---------------------------------------------------------------------
@@ -552,6 +555,7 @@ fn parse_atom_record(
         charge: None,
         radius: None,
         is_hetatm: record == "HETATM",
+        ter_before: false,
     })
 }
 
@@ -576,16 +580,18 @@ fn parse_model_number(line_bytes: &[u8], line_no: usize) -> Result<usize, PdbFie
 }
 
 /// Parse every ATOM/HETATM record from `reader`, in order, tracking MODEL
-/// boundaries and residue-reappearance (decision d) as it goes. The first
-/// malformed record anywhere in the file aborts the whole parse with a
-/// [`PdbFieldError`] naming exactly where and what -- there is no partial
-/// result and no silent drop.
+/// boundaries, TER records (debt #3215), and residue-reappearance (decision d)
+/// as it goes. The first malformed record anywhere in the file aborts the whole
+/// parse with a [`PdbFieldError`] naming exactly where and what -- there is no
+/// partial result and no silent drop.
 pub fn parse_pdb_records<R: BufRead>(mut reader: R) -> Result<Vec<PdbAtomRecord>, PdbFieldError> {
     let mut records = Vec::new();
     let mut current_model: usize = 1;
     let mut trackers: HashMap<(usize, String), ResidueTracker> = HashMap::new();
     let mut line_no: usize = 0;
     let mut buf: Vec<u8> = Vec::new();
+    let mut pending_ter = false;
+    let mut seen_atom_in_model = false;
 
     loop {
         buf.clear();
@@ -608,15 +614,29 @@ pub fn parse_pdb_records<R: BufRead>(mut reader: R) -> Result<Vec<PdbAtomRecord>
 
         match record_str.as_ref() {
             "ATOM" | "HETATM" => {
-                let rec =
+                let mut rec =
                     parse_atom_record(line_bytes, line_no, current_model, record_str.as_ref())?;
+                rec.ter_before = pending_ter && seen_atom_in_model;
+                pending_ter = false;
+                seen_atom_in_model = true;
                 check_residue_reappearance(&mut trackers, current_model, &rec, line_bytes)?;
                 records.push(rec);
             }
             "MODEL" => {
                 current_model = parse_model_number(line_bytes, line_no)?;
+                pending_ter = false;
+                seen_atom_in_model = false;
             }
-            "ENDMDL" | "TER" | "ANISOU" => {
+            "ENDMDL" => {
+                pending_ter = false;
+                seen_atom_in_model = false;
+            }
+            "TER" => {
+                if seen_atom_in_model {
+                    pending_ter = true;
+                }
+            }
+            "ANISOU" => {
                 // Explicitly ignored, matching pdb.rs's existing behaviour.
             }
             _ => {

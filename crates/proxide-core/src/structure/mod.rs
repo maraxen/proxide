@@ -65,6 +65,11 @@ pub struct RawAtomData {
 
     /// HETATM flag
     pub is_hetatm: Vec<bool>,
+
+    /// Atom indices (0-based into `atom_names` / `res_ids`) immediately
+    /// preceded by an explicit PDB `TER` record (debt #3215). Empty for
+    /// formats without `TER` records (mmCIF, PQR, HDF5).
+    pub ter_atom_indices: Vec<usize>,
 }
 
 impl RawAtomData {
@@ -88,6 +93,7 @@ impl RawAtomData {
             epsilons: None,
             num_atoms: 0,
             is_hetatm: Vec::new(),
+            ter_atom_indices: Vec::new(),
         }
     }
 
@@ -111,6 +117,7 @@ impl RawAtomData {
             epsilons: None,
             num_atoms: 0,
             is_hetatm: Vec::with_capacity(capacity),
+            ter_atom_indices: Vec::new(),
         }
     }
 

@@ -200,6 +200,7 @@ pub fn mdcath_to_raw_atom_data(metadata: &MdcathDomain, frame: &MdcathFrame) -> 
         epsilons: None,
         num_atoms,
         is_hetatm: vec![false; num_atoms],
+        ter_atom_indices: Vec::new(),
     }
 }
 
