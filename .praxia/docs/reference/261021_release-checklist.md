@@ -35,6 +35,8 @@ Versioning rule: `crates.io` stays pre-release. A stable PyPI tag has a final `X
 
 0.1.0 shipped on 2026-10-23. `CHANGELOG.md` has `## [0.1.0] - 2026-10-23`. Tag `v0.1.0` is commit `b5305dd` (`release: proxide 0.1.0 (#77)`). `pyproject.toml` on this tree is `0.1.1.dev0`. This document is the release procedure for later cuts.
 
+0.2.0: version PR opened 2026-11-04. Cargo workspace `0.2.0-alpha.1`. Debt #3258 records that the CGenFF-bearing CHARMM XMLs still ship by owner decision, pending clearance; the 0.1.0 yank (spec D5) is the owner's step and waits on that decision.
+
 The stable contract is core IO: structure parsing, formatting (Atom37, Atom14, Full), writing (PDB, mmCIF) and XTC trajectory reading. GAFF2, confind, rotlib and CCD/fixer ship as experimental. `crates.io` stays pre-release. Anything not listed as stable is provisional.
 
 #2909, the version agreement check (`scripts/check_versions.py`), is merged (PR #58, `627e7a4`, an ancestor of `origin/main`).

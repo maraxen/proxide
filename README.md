@@ -1,6 +1,6 @@
 # Proxide
 
-> **Pre-release toward 0.1.0.** The [Stability](#stability) section is the single source for what is stable and what may change in a minor release.
+> The [Stability](#stability) section is the single source for what is stable and what may change in a minor release.
 
 **Proxide** is a high-performance library for Protein I/O and Physics bridging in JAX. It combines a flexible Python/JAX frontend with a highly optimized Rust backend (`_proxider`) to provide fast structure parsing, force field parameterization, and seamless integration with JAX MD.
 
@@ -165,7 +165,7 @@ If you are migrating from older versions of Proxide:
 
 ## Stability
 
-Only core IO is stable at 0.1.0:
+Only core IO is stable:
 
 - structure parsers and writers: `parse_pdb`, `parse_mmcif`, `parse_pqr`, `parse_structure`, `parse_parm7`, `parse_amber_trajectory`, `write_pdb`, `write_mmcif`, `write_npz`, `write_dcd`;
 - the `Protein` result type returned by the parsers;
