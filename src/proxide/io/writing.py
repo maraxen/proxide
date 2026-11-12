@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -314,6 +315,26 @@ def _atom_rows(
   names = [
     _written_atom_name(layout, rn, ln) for rn, ln in zip(written_res, layout_names, strict=True)
   ]
+  # A residue whose as-read name has a layout alias (MSE) but whose type is not that alias's
+  # layout residue was parsed with modified_residue_typing="unknown": the format placed no atom
+  # for the alias target (SE), so the record is written without it. Say so rather than emit a
+  # silently incomplete MSE.
+  if residue_names is not None:
+    short = sorted(
+      {
+        residue_names[int(r)]
+        for r in set(res_idx.tolist())
+        if (alias := _layout_alias(layout, residue_names[int(r)])) is not None
+        and resnames[int(aatype[int(r)])] != alias[0]
+      }
+    )
+    if short:
+      msg = (
+        f"{fn_name}: residue(s) {short} were typed as something other than their layout residue "
+        "(modified_residue_typing='unknown'), so their alias atoms (for MSE, SE) were not placed "
+        "and are missing from the written records"
+      )
+      warnings.warn(msg, UserWarning, stacklevel=3)
   b_slots = _per_row_values(
     getattr(protein, "b_factors", None), atom_mask.shape, "b_factors", fn_name
   )

@@ -3,6 +3,7 @@
 //! Defines the OutputSpec struct that controls how structures are formatted
 //! and what optional processing steps should be applied.
 
+use crate::processing::ModifiedResidueTyping;
 use proxide_units::UnitSystem;
 
 /// Coordinate format options
@@ -164,8 +165,9 @@ pub struct OutputSpec {
     /// How a modified residue that is chemically a standard residue (MSE) is typed in the
     /// model-facing arrays: `"parent_residue"` (default, MSE typed MET) or `"unknown"` (MSE gets
     /// the unknown residue index, the pre-0.2.0 typing and the reference LigandMPNN parser's).
-    /// Validated against `ModifiedResidueTyping::from_name` when set and again at parse.
-    pub modified_residue_typing: String,
+    /// The Python layer accepts the names and rejects anything else, so an invalid value is
+    /// never stored.
+    pub modified_residue_typing: ModifiedResidueTyping,
 }
 
 impl Default for OutputSpec {
@@ -201,7 +203,7 @@ impl Default for OutputSpec {
             error_mode: ErrorMode::Warn,
             enable_caching: false,
             unit_system: UnitSystem::Amber,
-            modified_residue_typing: "parent_residue".to_string(),
+            modified_residue_typing: ModifiedResidueTyping::ParentResidue,
         }
     }
 }

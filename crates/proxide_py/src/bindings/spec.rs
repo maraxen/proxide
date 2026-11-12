@@ -229,8 +229,9 @@ impl PyOutputSpec {
         strict_parameterization: bool,
         modified_residue_typing: String,
     ) -> PyResult<Self> {
-        proxide_rs::processing::ModifiedResidueTyping::from_name(&modified_residue_typing)
-            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        let modified_residue_typing =
+            proxide_rs::processing::ModifiedResidueTyping::from_name(&modified_residue_typing)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?;
         Ok(Self {
             inner: OutputSpec {
                 coord_format: coord_format.into(),
@@ -427,14 +428,14 @@ impl PyOutputSpec {
         self.inner.water_model.clone()
     }
     #[getter]
-    fn get_modified_residue_typing(&self) -> String {
-        self.inner.modified_residue_typing.clone()
+    fn get_modified_residue_typing(&self) -> &'static str {
+        self.inner.modified_residue_typing.as_name()
     }
     #[setter]
     fn set_modified_residue_typing(&mut self, val: String) -> PyResult<()> {
-        proxide_rs::processing::ModifiedResidueTyping::from_name(&val)
-            .map_err(pyo3::exceptions::PyValueError::new_err)?;
-        self.inner.modified_residue_typing = val;
+        self.inner.modified_residue_typing =
+            proxide_rs::processing::ModifiedResidueTyping::from_name(&val)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?;
         Ok(())
     }
 

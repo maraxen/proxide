@@ -90,6 +90,14 @@ pub enum ModifiedResidueTyping {
 }
 
 impl ModifiedResidueTyping {
+    /// The Python-facing name, the inverse of [`Self::from_name`].
+    pub fn as_name(self) -> &'static str {
+        match self {
+            Self::ParentResidue => "parent_residue",
+            Self::Unknown => "unknown",
+        }
+    }
+
     /// Parse the Python-facing name (`"parent_residue"` or `"unknown"`); an unrecognised
     /// name is an error naming the accepted values, never a silent default.
     pub fn from_name(name: &str) -> Result<Self, String> {
@@ -1045,6 +1053,15 @@ mod tests {
             ModifiedResidueTyping::from_name("unknown"),
             Ok(ModifiedResidueTyping::Unknown)
         );
+        for typing in [
+            ModifiedResidueTyping::ParentResidue,
+            ModifiedResidueTyping::Unknown,
+        ] {
+            assert_eq!(
+                ModifiedResidueTyping::from_name(typing.as_name()),
+                Ok(typing)
+            );
+        }
         let err = ModifiedResidueTyping::from_name("met").unwrap_err();
         assert!(
             err.contains("parent_residue") && err.contains("unknown"),

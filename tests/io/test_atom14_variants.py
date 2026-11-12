@@ -283,3 +283,33 @@ def test_unknown_typing_reaches_the_parse_through_load_structure():
   assert int(np.asarray(typed_unknown.aatype)[idx]) == _UNK
   with pytest.raises(ValueError, match="parent_residue"):
     _first(load_structure(str(_PROBE), modified_residue_typing="met"))
+
+
+def test_atom14_unknown_typing_drops_the_residue_and_says_so():
+  # Pre-0.2.0 behaviour, kept on purpose: an unknown-typed residue has no atom14 layout, so its
+  # atoms are not placed. The parse must say so; it must not pass quietly.
+  with pytest.warns(UserWarning, match="no atom14 layout"):
+    protein = parse_structure(
+      str(_PROBE), OutputSpec(coord_format=CoordFormat.Atom14, modified_residue_typing="unknown")
+    )
+  idx = _mse_index(protein)
+  assert float(np.asarray(protein.atom_mask)[idx].sum()) == 0.0
+
+
+def test_writing_an_unknown_typed_mse_warns_that_its_selenium_is_missing(tmp_path):
+  protein = parse_structure(
+    str(_PROBE), OutputSpec(coord_format=CoordFormat.Atom37, modified_residue_typing="unknown")
+  )
+  with pytest.warns(UserWarning, match="alias atoms"):
+    out = write_pdb(protein, tmp_path / "unknown_typed.pdb")
+  atoms = [x[12:16].strip() for x in _mse_rows(out.read_text())]
+  assert "SE" not in atoms and "CE" in atoms  # the warning is true: the MSE record has no SE
+
+
+def test_writing_a_default_typed_mse_does_not_warn(tmp_path):
+  # Negative control for the warning above: the default typing places SE, so nothing is missing.
+  protein = parse_structure(str(_PROBE), OutputSpec(coord_format=CoordFormat.Atom37))
+  with warnings.catch_warnings():
+    warnings.simplefilter("error", UserWarning)
+    out = write_pdb(protein, tmp_path / "default_typed.pdb")
+  assert "SE" in [x[12:16].strip() for x in _mse_rows(out.read_text())]
