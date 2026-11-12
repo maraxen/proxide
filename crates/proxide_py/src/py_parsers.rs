@@ -583,6 +583,12 @@ fn process_models(
     classification: ResidueClassificationConfig,
     cache_key: Option<formatters::CacheKey>,
 ) -> PyResult<PyObject> {
+    // The spec decides how modified residues (MSE) are typed; every input path (PDB, mmCIF,
+    // AMBER) goes through here, so this is the one place the option reaches the classifier.
+    let mut classification = classification;
+    classification.modified_residue_typing =
+        proxide_rs::processing::ModifiedResidueTyping::from_name(&spec.modified_residue_typing)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
     let conv = spec.unit_system.conversion_spec();
     let target = spec::OutputFormatTarget::from_str(&spec.output_format_target)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;

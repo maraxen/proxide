@@ -47,6 +47,25 @@ pub fn lookup_alias(policy: AliasPolicy, res_name: &str) -> Option<&'static Layo
     policy.iter().find(|alias| alias.res_name == res_name)
 }
 
+/// The alias `policy` declares for `res_name`, but only when the residue's `res_type` really is
+/// the alias's layout residue.
+///
+/// Typing and placement are two decisions (see the module doc), yet they must agree: a residue
+/// typed unknown (`ModifiedResidueTyping::Unknown`) must not be laid out as MET with a selenium
+/// coordinate in the SD slot, or an X residue would carry a side-chain atom. With the alias
+/// withheld it is laid out exactly as before proxide 0.2.0.
+pub fn lookup_alias_for_type(
+    policy: AliasPolicy,
+    res_name: &str,
+    res_type: usize,
+) -> Option<&'static LayoutAlias> {
+    lookup_alias(policy, res_name).filter(|alias| {
+        proxide_core::chem::RESTYPE_1TO3
+            .get(res_type)
+            .is_some_and(|(_, three)| *three == alias.layout_residue)
+    })
+}
+
 /// Structure atom name as it appears in the layout after the alias renames.
 pub fn rename_layout_atom(name: &str, renames: &[(&str, &str)]) -> String {
     renames

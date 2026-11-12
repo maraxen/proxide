@@ -159,6 +159,13 @@ pub struct OutputSpec {
     // Unit system
     /// Experimental: not covered by proxide's stability guarantee; may change in a minor release.
     pub unit_system: UnitSystem,
+
+    // Residue typing
+    /// How a modified residue that is chemically a standard residue (MSE) is typed in the
+    /// model-facing arrays: `"parent_residue"` (default, MSE typed MET) or `"unknown"` (MSE gets
+    /// the unknown residue index, the pre-0.2.0 typing and the reference LigandMPNN parser's).
+    /// Validated against `ModifiedResidueTyping::from_name` when set and again at parse.
+    pub modified_residue_typing: String,
 }
 
 impl Default for OutputSpec {
@@ -194,6 +201,7 @@ impl Default for OutputSpec {
             error_mode: ErrorMode::Warn,
             enable_caching: false,
             unit_system: UnitSystem::Amber,
+            modified_residue_typing: "parent_residue".to_string(),
         }
     }
 }

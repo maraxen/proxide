@@ -217,3 +217,50 @@ def test_residue_names_present_writes_mse_back_as_hetatm_se(tmp_path):
   se_rows = [x for x in _mse_rows(out.read_text()) if x[12:16].strip() == "SE"]
   assert len(se_rows) == 1
   assert se_rows[0].startswith("HETATM")
+
+
+# --- modified_residue_typing: "unknown" reproduces the pre-0.2.0 typing (reference-parser parity) ---
+
+_UNK = 20  # index of the unknown residue type (RESTYPE_NUM)
+
+
+def _parse_unknown_typing(fmt: CoordFormat):
+  spec = OutputSpec(coord_format=fmt, modified_residue_typing="unknown")
+  with warnings.catch_warnings():
+    warnings.simplefilter("ignore", UserWarning)  # an unknown-typed atom14 residue may warn unplaced
+    return parse_structure(str(_PROBE), spec)
+
+
+def test_modified_residue_typing_default_is_parent_residue():
+  assert OutputSpec().modified_residue_typing == "parent_residue"
+
+
+@pytest.mark.parametrize("fmt", _FORMATS, ids=["atom14", "atom37"])
+def test_unknown_typing_makes_mse_unk_and_keeps_its_name(fmt):
+  protein = _parse_unknown_typing(fmt)
+  idx = _mse_index(protein)
+  aatype = np.asarray(protein.aatype)
+  assert int(aatype[idx]) == _UNK
+  assert protein.residue_names is not None
+  assert protein.residue_names[idx] == "MSE"  # provenance survives, so writers still emit MSE
+  # neighbours are untouched by the option
+  assert int(aatype[idx - 1]) == resnames.index("ALA")
+  # negative control: the default still types the same residue MET
+  assert int(np.asarray(_parse(fmt, _PROBE).aatype)[idx]) == _MET
+
+
+def test_unknown_typing_places_no_selenium_in_the_sd_slot():
+  protein = _parse_unknown_typing(CoordFormat.Atom37)
+  idx = _mse_index(protein)
+  assert float(np.asarray(protein.atom_mask)[idx][_SD_ATOM37]) == 0.0
+  np.testing.assert_array_equal(np.asarray(protein.coordinates)[idx][_SD_ATOM37], [0.0, 0.0, 0.0])
+
+
+@pytest.mark.parametrize("bad", ["met", "", "Unknown", "parent"])
+def test_unrecognised_typing_name_is_refused_not_defaulted(bad):
+  with pytest.raises(ValueError, match="parent_residue"):
+    OutputSpec(modified_residue_typing=bad)
+  spec = OutputSpec()
+  with pytest.raises(ValueError, match="parent_residue"):
+    spec.modified_residue_typing = bad
+  assert spec.modified_residue_typing == "parent_residue"
