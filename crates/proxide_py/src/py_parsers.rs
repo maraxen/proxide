@@ -681,15 +681,17 @@ fn process_models(
         // again, which is required for parameterization to find all atoms.
         if num_h_added > 0 {
             log::debug!("Rebuilding topology for contiguous residue ranges...");
-            let (rebuilt, rebuilt_bonds) =
-                crate::processing::residues::rebuild_topology(processed, bonds_for_h).map_err(
-                    |e| {
-                        pyo3::exceptions::PyValueError::new_err(format!(
-                            "Topology rebuild after H addition failed: {}",
-                            e
-                        ))
-                    },
-                )?;
+            let (rebuilt, rebuilt_bonds) = crate::processing::residues::rebuild_topology(
+                processed,
+                bonds_for_h,
+                classification,
+            )
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "Topology rebuild after H addition failed: {}",
+                    e
+                ))
+            })?;
             processed = rebuilt;
             // bonds_for_h is consumed by rebuild; the rebuilt bonds aren't needed
             // further since parameterization infers bonds from templates.

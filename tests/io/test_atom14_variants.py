@@ -264,3 +264,22 @@ def test_unrecognised_typing_name_is_refused_not_defaulted(bad):
   with pytest.raises(ValueError, match="parent_residue"):
     spec.modified_residue_typing = bad
   assert spec.modified_residue_typing == "parent_residue"
+
+
+def test_unknown_typing_reaches_the_parse_through_load_structure():
+  # The dataset path forwards parse_kwargs to load_structure -> load_rust, which used to read
+  # only remove_solvent from its kwargs and drop every other option silently.
+  from proxide.io.parsing.dispatch import load_structure
+
+  def _first(result):
+    return next(iter(result)) if not hasattr(result, "aatype") else result
+
+  with warnings.catch_warnings():
+    warnings.simplefilter("ignore", UserWarning)
+    typed_unknown = _first(load_structure(str(_PROBE), modified_residue_typing="unknown"))
+    typed_default = _first(load_structure(str(_PROBE)))
+  idx = _mse_index(typed_default)
+  assert int(np.asarray(typed_default.aatype)[idx]) == _MET
+  assert int(np.asarray(typed_unknown.aatype)[idx]) == _UNK
+  with pytest.raises(ValueError, match="parent_residue"):
+    _first(load_structure(str(_PROBE), modified_residue_typing="met"))

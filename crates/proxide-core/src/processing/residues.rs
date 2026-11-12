@@ -514,9 +514,14 @@ impl ProcessedStructure {
 
 /// Rebuild ProcessedStructure and Bonds by sorting atoms to ensure contiguous residues.
 /// This is necessary after adding atoms (like Hydrogens) which are appended to the end.
+///
+/// `config` must be the config the structure was first classified with. The rebuild
+/// classifies residues again, so a different config (it used to be the default) would
+/// silently re-type them, e.g. `ModifiedResidueTyping::Unknown` MSE back to MET.
 pub fn rebuild_topology(
     structure: ProcessedStructure,
     bonds: Vec<[usize; 2]>,
+    config: ResidueClassificationConfig,
 ) -> Result<(ProcessedStructure, Vec<[usize; 2]>), String> {
     let n = structure.raw_atoms.num_atoms;
     if n == 0 {
@@ -628,7 +633,7 @@ pub fn rebuild_topology(
     }
 
     // 5. Build new ProcessedStructure
-    let new_structure = ProcessedStructure::from_raw(new_raw)?;
+    let new_structure = ProcessedStructure::from_raw_with_config(new_raw, config)?;
 
     Ok((new_structure, new_bonds))
 }
