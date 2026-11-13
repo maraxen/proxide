@@ -11,9 +11,14 @@ they exist only in source builds that opt in.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-12
+
 ### Added
 - `OutputSpec(modified_residue_typing=...)`: how a modified residue that is chemically a standard residue (MSE, selenomethionine) is typed in the model-facing arrays. `"parent_residue"` (the default, unchanged) types MSE as MET with SE in the SD slot. `"unknown"` types it with the unknown residue index and places no selenium in the SD slot, which is the pre-0.2.0 result and what the reference LigandMPNN parser does, for consumers that must match that parser exactly. `res_name` keeps `"MSE"` either way, so writers still emit HETATM MSE. An unrecognised value raises `ValueError` at construction or assignment. The option is part of the parse-cache key. Known costs of `"unknown"`, both the pre-0.2.0 behaviour: with Atom14 the residue has no layout, so its atoms are not placed (the existing "no atom14 layout" warning fires); with Atom37 the selenium atom is not placed, so `write_pdb`/`write_mmcif` now warn that the written `MSE` record is missing `SE` instead of writing it silently.
 - `load_rust` (the `load_structure` path that `create_protein_dataset(parse_kwargs=...)` uses) takes `modified_residue_typing` as an explicit keyword. Before, its `**kwargs` documented "passed to `OutputSpec`" but only `remove_solvent` was read, so any other option was dropped silently; its docstring now says so.
+
+### Changed
+- **Changed (behaviour)**: after hydrogens are added, the topology rebuild classifies residues with the same `ResidueClassificationConfig` as the first pass. It used the default config, so a non-default `naming_convention` was dropped on that second pass; output for such inputs combined with `add_hydrogens` may differ from 0.2.0. Not measured on a CHARMM/AMBER-named structure. `rebuild_topology` is `pub` and now takes the config as a third argument.
 
 ### Fixed
 - `rebuild_topology` (run after hydrogens are added) now takes the `ResidueClassificationConfig` the structure was first classified with. It re-classified with the default config, which would have re-typed residues chosen by the spec (the new MSE option) and also dropped a non-default `naming_convention`. Callers outside this repo that call `proxide_core::processing::residues::rebuild_topology` must pass a config.
