@@ -70,11 +70,11 @@ impl<const N: usize> Fragment<N, Raw> {
 
         // Accumulate centroid sum.
         let mut sum = [0.0_f32; 3];
-        for r in 0..N {
-            for at in 0..4 {
-                sum[0] += self.coords[r][at][0];
-                sum[1] += self.coords[r][at][1];
-                sum[2] += self.coords[r][at][2];
+        for residue in &self.coords {
+            for atom in residue {
+                sum[0] += atom[0];
+                sum[1] += atom[1];
+                sum[2] += atom[2];
             }
         }
         let centroid = [sum[0] / n_atoms, sum[1] / n_atoms, sum[2] / n_atoms];
@@ -129,11 +129,9 @@ impl<const N: usize> Fragment<N, Centered> {
     /// [`FragmentDbEntry`]: crate::db::FragmentDbEntry
     pub fn norm_sq(&self) -> f32 {
         let mut acc = 0.0_f32;
-        for r in 0..N {
-            for at in 0..4 {
-                let x = self.coords[r][at][0];
-                let y = self.coords[r][at][1];
-                let z = self.coords[r][at][2];
+        for residue in &self.coords {
+            for atom in residue {
+                let (x, y, z) = (atom[0], atom[1], atom[2]);
                 acc += x * x + y * y + z * z;
             }
         }
@@ -152,4 +150,65 @@ impl<const N: usize> Fragment<N, Centered> {
 pub struct AlreadyCenteredError {
     /// Norm of the computed centroid.
     pub norm: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two residues, integer coordinates, so every sum below is exact in f32.
+    /// x sums to 32, y to 32, z to 8 over 8 atoms: centroid (4, 4, 1).
+    fn two_residue_fragment() -> Fragment<2, Raw> {
+        Fragment::new([
+            [
+                [1.0, 2.0, 0.0],
+                [3.0, 2.0, 0.0],
+                [5.0, 2.0, 0.0],
+                [7.0, 2.0, 0.0],
+            ],
+            [
+                [1.0, 6.0, 0.0],
+                [3.0, 6.0, 0.0],
+                [5.0, 6.0, 0.0],
+                [7.0, 6.0, 8.0],
+            ],
+        ])
+    }
+
+    #[test]
+    fn center_subtracts_the_centroid_of_all_atoms() {
+        let (centered, centroid) = two_residue_fragment().center().unwrap();
+        assert_eq!(centroid, [4.0, 4.0, 1.0]);
+        assert_eq!(
+            centered.coords,
+            [
+                [
+                    [-3.0, -2.0, -1.0],
+                    [-1.0, -2.0, -1.0],
+                    [1.0, -2.0, -1.0],
+                    [3.0, -2.0, -1.0]
+                ],
+                [
+                    [-3.0, 2.0, -1.0],
+                    [-1.0, 2.0, -1.0],
+                    [1.0, 2.0, -1.0],
+                    [3.0, 2.0, 7.0]
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn norm_sq_is_the_sum_of_squared_coordinates() {
+        // x: 4 * (9 + 1 + 1 + 9) = 40, y: 8 * 4 = 32, z: 7 * 1 + 49 = 56.
+        let (centered, _) = two_residue_fragment().center().unwrap();
+        assert_eq!(centered.norm_sq(), 128.0);
+    }
+
+    #[test]
+    fn centering_an_already_centered_fragment_is_refused() {
+        let (centered, _) = two_residue_fragment().center().unwrap();
+        let raw_again = Fragment::<2, Raw>::new(centered.coords);
+        assert!(raw_again.center().is_err());
+    }
 }
