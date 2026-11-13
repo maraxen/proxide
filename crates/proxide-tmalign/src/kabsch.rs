@@ -144,10 +144,10 @@ mod tests {
         assert_relative_eq!(result.translation[0], shift.x, epsilon = 1e-3);
         assert_relative_eq!(result.translation[1], shift.y, epsilon = 1e-3);
         assert_relative_eq!(result.translation[2], shift.z, epsilon = 1e-3);
-        for i in 0..3 {
-            for j in 0..3 {
+        for (i, row) in result.rotation.iter().enumerate() {
+            for (j, &value) in row.iter().enumerate() {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert_relative_eq!(result.rotation[i][j], expected, epsilon = 1e-3);
+                assert_relative_eq!(value, expected, epsilon = 1e-3);
             }
         }
     }
