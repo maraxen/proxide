@@ -170,8 +170,8 @@ mod tests {
         assert_eq!(formatted.atom_mask.len(), 4);
 
         // All backbone atoms should be present
-        for i in 0..4 {
-            assert_eq!(formatted.atom_mask[i], 1.0);
+        for mask in &formatted.atom_mask {
+            assert_eq!(*mask, 1.0);
         }
     }
 

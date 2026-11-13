@@ -6,8 +6,8 @@ fn rename_residue(processed: &mut ProcessedStructure, res_idx: usize, new_name: 
     processed.residue_info[res_idx].res_name = new_name.to_string();
     let start = processed.residue_info[res_idx].start_atom;
     let num = processed.residue_info[res_idx].num_atoms;
-    for i in start..(start + num) {
-        processed.raw_atoms.res_names[i] = new_name.to_string();
+    for name in &mut processed.raw_atoms.res_names[start..(start + num)] {
+        *name = new_name.to_string();
     }
 }
 
@@ -63,9 +63,13 @@ pub fn determine_protonation_states(
                 // Check for disulfide bridge
                 // Find SG atom
                 let mut sg_idx = None;
-                for i in res_info.start_atom..(res_info.start_atom + res_info.num_atoms) {
-                    if processed.raw_atoms.atom_names[i] == "SG" {
-                        sg_idx = Some(i);
+                let span = res_info.start_atom..(res_info.start_atom + res_info.num_atoms);
+                for (i, atom_name) in processed.raw_atoms.atom_names[span.clone()]
+                    .iter()
+                    .enumerate()
+                {
+                    if atom_name == "SG" {
+                        sg_idx = Some(span.start + i);
                         break;
                     }
                 }
@@ -139,9 +143,13 @@ fn determine_histidine_state(
     let mut hd1_exists = false;
     let mut he2_exists = false;
 
-    for i in res_info.start_atom..(res_info.start_atom + res_info.num_atoms) {
-        let atom_name = processed.raw_atoms.atom_names[i].as_str();
-        match atom_name {
+    let span = res_info.start_atom..(res_info.start_atom + res_info.num_atoms);
+    for (offset, atom_name) in processed.raw_atoms.atom_names[span.clone()]
+        .iter()
+        .enumerate()
+    {
+        let i = span.start + offset;
+        match atom_name.as_str() {
             "CG" => cg = Some(i),
             "ND1" => nd1 = Some(i),
             "CE1" => ce1 = Some(i),

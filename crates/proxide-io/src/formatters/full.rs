@@ -197,8 +197,8 @@ mod tests {
 
         // All 5 atoms have mask = 1
         assert_eq!(formatted.atom_mask.len(), 5);
-        for i in 0..5 {
-            assert_eq!(formatted.atom_mask[i], 1.0, "Atom {} should be present", i);
+        for (i, mask) in formatted.atom_mask.iter().enumerate() {
+            assert_eq!(*mask, 1.0, "Atom {} should be present", i);
         }
 
         // Check atom names
@@ -272,8 +272,8 @@ mod tests {
 
         // All 9 atoms have mask = 1 (no padding in flat format)
         assert_eq!(formatted.atom_mask.len(), 9);
-        for i in 0..9 {
-            assert_eq!(formatted.atom_mask[i], 1.0);
+        for mask in &formatted.atom_mask {
+            assert_eq!(*mask, 1.0);
         }
     }
 }
