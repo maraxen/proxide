@@ -6,7 +6,9 @@
 //! Unplaced slots are zero-filled: coordinates where `atom_mask == 0` are 0.0 and
 //! carry no meaning. Use `atom_mask`, never NaN tests, to find missing atoms.
 
-use super::residue_policy::{lookup_alias, rename_layout_atom, AliasPolicy, ATOM14_ALIASES};
+use super::residue_policy::{
+    lookup_alias_for_type, rename_layout_atom, AliasPolicy, ATOM14_ALIASES,
+};
 use proxide_core::chem::{build_restype_atom14_names, RESTYPE_1TO3};
 use proxide_core::processing::ProcessedStructure;
 use proxide_core::spec::OutputSpec;
@@ -85,7 +87,7 @@ impl Atom14Formatter {
                 "UNK"
             };
             let (canonical_res_name, atom_renames): (&str, &[(&str, &str)]) =
-                match lookup_alias(policy, &res_info.res_name) {
+                match lookup_alias_for_type(policy, &res_info.res_name, res_info.res_type) {
                     Some(alias) => (alias.layout_residue, alias.renames),
                     None => (type_name, &[]),
                 };

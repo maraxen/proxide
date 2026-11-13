@@ -69,6 +69,46 @@ pub struct LigandInfo {
 pub struct ResidueClassificationConfig {
     pub naming_convention: ResidueNamingConvention,
     pub alias_match: AliasMatchConfig,
+    pub modified_residue_typing: ModifiedResidueTyping,
+}
+
+/// How a modified residue that is chemically a standard residue (MSE, selenomethionine)
+/// is typed in the model-facing arrays (`aatype`, one-hot).
+///
+/// `res_name` keeps the as-read name either way, so writers and provenance never lose it.
+/// The default is [`Self::ParentResidue`] (AlphaFold convention, since proxide 0.2.0).
+/// [`Self::Unknown`] reproduces the pre-0.2.0 typing, which is also what the reference
+/// LigandMPNN parser does (token X for MSE), so a consumer that must match that parser
+/// byte for byte can ask for it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ModifiedResidueTyping {
+    /// MSE is typed MET.
+    #[default]
+    ParentResidue,
+    /// MSE is typed with the unknown residue index, like any residue with no table entry.
+    Unknown,
+}
+
+impl ModifiedResidueTyping {
+    /// The Python-facing name, the inverse of [`Self::from_name`].
+    pub fn as_name(self) -> &'static str {
+        match self {
+            Self::ParentResidue => "parent_residue",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// Parse the Python-facing name (`"parent_residue"` or `"unknown"`); an unrecognised
+    /// name is an error naming the accepted values, never a silent default.
+    pub fn from_name(name: &str) -> Result<Self, String> {
+        match name {
+            "parent_residue" => Ok(Self::ParentResidue),
+            "unknown" => Ok(Self::Unknown),
+            other => Err(format!(
+                "unknown modified_residue_typing {other:?}; expected \"parent_residue\" or \"unknown\""
+            )),
+        }
+    }
 }
 
 /// Processed structure with residue-level organization
@@ -193,7 +233,14 @@ impl ProcessedStructure {
             // ATOM records and un-recognized HETATM records alike.
             let type_lookup_name = alias_resolved
                 .or_else(|| (!is_hetatm || ccd_is_protein).then_some(res_name.as_str()))
-                .map(|name| model_residue_type_name(name).unwrap_or(name));
+                .map(|name| match config.modified_residue_typing {
+                    ModifiedResidueTyping::ParentResidue => {
+                        model_residue_type_name(name).unwrap_or(name)
+                    }
+                    // `name` has no entry in the residue table (MSE is deliberately not in
+                    // it), so the lookup below yields UNK_RESTYPE_INDEX.
+                    ModifiedResidueTyping::Unknown => name,
+                });
 
             if let Some(type_lookup_name) = type_lookup_name {
                 // Protein residue.
@@ -475,9 +522,14 @@ impl ProcessedStructure {
 
 /// Rebuild ProcessedStructure and Bonds by sorting atoms to ensure contiguous residues.
 /// This is necessary after adding atoms (like Hydrogens) which are appended to the end.
+///
+/// `config` must be the config the structure was first classified with. The rebuild
+/// classifies residues again, so a different config (it used to be the default) would
+/// silently re-type them, e.g. `ModifiedResidueTyping::Unknown` MSE back to MET.
 pub fn rebuild_topology(
     structure: ProcessedStructure,
     bonds: Vec<[usize; 2]>,
+    config: ResidueClassificationConfig,
 ) -> Result<(ProcessedStructure, Vec<[usize; 2]>), String> {
     let n = structure.raw_atoms.num_atoms;
     if n == 0 {
@@ -589,7 +641,7 @@ pub fn rebuild_topology(
     }
 
     // 5. Build new ProcessedStructure
-    let new_structure = ProcessedStructure::from_raw(new_raw)?;
+    let new_structure = ProcessedStructure::from_raw_with_config(new_raw, config)?;
 
     Ok((new_structure, new_bonds))
 }
@@ -945,6 +997,7 @@ mod tests {
         let config = ResidueClassificationConfig {
             naming_convention: ResidueNamingConvention::ForceFieldPrepped,
             alias_match: AliasMatchConfig::default(),
+            modified_residue_typing: ModifiedResidueTyping::default(),
         };
         let processed = ProcessedStructure::from_raw_with_config(raw, config).unwrap();
 
@@ -952,6 +1005,68 @@ mod tests {
         assert!(processed.ligand_groups.is_empty());
         let cys_idx = build_resname_to_idx()["CYS"];
         assert_eq!(processed.residue_info[0].res_type, cys_idx);
+    }
+
+    fn mse_structure(config: ResidueClassificationConfig) -> ProcessedStructure {
+        let atoms = ["N", "CA", "C", "O", "CB", "CG", "SE", "CE"];
+        let mut raw = RawAtomData::with_capacity(atoms.len());
+        for atom in make_residue_atoms("MSE", &atoms, true, 1) {
+            raw.add_atom(atom);
+        }
+        ProcessedStructure::from_raw_with_config(raw, config).unwrap()
+    }
+
+    #[test]
+    fn test_mse_unknown_typing_is_unk_and_keeps_name() {
+        // The option reproduces the pre-0.2.0 typing: a CCD-recognised protein residue
+        // with no table entry gets UNK_RESTYPE_INDEX, and the as-read name survives.
+        let config = ResidueClassificationConfig {
+            modified_residue_typing: ModifiedResidueTyping::Unknown,
+            ..Default::default()
+        };
+        let processed = mse_structure(config);
+
+        assert_eq!(processed.num_residues, 1);
+        assert!(processed.ligand_groups.is_empty());
+        assert_eq!(processed.molecule_type[0], 0);
+        assert_eq!(processed.residue_info[0].res_name, "MSE");
+        assert_eq!(processed.residue_info[0].res_type, UNK_RESTYPE_INDEX);
+        // Negative control: the default still types it MET, so the option is what moved it.
+        let default_typed = mse_structure(ResidueClassificationConfig::default());
+        assert_eq!(
+            default_typed.residue_info[0].res_type,
+            build_resname_to_idx()["MET"]
+        );
+        assert_ne!(
+            default_typed.residue_info[0].res_type,
+            processed.residue_info[0].res_type
+        );
+    }
+
+    #[test]
+    fn test_modified_residue_typing_from_name() {
+        assert_eq!(
+            ModifiedResidueTyping::from_name("parent_residue"),
+            Ok(ModifiedResidueTyping::ParentResidue)
+        );
+        assert_eq!(
+            ModifiedResidueTyping::from_name("unknown"),
+            Ok(ModifiedResidueTyping::Unknown)
+        );
+        for typing in [
+            ModifiedResidueTyping::ParentResidue,
+            ModifiedResidueTyping::Unknown,
+        ] {
+            assert_eq!(
+                ModifiedResidueTyping::from_name(typing.as_name()),
+                Ok(typing)
+            );
+        }
+        let err = ModifiedResidueTyping::from_name("met").unwrap_err();
+        assert!(
+            err.contains("parent_residue") && err.contains("unknown"),
+            "{err}"
+        );
     }
 
     #[test]

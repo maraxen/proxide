@@ -192,7 +192,8 @@ impl PyOutputSpec {
         enable_caching = false,
         unit_system = PyUnitSystem::Amber,
         water_model = "TIP3P".to_string(),
-        strict_parameterization = false
+        strict_parameterization = false,
+        modified_residue_typing = "parent_residue".to_string()
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -226,8 +227,12 @@ impl PyOutputSpec {
         unit_system: PyUnitSystem,
         water_model: String,
         strict_parameterization: bool,
-    ) -> Self {
-        Self {
+        modified_residue_typing: String,
+    ) -> PyResult<Self> {
+        let modified_residue_typing =
+            proxide_rs::processing::ModifiedResidueTyping::from_name(&modified_residue_typing)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(Self {
             inner: OutputSpec {
                 coord_format: coord_format.into(),
                 output_format_target,
@@ -259,8 +264,9 @@ impl PyOutputSpec {
                 unit_system: unit_system.into(),
                 water_model,
                 strict_parameterization,
+                modified_residue_typing,
             },
-        }
+        })
     }
 
     // --- Getters and Setters ---
@@ -421,6 +427,18 @@ impl PyOutputSpec {
     fn get_water_model(&self) -> String {
         self.inner.water_model.clone()
     }
+    #[getter]
+    fn get_modified_residue_typing(&self) -> &'static str {
+        self.inner.modified_residue_typing.as_name()
+    }
+    #[setter]
+    fn set_modified_residue_typing(&mut self, val: String) -> PyResult<()> {
+        self.inner.modified_residue_typing =
+            proxide_rs::processing::ModifiedResidueTyping::from_name(&val)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(())
+    }
+
     #[setter]
     fn set_water_model(&mut self, val: String) {
         self.inner.water_model = val;

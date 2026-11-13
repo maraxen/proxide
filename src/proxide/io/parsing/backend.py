@@ -87,6 +87,7 @@ def load_rust(
   return_type: str = "Protein",
   output_format_target: str | None = None,
   numbering: str = "auth",
+  modified_residue_typing: str = "parent_residue",
   **kwargs: Any,
 ) -> Any:
   """Load a protein structure using the Rust extension.
@@ -113,7 +114,11 @@ def load_rust(
       output_format_target: Target format hint ("mpnn" or "general").
       numbering: mmCIF chain/residue numbering, ``"auth"`` (default) or ``"label"``.
           Ignored for PDB input.
-      **kwargs: Additional args passed to `OutputSpec`.
+      modified_residue_typing: ``"parent_residue"`` (default; MSE typed MET) or ``"unknown"``
+          (MSE typed with the unknown residue index, as the reference LigandMPNN parser does).
+          Passed to `OutputSpec`; an unrecognised value raises ``ValueError``. Reaches this
+          function from ``create_protein_dataset(parse_kwargs=...)`` too.
+      **kwargs: Only ``remove_solvent`` is read; any other keyword is not forwarded.
 
   Yields:
       Protein or AtomicSystem instances (as a generator for compatibility).
@@ -127,6 +132,7 @@ def load_rust(
     force_field=force_field_name if populate_physics else None,
     output_format_target=output_format_target or "general",  # Rust requires 'general' or 'mpnn'
     remove_solvent=kwargs.get("remove_solvent", True),
+    modified_residue_typing=modified_residue_typing,
   )
 
   try:

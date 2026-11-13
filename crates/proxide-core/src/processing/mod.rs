@@ -1,2 +1,4 @@
 pub mod residues;
-pub use residues::{ProcessedStructure, ResidueId, ResidueInfo};
+pub use residues::{
+    ModifiedResidueTyping, ProcessedStructure, ResidueClassificationConfig, ResidueId, ResidueInfo,
+};

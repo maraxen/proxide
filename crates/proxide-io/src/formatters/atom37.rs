@@ -6,7 +6,9 @@
 //! Unplaced slots are zero-filled: coordinates where `atom_mask == 0` are 0.0 and
 //! carry no meaning. Use `atom_mask`, never NaN tests, to find missing atoms.
 
-use super::residue_policy::{lookup_alias, rename_layout_atom, AliasPolicy, ATOM37_ALIASES};
+use super::residue_policy::{
+    lookup_alias_for_type, rename_layout_atom, AliasPolicy, ATOM37_ALIASES,
+};
 use proxide_core::chem::{build_atom_order, build_standard_atom_mask};
 use proxide_core::processing::ProcessedStructure;
 use proxide_core::spec::OutputSpec;
@@ -78,7 +80,8 @@ impl Atom37Formatter {
 
             // Build atom name -> local index mapping for this residue
             let atom_renames: &[(&str, &str)] =
-                lookup_alias(policy, &res_info.res_name).map_or(&[], |alias| alias.renames);
+                lookup_alias_for_type(policy, &res_info.res_name, res_info.res_type)
+                    .map_or(&[], |alias| alias.renames);
             let mut residue_atoms: HashMap<String, usize> = HashMap::new();
             let start = res_info.start_atom;
             let end = start + res_info.num_atoms;
@@ -358,9 +361,7 @@ mod tests {
         assert_eq!(formatted.atom_mask[ca_idx], 1.0);
     }
 
-    #[test]
-    fn test_atom37_mse_typed_met_with_se_in_sd() {
-        use proxide_core::chem::{build_atom_order, build_resname_to_idx};
+    fn mse_raw() -> proxide_core::structure::RawAtomData {
         use proxide_core::structure::{AtomRecord, RawAtomData};
         let atoms: [(&str, &str, f32, f32, f32); 8] = [
             ("N", "N", 0.0, 0.0, 0.0),
@@ -393,7 +394,13 @@ mod tests {
                 is_hetatm: false,
             });
         }
-        let processed = proxide_core::processing::ProcessedStructure::from_raw(raw).unwrap();
+        raw
+    }
+
+    #[test]
+    fn test_atom37_mse_typed_met_with_se_in_sd() {
+        use proxide_core::chem::{build_atom_order, build_resname_to_idx};
+        let processed = proxide_core::processing::ProcessedStructure::from_raw(mse_raw()).unwrap();
         let formatted = Atom37Formatter::format(&processed, &OutputSpec::default()).unwrap();
 
         assert_eq!(formatted.aatype[0], build_resname_to_idx()["MET"] as i8);
@@ -402,5 +409,32 @@ mod tests {
         assert_eq!(&formatted.coordinates[sd * 3..sd * 3 + 3], &[1.0, 3.0, 0.0]);
         let mask_sum: f32 = formatted.atom_mask.iter().sum();
         assert_eq!(mask_sum, 8.0);
+    }
+
+    #[test]
+    fn test_atom37_mse_unknown_typing_is_x_with_no_selenium_in_sd() {
+        use proxide_core::chem::{build_atom_order, UNK_RESTYPE_INDEX};
+        use proxide_core::processing::{
+            ModifiedResidueTyping, ProcessedStructure, ResidueClassificationConfig,
+        };
+        let config = ResidueClassificationConfig {
+            modified_residue_typing: ModifiedResidueTyping::Unknown,
+            ..Default::default()
+        };
+        let processed = ProcessedStructure::from_raw_with_config(mse_raw(), config).unwrap();
+        let formatted = Atom37Formatter::format(&processed, &OutputSpec::default()).unwrap();
+
+        // Pre-0.2.0 layout: unknown type, and the MSE alias is withheld, so the selenium
+        // atom is not renamed into the SD slot (an X residue carries no side-chain atom there).
+        assert_eq!(formatted.aatype[0], UNK_RESTYPE_INDEX as i8);
+        let sd = build_atom_order()["SD"];
+        assert_eq!(formatted.atom_mask[sd], 0.0);
+        assert_eq!(&formatted.coordinates[sd * 3..sd * 3 + 3], &[0.0, 0.0, 0.0]);
+        // Negative control: the default places SD, so only the option changes that.
+        let default_processed = ProcessedStructure::from_raw(mse_raw()).unwrap();
+        let default_formatted =
+            Atom37Formatter::format(&default_processed, &OutputSpec::default()).unwrap();
+        assert_eq!(default_formatted.atom_mask[sd], 1.0);
+        assert_ne!(default_formatted.aatype[0], formatted.aatype[0]);
     }
 }

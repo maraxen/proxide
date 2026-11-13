@@ -217,3 +217,99 @@ def test_residue_names_present_writes_mse_back_as_hetatm_se(tmp_path):
   se_rows = [x for x in _mse_rows(out.read_text()) if x[12:16].strip() == "SE"]
   assert len(se_rows) == 1
   assert se_rows[0].startswith("HETATM")
+
+
+# --- modified_residue_typing: "unknown" reproduces the pre-0.2.0 typing (reference-parser parity) ---
+
+_UNK = 20  # index of the unknown residue type (RESTYPE_NUM)
+
+
+def _parse_unknown_typing(fmt: CoordFormat):
+  spec = OutputSpec(coord_format=fmt, modified_residue_typing="unknown")
+  with warnings.catch_warnings():
+    warnings.simplefilter("ignore", UserWarning)  # an unknown-typed atom14 residue may warn unplaced
+    return parse_structure(str(_PROBE), spec)
+
+
+def test_modified_residue_typing_default_is_parent_residue():
+  assert OutputSpec().modified_residue_typing == "parent_residue"
+
+
+@pytest.mark.parametrize("fmt", _FORMATS, ids=["atom14", "atom37"])
+def test_unknown_typing_makes_mse_unk_and_keeps_its_name(fmt):
+  protein = _parse_unknown_typing(fmt)
+  idx = _mse_index(protein)
+  aatype = np.asarray(protein.aatype)
+  assert int(aatype[idx]) == _UNK
+  assert protein.residue_names is not None
+  assert protein.residue_names[idx] == "MSE"  # provenance survives, so writers still emit MSE
+  # neighbours are untouched by the option
+  assert int(aatype[idx - 1]) == resnames.index("ALA")
+  # negative control: the default still types the same residue MET
+  assert int(np.asarray(_parse(fmt, _PROBE).aatype)[idx]) == _MET
+
+
+def test_unknown_typing_places_no_selenium_in_the_sd_slot():
+  protein = _parse_unknown_typing(CoordFormat.Atom37)
+  idx = _mse_index(protein)
+  assert float(np.asarray(protein.atom_mask)[idx][_SD_ATOM37]) == 0.0
+  np.testing.assert_array_equal(np.asarray(protein.coordinates)[idx][_SD_ATOM37], [0.0, 0.0, 0.0])
+
+
+@pytest.mark.parametrize("bad", ["met", "", "Unknown", "parent"])
+def test_unrecognised_typing_name_is_refused_not_defaulted(bad):
+  with pytest.raises(ValueError, match="parent_residue"):
+    OutputSpec(modified_residue_typing=bad)
+  spec = OutputSpec()
+  with pytest.raises(ValueError, match="parent_residue"):
+    spec.modified_residue_typing = bad
+  assert spec.modified_residue_typing == "parent_residue"
+
+
+def test_unknown_typing_reaches_the_parse_through_load_structure():
+  # The dataset path forwards parse_kwargs to load_structure -> load_rust, which used to read
+  # only remove_solvent from its kwargs and drop every other option silently.
+  from proxide.io.parsing.dispatch import load_structure
+
+  def _first(result):
+    return next(iter(result)) if not hasattr(result, "aatype") else result
+
+  with warnings.catch_warnings():
+    warnings.simplefilter("ignore", UserWarning)
+    typed_unknown = _first(load_structure(str(_PROBE), modified_residue_typing="unknown"))
+    typed_default = _first(load_structure(str(_PROBE)))
+  idx = _mse_index(typed_default)
+  assert int(np.asarray(typed_default.aatype)[idx]) == _MET
+  assert int(np.asarray(typed_unknown.aatype)[idx]) == _UNK
+  with pytest.raises(ValueError, match="parent_residue"):
+    _first(load_structure(str(_PROBE), modified_residue_typing="met"))
+
+
+def test_atom14_unknown_typing_drops_the_residue_and_says_so():
+  # Pre-0.2.0 behaviour, kept on purpose: an unknown-typed residue has no atom14 layout, so its
+  # atoms are not placed. The parse must say so; it must not pass quietly.
+  with pytest.warns(UserWarning, match="no atom14 layout"):
+    protein = parse_structure(
+      str(_PROBE), OutputSpec(coord_format=CoordFormat.Atom14, modified_residue_typing="unknown")
+    )
+  idx = _mse_index(protein)
+  assert float(np.asarray(protein.atom_mask)[idx].sum()) == 0.0
+
+
+def test_writing_an_unknown_typed_mse_warns_that_its_selenium_is_missing(tmp_path):
+  protein = parse_structure(
+    str(_PROBE), OutputSpec(coord_format=CoordFormat.Atom37, modified_residue_typing="unknown")
+  )
+  with pytest.warns(UserWarning, match="alias atoms"):
+    out = write_pdb(protein, tmp_path / "unknown_typed.pdb")
+  atoms = [x[12:16].strip() for x in _mse_rows(out.read_text())]
+  assert "SE" not in atoms and "CE" in atoms  # the warning is true: the MSE record has no SE
+
+
+def test_writing_a_default_typed_mse_does_not_warn(tmp_path):
+  # Negative control for the warning above: the default typing places SE, so nothing is missing.
+  protein = parse_structure(str(_PROBE), OutputSpec(coord_format=CoordFormat.Atom37))
+  with warnings.catch_warnings():
+    warnings.simplefilter("error", UserWarning)
+    out = write_pdb(protein, tmp_path / "default_typed.pdb")
+  assert "SE" in [x[12:16].strip() for x in _mse_rows(out.read_text())]

@@ -583,6 +583,10 @@ fn process_models(
     classification: ResidueClassificationConfig,
     cache_key: Option<formatters::CacheKey>,
 ) -> PyResult<PyObject> {
+    // The spec decides how modified residues (MSE) are typed; every input path (PDB, mmCIF,
+    // AMBER) goes through here, so this is the one place the option reaches the classifier.
+    let mut classification = classification;
+    classification.modified_residue_typing = spec.modified_residue_typing;
     let conv = spec.unit_system.conversion_spec();
     let target = spec::OutputFormatTarget::from_str(&spec.output_format_target)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
@@ -675,15 +679,17 @@ fn process_models(
         // again, which is required for parameterization to find all atoms.
         if num_h_added > 0 {
             log::debug!("Rebuilding topology for contiguous residue ranges...");
-            let (rebuilt, rebuilt_bonds) =
-                crate::processing::residues::rebuild_topology(processed, bonds_for_h).map_err(
-                    |e| {
-                        pyo3::exceptions::PyValueError::new_err(format!(
-                            "Topology rebuild after H addition failed: {}",
-                            e
-                        ))
-                    },
-                )?;
+            let (rebuilt, rebuilt_bonds) = crate::processing::residues::rebuild_topology(
+                processed,
+                bonds_for_h,
+                classification,
+            )
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "Topology rebuild after H addition failed: {}",
+                    e
+                ))
+            })?;
             processed = rebuilt;
             // bonds_for_h is consumed by rebuild; the rebuilt bonds aren't needed
             // further since parameterization infers bonds from templates.
