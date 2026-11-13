@@ -26,8 +26,12 @@ pub fn parse_pdb(text: &str) -> Result<WasmMol, String> {
 
     // Convert atoms from RawAtomData to WasmAtom
     let mut atoms = Vec::with_capacity(raw_data.num_atoms);
-    for i in 0..raw_data.num_atoms {
-        let element = &raw_data.elements[i];
+    for (i, element) in raw_data
+        .elements
+        .iter()
+        .enumerate()
+        .take(raw_data.num_atoms)
+    {
         let atomic_num =
             element_to_z(element).ok_or_else(|| format!("Unknown element: {}", element))?;
 
