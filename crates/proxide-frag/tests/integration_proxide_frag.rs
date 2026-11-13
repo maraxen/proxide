@@ -372,9 +372,8 @@ fn ac9_norm_sq_consistency() {
     let ns = centered.norm_sq();
 
     let mut manual = 0.0_f32;
-    for r in 0..5 {
-        for at in 0..4 {
-            let [x, y, z] = centered.coords[r][at];
+    for residue in &centered.coords {
+        for &[x, y, z] in residue {
             manual += x * x + y * y + z * z;
         }
     }
