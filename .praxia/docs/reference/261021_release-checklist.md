@@ -37,6 +37,8 @@ Versioning rule: `crates.io` stays pre-release. A stable PyPI tag has a final `X
 
 0.2.0 shipped on 2026-11-04. Tag `v0.2.0` is commit `e466d30` (PR #97). Cargo workspace `0.2.0-alpha.1`. Debt #3258 records that the CGenFF-bearing CHARMM XMLs still ship by owner decision, pending clearance; the 0.1.0 yank (spec D5) is the owner's step and waits on that decision.
 
+0.2.1 shipped on 2026-11-13. Tag `v0.2.1` is commit `39aa781` (PR #101); publish run 43451273150 built 4 wheels plus the sdist, passed every smoke job, and also published the crates. Cargo workspace `0.2.1-alpha.1`. It adds `OutputSpec(modified_residue_typing=...)` (PR #99) and repairs the CI clippy gate (PR #100). `main` is `0.2.2.dev0` / `0.2.2-dev.0` afterwards.
+
 The stable contract is core IO: structure parsing, formatting (Atom37, Atom14, Full), writing (PDB, mmCIF) and XTC trajectory reading. GAFF2, confind, rotlib and CCD/fixer ship as experimental. `crates.io` stays pre-release. Anything not listed as stable is provisional.
 
 #2909, the version agreement check (`scripts/check_versions.py`), is merged (PR #58, `627e7a4`, an ancestor of `origin/main`).
