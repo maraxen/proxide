@@ -27,6 +27,8 @@ pub struct FormattedAtom37 {
     pub residue_index: Vec<i32>, // (N_res,) PDB residue numbers
     pub chain_index: Vec<i32>, // (N_res,) chain indices
     pub residue_names: Vec<String>, // (N_res,) as-read residue names
+    /// (N_res,) one character per residue; `' '` for a blank insertion code.
+    pub insertion_codes: Vec<String>,
 }
 
 /// Atom37 formatter - converts to standardized (N_res, 37, 3) representation
@@ -62,6 +64,7 @@ impl Atom37Formatter {
         let mut residue_index = vec![0i32; num_residues];
         let mut chain_index = vec![0i32; num_residues];
         let mut residue_names: Vec<String> = Vec::with_capacity(num_residues);
+        let mut insertion_codes: Vec<String> = Vec::with_capacity(num_residues);
         let mut b_factors = vec![0.0f32; num_residues * 37];
         let mut occupancies = vec![0.0f32; num_residues * 37];
 
@@ -70,6 +73,7 @@ impl Atom37Formatter {
             // Set residue metadata
             aatype[res_idx] = res_info.res_type as i8;
             residue_names.push(res_info.res_name.clone());
+            insertion_codes.push(res_info.insertion_code.to_string());
             residue_index[res_idx] = res_info.res_id;
 
             // Map chain to index
@@ -137,6 +141,7 @@ impl Atom37Formatter {
             residue_index,
             chain_index,
             residue_names,
+            insertion_codes,
             b_factors,
             occupancies,
         })
@@ -359,6 +364,31 @@ mod tests {
         let atom_order = build_atom_order();
         let ca_idx = atom_order["CA"];
         assert_eq!(formatted.atom_mask[ca_idx], 1.0);
+    }
+
+    #[test]
+    fn icode_ligand_insertion_codes_per_residue_match_the_file() {
+        use crate::formatters::icode_fixture::{
+            expected_protein_residues, load_processed, read_file_atoms,
+        };
+
+        let processed = load_processed();
+        let formatted = Atom37Formatter::format(&processed, &create_test_spec()).unwrap();
+        let expected = expected_protein_residues(&read_file_atoms());
+
+        let codes: Vec<String> = expected.iter().map(|(_, _, c)| c.to_string()).collect();
+        assert_eq!(formatted.insertion_codes, codes);
+        let res_seqs: Vec<i32> = expected.iter().map(|(_, n, _)| *n).collect();
+        assert_eq!(formatted.residue_index, res_seqs);
+        // The brief's literal expectation for T1: 51, 52, 52A, 52B, MSE 53, 54, B1, B2.
+        assert_eq!(
+            formatted.insertion_codes,
+            [" ", " ", "A", "B", " ", " ", " ", " "]
+        );
+        assert_eq!(
+            formatted.insertion_codes.len(),
+            formatted.residue_names.len()
+        );
     }
 
     fn mse_raw() -> proxide_core::structure::RawAtomData {

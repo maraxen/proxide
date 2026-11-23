@@ -9,6 +9,8 @@ pub mod backbone;
 pub mod cache;
 pub mod custom;
 pub mod full;
+#[cfg(test)]
+pub(crate) mod icode_fixture;
 pub mod residue_policy;
 
 pub use atom14::Atom14Formatter;

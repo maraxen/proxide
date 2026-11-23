@@ -570,6 +570,29 @@ mod tests {
         parse_parm7_reader(FIXTURE.as_bytes()).expect("fixture parses")
     }
 
+    /// Must-not-fire (spec D1, R4): parm7 derives `is_hetatm` from a residue-name
+    /// list, so the flag is not a record type. The Full output must carry no
+    /// hetero flag, even though some `is_hetatm` are true.
+    #[test]
+    fn parm7_full_output_has_no_hetero_flag() {
+        use crate::formatters::full::FullFormatter;
+        use proxide_core::processing::ProcessedStructure;
+        use proxide_core::spec::OutputSpec;
+
+        let t = fixture();
+        let coords: Vec<f32> = (0..t.n_atoms * 3).map(|v| v as f32).collect();
+        let raw = t.to_raw_atom_data(&coords).unwrap();
+        assert!(!raw.hetero_from_records);
+        assert!(
+            raw.is_hetatm.iter().any(|&h| h),
+            "fixture has heuristic HETATM atoms"
+        );
+
+        let processed = ProcessedStructure::from_raw(raw).expect("fixture processes");
+        let formatted = FullFormatter::format(&processed, &OutputSpec::default()).unwrap();
+        assert!(formatted.hetero.is_none());
+    }
+
     #[test]
     fn format_width_parsing() {
         assert_eq!(parse_format_width("%FORMAT(20a4)").unwrap(), 4);
