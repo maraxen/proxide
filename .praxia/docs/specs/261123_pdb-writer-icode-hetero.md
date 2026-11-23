@@ -40,8 +40,8 @@ Tags: **V** = read at file:line on `origin/main`; **U** = unverified, probe in T
 | F9 | Per-residue icode exists on processed residues: `ResidueInfo.insertion_code` (`crates/proxide-core/src/processing/residues.rs:37`, set at `:265`, `ResidueId` built from the raw icode at `:164`); the formatters iterate `residue_info` (`crates/proxide-io/src/formatters/atom37.rs:69-72`), where they already read `residue_names`. | V (review 1) |
 | F15 | A residue's hetero status is taken from its FIRST atom (`residues.rs:194`). Only residues classified as protein reach `residue_info` and the Atom37/14 arrays (alias path, or CCD peptide-linking such as MSE, `residues.rs:207-235`); ligands and solvent never appear in Atom37/14 (`tests/io/test_writing.py:718`: 5awl's 12 HETATM HOH are not written). MSE written as MSE is HETATM by test (`tests/io/test_atom14_variants.py:88,105`). | V |
 | F16 | Paths that produce `Protein` fields besides the formatters: the parse cache (`crates/proxide_py/src/py_parsers.rs:901-916`, `:976-998`; `conversion.rs:62-107`) and the Atom37 multi-model stacker (`py_parsers.rs:~798-896`, stacks `b_factors`/`occupancies` per model). Python sites that copy or reshape `Protein` fields: `src/proxide/ops/transforms.py` (`truncate_protein` `:120`, `concatenate_proteins_for_inter_mode` `:194`, pad, stack `:568`) and the chain filter that rebuilds `Protein` (`src/proxide/io/parsing/backend.py:~250-285`). | V (review 1, sites spot-checked) |
-| F17 | The mmCIF writer has no `pdbx_PDB_ins_code` column (`writing.py:572-583`); the mmCIF reader keys residues on (chain, seq, icode) (`crates/proxide-io/src/formats/mmcif.rs:~1838,1865`), so without the column 52 and 52A merge on re-read. | V (review 1) |
-| F18 | No `build.rs` and no git sha exist; `proxide.__version__` comes from `importlib.metadata` (`src/proxide/__init__.py:15`). | V (review 1) |
+| F17 | The mmCIF writer has no `pdbx_PDB_ins_code` column (`writing.py:572-583`); the mmCIF reader reads `pdbx_PDB_ins_code` and keys residues on (chain, seq, icode) (`crates/proxide-io/src/formats/mmcif.rs:1838-1866`, its tests), so without the column 52 and 52A merge on re-read. | V |
+| F18 | No git sha is embedded anywhere: `crates/proxide-core/build.rs` and `crates/proxide-rotlib/build.rs` exist but only compile protobufs (review 1's "no build.rs" was wrong; corrected by reading). `proxide.__version__` comes from `importlib.metadata` (`src/proxide/__init__.py:15`). | V |
 | F10 | Private writers already exist: `backend._raw_atom_data_to_pdb` (`src/proxide/io/parsing/backend.py:355-396`, ATOM only, no icode) and `_raw_atom_data_to_mmcif` (`:438-502`, writes `group_PDB` from `is_hetatm` and `pdbx_PDB_ins_code`). Used only for altloc re-parse. | V |
 | F11 | Diagnostics: no `Report`/`DiagPolicy`/`*_reported`/`diagnostics/registry.toml` exists in code; spec `260910_proxide-silent-substitution-observability.md` (D1-D3, D9) is a **draft**. Telemetry in Python is `warnings.warn` (`writing.py:337`) and module loggers; Rust uses `log` bridged by `pyo3_log`. | V |
 | F12 | Spec `261102_proxide-stable-hardening-and-cisternal.md` T6 (draft): **library calls stay silent; only CLI/MCP entry points record to cisternal**; storage location is layered config; absent provenance reports `{"source": "unavailable", "reason": ...}`. | V |
@@ -137,10 +137,11 @@ Consequences:
 `insertion_codes="write"` (default) writes the code in PDB column 27 and in mmCIF `pdbx_PDB_ins_code`, blank
 or `?` when absent. `"blank"` writes column 27 blank and `?`.
 
-**mmCIF column policy:** `write_mmcif` **always** emits `_atom_site.pdbx_PDB_ins_code` (after
-`label_seq_id`), with `?` for blank or unknown, and `group_PDB` from the same record rule. Every mmCIF output gains
-one column. That is a changelog item. The golden test (T0) asserts the new output equals the golden one
-with that column removed. It is not optional, because without it 52/52A merge on re-read (F17).
+**mmCIF column policy (owner decision 2026-11-23: only when needed):** `write_mmcif` emits
+`_atom_site.pdbx_PDB_ins_code` (after `label_seq_id`) **only when at least one written code is non-blank**
+after applying the `insertion_codes` option; then blank rows get `?`. An icode-free `Protein`, or
+`insertion_codes="blank"`, gives mmCIF byte-identical to today. `group_PDB` follows the record rule. Without the
+column, 52/52A merge on re-read (F17), so a file with codes always carries it.
 
 ### D4. `WriteReport`: additive, experimental
 
@@ -218,8 +219,9 @@ through `_emit_warnings(findings, stacklevel)`; info findings never warn. T5 ass
   finding_codes = ["..."]
   ```
   `"unknown"` is the single spelling for a value that cannot be established. This follows bathos, not
-  260910's "unknown"/261102's "nogit" split. **Divergence to flag to the owner:** 261102 T6 says library calls
-  never write. This writes only on explicit `provenance="sidecar"` from the caller, beside a file the caller asked for.
+  260910's "unknown"/261102's "nogit" split. **Owner-approved exception (2026-11-23)** to 261102 T6's "library calls
+  never write". This writes only on explicit `provenance="sidecar"` from the caller, beside a file the
+  caller asked for. Amend T6's text when that spec is next revised.
 - **Out of scope:** cisternal recording (261102 T6). T6 can build its per-operation record from
   `WriteReport` plus input path/sha, duration and error code, which the writer does not have.
 
@@ -234,8 +236,9 @@ through `_emit_warnings(findings, stacklevel)`; info findings never warn. T5 ass
   Set `hetero=True` for ligand atoms and `insertion_codes` per atom from the input identifiers. Broadcast the
   per-residue sampled-token probability to `b_factors`. Pass `provenance="sidecar"` if the run wants a
   record.
-- Version bump: this changes default bytes in two places (Full HETATM, the mmCIF column). Choosing 0.2.x or
-  0.3.0 is the owner's decision at release. The PR records both changes under CHANGELOG "Changed"/"Fixed".
+- Version (owner decision 2026-11-23): the next release is **0.3.0**, because a stable writer's default output
+  changes. The change is Full HETATM from the parsed flag; mmCIF changes only for inputs with insertion codes,
+  which were written wrong before. The PR records both under CHANGELOG "Fixed"/"Changed".
 
 ## 3. Tasks
 
@@ -249,7 +252,11 @@ named test files locally. CI runs the full matrix. Rust tests: `cargo test -p pr
   (b) 5awl Atom14 → PDB;
   (c) a hand-built Full `Protein` with no hetero/icode → PDB and mmCIF;
   (d) 5awl Full → PDB.
-  Record the generating commit in `tests/data/golden_writer/README.md`. Probes, with results written into
+  Generate them with a tracked script, `scripts/golden/make_writer_goldens.py` (argparse + logging). The
+  script first asserts that `proxide.__file__` and `proxide._proxider.__file__` resolve inside this
+  worktree, and refuses otherwise: the main checkout's venv is on another branch and would silently pin the
+  wrong bytes. Record the generating commit and both resolved paths in `tests/data/golden_writer/README.md`.
+  Probes, with results written into
   section 1:
   - a residue whose atoms carry mixed HETATM/ATOM flags (F15, first-atom rule);
   - which parse path keeps 5awl's HOH in Full;
@@ -273,7 +280,7 @@ named test files locally. CI runs the full matrix. Rust tests: `cargo test -p pr
   - every option value, and an unknown value raises;
   - `hetero` on an Atom37 `Protein` raises;
   - an invalid icode (two characters, non-ASCII) raises;
-  - goldens: (a)-(c) PDB byte-identical; (a),(c) mmCIF identical after dropping the `pdbx_PDB_ins_code` column;
+  - goldens: (a)-(c) PDB and mmCIF byte-identical (no goldens carry insertion codes);
     (d) differs from its golden **only** in the record type of the HOH rows (assert the exact
     line set that changed).
 - **T5. Report, logging, provenance (D4, D5).** Accept:
@@ -301,8 +308,8 @@ named test files locally. CI runs the full matrix. Rust tests: `cargo test -p pr
   - Drop the two aminx-only tests, and say so in the module docstring.
 - **T7. Docs.** CHANGELOG:
   - "Fixed": Full HETATM from the parsed flag.
-  - "Changed": mmCIF gains `pdbx_PDB_ins_code`; Full outputs of parsed ligands, ions and waters change
-    record type.
+  - "Changed": mmCIF gains `pdbx_PDB_ins_code` when the structure has insertion codes; Full outputs of
+    parsed ligands, ions and waters change record type. The release is 0.3.0.
   - "Added": the fields, the options, and `*_reported` (experimental).
   README Stability: the new keyword arguments are stable; `*_reported`, `WriteReport`, `WriteFinding` and
   the provenance sidecar are experimental. Tag F-rows in this spec V after T0.
@@ -321,7 +328,7 @@ Order: T0 → T1 → T2 → T3 → T4 → T5 → T6 → T7. T6 may start after T
 | Risk | Mitigation |
 |---|---|
 | Users of Full output see HOH/ligands change to HETATM | Changelog; `record_type="residue_table"` restores the old bytes, proven by the golden (d) test with that option |
-| Every mmCIF output changes by one column | Decided (F17: correctness on re-read); golden test proves it is the only change |
+| mmCIF schema varies with input (column present only with codes) | Owner decision; readers tolerate the optional column; T4 tests both the with-codes and the without-codes shape |
 | A cache path or transform drops the new fields silently | D2 enumerates them; T2/T3 test cold == cached and each transform |
 | `WriteReport` diverges from 260910's `Report` | Experimental; codes are a literal table the registry can import |
 | Provenance sidecar conflicts with 261102 T6 "library never writes" | Opt-in only; flagged to the owner in D5 |
@@ -351,3 +358,11 @@ Order: T0 → T1 → T2 → T3 → T4 → T5 → T6 → T7. T6 may start after T
     - Report design → D4.
     - Spec conflicts → D4/D5.
     - Missing tasks → D2/T2/T7.
+- **R3 (261123), owner decisions via AskUserQuestion:**
+  - The mmCIF `pdbx_PDB_ins_code` column is emitted only when needed, so icode-free mmCIF stays byte-identical.
+  - The opt-in provenance sidecar is approved as an exception to 261102 T6.
+  - The default is fixed to HETATM-from-flag, and the next release is 0.3.0.
+  - praxia runtime files are ignored in proxide's `.gitignore`.
+  - F17 and F18 were re-verified by reading. F18's "no build.rs" was wrong: two exist, but neither
+    embeds a git sha.
+  - T0 goldens come from a tracked script that refuses a shadowing install.
