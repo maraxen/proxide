@@ -1212,6 +1212,11 @@ pub fn parse_mmcif_from_reader_with<R: BufRead>(
         return Err("No atoms found in mmCIF file".into());
     }
 
+    // `read_group_pdb` takes `is_hetatm` from the `group_PDB` column when it is
+    // present, and defaults every row to ATOM when it is absent. Only the
+    // present case is a record type.
+    state.raw_data.hetero_from_records = state.column_map.contains_key("group_PDB");
+
     Ok((state.raw_data, state.model_ids))
 }
 
@@ -1292,6 +1297,55 @@ mod tests {
     // the sprint plan and is re-expressed below against the public API,
     // preserving its exact intent (see that test for the deviation note).
     // -------------------------------------------------------------
+
+    /// `hetero_from_records` (writer spec D1) is set only when the `group_PDB`
+    /// column is present: that column is the record type. Without it every row
+    /// defaults to ATOM and the flag is not a record type.
+    #[test]
+    fn group_pdb_column_sets_hetero_from_records() {
+        let with_column = "
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+ATOM 1 N N . ALA A 1 ? 0.000 0.000 0.000 1.00 0.00
+HETATM 2 ZN ZN . ZN A 2 ? 1.000 1.000 1.000 1.00 0.00
+";
+        let (raw, _) = parse_mmcif_from_reader(with_column.as_bytes()).unwrap();
+        assert!(raw.hetero_from_records);
+        assert_eq!(raw.is_hetatm, vec![false, true]);
+
+        let without_column = "
+loop_
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+1 N N . ALA A 1 ? 0.000 0.000 0.000 1.00 0.00
+";
+        let (raw, _) = parse_mmcif_from_reader(without_column.as_bytes()).unwrap();
+        assert!(!raw.hetero_from_records);
+    }
 
     #[test]
     fn test_mmcif_multiple_loops_and_missing() {

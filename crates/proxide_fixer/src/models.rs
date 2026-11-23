@@ -254,6 +254,7 @@ mod tests {
             epsilons: None,
             num_atoms: 2,
             is_hetatm: vec![false, false],
+            hetero_from_records: false,
             ter_atom_indices: Vec::new(),
         };
 
@@ -288,6 +289,7 @@ mod tests {
             epsilons: None,
             num_atoms: 3,
             is_hetatm: vec![false, false, false],
+            hetero_from_records: false,
             ter_atom_indices: Vec::new(),
         };
 
@@ -318,6 +320,7 @@ mod tests {
             epsilons: None,
             num_atoms: 2,
             is_hetatm: vec![false, false],
+            hetero_from_records: false,
             ter_atom_indices: Vec::new(),
         };
 
@@ -351,6 +354,7 @@ mod tests {
             epsilons: None,
             num_atoms: 2,
             is_hetatm: vec![false, false],
+            hetero_from_records: false,
             ter_atom_indices: Vec::new(),
         };
 
@@ -391,6 +395,7 @@ mod tests {
             epsilons: None,
             num_atoms: 2,
             is_hetatm: vec![false, false],
+            hetero_from_records: false,
             ter_atom_indices: Vec::new(),
         };
 
@@ -425,6 +430,7 @@ mod tests {
             epsilons: None,
             num_atoms: 2,
             is_hetatm: vec![false, false],
+            hetero_from_records: false,
             ter_atom_indices: Vec::new(),
         };
 

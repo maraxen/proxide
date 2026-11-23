@@ -63,8 +63,15 @@ pub struct RawAtomData {
     /// Total number of atoms
     pub num_atoms: usize,
 
-    /// HETATM flag
+    /// HETATM flag. Parsers that read the record type (PDB, PQR, mmCIF with a
+    /// `group_PDB` column) set it from the file; parm7 derives it from a
+    /// residue-name list, so `hetero_from_records` distinguishes the two.
     pub is_hetatm: Vec<bool>,
+
+    /// True only when `is_hetatm` came from the source file's ATOM/HETATM
+    /// record type (see `hetero_from_records` in the writer spec, D1). False
+    /// for every other producer, including parm7, whose flag is a heuristic.
+    pub hetero_from_records: bool,
 
     /// Atom indices (0-based into `atom_names` / `res_ids`) immediately
     /// preceded by an explicit PDB `TER` record (debt #3215). Empty for mmCIF
@@ -94,6 +101,7 @@ impl RawAtomData {
             epsilons: None,
             num_atoms: 0,
             is_hetatm: Vec::new(),
+            hetero_from_records: false,
             ter_atom_indices: Vec::new(),
         }
     }
@@ -118,6 +126,7 @@ impl RawAtomData {
             epsilons: None,
             num_atoms: 0,
             is_hetatm: Vec::with_capacity(capacity),
+            hetero_from_records: false,
             ter_atom_indices: Vec::new(),
         }
     }

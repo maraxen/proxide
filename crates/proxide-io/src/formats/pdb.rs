@@ -37,6 +37,9 @@ pub fn parse_pdb_from_reader<R: BufRead>(
     let records = parse_pdb_records(reader)?;
 
     let mut raw_data = RawAtomData::with_capacity(records.len());
+    // Every PDB ATOM/HETATM record carries its record type, so `is_hetatm` is
+    // the file's own flag (writer spec D1).
+    raw_data.hetero_from_records = true;
     let mut model_ids: Vec<usize> = Vec::with_capacity(records.len());
 
     for rec in records {
@@ -87,6 +90,19 @@ mod tests {
 
     fn downcast_kind<'a>(err: &'a (dyn std::error::Error + 'static)) -> Option<&'a PdbFieldError> {
         err.downcast_ref::<PdbFieldError>()
+    }
+
+    /// Must-fire: the PDB reader takes `is_hetatm` from the record type, so it
+    /// sets `hetero_from_records`, and every flag matches the file's HETATM rows.
+    #[test]
+    fn pdb_reader_sets_hetero_from_records_and_matches_record_types() {
+        let path = workspace_root().join("tests/data/icode_ligand.pdb");
+        let (raw, _) = parse_pdb_file(&path).expect("fixture parses");
+        assert!(raw.hetero_from_records);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let hetatm_lines = text.lines().filter(|l| l.starts_with("HETATM")).count();
+        assert!(hetatm_lines > 0);
+        assert_eq!(raw.is_hetatm.iter().filter(|&&h| h).count(), hetatm_lines);
     }
 
     /// The workspace root, two levels above this crate (`crates/proxide-io`).

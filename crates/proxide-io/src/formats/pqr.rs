@@ -353,6 +353,9 @@ pub fn parse_pqr_file<P: AsRef<Path>>(path: P) -> Result<RawAtomData, Box<dyn st
 /// both the file path and the tests use.
 pub fn parse_pqr_reader<R: BufRead>(reader: R) -> Result<RawAtomData, Box<dyn std::error::Error>> {
     let mut raw_data = RawAtomData::new();
+    // PQR lines carry the ATOM/HETATM record type, read by `parse_pqr_line`
+    // (`record_type == "HETATM"`), so `is_hetatm` comes from the file.
+    raw_data.hetero_from_records = true;
     let mut seen_model = false;
     let mut residue_trackers: HashMap<(usize, String), ResidueTracker> = HashMap::new();
     let current_model: usize = 1; // PQR doesn't support models, but track for consistency

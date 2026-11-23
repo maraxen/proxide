@@ -37,6 +37,7 @@ pub fn is_ion(res_name: &str) -> bool {
 /// Returns a new RawAtomData with solvent atoms removed.
 pub fn remove_solvent(raw: &RawAtomData) -> RawAtomData {
     let mut filtered = RawAtomData::new();
+    filtered.hetero_from_records = raw.hetero_from_records;
     let mut pending_ter = false;
 
     for i in 0..raw.num_atoms {
@@ -102,6 +103,7 @@ pub fn remove_solvent(raw: &RawAtomData) -> RawAtomData {
 /// Remove both solvent and ion atoms from RawAtomData
 pub fn remove_solvent_and_ions(raw: &RawAtomData) -> RawAtomData {
     let mut filtered = RawAtomData::new();
+    filtered.hetero_from_records = raw.hetero_from_records;
     let mut pending_ter = false;
 
     for i in 0..raw.num_atoms {

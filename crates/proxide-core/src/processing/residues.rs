@@ -559,6 +559,8 @@ pub fn rebuild_topology(
     let old_raw = structure.raw_atoms;
     let mut new_raw = RawAtomData::new();
     new_raw.num_atoms = n;
+    // A permutation keeps every atom, so the flag's provenance carries over.
+    new_raw.hetero_from_records = old_raw.hetero_from_records;
 
     // Pre-allocate vectors
     // new_raw.ids removed - not a field
