@@ -59,14 +59,25 @@ atomicity claim is dropped, and the provenance vocabulary follows bathos `track_
 
 - `insertion_codes`: one-character strings. Per residue, `(N_res,)`, for Atom37/Atom14 (the same layout and
   handling as `residue_names`). Per atom, `(N_atoms,)`, for Full (the same as `res_names`/`atom_chain_ids`).
-  Blank is `" "`. `None` means the source gave none. Validation: every entry is exactly one printable
+  **Container: a Python `list[str]`, exactly like `residue_names`** (not a `'<U1'` ndarray). It is a pytree
+  leaf that must never reach `jnp`, `vmap` or `tree_map` arithmetic; `from_rust_dict` assigns it directly and
+  never passes it through `convert()`. `write_npz` stores it as a `'<U1'` array, and the npz loader turns it
+  back into a list. Blank is `" "`. `None` means the source gave none. Validation: every entry is exactly one printable
   ASCII character, else `ValueError`. Length must equal n_res or n_atoms, else `ValueError` (the existing
   "refusing to pad or truncate" helpers, `writing.py:143-154`, `:357-373`).
 - `hetero`: **per-atom `(N_atoms,)` numpy bool, Full layout only.** It has the same name as the raw-dict
   key (`conversion.rs:41`). `from_rust_dict` converts it to `np.bool_` explicitly and never routes it
   through `_per_slot`, which casts to float32. Setting `hetero` on an Atom37/Atom14 `Protein` raises
   `ValueError` at write time. Those layouts can only hold protein residues (F15), so a hetero flag there
-  carries no ligand information. Their record type is decided as today (D3).
+  carries no ligand information. Their record type is decided as today (D3). Which layout applies is decided
+  by the writer's own dispatch (`atom_names` present → per-atom path, `writing.py:192`), not by
+  `protein.format`. Length must equal n_atoms, and the dtype must be bool, else `ValueError`.
+- **The flag is only as good as its parser (R4).** The PDB and mmCIF parsers take `hetero` from the file's
+  record type. The AMBER parm7 parser derives it from a residue-name list
+  (`crates/proxide-io/src/formats/parm7.rs:202-206,324`). That list lacks ACE/NME/NHE, so caps would come
+  out HETATM. Decision: **parm7 emits `hetero = None`**, so the residue-table rule applies and output does
+  not change. parm7 has no record type, so a derived flag would put a heuristic into the output.
+  T2 tests this.
 
 Both default to `None`, which is additive to a stable type. Document both next to `b_factors`
 (`containers.py:125-130`).
@@ -89,16 +100,22 @@ Python propagation sites. Each gets a test in T3.
 
 | site | `insertion_codes` | `hetero` (Full) |
 |---|---|---|
-| `ops/transforms.py:120` `truncate_protein` | crop like `residue_names` | crop the atom rows the truncation keeps, or raise if truncate does not support Full |
-| `ops/transforms.py:194` concat | concatenate like `residue_names` (special-cased, not tree_map) | concatenate |
-| pad | pad with `" "` | pad with `False` |
-| `ops/transforms.py:568` stack | strip from tree_map like `residue_names`; keep a per-row list | stack |
-| chain filter (`backend.py:~250-285`) | Atom37/14: index with the residue mask, as `b_factors` is | see below |
+| site | `insertion_codes` (Atom37/14, per residue) | `hetero` and per-atom `insertion_codes` (Full) |
+|---|---|---|
+| `ops/transforms.py:120` `truncate_protein` | crop like `residue_names` | **drop to `None` with a `UserWarning`**: truncate never touches `atom_names`/`res_names`/`elements`, so a truncated Full `Protein` is already inconsistent (`:158-190`) |
+| `ops/transforms.py:194` concat | concatenate like `residue_names`, special-cased **before** the final batch-axis `tree_map` (`:270`); that `tree_map` must also skip string-list fields, because `'MET'[None, ...]` raises `TypeError`, a latent bug that `residue_names` already has | drop to `None` with a warning, same reason |
+| pad (`:469-481`) | pad with `" "` | drop to `None` with a warning, same reason |
+| `ops/transforms.py:568` stack | strip from `tree_map` like `residue_names`; keep a per-row list. **Mixed `None`/set across rows** → drop to `None` with a warning, like `b_factors` (`:612-632`) | drop to `None` with a warning |
+| chain filter (`backend.py:~250-285`) | Atom37/14: index with the residue mask, as `b_factors` is | n/a, see below |
 
-The chain filter already drops `residue_names`, `atom_names`, `res_names`, `elements` and `atom_chain_ids` on
-Full, and applies a per-residue mask to per-atom arrays there. That is a **pre-existing defect and out of
-scope**. T3 files it as a proxide debt and adds a test that a chain-filtered Full `Protein` fails loudly on
-write, not silently.
+The chain filter on Full fails earlier than any write: `backend.py:201` indexes flat coordinates with a
+per-residue mask and raises `ParsingError` at parse time (review 2, M6). That is a **pre-existing defect and
+out of scope**. T3 files it as a proxide debt. There is no write-time test, because the object cannot be built.
+
+Other `Protein` producers (review 2, M9) are **out of scope**: `io/streaming/array_record.py:351`,
+`io/parsing/foldcomp.py:120`, `io/parsing/utils.py:340` (biotite, which does carry `ins_code`) and the mdtraj
+loader. They leave both fields `None`, so the writer behaves as today. T7 lists them in the changelog, and T3
+files one debt for biotite/utils.py, because it could supply icodes.
 
 Grep `_reject_if_batched` (`writing.py:17-42`) and extend it: a nested `insertion_codes` (list of lists) is batched.
 
@@ -185,9 +202,12 @@ does not duplicate it.
 | `PROX-WRITE-ICODE-UNKNOWN` | info | `insertion_codes is None` |
 | `PROX-WRITE-ALIAS-ATOMS-MISSING` | warning | the existing unknown-typed MSE warning (`writing.py:337`), now also a finding |
 
-**One emitter.** `write_pdb` and `write_pdb_reported` both call a private `_write_pdb(..., _warn_stacklevel)`,
-so a warning resolves to the *caller's* frame from either entry point. Every warning-severity finding goes
-through `_emit_warnings(findings, stacklevel)`; info findings never warn. T5 asserts each warning's
+**One emitter.** `write_pdb` and `write_pdb_reported` are each one-line wrappers around a private
+`_write_pdb`, so the depth from either entry point to the emitter is the same, and one fixed stacklevel
+resolves to the *caller's* frame. `_atom_rows` no longer warns itself. It returns its findings (including the
+alias-atoms case, whose message text is kept for `tests/io/test_atom14_variants.py:303`), and
+`_emit_warnings(findings)` warns once, after rows are resolved and before the file is written.
+Info findings never warn. T5 asserts each warning's
 `filename` is the test file. The functions are experimental and not added to `_STABLE`.
 
 ### D5. Telemetry and provenance
@@ -198,7 +218,9 @@ through `_emit_warnings(findings, stacklevel)`; info findings never warn. T5 ass
   `write-file` phase boundary to 260910 D8's list. Python `logging` is the mechanism, and Rust `tracing` is untouched.
 - **Cost.** The writer already builds the full text in memory before writing (`writing.py:506-510`). The new
   code encodes it once, writes those bytes, and hashes the same bytes, with no read-back. That is one sha256
-  over the file size per call.
+  over the file size per call. To keep bytes identical to today's text-mode `open(path, "w")` on every
+  platform, encode with the locale-independent `"utf-8"` and newline `"\n"`. T4's goldens are the check, and
+  the CI matrix includes no Windows runner, so `"\n"` is what text mode produced.
 - **No atomicity change.** The output file is written exactly as today: validated first, then `open(path, "w")`.
   It is not temp-then-rename. A rejected structure still never touches the file.
 - **Provenance sidecar, opt-in, experimental.** `provenance="sidecar"` writes `<path>.prov.toml` **after**
@@ -209,7 +231,7 @@ through `_emit_warnings(findings, stacklevel)`; info findings never warn. T5 ass
   schema = "proxide-write-prov/0"     # experimental; 260910 OBS-306 keys pending the bathos contract
   [provenance]
   proxide_version = "..."             # importlib.metadata
-  proxide_source_commit = "..."       # PEP 610 direct_url.json vcs_info.commit_id, else "unknown"
+  proxide_source_commit = "..."       # see below; "unknown" when not establishable
   output_path = "..."
   output_sha256 = "..."
   input_source = "..."                # protein.source, or "unknown"
@@ -218,6 +240,17 @@ through `_emit_warnings(findings, stacklevel)`; info findings never warn. T5 ass
   counts = { n_atoms = 0, n_hetatm = 0, n_hetatm_from_hetero = 0, n_insertion_codes = 0 }
   finding_codes = ["..."]
   ```
+  **Source commit, honestly.** PEP 610 `vcs_info` exists only for VCS-URL installs. Editable and wheel installs
+  (the common cases) do not carry it, so the commit will usually be `"unknown"` (review 2, M8). The sidecar
+  records it as unknown rather than guessing, and also records `proxide_install = "editable"|"wheel"|"vcs"|"unknown"`
+  from `direct_url.json`. An editable install additionally records `proxide_editable_path`, so a reader can resolve
+  the checkout. Embedding a build-time sha is deferred to 260910 OBS-304.
+  **Serialization.** proxide has no TOML writer dependency. The sidecar is written by a small private emitter
+  that supports only the shapes above (strings, ints, a flat inline table, a list of strings) and escapes
+  strings per TOML basic-string rules. T5 round-trips it through `tomllib` with an adversarial `source`
+  (quotes, backslash, newline, non-ASCII). The key names are modelled on bathos `track_packages`
+  (`<pkg>_version`, `<pkg>_source_commit`; bathos skill "Record which build of a dependency ran"). That is a
+  naming convention, not a bathos ingestion contract, which is still open in 260910 OBS-306.
   `"unknown"` is the single spelling for a value that cannot be established. This follows bathos, not
   260910's "unknown"/261102's "nogit" split. **Owner-approved exception (2026-11-23)** to 261102 T6's "library calls
   never write". This writes only on explicit `provenance="sidecar"` from the caller, beside a file the
@@ -251,16 +284,20 @@ named test files locally. CI runs the full matrix. Rust tests: `cargo test -p pr
   (a) 5awl Atom37 → PDB and mmCIF;
   (b) 5awl Atom14 → PDB;
   (c) a hand-built Full `Protein` with no hetero/icode → PDB and mmCIF;
-  (d) 5awl Full → PDB.
+  (d) 5awl Full → PDB **and mmCIF** (its 12 HOH rows change `group_PDB` too, review 2 M7).
   Generate them with a tracked script, `scripts/golden/make_writer_goldens.py` (argparse + logging). The
   script first asserts that `proxide.__file__` and `proxide._proxider.__file__` resolve inside this
   worktree, and refuses otherwise: the main checkout's venv is on another branch and would silently pin the
-  wrong bytes. Record the generating commit and both resolved paths in `tests/data/golden_writer/README.md`.
+  wrong bytes. It **refuses to overwrite** an existing golden unless given `--force`, so a re-run after the
+  change cannot silently re-pin. mmCIF goldens embed `data_<stem>`, so write each to a fixed file name and
+  compare under that same name in T4. Record the generating commit and both resolved paths in
+  `tests/data/golden_writer/README.md`.
   Probes, with results written into
   section 1:
   - a residue whose atoms carry mixed HETATM/ATOM flags (F15, first-atom rule);
-  - which parse path keeps 5awl's HOH in Full;
   - `OutputSpec.include_hetatm`/`remove_solvent` (`spec.rs:97-98`), which a grep suggests are read nowhere.
+  (Already answered by reading, review 2 m3: Full keeps 5awl's HOH, `tests/io/test_writing.py:601-604`;
+  5awl has no column-27 characters.)
   Accept: goldens committed in their own commit; section 1 updated.
 - **T1. Fixture.** `tests/data/icode_ligand.pdb`, hand-written, with its provenance in a header REMARK and the test
   docstring. Contents: two chains; residues 52, 52A, 52B in chain A; one MSE; one ZN ion and one 3+-atom organic
@@ -270,8 +307,9 @@ named test files locally. CI runs the full matrix. Rust tests: `cargo test -p pr
   for both fields (a Python test in T3 if the cache is only reachable from Python).
 - **T3. Python fields, `from_rust_dict`, npz, propagation sites (D1, D2).** Accept: new tests for
   `parse_structure(T1)` per layout; each row of the D2 site table; the multi-model and cache tests; the
-  chain-filtered-Full-fails-loudly test; npz save/load round trip of both fields. File the chain-filter debt
-  and quote its number in the PR.
+  npz save/load round trip of both fields; a concat test with `residue_names` **and** `insertion_codes`
+  set (the latent `tree_map` crash, review 2 M1); a stack test with mixed `None`/set rows; and parm7 yields
+  `hetero is None`. File the chain-filter (Full) and biotite-icode debts and quote their numbers in the PR.
 - **T4. Writer options and record rule (D3).** Accept:
   - a parametrised test covering every row of the record-rule table;
   - PDB round trip of T1 in Full (record types, icodes, ligand atoms);
@@ -281,8 +319,10 @@ named test files locally. CI runs the full matrix. Rust tests: `cargo test -p pr
   - `hetero` on an Atom37 `Protein` raises;
   - an invalid icode (two characters, non-ASCII) raises;
   - goldens: (a)-(c) PDB and mmCIF byte-identical (no goldens carry insertion codes);
-    (d) differs from its golden **only** in the record type of the HOH rows (assert the exact
-    line set that changed).
+    (d) PDB and mmCIF each differ from their golden **only** in the record type / `group_PDB` of the 12 HOH
+    rows (assert the exact line set that changed); with `record_type="residue_table"` both are byte-identical.
+  - The mmCIF icode round trip is checked through proxide's own reader only. The writer emits `label_seq_id`
+    and no `auth_seq_id` (review 2 m7), so external-reader interop is not claimed. Note this in the changelog.
 - **T5. Report, logging, provenance (D4, D5).** Accept:
   - a must-fire and a must-not-fire protein for each warning code;
   - info codes present and never warned;
@@ -291,8 +331,10 @@ named test files locally. CI runs the full matrix. Rust tests: `cargo test -p pr
   - `caplog.set_level(logging.INFO, logger="proxide.io.writing")` sees exactly one record per write;
   - `provenance="none"` creates exactly one file;
   - `"sidecar"` creates two, the sidecar parses as TOML, and its `output_sha256` matches;
-  - a sidecar write forced to fail (monkeypatched `open` for the `.prov.toml` path) leaves the output intact
-    and raises.
+  - a sidecar write forced to fail leaves the output intact and raises. Force it by pre-creating a
+    **directory** at `<path>.prov.toml`, not by monkeypatching `open`;
+  - the sidecar round-trips through `tomllib` with an adversarial `protein.source` (quote, backslash,
+    newline, non-ASCII).
 - **T6. Ported aminx acceptance tests.** Create `tests/io/test_writing_full_atom.py`, self-contained in the PR.
   Port the logic of four tests from aminx commit `095a49e0`
   (`tests/io/test_laser_pdb.py`; the source is a local-only tag, so quote each original assertion in
@@ -366,3 +408,22 @@ Order: T0 → T1 → T2 → T3 → T4 → T5 → T6 → T7. T6 may start after T
   - F17 and F18 were re-verified by reading. F18's "no build.rs" was wrong: two exist, but neither
     embeds a git sha.
   - T0 goldens come from a tracked script that refuses a shadowing install.
+- **R4 (261123), after second review `dsp_6edfec06982ffabc` (Sonnet spec-challenger, verdict has_gaps, 0 blocking,
+  9 major, 7 minor).** The reviewer's `agent_result` failed. Before acting I checked M5 (`parm7.rs:202,324`) and
+  M1 (`ops/transforms.py:256-270`) by reading.
+  - M1 (concat crash) → D2 table and T3 test.
+  - M2 (container type) → D1: `list[str]`.
+  - M3 (mixed None) → D2 stack row.
+  - M4 (Full transforms) → drop with a warning.
+  - M5 (parm7 heuristic) → parm7 emits `hetero=None`.
+  - M6 (chain filter) → the test is dropped, because it fails at parse; filed as a debt.
+  - M7 → golden (d) mmCIF.
+  - M8 (sidecar) → install kind, editable path, own escaping emitter, tomllib round trip.
+  - M9 → other producers out of scope, with a biotite debt.
+  - m1 → one fixed stacklevel; `_atom_rows` returns findings.
+  - m2 → the generator refuses to overwrite.
+  - m3 → probes trimmed.
+  - m4 → utf-8 with `\n`.
+  - m5 → caplog filtered by logger; failure forced with a directory.
+  - m7 → interop not claimed.
+  - Already in R3: m6 (hetero validation).
