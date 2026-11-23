@@ -98,3 +98,4 @@ scripts/scratch/
 
 # Claude Code worktrees (debt #2926)
 .claude/worktrees/
+.praxia/debt_events.jsonl
