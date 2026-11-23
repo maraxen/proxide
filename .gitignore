@@ -75,6 +75,13 @@ cluster-config.toml
 # .praxia/ tracked (daily log, docs, handoffs, backlog)
 .praxia/cache/
 .praxia/eph/
+# praxia runtime files: rewritten every session, never work (they also trip the
+# commit-before-fixer gate in fresh worktrees)
+.praxia/*.lock
+.praxia/dispatch_cache.jsonl
+.praxia/telemetry.jsonl
+.praxia/subagent_outputs/*.head
+.praxia/subagent_outputs/*.start
 praxia.toml
 
 # Coverage reports
