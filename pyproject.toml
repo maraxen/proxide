@@ -134,9 +134,12 @@ include = [
 # MacKerell lab (mackerell.umaryland.edu/charmm_ff.shtml) -- not a
 # redistributable-by-default license, unlike everything else the `include`
 # wildcard above pulls in. Must not ship in the wheel until that agreement
-# is in place. See .praxia/docs/specs/260824_license-provenance-verification.md.
+# is in place. Decision D5 in
+# .praxia/docs/specs/261102_proxide-stable-hardening-and-cisternal.md; the file is
+# also removed from the tree, and scripts/smoke_wheel.py fails on any *cgenff* file.
 exclude = [
-    "src/proxide/assets/charmm/charmm36_cgenff.xml",
+    "src/proxide/**/*cgenff*",
+    "src/proxide/**/*CGenFF*",
 ]
 
 [tool.pytest.ini_options]

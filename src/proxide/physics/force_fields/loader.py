@@ -27,6 +27,27 @@ if TYPE_CHECKING:
   from proxide.core.types import Charges, EnergyGrids, Epsilons, Radii, Scales, Sigmas
 
 
+class CgenffNotDistributedError(FileNotFoundError, ValueError):
+  """CGenFF was requested by name, but proxide does not ship it.
+
+  CGenFF needs a signed agreement from the MacKerell lab, so it is not
+  redistributable and is absent from every proxide build (decision D5,
+  .praxia/docs/specs/261102_proxide-stable-hardening-and-cisternal.md). A user
+  holding that agreement passes the path to their own copy instead.
+
+  Subclasses FileNotFoundError and ValueError so callers of the generic
+  not-found error keep working.
+  """
+
+
+_CGENFF_MESSAGE = (
+  "CGenFF ({name!r}) is not distributed with proxide: its terms require a signed "
+  "agreement from the MacKerell lab (https://mackerell.umaryland.edu/charmm_ff.shtml). "
+  "If you hold that agreement, pass the path to your own copy, e.g. "
+  "load_force_field('/path/to/charmm36_cgenff.xml')."
+)
+
+
 @dataclass(frozen=True)
 class FullForceField:
   """Force field parameters stored as a Flax dataclass.
@@ -334,6 +355,9 @@ def load_force_field(
 
   # If not absolute/exists, check assets
   if not path.exists():
+    # Name lookup only: an existing path (a user's own licensed copy) loads above.
+    if "cgenff" in path.name.lower():
+      raise CgenffNotDistributedError(_CGENFF_MESSAGE.format(name=name_or_path))
     # Try known assets location
     # Assuming module path structure: src/priox/assets
     # We function is in src/priox/physics/force_fields/loader.py

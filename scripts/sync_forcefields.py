@@ -70,7 +70,8 @@ FILE_MAPPINGS = {
   # NOTE: charmm36_cgenff.xml deliberately excluded -- CGenFF requires a
   # signed not-for-profit license agreement from the MacKerell lab
   # (mackerell.umaryland.edu/charmm_ff.shtml), not redistributable by
-  # default. See .praxia/docs/specs/260824_license-provenance-verification.md.
+  # default. Decision D5 in
+  # .praxia/docs/specs/261102_proxide-stable-hardening-and-cisternal.md.
   # Do not re-add without that agreement in place.
   "charmm": [
     "openmmforcefields/ffxml/charmm/charmm36.xml",

@@ -125,6 +125,15 @@ def check_gaff2_def_is_not_bundled() -> None:
     raise AssertionError("ATOMTYPE_GFF2.DEF is present in a distributed build")
 
 
+def check_cgenff_is_not_bundled(package_dir: Path | None = None) -> None:
+  """CGenFF is not redistributable (decision D5); no build may contain any CGenFF file."""
+  root = package_dir if package_dir is not None else Path(proxide.__file__).parent
+  bundled = sorted(str(p.relative_to(root)) for p in root.rglob("*") if "cgenff" in p.name.lower())
+  if bundled:
+    raise AssertionError(f"cgenff files present in a distributed build: {bundled}")
+  log.info("no cgenff files under %s", root)
+
+
 def main() -> None:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--xtc", type=Path, required=True, help="XTC fixture to read")
@@ -139,6 +148,7 @@ def main() -> None:
     check_malformed_input_raises(workdir)
   check_xtc_read(args.xtc.resolve())
   check_gaff2_def_is_not_bundled()
+  check_cgenff_is_not_bundled()
   log.info("all checks passed")
 
 
