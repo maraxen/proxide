@@ -1158,8 +1158,11 @@ def _provenance_toml(report: WriteReport) -> str:
 def _write_sidecar(report: WriteReport) -> Path:
   """Write `<path>.prov.toml` after the output. An OSError propagates; the output stays."""
   prov_path = report.path.with_name(report.path.name + ".prov.toml")
+  # Build the bytes before opening, so an encoding error (e.g. a lone surrogate in
+  # protein.source) cannot leave an empty sidecar behind.
+  data = _provenance_toml(report).encode("utf-8")
   with open(prov_path, "wb") as f:
-    f.write(_provenance_toml(report).encode("utf-8"))
+    f.write(data)
   return prov_path
 
 

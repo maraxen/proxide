@@ -380,6 +380,23 @@ def test_adversarial_source_round_trips_through_tomllib(tmp_path: Path) -> None:
   assert prov["provenance"]["input_source"] == ADVERSARIAL_SOURCE
 
 
+@pytest.mark.parametrize("code", [*range(0x00, 0x20), 0x7F])
+def test_every_toml_control_character_round_trips(tmp_path: Path, code: int) -> None:
+  source = f"x{chr(code)}y"
+  write_pdb(_full(["ALA"], source=source), tmp_path / "c.pdb", provenance="sidecar")
+  prov = tomllib.loads((tmp_path / "c.pdb.prov.toml").read_text(encoding="utf-8"))
+  assert prov["provenance"]["input_source"] == source
+
+
+def test_unencodable_source_leaves_no_empty_sidecar(tmp_path: Path) -> None:
+  # A lone surrogate cannot be UTF-8 encoded: the sidecar must fail before its file is opened.
+  out = tmp_path / "s.pdb"
+  with pytest.raises(UnicodeEncodeError):
+    write_pdb(_full(["ALA"], source="a\udcffb"), out, provenance="sidecar")
+  assert out.exists()
+  assert not (tmp_path / "s.pdb.prov.toml").exists()
+
+
 def test_missing_source_is_recorded_as_unknown(tmp_path: Path) -> None:
   write_pdb(_full(["ALA"]), tmp_path / "n.pdb", provenance="sidecar")
   prov = tomllib.loads((tmp_path / "n.pdb.prov.toml").read_text(encoding="utf-8"))
