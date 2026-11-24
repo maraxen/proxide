@@ -20,7 +20,7 @@ Owner decisions, 2026-11-02:
 - D3. Provenance and telemetry are stored with cisternal's tooling.
 - D4. `get_mass`, CI lock use and other deferred items are filed as debt, not fixed silently.
 - D5. CGenFF (#3182): remove the file, ship the replacement release, then yank 0.1.0. Yanking stays a manual owner step. **Superseded by D5a on 2026-11-24.**
-- D5a (owner, 2026-11-24). Keep shipping CGenFF data as openmmforcefields does: `charmm36_cgenff.xml` and the CHARMM XMLs that embed CGenFF parameters stay in the wheel, synced unchanged from `openmmforcefields/ffxml/charmm/`. Explicit written clearance from the MacKerell lab may be sought later (debt #3258); it does not block releases. No release is yanked on CGenFF grounds. Evidence, from fetching `mackerell.umaryland.edu/charmm_ff.shtml` and `warning.shtml` on 2026-11-23 (verbatim quotes in debt #3182):
+- D5a (owner, 2026-11-24). Keep shipping CGenFF data as openmmforcefields does: `charmm36_cgenff.xml` and the CHARMM XMLs that embed CGenFF parameters stay in the wheel, unchanged from upstream: `charmm/` from `openmmforcefields/ffxml/charmm/`, and `openmm_bundled/charmm36*.xml` from OpenMM's `app/data`. Explicit written clearance from the MacKerell lab may be sought later (debt #3258); it does not block releases. No release is yanked on CGenFF grounds. Evidence, from fetching `mackerell.umaryland.edu/charmm_ff.shtml` and `warning.shtml` on 2026-11-23 (verbatim quotes in debt #3182):
   - The only licence terms the lab publishes are for the CGenFF *program*: a free not-for-profit binary licence, or SilcsBio for for-profit users.
   - The toppar topology and parameter files are open downloads with no stated licence or redistribution terms.
   - No stated licence is not a grant, which is why clearance stays open as a follow-up. Draft PR #104, which removed the file, was closed unmerged.
@@ -85,7 +85,7 @@ Accept: with `spec=.praxia/docs/specs/260824_license-provenance-verification.md`
 
 ### T2. Force-field licence records (was: Remove CGenFF)
 
-> **Amended 2026-11-24 (D5a).** The removal is withdrawn. The first three bullets below, and the `git ls-files | rg -i cgenff` and smoke-check clauses of the acceptance, no longer apply. They are kept struck through for the record. The force-field licence records (the fourth bullet and the program below) still stand: `charmm36_cgenff.xml` and the CGenFF-bearing CHARMM XMLs get rows like every other XML. For those rows, record the source as `openmmforcefields/ffxml/charmm/` built from MacKerell toppar, and record that no licence is stated upstream.
+> **Amended 2026-11-24 (D5a).** The removal is withdrawn. The first three bullets below, and the `git ls-files | rg -i cgenff` and smoke-check clauses of the acceptance, no longer apply. They are kept struck through for the record. The force-field licence records (the fourth bullet and the program below) still stand: `charmm36_cgenff.xml` and the CGenFF-bearing CHARMM XMLs get rows like every other XML. For those rows, record the actual upstream (`openmmforcefields/ffxml/charmm/` or OpenMM's `app/data`; both are built from MacKerell toppar), and record that no licence is stated upstream for the toppar data.
 
 - ~~Port `14e623d` and `bb4d018`. Take from `55bdfef` only what removal needs, and report the rest.~~
 - ~~Find every code path that loads the file, and make it raise a named error.~~
