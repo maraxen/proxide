@@ -154,3 +154,53 @@ def test_charmm_derived_xmls_point_at_notice() -> None:
     assert path in derived, path
   # Positive control: the check above must have something to find.
   assert len(derived) >= 20
+
+
+# Every data row must follow a '# source: REPO:PATH@SHA' line naming the upstream file
+# it matches. A sha256 row must cite that upstream's own licence text.
+SOURCE = re.compile(r"^# source: (openmm/openmm|openmm/openmmforcefields):(\S+)@([0-9a-f]{7,40})$")
+LICENCE_BY_REPO = {
+  "openmm/openmm": "src/proxide/assets/licences/openmm-Licenses.txt",
+  "openmm/openmmforcefields": "src/proxide/assets/licences/openmmforcefields-LICENSE",
+}
+
+
+def source_violations(tsv_text: str) -> list[str]:
+  bad = []
+  source = None
+  for line in tsv_text.splitlines():
+    if line.startswith("# source:"):
+      source = SOURCE.match(line)
+      if source is None:
+        bad.append(f"malformed: {line}")
+      continue
+    if not line.strip() or line.startswith("#"):
+      continue
+    path, kind, target = line.split("\t")
+    if source is None:
+      bad.append(f"no source line: {path}")
+      continue
+    repo, upstream_path, _ = source.groups()
+    if pathlib.PurePosixPath(upstream_path).name != pathlib.PurePosixPath(path).name:
+      bad.append(f"source filename differs: {path} <- {upstream_path}")
+    if kind == "sha256" and target.partition(" ")[2] != LICENCE_BY_REPO[repo]:
+      bad.append(f"licence is not {repo}'s: {path}")
+    source = None
+  return bad
+
+
+def test_source_lines_match_rows() -> None:
+  tsv = REPO / ASSETS_REL / TSV_NAME
+  bad = source_violations(tsv.read_text())
+  assert not bad, bad
+  assert tsv.read_text().count("\n# source: ") == len(data_rows(tsv))
+
+
+def test_red_swapped_source_lines() -> None:
+  # Cursor's round-2 example: identical siblings recorded under each other's name.
+  lines = (REPO / ASSETS_REL / TSV_NAME).read_text().splitlines()
+  names = ("/amber96_obc.xml@", "/amber99_obc.xml@")
+  idx = [i for i, line in enumerate(lines) if line.startswith("# source:") and any(n in line for n in names)]
+  assert len(idx) == 2, idx
+  lines[idx[0]], lines[idx[1]] = lines[idx[1]], lines[idx[0]]
+  assert source_violations("\n".join(lines))
