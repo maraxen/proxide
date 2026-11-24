@@ -61,6 +61,44 @@ def none_or_numpy(array: np.ndarray | None) -> np.ndarray | None:
   return np.asarray(array)
 
 
+def validate_insertion_codes(
+  codes: Any, expected_len: int, what: str = "insertion_codes"
+) -> list[str]:
+  """Check and normalise insertion codes: one printable ASCII character per entry.
+
+  Blank is ``" "``. Each entry must be a ``str`` of exactly one character in the printable
+  ASCII range (0x20-0x7E), and there must be ``expected_len`` of them (N_res for Atom37/Atom14,
+  N_atoms for Full). Raises ``ValueError`` otherwise.
+  """
+  if isinstance(codes, str) or codes is None:
+    msg = f"{what} must be a sequence of one-character strings, not {type(codes).__name__}"
+    raise ValueError(msg)
+  out = list(codes)
+  if len(out) != expected_len:
+    msg = f"{what} has {len(out)} entries; expected {expected_len}"
+    raise ValueError(msg)
+  for i, code in enumerate(out):
+    if not (isinstance(code, str) and len(code) == 1 and 0x20 <= ord(code) <= 0x7E):
+      msg = f"{what}[{i}] = {code!r} is not exactly one printable ASCII character"
+      raise ValueError(msg)
+  return out
+
+
+def validate_hetero(hetero: Any, n_atoms: int) -> np.ndarray:
+  """Check the per-atom HETATM flag: a bool array of length ``n_atoms``.
+
+  Raises ``ValueError`` on a non-bool dtype or a wrong length. Only the Full layout has it.
+  """
+  arr = np.asarray(hetero)
+  if arr.dtype != np.bool_:
+    msg = f"hetero must be a bool array, got dtype {arr.dtype}"
+    raise ValueError(msg)
+  if arr.shape != (n_atoms,):
+    msg = f"hetero has shape {arr.shape}; expected ({n_atoms},)"
+    raise ValueError(msg)
+  return arr
+
+
 @dataclass(frozen=True, kw_only=True)
 class Protein:
   """Residue-level protein structure representation.
@@ -128,6 +166,14 @@ class Protein:
   # hold 0.0, the same zero-fill as unplaced coordinates; atom_mask says which are placed.
   b_factors: Any | None = None
   occupancies: Any | None = None
+  # PDB insertion codes as read (spec 261123): one printable ASCII character per
+  # residue for Atom37/Atom14 and per atom for Full. A Python list[str], like
+  # residue_names; it must never reach jnp, vmap or tree_map. Blank is " ". None when the
+  # source gave none.
+  insertion_codes: list[str] | None = None
+  # Per-atom HETATM flag from the source's record types, Full layout only: a bool array of
+  # length N_atoms. None when the parser had no record types (parm7, mdtraj) or for Atom37/14.
+  hetero: np.ndarray | None = None
   molecule_type: Any | None = None
   atom_types: Any | None = None
   bonds: Any | None = None
@@ -376,11 +422,20 @@ class Protein:
         # For Atom14, CA is also usually at index 1
         mask_ca = atom_mask_2d[..., 1]
 
+      # Per residue, shared across models (Rust refuses models that disagree). Kept as a
+      # plain list[str]: it is never passed through convert().
+      insertion_codes = (
+        None
+        if rust_dict.get("insertion_codes") is None
+        else validate_insertion_codes(rust_dict["insertion_codes"], num_residues)
+      )
+
       return cls(
         coordinates=convert(coordinates, dtype=np.float32),
         aatype=convert(rust_dict["aatype"], dtype=np.int8),
         one_hot_sequence=convert(np.eye(21)[rust_dict["aatype"]]),
         residue_names=rust_dict.get("residue_names"),
+        insertion_codes=insertion_codes,
         mask=convert(mask_ca, dtype=np.float32),
         residue_index=convert(rust_dict["residue_index"], dtype=np.int32),
         chain_index=convert(rust_dict["chain_index"], dtype=np.int32),
@@ -508,6 +563,27 @@ class Protein:
         return val[mask]
       return val
 
+    # Per-atom icodes and hetero follow the coordinates' padding rule, but icodes stay a
+    # plain list[str] and hetero is cast to bool explicitly (never via _per_slot / float32).
+    flat_mask = np.asarray(raw_mask, dtype=bool).ravel()
+    n_atoms_int = int(flat_mask.sum())
+
+    raw_codes = rust_dict.get("insertion_codes")
+    insertion_codes = None
+    if raw_codes is not None:
+      codes = list(raw_codes)
+      if len(codes) > n_atoms_int and len(codes) == flat_mask.size:
+        codes = [c for c, keep in zip(codes, flat_mask, strict=True) if keep]
+      insertion_codes = validate_insertion_codes(codes, n_atoms_int)
+
+    raw_hetero = rust_dict.get("hetero")
+    hetero = None
+    if raw_hetero is not None:
+      hetero_arr = np.asarray(raw_hetero)
+      if len(hetero_arr) > n_atoms_int and len(hetero_arr) == flat_mask.size:
+        hetero_arr = hetero_arr[flat_mask]
+      hetero = validate_hetero(hetero_arr, n_atoms_int)
+
     return cls(
       coordinates=_slice_if_padded(raw_coords.reshape(-1, 3)),
       full_coordinates=_slice_if_padded(raw_coords.reshape(-1, 3)),
@@ -523,6 +599,8 @@ class Protein:
       atom_chain_ids=rust_dict.get("atom_chain_ids"),
       b_factors=_slice_if_padded(rust_dict.get("b_factors"), dtype=np.float32),
       occupancies=_slice_if_padded(rust_dict.get("occupancies"), dtype=np.float32),
+      insertion_codes=insertion_codes,
+      hetero=hetero,
       charges=_slice_if_padded(rust_dict.get("charges")),
       radii=_slice_if_padded(
           rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32

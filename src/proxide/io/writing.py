@@ -38,6 +38,13 @@ def _reject_if_batched(protein: Protein, fn_name: str) -> None:
       f"or write each row separately."
     )
     raise ValueError(msg)
+  codes = getattr(protein, "insertion_codes", None)
+  if codes is not None and len(codes) > 0 and isinstance(codes[0], (list, tuple, np.ndarray)):
+    msg = (
+      f"{fn_name}() writes a single structure, but `protein.insertion_codes` is a list of "
+      f"lists -- this looks like a batched Protein. Index into the batch first."
+    )
+    raise ValueError(msg)
   coords = getattr(protein, "coordinates", None)
   if coords is not None and coords.ndim == 4:
     msg = (
@@ -638,6 +645,11 @@ def write_npz(protein: Protein, path: str | Path) -> Path:
 
   if protein.residue_names is not None:
     data["residue_names"] = np.asarray([str(r) for r in protein.residue_names], dtype=str)
+  # Insertion codes (spec 261123) and the per-atom HETATM flag, present only when set.
+  if protein.insertion_codes is not None:
+    data["insertion_codes"] = np.asarray([str(c) for c in protein.insertion_codes], dtype=str)
+  if protein.hetero is not None:
+    data["hetero"] = np.asarray(protein.hetero, dtype=np.bool_)
 
   # Filter out None values
   data = {k: v for k, v in data.items() if v is not None}
