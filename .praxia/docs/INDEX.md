@@ -47,6 +47,7 @@ Superseded and archived docs: [HISTORY.md](HISTORY.md).
 - [260820_gaff2-parity-verdict](audits/260820_gaff2-parity-verdict.md) — Phase 5 graded verdict (PARITY, as of the PR
 
 ## Research
+- [261124_ff-parameter-original-terms](research/261124_ff-parameter-original-terms.md) — Debt #3599 findings (Tinker licence for AMOEBA, no stated GLYCAM terms) and the status of the MacKerell clearance request (debt #3258)
 - [260922_optional-dep-test-preflight](research/260922_optional-dep-test-preflight.md) — Assessment of optional-dependency-gated test execution when rdkit, mdtraj, h5py, and tables are installed at uv.lock versions on Python 3.11
 - [260729_tm-align-phase-2-algorithm-map](research/260729_tm-align-phase-2-algorithm-map.md) — Line-referenced map of USalign's 5 seeding strategies, get_score_fast, DP_iter/NWDP_TM/TMscore8_search, and final multi-TM output
 - [260630_arrow-ipc-prototype](research/260630_arrow-ipc-prototype.md) — proxide-jaccard — Arrow IPC + sorted accession index prototype, measured against the real corpus; planus vs flatbuffers vs Arrow IPC tradeoff analysis
