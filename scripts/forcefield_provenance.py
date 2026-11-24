@@ -186,8 +186,10 @@ def emit_tsv(rows: list[dict]) -> str:
     "# upstream that redistributes the file:",
     "#   - CHARMM36, CGenFF, Drude and CHARMM water/ion XMLs: no licence is stated for the",
     "#     MacKerell toppar files; see licences/CHARMM-TOPPAR-NOTICE.md and debt #3258.",
-    "#   - amoeba*.xml and iamoeba.xml: AMOEBA parameters from Tinker; terms not verified.",
-    "#   - GLYCAM_06j-1.xml: Woods lab (glycam.org) parameters; terms not verified.",
+    "#   - amoeba*.xml and iamoeba.xml: AMOEBA parameters from Tinker, whose licence restricts",
+    "#     redistribution and does not address parameter data; debt #3599.",
+    "#   - GLYCAM_06j-1.xml: Woods lab (glycam.org) parameters; no licence stated; debt #3599.",
+    "#   Findings: .praxia/docs/research/261124_ff-parameter-original-terms.md",
     "",
   ]
   for r in rows:

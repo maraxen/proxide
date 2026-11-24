@@ -20,8 +20,10 @@
 # upstream that redistributes the file:
 #   - CHARMM36, CGenFF, Drude and CHARMM water/ion XMLs: no licence is stated for the
 #     MacKerell toppar files; see licences/CHARMM-TOPPAR-NOTICE.md and debt #3258.
-#   - amoeba*.xml and iamoeba.xml: AMOEBA parameters from Tinker; terms not verified.
-#   - GLYCAM_06j-1.xml: Woods lab (glycam.org) parameters; terms not verified.
+#   - amoeba*.xml and iamoeba.xml: AMOEBA parameters from Tinker, whose licence restricts
+#     redistribution and does not address parameter data; debt #3599.
+#   - GLYCAM_06j-1.xml: Woods lab (glycam.org) parameters; no licence stated; debt #3599.
+#   Findings: .praxia/docs/research/261124_ff-parameter-original-terms.md
 
 # source: openmm/openmmforcefields:openmmforcefields/ffxml/amber/DNA.OL15.xml@0edd3bb8111b
 amber/DNA.OL15.xml	sha256	16e575d857a05fa5be1bc71f240cb3641c2ec654de1ee97ff8ea9dacef78a26f src/proxide/assets/licences/openmmforcefields-LICENSE
