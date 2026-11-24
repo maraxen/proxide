@@ -24,8 +24,8 @@ extracting `LICENSE.pdf` with `pdftotext`.
 Their `<Source>` elements name Tinker parameter files: `amoebabio09.prm`,
 `amoebapro13.prm` and `amoebabio18.prm` [V]. OpenMM converts them with
 `processTinkerForceField.py` (openmm/openmm commit eaf56f96bc, #5086) [V].
-`iamoeba.xml` has no `<Info>` block and its origin is unknown; it may come from the
-SimTK iAMOEBA project [U].
+`iamoeba.xml` has no `<Info>` block. Its author added it to OpenMM (see the
+OpenMM review below) [V].
 
 **Stated terms.** The only licence text in TinkerTools/tinker is `LICENSE.pdf`
 (Tinker v26.2, April 2026) [V]:
@@ -58,6 +58,62 @@ not reach them, but no source says so.
 Their headers give only the source and references, and OpenMM's `Licenses.txt` does
 not mention Tinker or AMOEBA [V]. No OpenMM or Tinker issue about licensing these
 parameters was found [V]. openmmforcefields does not ship AMOEBA.
+
+**OpenMM documentation and history (checked 2026-11-24, owner request: review
+before any outreach).** All [V], from openmm/openmm on GitHub.
+
+- *What OpenMM claims.* The user guide (`docs-source/usersguide/library/01_introduction.rst`)
+  says: "The public API, the low level API, the reference platform, the CPU
+  platform, and the application layer are all distributed under the MIT license."
+  The XMLs live in the application layer (`openmm/app/data`). The guide adds that
+  third-party code is "covered by other licenses ... similar in their terms to the
+  MIT license". Neither the guide nor `Licenses.txt` (nine sections: API/platforms,
+  CUDA/OpenCL, SFMT, Hilbert curve, AsmJit, PdbxReader, irrXML, L-BFGS, VkFFT)
+  makes an exception for force-field data, Tinker or AMOEBA. OpenMM therefore
+  presents the AMOEBA XMLs as MIT. Nowhere does it say it holds Tinker's
+  permission to do so.
+- *Who converted the files.* Peter Eastman (OpenMM lead) generated `amoeba2013.xml`
+  from Tinker files in 2014–2015 (commit 1cbc2f3829 and later: "Regenerated
+  AMOEBA2013 based on Tinker 7.0.1"). He added AMOEBA 2018 in PR #3299 (2021),
+  which closed issues #2816 (David Case) and #3123. João Morado refreshed all of
+  them in PR #5086 (2025). The 2009 file goes back to 2011 (Eastman, Mark
+  Friedrichs).
+- *iamoeba.xml.* Lee-Ping Wang added it ("Added iAMOEBA water parameters",
+  fda320e65f, 2014-02-18). He is iAMOEBA's lead author; the 2013 paper has Ponder
+  as a co-author. This resolves the open provenance question: the force field's
+  own author contributed this file.
+- *Collaboration with the Ponder lab.* The AMOEBA plugin chapter
+  (`08_amoeba_plugin.rst`) describes "the AMOEBA polarizable atomic multipole
+  force field from Jay Ponder's lab" and TINKER-OpenMM, "a modified version of
+  TINKER ... that uses OpenMM", built from files on the OpenMM home page. This
+  shows a long-running working relationship. It is not a licence statement.
+- *Raw Tinker files in OpenMM's MIT repo.* At the pin, openmm/openmm carries
+  `amoebabio18.prm` and `amoebapro13.prm` under `wrappers/python/tests/systems/`
+  and `examples/`. It also carries raw CHARMM `par_all36_*.prm`. OpenMM
+  redistributes the unconverted parameter files as well as the XMLs.
+- *Tinker's licence when OpenMM converted.* The 2014 licence (Tinker 6.3,
+  `doc/license.pdf`, commit b572ca1c50) is worded more broadly than today's: "The
+  package and portions thereof may not be sold nor may copies be distributed to
+  third parties without the express permission of the author and Washington
+  University." The `.prm` files ship inside "the package". If express permission
+  was given to OpenMM, no public record of it was found.
+- *Discussion.* No openmm/openmm issue or PR discusses licensing AMOEBA, Tinker or
+  any force-field data (GitHub issue search for license/licence with
+  amoeba/tinker/"force field"/charmm).
+
+**Reading.** The evidence is consistent with OpenMM distributing these files with
+the Tinker developers' knowledge and involvement:
+
+- OpenMM's lead generated the 2013 and 2018 files, and iAMOEBA's own author
+  contributed his file.
+- The Ponder lab co-maintains TINKER-OpenMM.
+- AMOEBA has been in OpenMM since 2011, with no recorded objection.
+
+None of this is a written grant. On the text, Tinker's licence restricts
+redistribution of "the package and portions thereof" (2014) and of "the Software"
+(2026). proxide's position is the same as for CHARMM under D5a: it ships what
+OpenMM ships, under OpenMM's stated terms. The upstream ambiguity is documented,
+not resolved.
 
 **Bottom line.** #3599 is not closable for AMOEBA. Clearance would come from the
 Tinker Core Development Consortium (Jay W. Ponder, WashU; Pengyu Ren, UT Austin;
@@ -143,7 +199,9 @@ For the owner to send. Nothing has been sent.
 
 ## Open
 
-- AMOEBA: what to do while clearance is pending is an owner decision (keep as
-  OpenMM does, or stop shipping).
+- AMOEBA: owner decision 2026-11-24, no outreach for now. Keep shipping as OpenMM
+  does, after the OpenMM due-diligence review above. Revisit if OpenMM's
+  terms change, or if anyone asks.
 - GLYCAM: an optional clearance request to the Woods lab, at lower priority.
-- `iamoeba.xml` and `glycam-hydrogens.xml`: provenance is unverified.
+- `glycam-hydrogens.xml`: provenance is unverified. (`iamoeba.xml` is resolved
+  above.)
