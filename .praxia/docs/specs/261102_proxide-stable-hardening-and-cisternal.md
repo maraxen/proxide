@@ -85,7 +85,7 @@ Accept: with `spec=.praxia/docs/specs/260824_license-provenance-verification.md`
 
 ### T2. Force-field licence records (was: Remove CGenFF)
 
-> **Amended 2026-11-24 (D5a).** The removal is withdrawn. The first three bullets below, and the `git ls-files | rg -i cgenff` and smoke-check clauses of the acceptance, no longer apply. They are kept struck through for the record. The force-field licence records (the fourth bullet and the program below) still stand: `charmm36_cgenff.xml` and the CGenFF-bearing CHARMM XMLs get rows like every other XML. For those rows, record the actual upstream (`openmmforcefields/ffxml/charmm/` or OpenMM's `app/data`; both are built from MacKerell toppar), and record that no licence is stated upstream for the toppar data.
+> **Amended 2026-11-24 (D5a).** The removal is withdrawn. The first three bullets below, and the `git ls-files | rg -i cgenff` and smoke-check clauses of the acceptance, no longer apply. They are kept struck through for the record. The force-field licence records (the fourth bullet and the program below) still stand: `charmm36_cgenff.xml` and the CGenFF-bearing CHARMM XMLs get rows like every other XML. For those rows, record the actual upstream (`openmmforcefields/ffxml/charmm/` or OpenMM's `app/data`; both are built from MacKerell toppar), and record that no licence is stated upstream for the toppar data. Because the program accepts only a licence file or a pinned licence text, those rows use kind `file` and point at a repo-authored notice that says this (PR #106: `src/proxide/assets/licences/CHARMM-TOPPAR-NOTICE.md`).
 
 - ~~Port `14e623d` and `bb4d018`. Take from `55bdfef` only what removal needs, and report the rest.~~
 - ~~Find every code path that loads the file, and make it raise a named error.~~
