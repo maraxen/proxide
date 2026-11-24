@@ -1340,7 +1340,10 @@ HETATM 2 ZN ZN . ZN A 2 ? 1.000 1.000 1.000 1.00 0.00
             "{with_column}#\nloop_\n_atom_site_anisotrop.id\n_atom_site_anisotrop.U[1][1]\n1 0.1\n2 0.2\n"
         );
         let (raw, _) = parse_mmcif_from_reader(trailing_loop.as_bytes()).unwrap();
-        assert!(raw.hetero_from_records, "a trailing loop_ must not clear the flag");
+        assert!(
+            raw.hetero_from_records,
+            "a trailing loop_ must not clear the flag"
+        );
         assert_eq!(raw.is_hetatm, vec![false, true]);
 
         let without_column = "

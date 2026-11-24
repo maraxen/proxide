@@ -729,7 +729,7 @@ def _stack_padded_proteins(
     )
     insertion_codes_per_row = None
   elif all(codes_present) and padded_proteins:
-    insertion_codes_per_row = [list(p.insertion_codes) for p in padded_proteins]
+    insertion_codes_per_row = [list(p.insertion_codes or ()) for p in padded_proteins]
   else:
     insertion_codes_per_row = None
   if any(p.hetero is not None for p in padded_proteins):

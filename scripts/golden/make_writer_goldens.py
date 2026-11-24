@@ -67,8 +67,9 @@ def _inside(path: str | None, root: Path) -> bool:
 
 def check_import_location(root: Path) -> tuple[str, str]:
   """Refuse unless proxide and its extension load from ``root``."""
-  import proxide
   import proxide._proxider as ext
+
+  import proxide
 
   where = (proxide.__file__, ext.__file__)
   bad = [p for p in where if not _inside(p, root)]
@@ -164,7 +165,9 @@ def main(argv: list[str] | None = None) -> int:
   pkg_path, ext_path = check_import_location(REPO_ROOT)
   head, dirty = git_state(REPO_ROOT)
   if dirty:
-    raise SystemExit("refusing: src/ or crates/ has uncommitted changes; goldens must pin committed code")
+    raise SystemExit(
+      "refusing: src/ or crates/ has uncommitted changes; goldens must pin committed code"
+    )
 
   out_dir = args.out_dir.resolve()
   existing = [name for name, _, _ in GOLDENS if (out_dir / name).exists()]
@@ -195,7 +198,8 @@ def main(argv: list[str] | None = None) -> int:
     f"- generating commit: `{head}` (src/ and crates/ clean)",
     f"- `proxide` resolved to: `{pkg_path}` (inside the generating checkout)",
     f"- `proxide._proxider` resolved to: `{ext_path}` (inside the generating checkout)",
-    f"- source structure: `tests/data/5awl.pdb`; hand-built protein: `handbuilt_full_protein()` in the script",
+    "- source structure: `tests/data/5awl.pdb`; "
+    "hand-built protein: `handbuilt_full_protein()` in the script",
     "",
     "| file | source | writer | sha256 |",
     "|---|---|---|---|",

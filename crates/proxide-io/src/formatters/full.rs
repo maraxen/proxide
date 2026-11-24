@@ -253,12 +253,12 @@ mod tests {
             );
         }
 
-        for i in 0..formatted.atom_names.len() {
+        for (i, atom_name) in formatted.atom_names.iter().enumerate() {
             let key: AtomKey = (
                 formatted.atom_chain_ids[i].clone(),
                 formatted.atom_residue_ids[i],
                 formatted.res_names[i].clone(),
-                formatted.atom_names[i].clone(),
+                atom_name.clone(),
             );
             let (icode, is_hetatm) = expected
                 .get(&key)
