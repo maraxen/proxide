@@ -321,11 +321,24 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[Protein]) -> Protein:
   # Every string-valued field (residue_names, insertion_codes, atom_names, chain_ids, format,
   # source, ...) must stay out of the numeric tree_map: np.concatenate cannot join strings,
   # and the batch-axis tree_map below cannot index a str. residue_names and insertion_codes
-  # are rebuilt above; format and source are kept when all inputs agree; any other string
-  # field has no concatenation rule here, so it is None in the result, with a warning.
+  # and chain_ids are rebuilt here; format and source are kept when all inputs agree; any
+  # other string field (per-atom names, elements) has no concatenation rule here, so it is
+  # None in the result, with a warning.
+  # chain_ids is the vocabulary chain_index indexes. Each input's chain_index was shifted by
+  # the previous inputs' max(chain_index) + 1, so each input contributes exactly that many
+  # names (padded with "" for unused indices); the result then indexes correctly. Missing on
+  # any input means missing overall.
+  all_chain_ids: list[str] | None = []
+  for p in proteins:
+    if p.chain_ids is None:
+      all_chain_ids = None
+      break
+    span = int(np.max(p.chain_index)) + 1
+    names = [str(c) for c in list(p.chain_ids)[:span]]
+    all_chain_ids.extend(names + [""] * (span - len(names)))
   string_fields = sorted(
     {name for p in proteins for name in _string_valued_field_names(p)}
-    - {"residue_names", "insertion_codes", "format", "source"}
+    - {"residue_names", "insertion_codes", "chain_ids", "format", "source"}
   )
   if string_fields:
     warnings.warn(
@@ -350,7 +363,13 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[Protein]) -> Protein:
     chain_index=chain_ids, mapping=structure_mapping, **dict.fromkeys(string_fields)
   )
   batched = jax.tree_util.tree_map(lambda x: x[None, ...], concatenated)
-  return batched.replace(residue_names=all_names, insertion_codes=all_codes, hetero=None, **meta)
+  return batched.replace(
+    residue_names=all_names,
+    insertion_codes=all_codes,
+    chain_ids=all_chain_ids,
+    hetero=None,
+    **meta,
+  )
 
 
 def _validate_and_flatten_elements(
@@ -427,10 +446,7 @@ def _apply_electrostatics_if_needed(
     )
     phys_feats.append(np.array(feat))
 
-  return [
-    p.replace(physics_features=feat)
-    for p, feat in zip(elements, phys_feats, strict=False)
-  ]
+  return [p.replace(physics_features=feat) for p, feat in zip(elements, phys_feats, strict=False)]
 
 
 def _apply_md_parameterization(

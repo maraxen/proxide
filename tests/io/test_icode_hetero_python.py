@@ -166,6 +166,33 @@ def test_concat_keeps_residue_names_and_insertion_codes_together(atom37: Protein
   assert out.residue_names == list(p.residue_names) * 2
 
 
+def test_concat_keeps_a_chain_ids_vocabulary_that_chain_index_resolves(atom37: Protein) -> None:
+  # The normal parsed-protein path: chain_ids is set, so concat must neither warn nor drop it,
+  # and every residue's remapped chain_index must name its original chain.
+  import warnings as _warnings
+
+  # A second input with two chains whose vocabulary lists one name beyond its max index.
+  n = atom37.coordinates.shape[0]
+  second = atom37.replace(
+    chain_index=np.array([0] * (n // 2) + [1] * (n - n // 2), dtype=np.int32),
+    chain_ids=["X", "Y", "UNUSED"],
+  )
+  with _warnings.catch_warnings():
+    _warnings.simplefilter("error")
+    out = concatenate_proteins_for_inter_mode([atom37, second])
+  expected = [atom37.chain_ids[i] for i in np.asarray(atom37.chain_index)] + [
+    ["X", "Y"][i] for i in np.asarray(second.chain_index)
+  ]
+  resolved = [out.chain_ids[i] for i in np.asarray(out.chain_index)[0]]
+  assert resolved == expected
+  assert "UNUSED" not in out.chain_ids
+
+
+def test_concat_chain_ids_missing_on_one_input_is_none(atom37: Protein) -> None:
+  out = concatenate_proteins_for_inter_mode([atom37, atom37.replace(chain_ids=None)])
+  assert out.chain_ids is None
+
+
 def test_concat_full_drops_codes_and_hetero_with_warning(full: Protein) -> None:
   with pytest.warns(UserWarning, match="insertion_codes, hetero"):
     out = concatenate_proteins_for_inter_mode([full, full])
