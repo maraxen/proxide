@@ -11,6 +11,10 @@
 # Pinned upstreams:
 #   openmm/openmmforcefields@0edd3bb8111b400db01f0a9666091bf8a9247baf
 #   openmm/openmm@b5282630278e6c78e92691ed411543f73aabba75
+# Licence texts are each upstream's at its pinned commit. A '# source:' line with an
+# older commit means the XML matches an earlier version of that upstream file; for
+# OpenMM, Licenses.txt section 1 (MIT) is unchanged between 654c6c9 (2021) and the
+# pin: only the preamble, copyright years and an added VkFFT section differ.
 #
 # Original-source caveats not resolved here; each row records the licence of the
 # upstream that redistributes the file:
@@ -83,7 +87,7 @@ gaff/ffxml/gaff-2.1.xml	sha256	16e575d857a05fa5be1bc71f240cb3641c2ec654de1ee97ff
 gaff/ffxml/gaff-2.11.xml	sha256	16e575d857a05fa5be1bc71f240cb3641c2ec654de1ee97ff8ea9dacef78a26f src/proxide/assets/licences/openmmforcefields-LICENSE
 # source: openmm/openmmforcefields:openmmforcefields/ffxml/amber/gaff/ffxml/gaff-2.2.20.xml@0edd3bb8111b
 gaff/ffxml/gaff-2.2.20.xml	sha256	16e575d857a05fa5be1bc71f240cb3641c2ec654de1ee97ff8ea9dacef78a26f src/proxide/assets/licences/openmmforcefields-LICENSE
-# source: openmm/openmmforcefields:openmmforcefields/ffxml/amber/gaff/ffxml/gaff-1.81.xml@0edd3bb8111b
+# source: openmm/openmmforcefields:openmmforcefields/ffxml/amber/gaff/ffxml/gaff.xml@0edd3bb8111b
 gaff/ffxml/gaff.xml	sha256	16e575d857a05fa5be1bc71f240cb3641c2ec654de1ee97ff8ea9dacef78a26f src/proxide/assets/licences/openmmforcefields-LICENSE
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber03_obc.xml@b5282630278e
 implicit/amber03_obc.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
@@ -91,7 +95,7 @@ implicit/amber03_obc.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be42
 implicit/amber10_obc.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber96_obc.xml@b5282630278e
 implicit/amber96_obc.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
-# source: openmm/openmm:wrappers/python/openmm/app/data/amber96_obc.xml@b5282630278e
+# source: openmm/openmm:wrappers/python/openmm/app/data/amber99_obc.xml@b5282630278e
 implicit/amber99_obc.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber03.xml@b5282630278e
 openmm_bundled/amber03.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
@@ -131,23 +135,23 @@ openmm_bundled/amber14-all.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c
 openmm_bundled/amber19/DNA.OL21.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber19/lipid21.xml@b5282630278e
 openmm_bundled/amber19/lipid21.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
-# source: openmm/openmm:wrappers/python/openmm/app/data/amber14/opc.xml@b5282630278e
+# source: openmm/openmm:wrappers/python/openmm/app/data/amber19/opc.xml@b5282630278e
 openmm_bundled/amber19/opc.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
-# source: openmm/openmm:wrappers/python/openmm/app/data/amber14/opc3.xml@b5282630278e
+# source: openmm/openmm:wrappers/python/openmm/app/data/amber19/opc3.xml@b5282630278e
 openmm_bundled/amber19/opc3.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber19/protein.ff19SB.xml@b5282630278e
 openmm_bundled/amber19/protein.ff19SB.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber19/protein.ff19ipq.xml@d7ac083ff2d0
 openmm_bundled/amber19/protein.ff19ipq.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
-# source: openmm/openmm:wrappers/python/openmm/app/data/amber14/spce.xml@b5282630278e
+# source: openmm/openmm:wrappers/python/openmm/app/data/amber19/spce.xml@b5282630278e
 openmm_bundled/amber19/spce.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
-# source: openmm/openmm:wrappers/python/openmm/app/data/amber14/tip3p.xml@b5282630278e
+# source: openmm/openmm:wrappers/python/openmm/app/data/amber19/tip3p.xml@b5282630278e
 openmm_bundled/amber19/tip3p.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
-# source: openmm/openmm:wrappers/python/openmm/app/data/amber14/tip3pfb.xml@b5282630278e
+# source: openmm/openmm:wrappers/python/openmm/app/data/amber19/tip3pfb.xml@b5282630278e
 openmm_bundled/amber19/tip3pfb.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
-# source: openmm/openmm:wrappers/python/openmm/app/data/amber14/tip4pew.xml@b5282630278e
+# source: openmm/openmm:wrappers/python/openmm/app/data/amber19/tip4pew.xml@b5282630278e
 openmm_bundled/amber19/tip4pew.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
-# source: openmm/openmm:wrappers/python/openmm/app/data/amber14/tip4pfb.xml@b5282630278e
+# source: openmm/openmm:wrappers/python/openmm/app/data/amber19/tip4pfb.xml@b5282630278e
 openmm_bundled/amber19/tip4pfb.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber19-all.xml@b5282630278e
 openmm_bundled/amber19-all.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
@@ -244,7 +248,7 @@ openmm_bundled/residues.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69b
 # source: openmm/openmm:wrappers/python/openmm/app/data/spce.xml@b5282630278e
 openmm_bundled/spce.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/swm4ndp.xml@b5282630278e
-openmm_bundled/swm4ndp.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
+openmm_bundled/swm4ndp.xml	file	src/proxide/assets/licences/CHARMM-TOPPAR-NOTICE.md
 # source: openmm/openmm:wrappers/python/openmm/app/data/tip3p.xml@b5282630278e
 openmm_bundled/tip3p.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/tip3pfb.xml@b5282630278e

@@ -62,9 +62,8 @@ LICENCE_TEXTS = {
 # Repo-authored notice for XMLs converted from MacKerell-lab toppar files,
 # which carry no stated licence upstream (spec 261102, decision D5a).
 CHARMM_NOTICE = "src/proxide/assets/licences/CHARMM-TOPPAR-NOTICE.md"
-# Header-less wrappers that only <Include> CHARMM-derived files.
-CHARMM_WRAPPERS = {"charmm/charmm36.xml"}
 CHARMM_SOURCE = re.compile(r'sourcePackage="(charmm|drude)|<Source[^>]*>[^<]*toppar')
+CHARMM_INCLUDE = re.compile(r'<Include\s+file="([^"]+)"')
 # Directories vendored from OpenMM's own app/data; everything else is synced
 # from openmmforcefields (scripts/sync_forcefields.py).
 OPENMM_DIRS = ("openmm_bundled/", "implicit/")
@@ -126,17 +125,43 @@ def history_matches(
 
 
 def pick_source(rel: str, matches: list[dict]) -> dict:
-  """Choose the upstream the asset was vendored from, among byte-identical matches."""
+  """Choose the upstream the asset was vendored from, among byte-identical matches.
+
+  Prefer the expected repo for the asset's directory, then an upstream path with
+  the asset's own filename: identical siblings (amber96_obc.xml and
+  amber99_obc.xml share one blob) must not be recorded under each other's name.
+  """
   want = "openmm/openmm" if rel.startswith(OPENMM_DIRS) else "openmm/openmmforcefields"
-  preferred = [m for m in matches if m["repo"] == want]
-  return (preferred or matches)[0]
+  ours = rel.split("/")[::-1]
+
+  def shared_tail(path: str) -> int:
+    """Number of trailing path components shared with the asset's path."""
+    n = 0
+    for a, b in zip(ours, path.split("/")[::-1], strict=False):
+      if a != b:
+        break
+      n += 1
+    return n
+
+  return min(matches, key=lambda m: (m["repo"] != want, -shared_tail(m["path"])))
 
 
 def is_charmm_derived(rel: str, path: pathlib.Path) -> bool:
-  if rel in CHARMM_WRAPPERS:
+  """True for XMLs built from MacKerell-lab toppar data.
+
+  Signals, any of which suffices: a <Source> naming a CHARMM or Drude toppar
+  file; a DrudeForce (the CHARMM Drude polarizable model, including the
+  SWM4-NDP water, whose OpenMM XML has no <Source>); or a wrapper whose
+  <Include>s all resolve to CHARMM-derived files.
+  """
+  text = path.read_text(encoding="utf-8", errors="replace")
+  if CHARMM_SOURCE.search(text[:20000]) or "<DrudeForce" in text:
     return True
-  head = path.read_bytes()[:20000].decode("utf-8", errors="replace")
-  return bool(CHARMM_SOURCE.search(head))
+  includes = CHARMM_INCLUDE.findall(text)
+  if includes and not re.search(r"<(AtomTypes|Residues|\w+Force)\b", text):
+    targets = [path.parent / inc for inc in includes]
+    return all(t.is_file() and is_charmm_derived(rel, t) for t in targets)
+  return False
 
 
 def sha256_of(path: str) -> str:
@@ -157,6 +182,10 @@ def emit_tsv(rows: list[dict]) -> str:
     "#",
     "# Pinned upstreams:",
     *(f"#   {repo}@{sha}" for repo, sha in UPSTREAMS.items()),
+    "# Licence texts are each upstream's at its pinned commit. A '# source:' line with an",
+    "# older commit means the XML matches an earlier version of that upstream file; for",
+    "# OpenMM, Licenses.txt section 1 (MIT) is unchanged between 654c6c9 (2021) and the",
+    "# pin: only the preamble, copyright years and an added VkFFT section differ.",
     "#",
     "# Original-source caveats not resolved here; each row records the licence of the",
     "# upstream that redistributes the file:",

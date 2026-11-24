@@ -53,10 +53,24 @@ for path, (kind, target) in rows.items():
 sys.exit(1 if missing or bad else 0)
 '''
 
-# Mirrors scripts/forcefield_provenance.py: an XML converted from MacKerell
-# toppar files must point at the CHARMM notice, never at an MIT text.
-CHARMM_SOURCE = re.compile(r'sourcePackage="(charmm|drude)|<Source[^>]*>[^<]*toppar')
+# An XML built from MacKerell toppar data must point at the CHARMM notice, never at
+# an MIT text. This classification is written independently of the generator's
+# (scripts/forcefield_provenance.py), so a regression there is not mirrored here.
+TOPPAR_HINTS = ("toppar", 'sourcePackage="charmm', 'sourcePackage="drude', "<DrudeForce")
+INCLUDE = re.compile(r'<Include\s+file="([^"]+)"')
 CHARMM_NOTICE = "src/proxide/assets/licences/CHARMM-TOPPAR-NOTICE.md"
+# Named regressions found in review of PR #106: a header-less Include wrapper, and
+# the SWM4-NDP Drude water, which has a DrudeForce but no <Source>.
+MUST_BE_CHARMM = ("charmm/charmm36.xml", "openmm_bundled/swm4ndp.xml")
+
+
+def toppar_derived(xml: pathlib.Path) -> bool:
+  text = xml.read_text(encoding="utf-8", errors="replace")
+  if any(hint in text for hint in TOPPAR_HINTS):
+    return True
+  includes = INCLUDE.findall(text)
+  targets = [xml.parent / inc for inc in includes]
+  return bool(targets) and all(t.is_file() and toppar_derived(t) for t in targets)
 
 
 def run_accept(cwd: pathlib.Path) -> int:
@@ -130,11 +144,13 @@ def test_charmm_derived_xmls_point_at_notice() -> None:
   """No CHARMM-toppar-derived XML may be recorded under an MIT licence text."""
   assets = REPO / ASSETS_REL
   rows = {path: (kind, target) for path, kind, target in data_rows(assets / TSV_NAME)}
-  wrong = []
-  for path, (kind, target) in rows.items():
-    head = (assets / path).read_bytes()[:20000].decode("utf-8", errors="replace")
-    if CHARMM_SOURCE.search(head) and (kind, target) != ("file", CHARMM_NOTICE):
-      wrong.append(path)
+  derived = {path for path in rows if toppar_derived(assets / path)}
+  wrong = sorted(p for p in derived if rows[p] != ("file", CHARMM_NOTICE))
   assert not wrong, wrong
+  # Rows on the notice that nothing here recognises as toppar-derived are also wrong.
+  extra = sorted(p for p, row in rows.items() if row == ("file", CHARMM_NOTICE) and p not in derived)
+  assert not extra, extra
+  for path in MUST_BE_CHARMM:
+    assert path in derived, path
   # Positive control: the check above must have something to find.
-  assert sum(1 for kind, target in rows.values() if target == CHARMM_NOTICE) >= 20
+  assert len(derived) >= 20
