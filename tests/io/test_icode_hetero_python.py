@@ -315,3 +315,34 @@ def test_protein_fields_are_declared_with_defaults() -> None:
   names = {f.name: f for f in dataclasses.fields(Protein)}
   assert "insertion_codes" in names
   assert "hetero" in names
+
+
+# --- layout detection (Cursor review of PR #103) --------------------------------------------------
+
+
+def _ala_plus_ligand_pdb(path: Path, n_ligand_atoms: int) -> Path:
+  def atom(rec: str, serial: int, name: str, res: str, resi: int, x: float, el: str) -> str:
+    return (
+      f"{rec:<6}{serial:>5} {name:<4} {res:>3} A{resi:>4}    "
+      f"{x:8.3f}{0.0:8.3f}{0.0:8.3f}  1.00 10.00          {el:>2}\n"
+    )
+
+  lines = [atom("ATOM", i + 1, n, "ALA", 1, float(i), n[0]) for i, n in enumerate(["N", "CA", "C", "O", "CB"])]
+  lines += [
+    atom("HETATM", 6 + k, f"C{k + 1}", "LIG", 2, 10.0 + k, "C") for k in range(n_ligand_atoms)
+  ]
+  path.write_text("".join(lines) + "END\n")
+  return path
+
+
+@pytest.mark.parametrize("n_ligand_atoms", [9, 32])  # 14 and 37 atoms over one residue
+def test_full_parse_is_never_read_as_atom14_or_atom37(tmp_path: Path, n_ligand_atoms: int) -> None:
+  # A flat Full buffer whose atom count equals num_residues * 14 (or * 37) used to be reshaped
+  # as Atom14 (Atom37); with per-atom insertion codes it then raised on their length.
+  path = _ala_plus_ligand_pdb(tmp_path / "p.pdb", n_ligand_atoms)
+  protein = parse_structure(str(path), OutputSpec(coord_format=CoordFormat.Full))
+  n_atoms = 5 + n_ligand_atoms
+  assert protein.atom_names is not None and len(protein.atom_names) == n_atoms
+  assert np.asarray(protein.coordinates).shape == (n_atoms, 3)
+  assert len(protein.insertion_codes) == n_atoms
+  assert list(np.asarray(protein.hetero)) == [False] * 5 + [True] * n_ligand_atoms

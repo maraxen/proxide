@@ -299,13 +299,13 @@ class Protein:
     # Attempt to extract fields
     # Note: This is an incomplete conversion, but mimics the requested interface.
     system = AtomicSystem(
-        # The Protein's own per-atom elements and names: this was an empty
-        # MolecularTopology(), so the projector treated every atom -- hydrogens
-        # included -- as carbon (review #8). Formats with no per-atom
-        # elements (Atom37/Atom14) now raise there instead.
-        topology=MolecularTopology(elements=self.elements, atom_names=self.atom_names),
-        state=AtomicState(coordinates=coords),
-        atom_mask=self.full_atom_mask,
+      # The Protein's own per-atom elements and names: this was an empty
+      # MolecularTopology(), so the projector treated every atom -- hydrogens
+      # included -- as carbon (review #8). Formats with no per-atom
+      # elements (Atom37/Atom14) now raise there instead.
+      topology=MolecularTopology(elements=self.elements, atom_names=self.atom_names),
+      state=AtomicState(coordinates=coords),
+      atom_mask=self.full_atom_mask,
     )
 
     spec = OpenMMSpec(coulomb14scale=coulomb14scale, lj14scale=lj14scale)
@@ -322,13 +322,13 @@ class Protein:
     coords = self.full_coordinates if self.full_coordinates is not None else jnp.zeros((0, 3))
 
     system = AtomicSystem(
-        # The Protein's own per-atom elements and names: this was an empty
-        # MolecularTopology(), so the projector treated every atom -- hydrogens
-        # included -- as carbon (review #8). Formats with no per-atom
-        # elements (Atom37/Atom14) now raise there instead.
-        topology=MolecularTopology(elements=self.elements, atom_names=self.atom_names),
-        state=AtomicState(coordinates=coords),
-        atom_mask=self.full_atom_mask,
+      # The Protein's own per-atom elements and names: this was an empty
+      # MolecularTopology(), so the projector treated every atom -- hydrogens
+      # included -- as carbon (review #8). Formats with no per-atom
+      # elements (Atom37/Atom14) now raise there instead.
+      topology=MolecularTopology(elements=self.elements, atom_names=self.atom_names),
+      state=AtomicState(coordinates=coords),
+      atom_mask=self.full_atom_mask,
     )
 
     spec = SimpleNamespace(output_format_target="openmm_topology")
@@ -385,14 +385,19 @@ class Protein:
       )
       raise ValueError(msg)
 
-    is_atom37 = (
+    # Only the Full formatter emits per-atom names. Its flat (n_atoms, 3) buffer must never be
+    # read as Atom37/Atom14 just because n_atoms happens to equal num_residues * 37 or * 14
+    # (e.g. one ALA plus a 9-atom ligand is 14 atoms over 1 residue). The shape checks below
+    # stay the fallback for dicts without atom_names.
+    is_full = rust_dict.get("atom_names") is not None
+    is_atom37 = not is_full and (
       (raw_coords.ndim == 3 and raw_coords.shape[1] == 37)
       or (raw_coords.ndim == 4 and n_models > 1 and raw_coords.shape[2] == 37)
       or (raw_coords.ndim == 2 and raw_coords.size == num_residues * 37 * 3)
       or (raw_coords.ndim == 1 and raw_coords.size == num_residues * 37 * 3)
     )
 
-    is_atom14 = (
+    is_atom14 = not is_full and (
       (raw_coords.ndim == 3 and raw_coords.shape[1] == 14)
       or (raw_coords.ndim == 4 and n_models > 1 and raw_coords.shape[2] == 14)
       or (raw_coords.ndim == 2 and raw_coords.size == num_residues * 14 * 3)
@@ -504,7 +509,7 @@ class Protein:
         if rust_dict.get("constrained_bonds") is not None
         else None,
         constrained_bond_lengths=convert(
-            rust_dict.get("constrained_bond_lengths"), dtype=np.float32
+          rust_dict.get("constrained_bond_lengths"), dtype=np.float32
         )
         if rust_dict.get("constrained_bond_lengths") is not None
         else None,
@@ -603,7 +608,7 @@ class Protein:
       hetero=hetero,
       charges=_slice_if_padded(rust_dict.get("charges")),
       radii=_slice_if_padded(
-          rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32
+        rust_dict.get("radii") or rust_dict.get("gbsa_radii"), dtype=np.float32
       ),
       sigmas=_slice_if_padded(rust_dict.get("sigmas"), dtype=np.float32),
       epsilons=_slice_if_padded(rust_dict.get("epsilons"), dtype=np.float32),
@@ -647,9 +652,7 @@ class Protein:
       constrained_bonds=convert(rust_dict.get("constrained_bonds"))
       if rust_dict.get("constrained_bonds") is not None
       else None,
-      constrained_bond_lengths=convert(
-          rust_dict.get("constrained_bond_lengths"), dtype=np.float32
-      )
+      constrained_bond_lengths=convert(rust_dict.get("constrained_bond_lengths"), dtype=np.float32)
       if rust_dict.get("constrained_bond_lengths") is not None
       else None,
       gbsa_scales=_slice_if_padded(rust_dict.get("gbsa_scales")),
