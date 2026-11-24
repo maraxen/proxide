@@ -47,12 +47,7 @@ UPSTREAMS = {
 
 # Upstream files that no longer exist at the pinned commit, so a same-name
 # search of the pinned tree cannot find them. Asset basename -> [(repo, path)].
-DELETED_UPSTREAM = {
-  # Removed by openmm/openmm#5143 (2025-11-18) as an incomplete, abandoned force field.
-  "protein.ff19ipq.xml": [
-    ("openmm/openmm", "wrappers/python/openmm/app/data/amber19/protein.ff19ipq.xml"),
-  ],
-}
+DELETED_UPSTREAM: dict[str, list[tuple[str, str]]] = {}
 
 # Verbatim licence text of each upstream at its pinned commit, checked in.
 LICENCE_TEXTS = {
@@ -193,8 +188,6 @@ def emit_tsv(rows: list[dict]) -> str:
     "#     MacKerell toppar files; see licences/CHARMM-TOPPAR-NOTICE.md and debt #3258.",
     "#   - amoeba*.xml and iamoeba.xml: AMOEBA parameters from Tinker; terms not verified.",
     "#   - GLYCAM_06j-1.xml: Woods lab (glycam.org) parameters; terms not verified.",
-    "#   - openmm_bundled/amber19/protein.ff19ipq.xml: removed upstream as abandoned",
-    "#     (openmm/openmm#5143).",
     "",
   ]
   for r in rows:

@@ -36,6 +36,9 @@ The next release is **0.3.0**. It is a minor release because the default output 
 - New warnings, only under non-default options: `insertion_codes="blank"` warns when it blanks a non-blank code, and `record_type="residue_table"` warns when it writes ATOM for an atom whose `hetero` flag is set. Writes with default options emit neither.
 - `write_pdb` and `write_mmcif` now encode the text once as UTF-8 with `"\n"` line endings and write the bytes. This is byte-identical to the previous text-mode write wherever text mode wrote `"\n"` (that is, everywhere except Windows, which previously wrote `"\r\n"`).
 
+### Removed
+- The bundled force field `openmm_bundled/amber19/protein.ff19ipq.xml`. OpenMM removed it as an incomplete, abandoned force field (openmm/openmm#5143), and `scripts/sync_forcefields.py` now skips it, so a sync against an older OpenMM does not bring it back. Code that loads this file by path from `proxide.assets` will no longer find it; use `amber19/protein.ff19SB.xml`, or take ff19ipq from an OpenMM release that still ships it.
+
 ### Fixed
 - Full-layout output of parsed structures wrote ligands, ions and waters as ATOM (see **Changed (behaviour)** above).
 - `concatenate_proteins_for_inter_mode` raised on any parsed protein, because its string fields (`chain_ids`, `residue_names`) went through a numeric tree map. Residue names and insertion codes are now concatenated in order. `chain_ids` is rebuilt to match the remapped `chain_index`. Per-atom string fields, which have no concatenation rule, become `None` with a `UserWarning`.

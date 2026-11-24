@@ -22,8 +22,6 @@
 #     MacKerell toppar files; see licences/CHARMM-TOPPAR-NOTICE.md and debt #3258.
 #   - amoeba*.xml and iamoeba.xml: AMOEBA parameters from Tinker; terms not verified.
 #   - GLYCAM_06j-1.xml: Woods lab (glycam.org) parameters; terms not verified.
-#   - openmm_bundled/amber19/protein.ff19ipq.xml: removed upstream as abandoned
-#     (openmm/openmm#5143).
 
 # source: openmm/openmmforcefields:openmmforcefields/ffxml/amber/DNA.OL15.xml@0edd3bb8111b
 amber/DNA.OL15.xml	sha256	16e575d857a05fa5be1bc71f240cb3641c2ec654de1ee97ff8ea9dacef78a26f src/proxide/assets/licences/openmmforcefields-LICENSE
@@ -141,8 +139,6 @@ openmm_bundled/amber19/opc.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c
 openmm_bundled/amber19/opc3.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber19/protein.ff19SB.xml@b5282630278e
 openmm_bundled/amber19/protein.ff19SB.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
-# source: openmm/openmm:wrappers/python/openmm/app/data/amber19/protein.ff19ipq.xml@d7ac083ff2d0
-openmm_bundled/amber19/protein.ff19ipq.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber19/spce.xml@b5282630278e
 openmm_bundled/amber19/spce.xml	sha256	437b7168cc997abea3b5f2a9e0fb6894f96de77b9c69be428ccfcfe9bed58293 src/proxide/assets/licences/openmm-Licenses.txt
 # source: openmm/openmm:wrappers/python/openmm/app/data/amber19/tip3p.xml@b5282630278e
