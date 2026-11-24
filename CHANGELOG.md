@@ -11,7 +11,9 @@ they exist only in source builds that opt in.
 
 ## [Unreleased]
 
-The next release is **0.3.0**. It is a minor release because the default output of a stable writer changes (Full-layout HETATM records; see **Changed (behaviour)**). Main now carries `0.3.0.dev0` / `0.3.0-dev.0`.
+## [0.3.0] - 2026-11-24
+
+A minor release because the default output of a stable writer changes (Full-layout HETATM records; see **Changed (behaviour)**). The Cargo workspace is `0.3.0-alpha.1` (crates.io stays pre-release).
 
 ### Added
 - `Protein.insertion_codes` and `Protein.hetero`. Parsed structures carry PDB insertion codes (column 27, mmCIF `pdbx_PDB_ins_code`): one code per residue in the Atom37/Atom14 layouts, one per atom in the Full layout. A blank code is `" "`. `Protein.hetero` is a per-atom bool array, set only in the Full layout and only when the file has record types (PDB, PQR, and mmCIF with a `group_PDB` column). It is `None` otherwise, for example for parm7. Both fields survive the parse cache, `write_npz` (keys `insertion_codes` and `hetero`, present only when set; read back with the experimental `proxide.io.fixtures.load_npz_icode_fields`), truncate, pad, stack, inter-mode concatenation and the Atom37/Atom14 chain filter. Where an operation cannot carry the per-atom Full fields (truncate, pad and concatenation of a Full structure, and `hetero` in stacked batches), they become `None` with a `UserWarning`.
