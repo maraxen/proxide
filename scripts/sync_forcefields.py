@@ -2,7 +2,7 @@
 """Script to sync force field XML files from openmmforcefields and OpenMM.
 
 This script clones/updates the openmmforcefields repository and copies
-the relevant XML files into the priox assets directory structure.
+the relevant XML files into the proxide assets directory structure.
 It also copies bundled force field files from OpenMM itself.
 
 Usage:
@@ -23,9 +23,11 @@ from pathlib import Path
 REPO_URL = "https://github.com/openmm/openmmforcefields.git"
 
 # Asset directory relative to project root
-ASSETS_DIR = Path("src/priox/assets")
+ASSETS_DIR = Path("src/proxide/assets")
 
-# OpenMM data files not vendored, relative to openmm/app/data. ff19ipq was removed
+# OpenMM data files not vendored, as paths relative to openmm/app/data (a
+# top-level file is just its name). Checked for top-level and subdirectory
+# files alike. ff19ipq was removed
 # upstream as an incomplete, abandoned force field (openmm/openmm#5143); an older
 # OpenMM install still has it, so a sync must not bring it back (debt #3598).
 EXCLUDED_OPENMM_FILES = frozenset({"amber19/protein.ff19ipq.xml"})
@@ -178,17 +180,23 @@ def copy_openmm_bundled_files(
   assets_path: Path,
   *,
   dry_run: bool = False,
+  openmm_data: Path | None = None,
 ) -> dict[str, list[str]]:
-  """Copy force field files bundled with OpenMM itself."""
+  """Copy force field files bundled with OpenMM itself.
+
+  ``openmm_data`` defaults to the installed ``openmm/app/data`` directory.
+  Files named in ``EXCLUDED_OPENMM_FILES`` are recorded under ``skipped``.
+  """
   results = {"copied": [], "skipped": [], "errors": []}
 
-  try:
-    import openmm.app
+  if openmm_data is None:
+    try:
+      import openmm.app
 
-    openmm_data = Path(openmm.app.__file__).parent / "data"
-  except ImportError:
-    print("  Warning: OpenMM not installed, skipping bundled files")
-    return results
+      openmm_data = Path(openmm.app.__file__).parent / "data"
+    except ImportError:
+      print("  Warning: OpenMM not installed, skipping bundled files")
+      return results
 
   print("\nCopying OpenMM bundled files...")
   print("-" * 40)
@@ -218,6 +226,10 @@ def copy_openmm_bundled_files(
   for src_file in openmm_data.glob("*.xml"):
     # Skip if it's an OBC file (already copied)
     if "_obc" in src_file.name:
+      continue
+    if src_file.name in EXCLUDED_OPENMM_FILES:
+      print(f"  Skipped (excluded): {src_file.name}")
+      results["skipped"].append(str(src_file))
       continue
     dest_file = openmm_amber_dir / src_file.name
     if dry_run:
@@ -399,6 +411,8 @@ def main() -> int:
   openmm_results = copy_openmm_bundled_files(assets_path, dry_run=args.dry_run)
   print("-" * 40)
   print(f"Copied from OpenMM: {len(openmm_results['copied'])} files")
+  if openmm_results["skipped"]:
+    print(f"Skipped from OpenMM (excluded): {len(openmm_results['skipped'])} files")
 
   if results["skipped"]:
     print(f"Skipped patterns: {len(results['skipped'])}")
