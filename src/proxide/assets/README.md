@@ -76,5 +76,15 @@ uv run python scripts/sync_forcefields.py --force
 
 ## License
 
-Force field files are distributed under the terms of their original licenses.
-See the respective repositories for details.
+`FORCEFIELD-LICENCES.tsv` records, for every XML here, the upstream file it is
+byte-identical to (repository, path and commit) and the licence it ships under.
+The upstream licence texts are in `licences/`, checked in verbatim. XMLs
+converted from the MacKerell lab's CHARMM toppar files point at
+`licences/CHARMM-TOPPAR-NOTICE.md`: no licence is stated upstream for that
+parameter data.
+
+After every sync, regenerate the record and review its diff:
+
+```bash
+uv run python scripts/forcefield_provenance.py --history --emit-tsv
+```

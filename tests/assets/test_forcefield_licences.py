@@ -1,0 +1,206 @@
+"""Acceptance for spec 261102 track T2: every vendored force-field XML has a licence record.
+
+``ACCEPT`` is the program from the spec, verbatim. It exits 0 only when every
+``*.xml`` under ``src/proxide/assets`` has a row in ``FORCEFIELD-LICENCES.tsv``
+and every row's licence target exists (``file``) or matches its recorded
+sha256 (``sha256``). The red controls below break one thing each in a mirror
+of the tree and require a non-zero exit, so a check that always passes would
+fail here.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+
+import pytest
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+ASSETS_REL = pathlib.Path("src/proxide/assets")
+TSV_NAME = "FORCEFIELD-LICENCES.tsv"
+
+# Verbatim from .praxia/docs/specs/261102_proxide-stable-hardening-and-cisternal.md, T2.
+ACCEPT = r'''
+import hashlib, pathlib, sys
+root = pathlib.Path("src/proxide/assets")
+xmls = {p.relative_to(root).as_posix() for p in root.rglob("*.xml")}
+rec = root / "FORCEFIELD-LICENCES.tsv"
+rows = {}
+if rec.is_file():
+    for line in rec.read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        path, kind, target = line.split("\t")
+        rows[path] = (kind, target)
+missing = sorted(xmls - rows.keys())
+bad = []
+for path, (kind, target) in rows.items():
+    if path not in xmls:
+        bad.append(path)
+    elif kind == "file":
+        if not pathlib.Path(target).is_file():
+            bad.append(path)
+    elif kind == "sha256":
+        digest, _, text = target.partition(" ")
+        blob = pathlib.Path(text)
+        if not blob.is_file() or hashlib.sha256(blob.read_bytes()).hexdigest() != digest:
+            bad.append(path)
+    else:
+        bad.append(path)
+sys.exit(1 if missing or bad else 0)
+'''
+
+# An XML built from MacKerell toppar data must point at the CHARMM notice, never at
+# an MIT text. This classification is written independently of the generator's
+# (scripts/forcefield_provenance.py), so a regression there is not mirrored here.
+TOPPAR_HINTS = ("toppar", 'sourcePackage="charmm', 'sourcePackage="drude', "<DrudeForce")
+INCLUDE = re.compile(r'<Include\s+file="([^"]+)"')
+CHARMM_NOTICE = "src/proxide/assets/licences/CHARMM-TOPPAR-NOTICE.md"
+# Named regressions found in review of PR #106: a header-less Include wrapper, and
+# the SWM4-NDP Drude water, which has a DrudeForce but no <Source>.
+MUST_BE_CHARMM = ("charmm/charmm36.xml", "openmm_bundled/swm4ndp.xml")
+
+
+def toppar_derived(xml: pathlib.Path) -> bool:
+  text = xml.read_text(encoding="utf-8", errors="replace")
+  if any(hint in text for hint in TOPPAR_HINTS):
+    return True
+  includes = INCLUDE.findall(text)
+  targets = [xml.parent / inc for inc in includes]
+  return bool(targets) and all(t.is_file() and toppar_derived(t) for t in targets)
+
+
+def run_accept(cwd: pathlib.Path) -> int:
+  return subprocess.run([sys.executable, "-c", ACCEPT], cwd=cwd, check=False).returncode
+
+
+def data_rows(tsv: pathlib.Path) -> list[list[str]]:
+  return [
+    line.split("\t")
+    for line in tsv.read_text().splitlines()
+    if line.strip() and not line.startswith("#")
+  ]
+
+
+@pytest.fixture
+def mirror(tmp_path: pathlib.Path) -> pathlib.Path:
+  """A copy of the asset tree: XMLs symlinked, TSV and licence texts copied."""
+  src = REPO / ASSETS_REL
+  dst = tmp_path / ASSETS_REL
+  for xml in src.rglob("*.xml"):
+    link = dst / xml.relative_to(src)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(xml)
+  shutil.copy(src / TSV_NAME, dst / TSV_NAME)
+  shutil.copytree(src / "licences", dst / "licences")
+  return tmp_path
+
+
+def test_accept_program_passes_on_repo() -> None:
+  assert run_accept(REPO) == 0
+
+
+def test_accept_program_passes_on_unmodified_mirror(mirror: pathlib.Path) -> None:
+  assert run_accept(mirror) == 0
+
+
+def test_red_missing_row(mirror: pathlib.Path) -> None:
+  tsv = mirror / ASSETS_REL / TSV_NAME
+  lines = tsv.read_text().splitlines()
+  first_row = next(i for i, line in enumerate(lines) if line.strip() and not line.startswith("#"))
+  del lines[first_row]
+  tsv.write_text("\n".join(lines) + "\n")
+  assert run_accept(mirror) == 1
+
+
+def test_red_stray_xml(mirror: pathlib.Path) -> None:
+  (mirror / ASSETS_REL / "amber" / "unrecorded.xml").write_text("<ForceField/>\n")
+  assert run_accept(mirror) == 1
+
+
+def test_red_wrong_digest(mirror: pathlib.Path) -> None:
+  tsv = mirror / ASSETS_REL / TSV_NAME
+  text = tsv.read_text()
+  digest = re.search(r"\tsha256\t([0-9a-f]{64}) ", text).group(1)
+  tsv.write_text(text.replace(digest, "0" * 64, 1))
+  assert run_accept(mirror) == 1
+
+
+def test_red_edited_licence_text(mirror: pathlib.Path) -> None:
+  lic = mirror / ASSETS_REL / "licences" / "openmmforcefields-LICENSE"
+  lic.write_bytes(lic.read_bytes() + b"\n")
+  assert run_accept(mirror) == 1
+
+
+def test_red_missing_charmm_notice(mirror: pathlib.Path) -> None:
+  (mirror / CHARMM_NOTICE).unlink()
+  assert run_accept(mirror) == 1
+
+
+def test_charmm_derived_xmls_point_at_notice() -> None:
+  """No CHARMM-toppar-derived XML may be recorded under an MIT licence text."""
+  assets = REPO / ASSETS_REL
+  rows = {path: (kind, target) for path, kind, target in data_rows(assets / TSV_NAME)}
+  derived = {path for path in rows if toppar_derived(assets / path)}
+  wrong = sorted(p for p in derived if rows[p] != ("file", CHARMM_NOTICE))
+  assert not wrong, wrong
+  # Rows on the notice that nothing here recognises as toppar-derived are also wrong.
+  extra = sorted(p for p, row in rows.items() if row == ("file", CHARMM_NOTICE) and p not in derived)
+  assert not extra, extra
+  for path in MUST_BE_CHARMM:
+    assert path in derived, path
+  # Positive control: the check above must have something to find.
+  assert len(derived) >= 20
+
+
+# Every data row must follow a '# source: REPO:PATH@SHA' line naming the upstream file
+# it matches. A sha256 row must cite that upstream's own licence text.
+SOURCE = re.compile(r"^# source: (openmm/openmm|openmm/openmmforcefields):(\S+)@([0-9a-f]{7,40})$")
+LICENCE_BY_REPO = {
+  "openmm/openmm": "src/proxide/assets/licences/openmm-Licenses.txt",
+  "openmm/openmmforcefields": "src/proxide/assets/licences/openmmforcefields-LICENSE",
+}
+
+
+def source_violations(tsv_text: str) -> list[str]:
+  bad = []
+  source = None
+  for line in tsv_text.splitlines():
+    if line.startswith("# source:"):
+      source = SOURCE.match(line)
+      if source is None:
+        bad.append(f"malformed: {line}")
+      continue
+    if not line.strip() or line.startswith("#"):
+      continue
+    path, kind, target = line.split("\t")
+    if source is None:
+      bad.append(f"no source line: {path}")
+      continue
+    repo, upstream_path, _ = source.groups()
+    if pathlib.PurePosixPath(upstream_path).name != pathlib.PurePosixPath(path).name:
+      bad.append(f"source filename differs: {path} <- {upstream_path}")
+    if kind == "sha256" and target.partition(" ")[2] != LICENCE_BY_REPO[repo]:
+      bad.append(f"licence is not {repo}'s: {path}")
+    source = None
+  return bad
+
+
+def test_source_lines_match_rows() -> None:
+  tsv = REPO / ASSETS_REL / TSV_NAME
+  bad = source_violations(tsv.read_text())
+  assert not bad, bad
+  assert tsv.read_text().count("\n# source: ") == len(data_rows(tsv))
+
+
+def test_red_swapped_source_lines() -> None:
+  # Cursor's round-2 example: identical siblings recorded under each other's name.
+  lines = (REPO / ASSETS_REL / TSV_NAME).read_text().splitlines()
+  names = ("/amber96_obc.xml@", "/amber99_obc.xml@")
+  idx = [i for i, line in enumerate(lines) if line.startswith("# source:") and any(n in line for n in names)]
+  assert len(idx) == 2, idx
+  lines[idx[0]], lines[idx[1]] = lines[idx[1]], lines[idx[0]]
+  assert source_violations("\n".join(lines))

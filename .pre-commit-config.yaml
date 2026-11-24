@@ -3,8 +3,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
+      # Upstream licence texts are checked in verbatim and pinned by sha256 in
+      # src/proxide/assets/FORCEFIELD-LICENCES.tsv; a whitespace fix would break the pin.
       - id: trailing-whitespace
+        exclude: ^src/proxide/assets/licences/
       - id: end-of-file-fixer
+        exclude: ^src/proxide/assets/licences/
       - id: check-yaml
       - id: check-added-large-files
 
