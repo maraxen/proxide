@@ -1,7 +1,7 @@
 ---
 title: Original terms of the AMOEBA and GLYCAM parameters
 description: 'Debt #3599 findings (Tinker licence for AMOEBA, no stated GLYCAM terms) and the status of the MacKerell clearance request (debt #3258)'
-status: draft
+status: final
 task_id: 261124_ff-licence-followups
 date: '261124'
 confidence: 'medium: primary sources quoted; the scope of the Tinker licence over parameter data is unresolved'
