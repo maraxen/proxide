@@ -89,6 +89,9 @@ impl ToPyDict for CachedStructure {
         if let Some(ref names) = self.residue_names {
             dict.set_item("residue_names", names.clone())?;
         }
+        if let Some(ref codes) = self.insertion_codes {
+            dict.set_item("insertion_codes", codes.clone())?;
+        }
         if let Some(ref b) = self.b_factors {
             dict.set_item("b_factors", PyArray1::from_slice_bound(py, b))?;
         }
@@ -100,6 +103,8 @@ impl ToPyDict for CachedStructure {
             dict.set_item("elements", per_atom.elements.clone())?;
             dict.set_item("res_names", per_atom.res_names.clone())?;
             dict.set_item("atom_chain_ids", per_atom.atom_chain_ids.clone())?;
+            dict.set_item("insertion_codes", per_atom.insertion_codes.clone())?;
+            dict.set_item("hetero", per_atom.hetero.clone())?;
         }
 
         Ok(dict)
@@ -110,6 +115,7 @@ impl ToPyDict for FormattedAtom37 {
     fn to_py_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new_bound(py);
         dict.set_item("residue_names", &self.residue_names)?;
+        dict.set_item("insertion_codes", &self.insertion_codes)?;
         dict.set_item(
             "coordinates",
             PyArray1::from_slice_bound(py, &self.coordinates),
@@ -152,6 +158,7 @@ impl ToPyDict for FormattedAtom14 {
         )?;
         dict.set_item("unplaced_residues", &self.unplaced_residues)?;
         dict.set_item("residue_names", &self.residue_names)?;
+        dict.set_item("insertion_codes", &self.insertion_codes)?;
         dict.set_item("b_factors", PyArray1::from_slice_bound(py, &self.b_factors))?;
         dict.set_item(
             "occupancies",
@@ -205,6 +212,9 @@ impl ToPyDict for FormattedFull {
         dict.set_item("elements", self.elements.clone())?;
         dict.set_item("res_names", self.res_names.clone())?;
         dict.set_item("atom_chain_ids", self.atom_chain_ids.clone())?;
+        dict.set_item("insertion_codes", self.insertion_codes.clone())?;
+        // `None` (no record-type flag) reaches Python as a None value.
+        dict.set_item("hetero", self.hetero.clone())?;
         dict.set_item("coord_shape", self.coord_shape)?;
         dict.set_item("b_factors", PyArray1::from_slice_bound(py, &self.b_factors))?;
         dict.set_item(

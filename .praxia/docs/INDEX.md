@@ -1,4 +1,6 @@
-# stable-hardening-261102 Internal Docs
+# 261123-pdb-writer-icode-hetero Internal Docs
+
+Superseded and archived docs: [HISTORY.md](HISTORY.md).
 
 ## Daily
 
@@ -17,6 +19,7 @@
 - [260416_phase2-plan](plans/260416_phase2-plan.md)
 
 ## Specs
+- [261123_pdb-writer-icode-hetero](specs/261123_pdb-writer-icode-hetero.md) — Debt #3583 rescoped: extend main's write_pdb/write_mmcif/write_npz with insertion codes and a per-atom hetero flag, behind per-call options, with an additive *_reported WriteReport (counts, coded findings, sha256), phase-boundary telemetry and an opt-in provenance sidecar; ports the archived aminx 095a49e0 PDB tests as acceptance tests
 - [261102_clean-room-functional-specification-proxide-confind-proxide-rotlib-and-proxide_fixer](specs/261102_clean-room-functional-specification-proxide-confind-proxide-rotlib-and-proxide_fixer.md) — Clean-room behavioral specification for proxide-confind, proxide-rotlib, and proxide_fixer under MIT license, covering mathematical formulas with citations, a typed configuration section (Cβ clash policy, crowdedness mode, freedom mode, scope, cutoffs), Option<f64> dihedrals (#1897), IUPAC omega (#1903), chain semantics (#1904), fixer repack tests (#1891), and CCD parser fallbacks (#1933).
 - [261102_design-utilities-placement](specs/261102_design-utilities-placement.md) — Engineering specification for Slice 1 and Slice 2 design-screening utilities in proxide: proxide.seqqc and proxide.geometry.contacts (contact analysis, Shrake-Rupley SASA, self-association screening, and alignment overlap), with exact API signatures, batching contracts, selftest gates, and bathos parity verification across 4 runs
 - [261102_proxide-stable-hardening-and-cisternal](specs/261102_proxide-stable-hardening-and-cisternal.md) — Deeper audit and remaining work after 0.1.0: licensing, sdist, stable-surface gaps, cisternal skill and plugin, provenance and telemetry, unified CLI and MCP
@@ -67,6 +70,8 @@
 ## Roadmaps
 
 ## Archive
+
+## Residue cards
 
 ## Misc
 - [260630_jaccard-output-format-debt](misc/260630_jaccard-output-format-debt.md) — Tech debt — proxide-jaccard's dense symmetric .npy output is an MVP choice; revisit for memory/IO efficiency once matrix sizes and JAX consumption patterns are known

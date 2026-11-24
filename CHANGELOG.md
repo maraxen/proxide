@@ -11,6 +11,36 @@ they exist only in source builds that opt in.
 
 ## [Unreleased]
 
+The next release is **0.3.0**. It is a minor release because the default output of a stable writer changes (Full-layout HETATM records; see **Changed (behaviour)**). Main now carries `0.3.0.dev0` / `0.3.0-dev.0`.
+
+### Added
+- `Protein.insertion_codes` and `Protein.hetero`. Parsed structures carry PDB insertion codes (column 27, mmCIF `pdbx_PDB_ins_code`): one code per residue in the Atom37/Atom14 layouts, one per atom in the Full layout. A blank code is `" "`. `Protein.hetero` is a per-atom bool array, set only in the Full layout and only when the file has record types (PDB, PQR, and mmCIF with a `group_PDB` column). It is `None` otherwise, for example for parm7. Both fields survive the parse cache, `write_npz` (keys `insertion_codes` and `hetero`, present only when set; read back with the experimental `proxide.io.fixtures.load_npz_icode_fields`), truncate, pad, stack, inter-mode concatenation and the Atom37/Atom14 chain filter. Where an operation cannot carry the per-atom Full fields (truncate, pad and concatenation of a Full structure, and `hetero` in stacked batches), they become `None` with a `UserWarning`.
+- `write_pdb` and `write_mmcif` take keyword-only options. An unknown value raises `ValueError` that names the accepted values, before any file is written.
+  - `record_type`: `"source"` (default) or `"residue_table"`.
+  - `insertion_codes`: `"write"` (default) or `"blank"`.
+  - `provenance`: `"none"` (default) or `"sidecar"`.
+- `write_pdb` writes insertion codes in column 27. `write_mmcif` writes them in a `pdbx_PDB_ins_code` column after `label_seq_id`, with `?` for blank rows, but only when at least one written code is non-blank. Codes must be one ASCII character, else `ValueError`. Atom37/Atom14 codes apply to every atom of their residue.
+- Experimental: `proxide.io.writing.write_pdb_reported` and `write_mmcif_reported`. Each returns a `WriteReport` with:
+  - the path and the sha256 of the bytes written;
+  - atom, HETATM and insertion-code counts;
+  - the effective options;
+  - `WriteFinding`s with stable codes, listed in `proxide.io.write_codes`: `PROX-WRITE-HETERO-IGNORED`, `PROX-WRITE-HETERO-UNKNOWN`, `PROX-WRITE-ICODE-BLANKED`, `PROX-WRITE-ICODE-UNKNOWN` and `PROX-WRITE-ALIAS-ATOMS-MISSING`.
+
+  Warning-severity findings warn with the caller's line as the location, from all four writers. Info findings never warn.
+- Experimental: `provenance="sidecar"` writes `<path>.prov.toml` after the output. It holds the schema `proxide-write-prov/0`, the proxide version and install kind, the output path and sha256, the input source, the options, the counts and the finding codes. The source commit is recorded as `"unknown"` unless the install carries PEP 610 VCS info. If the sidecar write fails, the `OSError` propagates and the output file stays.
+- Each `write_pdb`/`write_mmcif` call logs one INFO record on the `proxide.io.writing` logger. proxide installs no handler, so nothing is printed unless the caller configures `logging`.
+
+### Changed
+- **Changed (behaviour)**: in the Full layout, `write_pdb` and `write_mmcif` write HETATM (and mmCIF `group_PDB` HETATM) for every atom whose parsed `hetero` flag is set. That covers parsed ligands, ions and waters, which were written as ATOM unless their residue name was in the built-in HETATM table. A residue in that table is never downgraded to ATOM. Atom37/Atom14 record types are unchanged. For a structure without insertion codes, Atom37/Atom14 output is byte-identical to 0.2.1, and `record_type="residue_table"` restores the 0.2.1 bytes for Full output. For example, in the Full output of PDB 5AWL, only the record type of its 12 waters changes. A structure with insertion codes also differs in PDB column 27, which 0.2.1 always left blank; `insertion_codes="blank"` leaves it blank again.
+- **Changed (behaviour)**: `write_mmcif` output gains the `pdbx_PDB_ins_code` column when the structure has insertion codes. Without it, residues such as 52, 52A and 52B were written with the same identifiers and merged on re-read. Output for structures without insertion codes is byte-identical to 0.2.1. The mmCIF writer emits `label_seq_id` and no `auth_seq_id`, so the insertion-code round trip is checked through proxide's own reader only; interoperation with external mmCIF readers is not claimed.
+- New warnings, only under non-default options: `insertion_codes="blank"` warns when it blanks a non-blank code, and `record_type="residue_table"` warns when it writes ATOM for an atom whose `hetero` flag is set. Writes with default options emit neither.
+- `write_pdb` and `write_mmcif` now encode the text once as UTF-8 with `"\n"` line endings and write the bytes. This is byte-identical to the previous text-mode write wherever text mode wrote `"\n"` (that is, everywhere except Windows, which previously wrote `"\r\n"`).
+
+### Fixed
+- Full-layout output of parsed structures wrote ligands, ions and waters as ATOM (see **Changed (behaviour)** above).
+- `concatenate_proteins_for_inter_mode` raised on any parsed protein, because its string fields (`chain_ids`, `residue_names`) went through a numeric tree map. Residue names and insertion codes are now concatenated in order. `chain_ids` is rebuilt to match the remapped `chain_index`. Per-atom string fields, which have no concatenation rule, become `None` with a `UserWarning`.
+- `write_mmcif` writes a value containing `'` (for example the PDB insertion code `'`) as a double-quoted CIF token instead of raising.
+
 ## [0.2.1] - 2026-11-12
 
 ### Added

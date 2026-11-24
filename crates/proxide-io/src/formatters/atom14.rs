@@ -28,6 +28,8 @@ pub struct FormattedAtom14 {
     pub chain_index: Vec<i32>,                   // (N_res,) chain indices
     pub unplaced_residues: Vec<(usize, String)>, // (residue_index, res_name) for residues with atoms but no atom14 layout
     pub residue_names: Vec<String>,              // (N_res,) as-read residue names
+    /// (N_res,) one character per residue; `' '` for a blank insertion code.
+    pub insertion_codes: Vec<String>,
 }
 
 /// Atom14 formatter - converts to reduced (N_res, 14, 3) representation
@@ -65,12 +67,14 @@ impl Atom14Formatter {
         let mut occupancies = vec![0.0f32; num_residues * 14];
         let mut unplaced_residues: Vec<(usize, String)> = Vec::new();
         let mut residue_names: Vec<String> = Vec::with_capacity(num_residues);
+        let mut insertion_codes: Vec<String> = Vec::with_capacity(num_residues);
 
         // Process each residue
         for (res_idx, res_info) in processed.residue_info.iter().enumerate() {
             // Set residue metadata
             aatype[res_idx] = res_info.res_type as i8;
             residue_names.push(res_info.res_name.clone());
+            insertion_codes.push(res_info.insertion_code.to_string());
             residue_index[res_idx] = res_info.res_id;
 
             // Map chain to index
@@ -165,6 +169,7 @@ impl Atom14Formatter {
             chain_index,
             unplaced_residues,
             residue_names,
+            insertion_codes,
             b_factors,
             occupancies,
         })
@@ -389,5 +394,30 @@ mod tests {
         assert_eq!(mask_sum, 0.0);
         assert_eq!(formatted.unplaced_residues.len(), 1);
         assert_eq!(formatted.unplaced_residues[0].1, "XYZ");
+    }
+
+    #[test]
+    fn icode_ligand_insertion_codes_per_residue_match_the_file() {
+        use crate::formatters::icode_fixture::{
+            expected_protein_residues, load_processed, read_file_atoms,
+        };
+
+        let processed = load_processed();
+        let formatted = Atom14Formatter::format(&processed, &OutputSpec::default()).unwrap();
+        let expected = expected_protein_residues(&read_file_atoms());
+
+        let codes: Vec<String> = expected.iter().map(|(_, _, c)| c.to_string()).collect();
+        assert_eq!(formatted.insertion_codes, codes);
+        let res_seqs: Vec<i32> = expected.iter().map(|(_, n, _)| *n).collect();
+        assert_eq!(formatted.residue_index, res_seqs);
+        // The brief's literal expectation for T1: 51, 52, 52A, 52B, MSE 53, 54, B1, B2.
+        assert_eq!(
+            formatted.insertion_codes,
+            [" ", " ", "A", "B", " ", " ", " ", " "]
+        );
+        assert_eq!(
+            formatted.insertion_codes.len(),
+            formatted.residue_names.len()
+        );
     }
 }

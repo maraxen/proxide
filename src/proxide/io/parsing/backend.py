@@ -249,6 +249,14 @@ def load_rust(
               # (debt #2367); dropping them here would make a chain-filtered parse lose them.
               new_b_factors = obj.b_factors[mask] if obj.b_factors is not None else None
               new_occupancies = obj.occupancies[mask] if obj.occupancies is not None else None
+              # Per-residue insertion codes (Atom37/Atom14) follow the residue mask (spec 261123).
+              # Atom37/Atom14 only: the Full layout's per-atom codes never reach this point
+              # (the flat-atom chain filter is a known pre-existing crash, not touched here).
+              new_insertion_codes = (
+                None
+                if obj.insertion_codes is None or obj.atom_names is not None
+                else [c for c, keep in zip(obj.insertion_codes, mask, strict=True) if keep]
+              )
 
               # Physics params are tricky because they might be (N_atoms,) or (N_res,)
               # depending on storage AtomicSystem stores them as (N_atoms,) currently.
@@ -271,6 +279,7 @@ def load_rust(
                 full_coordinates=new_full_coords,
                 b_factors=new_b_factors,
                 occupancies=new_occupancies,
+                insertion_codes=new_insertion_codes,
                 # full_atom_mask should satisfy AtomicSystem's expectation (often flat)
                 full_atom_mask=(
                   new_atom_mask.flatten()

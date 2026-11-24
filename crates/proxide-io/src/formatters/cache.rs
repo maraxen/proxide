@@ -89,6 +89,8 @@ pub struct CachedStructure {
     pub occupancies: Option<Vec<f32>>,
     /// As-read residue names per residue (Atom14/Atom37), so writers keep MSE as MSE.
     pub residue_names: Option<Vec<String>>,
+    /// Insertion code per residue (Atom37/Atom14), one character each.
+    pub insertion_codes: Option<Vec<String>>,
     pub coordinates: Vec<f32>,
     pub atom_mask: Vec<f32>,
     pub aatype: Vec<i8>,
@@ -114,6 +116,10 @@ pub struct FullPerAtom {
     pub elements: Vec<String>,
     pub res_names: Vec<String>,
     pub atom_chain_ids: Vec<String>,
+    /// Per-atom insertion codes (one character each).
+    pub insertion_codes: Vec<String>,
+    /// Per-atom HETATM flag, `None` when the parser did not read it from records.
+    pub hetero: Option<Vec<bool>>,
 }
 
 pub struct CachedStructureArgs {
@@ -130,6 +136,7 @@ pub struct CachedStructureArgs {
     pub b_factors: Option<Vec<f32>>,
     pub occupancies: Option<Vec<f32>>,
     pub residue_names: Option<Vec<String>>,
+    pub insertion_codes: Option<Vec<String>>,
 }
 
 impl CachedStructure {
@@ -148,6 +155,7 @@ impl CachedStructure {
             b_factors: args.b_factors,
             occupancies: args.occupancies,
             residue_names: args.residue_names,
+            insertion_codes: args.insertion_codes,
         }
     }
 }
@@ -303,6 +311,7 @@ mod tests {
             b_factors: None,
             occupancies: None,
             residue_names: None,
+            insertion_codes: None,
         })
     }
 

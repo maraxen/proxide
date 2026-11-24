@@ -24,6 +24,8 @@ pub fn split_by_model(raw: &RawAtomData, model_ids: &[usize]) -> Vec<RawAtomData
         .iter()
         .map(|&target_model| {
             let mut model_data = RawAtomData::new();
+            // Splitting keeps every atom's record type, so the flag's provenance carries over.
+            model_data.hetero_from_records = raw.hetero_from_records;
 
             for i in 0..raw.num_atoms {
                 if model_ids[i] == target_model {
@@ -86,6 +88,7 @@ pub fn filter_models(raw: &RawAtomData, model_ids: &[usize], keep_models: &[usiz
     }
 
     let mut filtered = RawAtomData::new();
+    filtered.hetero_from_records = raw.hetero_from_records;
 
     for i in 0..raw.num_atoms {
         if keep_models.contains(&model_ids[i]) {
@@ -159,6 +162,23 @@ mod tests {
             radius: None,
             is_hetatm: false,
         }
+    }
+
+    /// The record-type provenance of `is_hetatm` must survive the per-model split and
+    /// the model filter: the Full writer reads it through both (writer spec D1).
+    #[test]
+    fn test_split_and_filter_keep_hetero_from_records() {
+        let mut raw = RawAtomData::new();
+        raw.hetero_from_records = true;
+        raw.add_atom(create_atom(1, 1));
+        raw.add_atom(create_atom(2, 2));
+        let model_ids = vec![1, 2];
+
+        let models = split_by_model(&raw, &model_ids);
+        assert!(models.iter().all(|m| m.hetero_from_records));
+
+        let filtered = filter_models(&raw, &model_ids, &[2]);
+        assert!(filtered.hetero_from_records);
     }
 
     #[test]

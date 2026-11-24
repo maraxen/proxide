@@ -46,6 +46,13 @@ pub struct FormattedFull {
     /// Per-atom chain ids as read: (N_atoms) (backlog #5684). `chain_index`
     /// stays per-residue.
     pub atom_chain_ids: Vec<String>,
+    /// Per-atom insertion codes as read, one character each (`' '` = blank):
+    /// (N_atoms). Same order as `atom_chain_ids`.
+    pub insertion_codes: Vec<String>,
+    /// Per-atom HETATM flag from the source record type: (N_atoms). `None`
+    /// unless the parser read the flag from ATOM/HETATM records (writer spec
+    /// D1); parm7's residue-name heuristic gives `None`.
+    pub hetero: Option<Vec<bool>>,
     /// Shape info: (num_residues, max_atoms_in_any_residue, 3)
     pub coord_shape: (usize, usize, usize),
 }
@@ -128,6 +135,16 @@ impl FullFormatter {
             elements: processed.raw_atoms.elements.clone(),
             res_names: processed.raw_atoms.res_names.clone(),
             atom_chain_ids: processed.raw_atoms.chain_ids.clone(),
+            insertion_codes: processed
+                .raw_atoms
+                .insertion_codes
+                .iter()
+                .map(|c| c.to_string())
+                .collect(),
+            hetero: processed
+                .raw_atoms
+                .hetero_from_records
+                .then(|| processed.raw_atoms.is_hetatm.clone()),
             b_factors: processed.raw_atoms.b_factors.clone(),
             occupancies: processed.raw_atoms.occupancy.clone(),
             chain_index,
@@ -204,6 +221,60 @@ mod tests {
         // Check atom names
         assert_eq!(formatted.atom_names[0], "N");
         assert_eq!(formatted.atom_names[1], "CA");
+    }
+
+    #[test]
+    fn icode_ligand_full_per_atom_codes_and_hetero_match_the_file() {
+        use crate::formatters::icode_fixture::{
+            file_atom_key, load_processed, read_file_atoms, AtomKey,
+        };
+        use std::collections::HashMap;
+
+        let processed = load_processed();
+        let formatted = FullFormatter::format(&processed, &create_test_spec()).unwrap();
+        let file = read_file_atoms();
+
+        // Every atom of the file is written, and every per-atom array has one entry per atom.
+        assert_eq!(formatted.atom_names.len(), file.len());
+        assert_eq!(formatted.insertion_codes.len(), file.len());
+        let hetero = formatted
+            .hetero
+            .as_ref()
+            .expect("the PDB reader sets hetero_from_records, so hetero is Some");
+        assert_eq!(hetero.len(), file.len());
+
+        let mut expected: HashMap<AtomKey, (char, bool)> = HashMap::new();
+        for atom in &file {
+            let previous = expected.insert(file_atom_key(atom), (atom.icode, atom.hetatm));
+            assert!(
+                previous.is_none(),
+                "duplicate atom key {:?}",
+                file_atom_key(atom)
+            );
+        }
+
+        for (i, atom_name) in formatted.atom_names.iter().enumerate() {
+            let key: AtomKey = (
+                formatted.atom_chain_ids[i].clone(),
+                formatted.atom_residue_ids[i],
+                formatted.res_names[i].clone(),
+                atom_name.clone(),
+            );
+            let (icode, is_hetatm) = expected
+                .get(&key)
+                .unwrap_or_else(|| panic!("output atom {:?} is not in the file", key));
+            assert_eq!(
+                formatted.insertion_codes[i],
+                icode.to_string(),
+                "icode of {:?}",
+                key
+            );
+            assert_eq!(hetero[i], *is_hetatm, "hetero of {:?}", key);
+        }
+
+        // Sanity: the fixture has both record types and at least one non-blank code.
+        assert!(hetero.iter().any(|&h| h) && hetero.iter().any(|&h| !h));
+        assert!(formatted.insertion_codes.iter().any(|c| c != " "));
     }
 
     #[test]

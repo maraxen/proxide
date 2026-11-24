@@ -1,0 +1,59 @@
+REMARK   1 HAND-WRITTEN TEST FIXTURE FOR PROXIDE, 2026-11-23 (SPEC 261123,
+REMARK   1 TASK T1). NOT A REAL STRUCTURE: COORDINATES ARE A SYNTHETIC
+REMARK   1 HELIX-LIKE TRACE. CONTENTS: INSERTION CODES 52/52A/52B IN CHAIN
+REMARK   1 A, ONE MSE, ONE ZN ION, ONE 4-ATOM LIGAND WITH CL ATOMS, TWO HOH.
+ATOM      1  N   ALA A  51       6.925   4.484   0.550  1.00 11.00           N
+ATOM      2  CA  ALA A  51       3.573   7.427   1.100  1.00 12.00           C
+ATOM      3  C   ALA A  51      -0.801   7.817   1.650  1.00 13.00           C
+ATOM      4  O   ALA A  51      -4.590   5.521   2.200  1.00 14.00           O
+ATOM      5  CB  ALA A  51      -6.389   1.327   2.750  1.00 15.00           C
+ATOM      6  N   GLY A  52      -5.477  -3.323   3.300  1.00 16.00           N
+ATOM      7  CA  GLY A  52      -2.064  -6.831   3.850  1.00 17.00           C
+ATOM      8  C   GLY A  52       2.781  -7.991   4.400  1.00 18.00           C
+ATOM      9  O   GLY A  52       7.494  -6.404   4.950  1.00 19.00           O
+ATOM     10  N   SER A  52A     10.560  -2.616   5.500  1.00 20.00           N
+ATOM     11  CA  SER A  52A     11.027   2.071   6.050  1.00 21.00           C
+ATOM     12  C   SER A  52A      8.839   6.046   6.600  1.00 22.00           C
+ATOM     13  O   SER A  52A      4.850   7.943   7.150  1.00 23.00           O
+ATOM     14  CB  SER A  52A      0.534   7.111   7.700  1.00 24.00           C
+ATOM     15  OG  SER A  52A     -2.522   3.834   8.250  1.00 25.00           O
+ATOM     16  N   THR A  52B     -3.164  -0.761   8.800  1.00 26.00           N
+ATOM     17  CA  THR A  52B     -1.069  -5.094   9.350  1.00 27.00           C
+ATOM     18  C   THR A  52B      3.146  -7.676   9.900  1.00 28.00           C
+ATOM     19  O   THR A  52B      8.136  -7.620  10.450  1.00 29.00           O
+ATOM     20  CB  THR A  52B     12.289  -4.945  11.000  1.00 30.00           C
+ATOM     21  OG1 THR A  52B     14.280  -0.570  11.550  1.00 31.00           O
+ATOM     22  CG2 THR A  52B     13.528   4.000  12.100  1.00 32.00           C
+HETATM   23  N   MSE A  53      10.395   7.196  12.650  1.00 33.00           N
+HETATM   24  CA  MSE A  53       6.061   7.919  13.200  1.00 34.00           C
+HETATM   25  C   MSE A  53       2.119   5.919  13.750  1.00 35.00           C
+HETATM   26  O   MSE A  53       0.025   1.886  14.300  1.00 36.00           O
+HETATM   27  CB  MSE A  53       0.605  -2.796  14.850  1.00 37.00           C
+HETATM   28  CG  MSE A  53       3.760  -6.517  15.400  1.00 38.00           C
+HETATM   29 SE   MSE A  53       8.510  -7.998  15.950  1.00 39.00          SE
+HETATM   30  CE  MSE A  53      13.325  -6.730  16.500  1.00 40.00           C
+ATOM     31  N   ALA A  54      16.654  -3.149  17.050  1.00 41.00           N
+ATOM     32  CA  ALA A  54      17.455   1.514  17.600  1.00 42.00           C
+ATOM     33  C   ALA A  54      15.557   5.657  18.150  1.00 43.00           C
+ATOM     34  O   ALA A  54      11.714   7.856  18.700  1.00 44.00           O
+ATOM     35  CB  ALA A  54       7.350   7.354  19.250  1.00 45.00           C
+ATOM     36  OXT ALA A  54       4.070   4.325  19.800  1.00 46.00           O
+TER
+ATOM     37  N   ALA B   1       3.102  -0.191  20.350  1.00 47.00           N
+ATOM     38  CA  ALA B   1       4.884  -4.641  20.900  1.00 48.00           C
+ATOM     39  C   ALA B   1       8.905  -7.496  21.450  1.00 49.00           C
+ATOM     40  O   ALA B   1      13.887  -7.774  22.000  1.00 50.00           O
+ATOM     41  CB  ALA B   1      18.220  -5.381  22.550  1.00 51.00           C
+ATOM     42  N   GLY B   2      20.519  -1.138  23.100  1.00 52.00           N
+ATOM     43  CA  GLY B   2      20.096   3.496  23.650  1.00 53.00           C
+ATOM     44  C   GLY B   2      17.200   6.928  24.200  1.00 54.00           C
+ATOM     45  O   GLY B   2      12.929   7.980  24.750  1.00 55.00           O
+ATOM     46  OXT GLY B   2       8.854   6.288  25.300  1.00 56.00           O
+HETATM   47 ZN    ZN A 101       6.480   2.435  25.850  1.00 57.00          ZN
+HETATM   48  C1  LIG A 201       6.724  -2.254  26.400  1.00 58.00           C
+HETATM   49  C2  LIG A 201       9.607  -6.169  26.950  1.00 59.00           C
+HETATM   50 CL1  LIG A 201      14.240  -7.964  27.500  1.00 60.00          CL
+HETATM   51 CL2  LIG A 201      19.134  -7.021  28.050  1.00 61.00          CL
+HETATM   52  O   HOH A 301      22.711  -3.665  28.600  1.00 62.00           O
+HETATM   53  O   HOH B 302      23.843   0.950  29.150  1.00 63.00           O
+END

@@ -808,6 +808,10 @@ struct CifParseState {
     /// `_atom_site` row data -- i.e. the most recently opened `loop_`'s
     /// columns are `_atom_site.*` ones.
     current_loop_is_atom_site: bool,
+    /// Set when an `_atom_site.group_PDB` column is registered. Kept here, not
+    /// read back from `column_map` at EOF, because `handle_reserved` clears
+    /// `column_map` on every later `loop_`/`data_` (writer spec D1, review of T2).
+    saw_group_pdb: bool,
     column_sources: Option<ColumnSources>,
     /// Which `data_` block index first contained an `_atom_site` loop
     /// (decision m: a SECOND block containing one is `MultipleDataBlocks`).
@@ -831,6 +835,7 @@ impl CifParseState {
             column_names: Vec::new(),
             column_map: HashMap::new(),
             current_loop_is_atom_site: false,
+            saw_group_pdb: false,
             column_sources: None,
             atom_site_data_block: None,
             data_block_index: 0,
@@ -970,6 +975,9 @@ impl CifParseState {
             if !self.current_loop_is_atom_site {
                 self.current_loop_is_atom_site = true;
                 self.column_sources = None;
+            }
+            if col_name == "group_PDB" {
+                self.saw_group_pdb = true;
             }
             self.column_map
                 .insert(col_name.clone(), self.column_names.len());
@@ -1212,6 +1220,11 @@ pub fn parse_mmcif_from_reader_with<R: BufRead>(
         return Err("No atoms found in mmCIF file".into());
     }
 
+    // `read_group_pdb` takes `is_hetatm` from the `group_PDB` column when it is
+    // present, and defaults every row to ATOM when it is absent. Only the
+    // present case is a record type.
+    state.raw_data.hetero_from_records = state.saw_group_pdb;
+
     Ok((state.raw_data, state.model_ids))
 }
 
@@ -1292,6 +1305,67 @@ mod tests {
     // the sprint plan and is re-expressed below against the public API,
     // preserving its exact intent (see that test for the deviation note).
     // -------------------------------------------------------------
+
+    /// `hetero_from_records` (writer spec D1) is set only when the `group_PDB`
+    /// column is present: that column is the record type. Without it every row
+    /// defaults to ATOM and the flag is not a record type.
+    #[test]
+    fn group_pdb_column_sets_hetero_from_records() {
+        let with_column = "
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+ATOM 1 N N . ALA A 1 ? 0.000 0.000 0.000 1.00 0.00
+HETATM 2 ZN ZN . ZN A 2 ? 1.000 1.000 1.000 1.00 0.00
+";
+        let (raw, _) = parse_mmcif_from_reader(with_column.as_bytes()).unwrap();
+        assert!(raw.hetero_from_records);
+        assert_eq!(raw.is_hetatm, vec![false, true]);
+
+        // Must-fire: a loop AFTER atom_site (e.g. `_atom_site_anisotrop`, common
+        // in RCSB X-ray files) clears `column_map`; the flag must survive it.
+        let trailing_loop = format!(
+            "{with_column}#\nloop_\n_atom_site_anisotrop.id\n_atom_site_anisotrop.U[1][1]\n1 0.1\n2 0.2\n"
+        );
+        let (raw, _) = parse_mmcif_from_reader(trailing_loop.as_bytes()).unwrap();
+        assert!(
+            raw.hetero_from_records,
+            "a trailing loop_ must not clear the flag"
+        );
+        assert_eq!(raw.is_hetatm, vec![false, true]);
+
+        let without_column = "
+loop_
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+1 N N . ALA A 1 ? 0.000 0.000 0.000 1.00 0.00
+";
+        let (raw, _) = parse_mmcif_from_reader(without_column.as_bytes()).unwrap();
+        assert!(!raw.hetero_from_records);
+    }
 
     #[test]
     fn test_mmcif_multiple_loops_and_missing() {

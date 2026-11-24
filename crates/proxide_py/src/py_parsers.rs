@@ -864,6 +864,15 @@ fn process_models(
                             ref_formatted.coordinates.len()
                         )));
                     }
+                    // Insertion codes are per residue and the models share one
+                    // residue layout, so every model must agree with the reference.
+                    if m_formatted.insertion_codes != ref_formatted.insertion_codes {
+                        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                            "Model {} insertion codes differ from model 1; \
+                             a stacked Atom37 structure needs one set of insertion codes",
+                            i + 1
+                        )));
+                    }
                     all_coords.extend_from_slice(&m_formatted.coordinates);
                     all_masks.extend_from_slice(&m_formatted.atom_mask);
                     all_b.extend_from_slice(&m_formatted.b_factors);
@@ -906,6 +915,7 @@ fn process_models(
                     atom_mask: ref_formatted.atom_mask.clone(),
                     aatype: ref_formatted.aatype.clone(),
                     residue_names: Some(ref_formatted.residue_names.clone()),
+                    insertion_codes: Some(ref_formatted.insertion_codes.clone()),
                     residue_index: ref_formatted.residue_index.clone(),
                     chain_index: ref_formatted.chain_index.clone(),
                     _num_residues: ref_formatted.aatype.len(),
@@ -981,6 +991,7 @@ fn process_models(
                     atom_mask: formatted.atom_mask.clone(),
                     aatype: formatted.aatype.clone(),
                     residue_names: None,
+                    insertion_codes: None,
                     residue_index: formatted.residue_index.clone(),
                     chain_index: formatted.chain_index.clone(),
                     _num_residues: formatted.aatype.len(),
@@ -995,6 +1006,8 @@ fn process_models(
                         elements: formatted.elements.clone(),
                         res_names: formatted.res_names.clone(),
                         atom_chain_ids: formatted.atom_chain_ids.clone(),
+                        insertion_codes: formatted.insertion_codes.clone(),
+                        hetero: formatted.hetero.clone(),
                     }),
                 })
             } else {

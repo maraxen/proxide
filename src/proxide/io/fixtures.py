@@ -137,6 +137,23 @@ def load_tensor_bundle(
   return tensors, meta
 
 
+def load_npz_icode_fields(npz_path: Path | str) -> dict[str, Any]:
+  """Read the insertion codes and HETATM flag that ``write_npz`` stored, if present.
+
+  ``load_tensor_bundle`` is generic and returns raw arrays; this loader turns the two
+  Protein fields back into their in-memory types: ``insertion_codes`` as a ``list[str]``
+  (as ``Protein.insertion_codes`` holds it) and ``hetero`` as a bool array. Keys absent from
+  the file are absent from the result.
+  """
+  with np.load(Path(npz_path), allow_pickle=False) as data:
+    out: dict[str, Any] = {}
+    if "insertion_codes" in data.files:
+      out["insertion_codes"] = [str(c) for c in data["insertion_codes"]]
+    if "hetero" in data.files:
+      out["hetero"] = np.asarray(data["hetero"], dtype=np.bool_)
+  return out
+
+
 def assert_bundle_keys(
   bundle: Mapping[str, Any],
   required: Sequence[str],

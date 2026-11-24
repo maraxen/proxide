@@ -6,6 +6,7 @@ for parsing, transforming, and batching protein data.
 Includes a padding registry pattern for extensible output format support.
 """
 
+import dataclasses
 import warnings
 from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
@@ -20,6 +21,39 @@ from proxide.core.projector import MPNNBatch
 from proxide.physics.features import compute_electrostatic_node_features
 
 _MAX_TRIES = 5
+
+
+def _is_per_atom_layout(protein: Protein) -> bool:
+  """True for the Full (per-atom) layout. Mirrors the writer's dispatch on ``atom_names``."""
+  return protein.atom_names is not None
+
+
+def _full_icode_fields_to_drop(protein: Protein) -> list[str]:
+  """Names of the per-atom icode/hetero fields a Full protein carries, that a transform drops."""
+  return [name for name in ("insertion_codes", "hetero") if getattr(protein, name) is not None]
+
+
+def _string_valued_field_names(protein: Protein) -> list[str]:
+  """Names of the Protein fields that hold a string or a list of strings (non-numeric)."""
+  names = []
+  for field in dataclasses.fields(protein):
+    value = getattr(protein, field.name)
+    if isinstance(value, str) or (
+      isinstance(value, (list, tuple)) and len(value) > 0 and isinstance(value[0], str)
+    ):
+      names.append(field.name)
+  return names
+
+
+def _warn_dropped_icode_fields(names: list[str], site: str) -> None:
+  """Warn that a propagation site cannot carry the per-atom icode/hetero fields."""
+  if names:
+    msg = (
+      f"{site}: {', '.join(names)} cannot be carried through this operation on a Full "
+      f"(per-atom) structure; those fields are set to None"
+    )
+    warnings.warn(msg, UserWarning, stacklevel=3)
+
 
 # Type variable for batch output
 T = TypeVar("T", Protein, MPNNBatch)
@@ -155,6 +189,14 @@ def truncate_protein(
 
   end = start + max_length
 
+  # Per-residue icodes crop like residue_names. Per-atom (Full) icodes and hetero cannot follow
+  # a residue crop, so they drop to None with a warning.
+  insertion_codes = None
+  if _is_per_atom_layout(protein):
+    _warn_dropped_icode_fields(_full_icode_fields_to_drop(protein), "truncate_protein")
+  elif protein.insertion_codes is not None:
+    insertion_codes = list(protein.insertion_codes)[start:end]
+
   def slice_array(arr: Any | None) -> Any | None:
     if arr is None:
       return None
@@ -188,6 +230,8 @@ def truncate_protein(
     b_factors=slice_array(protein.b_factors),
     occupancies=slice_array(protein.occupancies),
     residue_names=None if protein.residue_names is None else list(protein.residue_names)[start:end],
+    insertion_codes=insertion_codes,
+    hetero=None,
   )
 
 
@@ -261,13 +305,71 @@ def concatenate_proteins_for_inter_mode(elements: Sequence[Protein]) -> Protein:
     if len(present_names) != len(proteins)
     else [str(r) for names in present_names for r in names]
   )
-  concatenated = jax.tree_util.tree_map(
-    lambda *x: np.concatenate(x, axis=0), *[p.replace(residue_names=None) for p in proteins]
+  # insertion_codes follow residue_names: per-residue strings, concatenated directly. Full
+  # (per-atom) inputs cannot keep them or hetero, so those drop to None with a warning.
+  dropped: list[str] = []
+  for p in proteins:
+    if _is_per_atom_layout(p):
+      dropped.extend(n for n in _full_icode_fields_to_drop(p) if n not in dropped)
+  _warn_dropped_icode_fields(dropped, "concatenate_proteins_for_inter_mode")
+  present_codes = [p.insertion_codes for p in proteins if p.insertion_codes is not None]
+  all_codes = (
+    None
+    if dropped or len(present_codes) != len(proteins)
+    else [str(c) for codes in present_codes for c in codes]
   )
+  # Every string-valued field (residue_names, insertion_codes, atom_names, chain_ids, format,
+  # source, ...) must stay out of the numeric tree_map: np.concatenate cannot join strings,
+  # and the batch-axis tree_map below cannot index a str. residue_names and insertion_codes
+  # and chain_ids are rebuilt here; format and source are kept when all inputs agree; any
+  # other string field (per-atom names, elements) has no concatenation rule here, so it is
+  # None in the result, with a warning.
+  # chain_ids is the vocabulary chain_index indexes. Each input's chain_index was shifted by
+  # the previous inputs' max(chain_index) + 1, so each input contributes exactly that many
+  # names (padded with "" for unused indices); the result then indexes correctly. Missing on
+  # any input means missing overall.
+  all_chain_ids: list[str] | None = []
+  for p in proteins:
+    if p.chain_ids is None:
+      all_chain_ids = None
+      break
+    span = int(np.max(p.chain_index)) + 1
+    names = [str(c) for c in list(p.chain_ids)[:span]]
+    all_chain_ids.extend(names + [""] * (span - len(names)))
+  string_fields = sorted(
+    {name for p in proteins for name in _string_valued_field_names(p)}
+    - {"residue_names", "insertion_codes", "chain_ids", "format", "source"}
+  )
+  if string_fields:
+    warnings.warn(
+      "concatenate_proteins_for_inter_mode: "
+      f"{', '.join(string_fields)} cannot be concatenated; those fields are None in the result",
+      UserWarning,
+      stacklevel=2,
+    )
+  meta = {
+    name: getattr(proteins[0], name)
+    if all(getattr(p, name) == getattr(proteins[0], name) for p in proteins)
+    else None
+    for name in ("format", "source")
+  }
+  # hetero is per-atom and has no concatenation rule here: it is None in the result.
+  stripped = [
+    p.replace(hetero=None, **{name: None for name in _string_valued_field_names(p)})
+    for p in proteins
+  ]
+  concatenated = jax.tree_util.tree_map(lambda *x: np.concatenate(x, axis=0), *stripped)
   concatenated = concatenated.replace(
-    chain_index=chain_ids, mapping=structure_mapping, residue_names=all_names
+    chain_index=chain_ids, mapping=structure_mapping, **dict.fromkeys(string_fields)
   )
-  return jax.tree_util.tree_map(lambda x: x[None, ...], concatenated)
+  batched = jax.tree_util.tree_map(lambda x: x[None, ...], concatenated)
+  return batched.replace(
+    residue_names=all_names,
+    insertion_codes=all_codes,
+    chain_ids=all_chain_ids,
+    hetero=None,
+    **meta,
+  )
 
 
 def _validate_and_flatten_elements(
@@ -344,10 +446,7 @@ def _apply_electrostatics_if_needed(
     )
     phys_feats.append(np.array(feat))
 
-  return [
-    p.replace(physics_features=feat)
-    for p, feat in zip(elements, phys_feats, strict=False)
-  ]
+  return [p.replace(physics_features=feat) for p, feat in zip(elements, phys_feats, strict=False)]
 
 
 def _apply_md_parameterization(
@@ -471,6 +570,16 @@ def _pad_protein(  # noqa: C901
     if protein.residue_names is None
     else [str(r) for r in protein.residue_names] + [""] * pad_len
   )
+  # Per-residue icodes pad with blanks. Per-atom (Full) icodes and hetero are not padded
+  # here, so they drop to None with a warning (hetero is per-atom in any layout).
+  padded_insertion_codes = None
+  if _is_per_atom_layout(protein):
+    _warn_dropped_icode_fields(_full_icode_fields_to_drop(protein), "pad_and_collate_proteins")
+  else:
+    if protein.insertion_codes is not None:
+      padded_insertion_codes = [str(c) for c in protein.insertion_codes] + [" "] * pad_len
+    if protein.hetero is not None:
+      _warn_dropped_icode_fields(["hetero"], "pad_and_collate_proteins")
 
   # Atomic-level fields (shape[0] == n_atoms, for full atomic representation)
   padded_full_coordinates = pad_atomic_array(protein.full_coordinates)
@@ -486,6 +595,8 @@ def _pad_protein(  # noqa: C901
     b_factors=padded_b_factors,
     occupancies=padded_occupancies,
     residue_names=padded_residue_names,
+    insertion_codes=padded_insertion_codes,
+    hetero=None,
     aatype=padded_aatype,
     mask=padded_mask,
     one_hot_sequence=padded_one_hot,
@@ -603,8 +714,29 @@ def _stack_padded_proteins(
     [str(r) for r in p.residue_names] if p.residue_names is not None else None
     for p in padded_proteins
   ]
+  # insertion_codes: one list per row, like residue_names. A batch where only some rows have
+  # them drops them with a warning, as b_factors does below. hetero is per-atom and cannot be
+  # kept per row, so it drops to None with a warning.
+  codes_present = [p.insertion_codes is not None for p in padded_proteins]
+  codes_mixed = any(codes_present) and not all(codes_present)
+  if codes_mixed:
+    warnings.warn(
+      "_stack_padded_proteins: insertion_codes is missing on "
+      f"{codes_present.count(False)} of {len(padded_proteins)} proteins; "
+      "insertion_codes is None in the batch",
+      UserWarning,
+      stacklevel=2,
+    )
+    insertion_codes_per_row = None
+  elif all(codes_present) and padded_proteins:
+    insertion_codes_per_row = [list(p.insertion_codes or ()) for p in padded_proteins]
+  else:
+    insertion_codes_per_row = None
+  if any(p.hetero is not None for p in padded_proteins):
+    _warn_dropped_icode_fields(["hetero"], "_stack_padded_proteins")
   proteins_without_chain_ids = [
-    p.replace(chain_ids=None, residue_names=None) for p in padded_proteins
+    p.replace(chain_ids=None, residue_names=None, insertion_codes=None, hetero=None)
+    for p in padded_proteins
   ]
   # B-factor and occupancy need a source in every row. A batch where only some rows
   # carry a field (e.g. FoldComp or array_record rows beside parsed ones) warns once
@@ -638,7 +770,11 @@ def _stack_padded_proteins(
     if getattr(padded_proteins[0], name) is not None and getattr(batched, name) is None:
       msg = f"_stack_padded_proteins: {name} could not be stacked (per-row shapes differ)"
       raise ValueError(msg)
-  return batched.replace(chain_ids=chain_ids_per_row, residue_names=residue_names_per_row)
+  return batched.replace(
+    chain_ids=chain_ids_per_row,
+    residue_names=residue_names_per_row,
+    insertion_codes=insertion_codes_per_row,
+  )
 
 
 def pad_and_collate_proteins(
