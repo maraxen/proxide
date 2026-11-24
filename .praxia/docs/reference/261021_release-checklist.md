@@ -39,6 +39,8 @@ Versioning rule: `crates.io` stays pre-release. A stable PyPI tag has a final `X
 
 0.2.1 shipped on 2026-11-13. Tag `v0.2.1` is commit `39aa781` (PR #101); publish run 43451273150 built 4 wheels plus the sdist, passed every smoke job, and also published the crates. Cargo workspace `0.2.1-alpha.1`. It adds `OutputSpec(modified_residue_typing=...)` (PR #99) and repairs the CI clippy gate (PR #100). `main` is `0.2.2.dev0` / `0.2.2-dev.0` afterwards.
 
+0.3.0 shipped on 2026-11-24. Tag `v0.3.0` is commit `2376492` (PR #109); a `workflow_dispatch` dry run (45491701736) passed first, then publish run 45505289813 built 4 wheels plus the sdist, passed every smoke job, published the crates and created the Release. Cargo workspace `0.3.0-alpha.1`. It adds insertion codes, per-atom hetero and configurable, reported PDB/mmCIF writers (PR #103). `main` is `0.3.1.dev0` / `0.3.1-dev.0` afterwards.
+
 The stable contract is core IO: structure parsing, formatting (Atom37, Atom14, Full), writing (PDB, mmCIF) and XTC trajectory reading. GAFF2, confind, rotlib and CCD/fixer ship as experimental. `crates.io` stays pre-release. Anything not listed as stable is provisional.
 
 #2909, the version agreement check (`scripts/check_versions.py`), is merged (PR #58, `627e7a4`, an ancestor of `origin/main`).
