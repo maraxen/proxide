@@ -714,7 +714,10 @@ def _cif_token(value: str, what: str, i: int) -> str:
     raise ValueError(f"write_mmcif: {what} {value!r} (atom {i}) is empty or contains whitespace")
   if value[0] in "'\"_#$;[]" or value in ("?", "."):
     if "'" in value:
-      raise ValueError(f"write_mmcif: {what} {value!r} (atom {i}) cannot be CIF-quoted")
+      # CIF 1.1 allows a double-quoted token holding a single quote (e.g. the PDB icode "'").
+      if '"' in value:
+        raise ValueError(f"write_mmcif: {what} {value!r} (atom {i}) cannot be CIF-quoted")
+      return f'"{value}"'
     return f"'{value}'"
   return value
 

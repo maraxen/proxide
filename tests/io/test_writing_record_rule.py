@@ -371,3 +371,31 @@ def test_golden_d_residue_table_reproduces_both_goldens_byte_for_byte(tmp_path: 
     _write_bytes(tmp_path, "5awl_full.cif", protein, "cif", record_type="residue_table")
     == _golden_bytes("5awl_full.cif")
   )
+
+
+# --- special one-character codes (T4 review) ----------------------------------------------------
+
+
+@pytest.mark.parametrize("layout", [CoordFormat.Full, CoordFormat.Atom37])
+@pytest.mark.parametrize("writer", ["pdb", "cif"])
+@pytest.mark.parametrize("sym", ["'", "?", "."])
+def test_cif_special_insertion_codes_round_trip(
+  tmp_path: Path, layout: CoordFormat, writer: str, sym: str
+) -> None:
+  # "'" needs a double-quoted CIF token; "?" and "." must stay literal codes, not read back as
+  # CIF unknown/inapplicable (blank).
+  protein = _parse(FIXTURE, layout)
+  codes = [sym if c == "A" else c for c in protein.insertion_codes]
+  out = WRITERS[writer](protein.replace(insertion_codes=codes), tmp_path / f"out.{writer}")
+  assert list(_parse(Path(out), layout).insertion_codes) == codes
+
+
+@pytest.mark.parametrize("writer", ["pdb", "cif"])
+def test_invalid_code_raises_even_with_blank_option_and_leaves_no_file(
+  tmp_path: Path, writer: str, t1_atom37
+) -> None:
+  codes = ["AB" if c == "A" else c for c in t1_atom37.insertion_codes]
+  target = tmp_path / f"out.{writer}"
+  with pytest.raises(ValueError):
+    WRITERS[writer](t1_atom37.replace(insertion_codes=codes), target, insertion_codes="blank")
+  assert not target.exists()
