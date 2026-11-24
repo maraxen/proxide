@@ -1,13 +1,13 @@
 ---
-title: Original terms of the AMOEBA and GLYCAM parameters, and a clearance request for CHARMM toppar
-description: 'Debt #3599 findings (Tinker licence for AMOEBA, no stated GLYCAM terms) and a draft clearance email to the MacKerell lab for debt #3258'
+title: Original terms of the AMOEBA and GLYCAM parameters
+description: 'Debt #3599 findings (Tinker licence for AMOEBA, no stated GLYCAM terms) and the status of the MacKerell clearance request (debt #3258)'
 status: draft
 task_id: 261124_ff-licence-followups
 date: '261124'
 confidence: 'medium: primary sources quoted; the scope of the Tinker licence over parameter data is unresolved'
 sources: 'TinkerTools/tinker LICENSE.pdf v26.2; openmm/openmm; openmm/openmmforcefields; glycam.org; ambermd.org'
 ---
-# Original terms of the AMOEBA and GLYCAM parameters, and a clearance request for CHARMM toppar
+# Original terms of the AMOEBA and GLYCAM parameters
 
 proxide records every vendored force-field XML under the licence of the project
 that redistributes it, OpenMM or openmmforcefields (both MIT; `FORCEFIELD-LICENCES.tsv`,
@@ -146,56 +146,10 @@ Amber project. The risk is lower than for AMOEBA, because no restrictive text wa
 found. `glycam-hydrogens.xml` may be OpenMM's own work (hydrogen naming for
 Modeller) [U].
 
-## 3. Draft clearance request to the MacKerell lab (debt #3258)
+## 3. Clearance request to the MacKerell lab (debt #3258)
 
-For the owner to send. Nothing has been sent.
-
-> **To:** MacKerell lab (contact via https://mackerell.umaryland.edu/)
-> **Subject:** Permission to redistribute CHARMM36/CGenFF/Drude parameters (OpenMM XML) in an MIT-licensed Python package
->
-> Dear Professor MacKerell,
->
-> I maintain proxide (https://github.com/maraxen/proxide), an open-source
-> Python/Rust library for protein structure I/O. It's published on PyPI under the
-> MIT licence. To support simulation setup, proxide redistributes force-field files
-> in OpenMM XML format. These include 28 files converted from your lab's CHARMM
-> topology and parameter ("toppar") releases:
->
-> - CHARMM36 protein and nucleic acids, including the CGenFF parameters
->   (`charmm36.xml`, `charmm36_cgenff.xml` and related files)
-> - the CHARMM water and ion models (TIP3P/TIP4P/TIP5P/SPC/E variants)
-> - the Drude polarizable force field (`charmm_polar_2013/2019/2023.xml`) and the
->   SWM4-NDP water model
->
-> We did not convert these files ourselves. Each is a byte-identical copy of a file
-> that the OpenMM project distributes in `openmm/openmmforcefields` (MIT) or
-> `openmm/openmm` (MIT). Their headers name the source archives:
-> `toppar_c36_jul24.tgz`, `toppar_c36_aug15.tgz`, `drude_toppar_2019.tgz` and
-> `drude_toppar_2023.tgz`.
->
-> Your website gives licence terms for the CGenFF program, but I could not find
-> terms that cover redistributing the toppar parameter files themselves. We
-> currently ship them as OpenMM does, with a notice that credits your lab and states
-> that no licence is given for the underlying data. We would rather have your
-> explicit permission.
->
-> Could you tell me:
->
-> 1. whether we may redistribute these parameter files, in this converted form, in
->    an MIT-licensed package that anyone (including commercial users) can install
->    from PyPI;
-> 2. whether any part, such as the CGenFF parameters, needs different handling,
->    for example omitting it or putting it under separate terms; and
-> 3. what attribution or citation you would like us to include.
->
-> If you would prefer that we not distribute some or all of these files, we will
-> remove them from the next release.
->
-> Thank you for making these parameters available to the community.
->
-> Best regards,
-> [Your name]
-> proxide maintainer
+A draft request exists, for the owner to send. It is deliberately kept out of
+this public repository. Nothing has been sent.
 
 ## Open
 
