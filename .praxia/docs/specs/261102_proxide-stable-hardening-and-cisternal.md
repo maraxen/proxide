@@ -19,7 +19,11 @@ Owner decisions, 2026-11-02:
 - D2. The first cisternal integration is the skill and plugin. Stable MCP tools and a unified CLI and MCP interface are debt #3177, specified here.
 - D3. Provenance and telemetry are stored with cisternal's tooling.
 - D4. `get_mass`, CI lock use and other deferred items are filed as debt, not fixed silently.
-- D5. CGenFF (#3182): remove the file, ship the replacement release, then yank 0.1.0. Yanking stays a manual owner step.
+- D5. CGenFF (#3182): remove the file, ship the replacement release, then yank 0.1.0. Yanking stays a manual owner step. **Superseded by D5a on 2026-11-24.**
+- D5a (owner, 2026-11-24). Keep shipping CGenFF data as openmmforcefields does: `charmm36_cgenff.xml` and the CHARMM XMLs that embed CGenFF parameters stay in the wheel, unchanged from upstream: `charmm/` from `openmmforcefields/ffxml/charmm/`, and `openmm_bundled/charmm36*.xml` from OpenMM's `app/data`. Explicit written clearance from the MacKerell lab may be sought later (debt #3258); it does not block releases. No release is yanked on CGenFF grounds. Evidence, from fetching `mackerell.umaryland.edu/charmm_ff.shtml` and `warning.shtml` on 2026-11-23 (verbatim quotes in debt #3182):
+  - The only licence terms the lab publishes are for the CGenFF *program*: a free not-for-profit binary licence, or SilcsBio for for-profit users.
+  - The toppar topology and parameter files are open downloads with no stated licence or redistribution terms.
+  - No stated licence is not a grant, which is why clearance stays open as a follow-up. Draft PR #104, which removed the file, was closed unmerged.
 - D6. sdist (#3181): restructure the optional GPL dependency so an MIT-only sdist builds.
 - D7. Intel macOS (#3183): drop the target. Done on `ci/smoke-built-wheels`, PR #80.
 
@@ -41,7 +45,7 @@ No agent makes these. A track that reaches one stops, parks the item as `awaitin
 |---|---|---|
 | O1 | Mosaist code (#1420): seek permission from the Grigoryan lab, relicense the affected crates CC BY-NC-SA 4.0, or rewrite clean-room. Evidence: `audits/261102_mosaist-derivation-map.md` | T1 end state |
 | O2 | Yank the published crates (alpha.9 to alpha.18). A counsel question; yanked versions stay downloadable | nothing in code |
-| O3 | The git history rewrite for CGenFF that the unmerged branch deferred, and carrying out the 0.1.0 yank decided in D5 | T2 follow-up |
+| O3 | ~~The git history rewrite for CGenFF that the unmerged branch deferred, and carrying out the 0.1.0 yank decided in D5~~ Withdrawn by D5a (2026-11-24): no history rewrite and no yank | nothing |
 | O5 | Repo settings: required status checks on the `main` ruleset, a reviewer on the `pypi` environment, and whether the signed-commit bypass stays | T8 |
 | O6 | Whether `Dunbrack` attribution needs correcting: the licence URL cited as ODC-BY now serves CC BY 4.0 text (#1917) | nothing in code |
 
@@ -79,14 +83,16 @@ Each track is one branch and one draft PR off `origin/main`, safe to run in para
 
 Accept: with `spec=.praxia/docs/specs/260824_license-provenance-verification.md` on `main`, `rg -n 'proxide-confind dependency|invoked as external subprocesses' "$spec"` exits 1, and both `rg -n CANONICAL_AA_NAMES "$spec"` and `rg -n proxide-rotlib "$spec"` exit 0. `rg -n proxide-confind crates/proxide-frag/Cargo.toml` exits 1. Depends on #81 for the NOTICE files. `rg -l Mosaist crates/*/NOTICE` already lists confind, rotlib and fixer on `fix/stop-publishing-mosaist-ports`, so that command does not decide these wording corrections.
 
-### T2. Remove CGenFF
+### T2. Force-field licence records (was: Remove CGenFF)
 
-- Port `14e623d` and `bb4d018`. Take from `55bdfef` only what removal needs, and report the rest.
-- Find every code path that loads the file, and make it raise a named error.
-- Add a `smoke_wheel.py` check that no `*cgenff*` file is present. Depends on #80.
+> **Amended 2026-11-24 (D5a).** The removal is withdrawn. The first three bullets below, and the `git ls-files | rg -i cgenff` and smoke-check clauses of the acceptance, no longer apply. They are kept struck through for the record. The force-field licence records (the fourth bullet and the program below) still stand: `charmm36_cgenff.xml` and the CGenFF-bearing CHARMM XMLs get rows like every other XML. For those rows, record the actual upstream (`openmmforcefields/ffxml/charmm/` or OpenMM's `app/data`; both are built from MacKerell toppar), and record that no licence is stated upstream for the toppar data. Because the program accepts only a licence file or a pinned licence text, those rows use kind `file` and point at a repo-authored notice that says this (PR #106: `src/proxide/assets/licences/CHARMM-TOPPAR-NOTICE.md`).
+
+- ~~Port `14e623d` and `bb4d018`. Take from `55bdfef` only what removal needs, and report the rest.~~
+- ~~Find every code path that loads the file, and make it raise a named error.~~
+- ~~Add a `smoke_wheel.py` check that no `*cgenff*` file is present. Depends on #80.~~
 - Audit the other bundled force fields and record a source and licence for each vendored XML under `src/proxide/assets`. `openmm_bundled` and `charmm36*.xml` need checking, and the branch's asset audit (`cdb48c1`) is the starting point. Write `src/proxide/assets/FORCEFIELD-LICENCES.tsv`, one data row per XML. Columns, tab-separated: path relative to `src/proxide/assets`; `file` or `sha256`; then a repo-relative licence file, or `DIGEST PATH` where `DIGEST` is the sha256 of the checked-in upstream licence text at `PATH`.
 
-Accept: `git ls-files | rg -i cgenff` exits 1 (no output), and the smoke check fails when the file is put back. Force-field records: the program below exits 0. It exits 1 when a vendored `*.xml` under `src/proxide/assets` has no matching row, when a `file` target is missing, or when a `sha256` target's digest does not equal `hashlib.sha256` of the checked-in upstream text.
+Accept: ~~`git ls-files | rg -i cgenff` exits 1 (no output), and the smoke check fails when the file is put back.~~ (withdrawn by D5a) Force-field records: the program below exits 0. It exits 1 when a vendored `*.xml` under `src/proxide/assets` has no matching row, when a `file` target is missing, or when a `sha256` target's digest does not equal `hashlib.sha256` of the checked-in upstream text.
 
 ```python
 import hashlib, pathlib, sys
@@ -282,7 +288,7 @@ PY
 1. Owner: merge #81, then #79 and #80. Each carries the pytest fix where needed. Decide O1 to O6.
 2. In parallel: T1, T2, T3, T4, T8.
 3. T5, then T6, then T7.
-4. Release as 0.2.0, because #79 changes accepted input on the stable surface. Follow `261021_release-checklist.md`. The owner then yanks 0.1.0 (D5).
+4. Release as 0.2.0, because #79 changes accepted input on the stable surface. Follow `261021_release-checklist.md`. ~~The owner then yanks 0.1.0 (D5).~~ No yank (D5a, 2026-11-24).
 
 ## 6. Verification rules
 
