@@ -185,6 +185,11 @@ def _atom_lines(path) -> list[str]:
   return [line for line in path.read_text().splitlines() if line.startswith("ATOM")]
 
 
+def _atom_or_hetatm_lines(path) -> list[str]:
+  """ATOM and HETATM rows: the Full writer's default record type follows the parsed hetero flag."""
+  return [line for line in path.read_text().splitlines() if line.startswith(("ATOM", "HETATM"))]
+
+
 def _flat_protein(n_atoms: int, **overrides) -> Protein:
   """A flat per-atom ("Full"-style) Protein with every per-atom field set."""
   fields = dict(
@@ -599,7 +604,7 @@ class TestWritePdbOnRealParsedStructures:
     from proxide import CoordFormat, OutputSpec, parse_structure
 
     protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
-    written = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    written = _atom_or_hetatm_lines(write_pdb(protein, tmp_path / "out.pdb"))
     source = [x for x in open(self.PDB) if x.startswith(("ATOM", "HETATM"))]
     assert sorted(map(self._atom_key, written)) == sorted(map(self._atom_key, source))
 
@@ -673,7 +678,7 @@ class TestWriteOccupancyAndBFactorAreSourceValues:
     from proxide import CoordFormat, OutputSpec, parse_structure
 
     protein = parse_structure(self.PDB, OutputSpec(coord_format=CoordFormat.Full))
-    written = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+    written = _atom_or_hetatm_lines(write_pdb(protein, tmp_path / "out.pdb"))
     # pytest.approx rejects nested sequences from pytest 9.2, so compare arrays.
     np.testing.assert_allclose(
       np.asarray(_source_occ_b(str(tmp_path / "out.pdb"))),
@@ -928,7 +933,7 @@ def test_parsed_cl_hetatm_round_trips_to_upper_case_element(tmp_path) -> None:
   cl_idx = [i for i, r in enumerate(protein.res_names) if r == "CL"]
   assert len(cl_idx) == 1
   assert protein.elements[cl_idx[0]] == "Cl"
-  out_lines = _atom_lines(write_pdb(protein, tmp_path / "out.pdb"))
+  out_lines = _atom_or_hetatm_lines(write_pdb(protein, tmp_path / "out.pdb"))
   cl_lines = [line for line in out_lines if line[17:20].strip() == "CL"]
   assert len(cl_lines) == 1
   assert cl_lines[0][76:78] == "CL"
