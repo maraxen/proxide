@@ -2,16 +2,76 @@
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import importlib.metadata
+import json
+import logging
+import re
+import urllib.parse
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from proxide import _proxider
+from proxide.io import write_codes as _codes
 
 if TYPE_CHECKING:
   from proxide.core.containers import Protein
+
+logger = logging.getLogger("proxide.io.writing")
+
+
+@dataclass(frozen=True)
+class WriteFinding:
+  """One thing the writer noticed about a write (spec 261123 D4). Experimental."""
+
+  code: str
+  severity: Literal["info", "warning"]
+  count: int
+  message: str
+
+
+@dataclass(frozen=True)
+class WriteReport:
+  """What one `write_pdb`/`write_mmcif` call wrote, and how (spec 261123 D4). Experimental.
+
+  ``sha256`` is of the exact bytes written. ``options`` are the effective content options,
+  sorted; ``provenance_path`` is set only when a sidecar was written.
+  """
+
+  path: Path
+  format: Literal["pdb", "mmcif"]
+  sha256: str
+  n_atoms: int
+  n_hetatm: int
+  n_hetatm_from_hetero: int
+  n_insertion_codes: int
+  options: tuple[tuple[str, str], ...]
+  source: str | None
+  proxide_version: str
+  findings: tuple[WriteFinding, ...]
+  provenance_path: Path | None
+
+
+def _finding(code: str, count: int, message: str) -> WriteFinding:
+  """A finding whose severity comes from the literal code table, never from the caller."""
+  return WriteFinding(code=code, severity=_codes.SEVERITY_OF[code], count=count, message=message)
+
+
+def _emit_warnings(findings: list[WriteFinding] | tuple[WriteFinding, ...]) -> None:
+  """Warn once per warning finding. Info findings never warn.
+
+  stacklevel=4 is fixed: this frame (1), `_write_pdb`/`_write_mmcif` (2), the public
+  `write_pdb`/`write_pdb_reported` (or mmCIF pair) (3), so the warning is attributed to the
+  caller of the public function. Do not add a frame between the public function and here.
+  """
+  for finding in findings:
+    if finding.severity == "warning":
+      warnings.warn(finding.message, UserWarning, stacklevel=4)
 
 
 def _reject_if_batched(protein: Protein, fn_name: str) -> None:
@@ -173,12 +233,14 @@ def _atom_rows(
   list[str],
   np.ndarray | None,
   np.ndarray | None,
+  list[WriteFinding],
 ]:
   """Resolve the per-atom rows `write_pdb`/`write_mmcif` emit, without inventing any.
 
   Returns (coords, atom_names, res_names, res_seqs, chain_letters, elements,
-  b_factors, occupancies), the first six of one length. b_factors and occupancies
-  are the Protein's own values for those rows, or None when it carries none.
+  b_factors, occupancies, findings), the first six of one length. b_factors and occupancies
+  are the Protein's own values for those rows, or None when it carries none. ``findings`` are
+  the findings about the rows (spec 261123 D4); this function warns nothing itself.
   Two sources are supported:
 
   * per-atom fields (``atom_names`` present, e.g. the flat "Full" format):
@@ -252,6 +314,7 @@ def _atom_rows(
       [str(e) for e in fields["elements"]],
       _per_row_values(getattr(protein, "b_factors", None), (n,), "b_factors", fn_name),
       _per_row_values(getattr(protein, "occupancies", None), (n,), "occupancies", fn_name),
+      [],
     )
 
   coords = np.asarray(protein.coordinates)
@@ -322,6 +385,7 @@ def _atom_rows(
   names = [
     _written_atom_name(layout, rn, ln) for rn, ln in zip(written_res, layout_names, strict=True)
   ]
+  alias_findings: list[WriteFinding] = []
   # A residue whose as-read name has a layout alias (MSE) but whose type is not that alias's
   # layout residue was parsed with modified_residue_typing="unknown": the format placed no atom
   # for the alias target (SE), so the record is written without it. Say so rather than emit a
@@ -341,7 +405,7 @@ def _atom_rows(
         "(modified_residue_typing='unknown'), so their alias atoms (for MSE, SE) were not placed "
         "and are missing from the written records"
       )
-      warnings.warn(msg, UserWarning, stacklevel=3)
+      alias_findings.append(_finding(_codes.ALIAS_ATOMS_MISSING, len(short), msg))
   b_slots = _per_row_values(
     getattr(protein, "b_factors", None), atom_mask.shape, "b_factors", fn_name
   )
@@ -358,6 +422,7 @@ def _atom_rows(
     ["SE" if n == "SE" else _ATOM37_ELEMENT[n] for n in names],
     None if b_slots is None else b_slots[res_idx, slot_idx],
     None if occ_slots is None else occ_slots[res_idx, slot_idx],
+    alias_findings,
   )
 
 
@@ -382,10 +447,13 @@ def _per_row_values(values, shape: tuple, what: str, fn_name: str) -> np.ndarray
 
 _RECORD_TYPES = ("source", "residue_table")
 _INSERTION_CODE_OPTIONS = ("write", "blank")
+_PROVENANCE_OPTIONS = ("none", "sidecar")
 
 
-def _check_writer_options(fn_name: str, record_type: str, insertion_codes: str) -> None:
-  """Reject an unknown option value before anything is read or written (spec D3)."""
+def _check_writer_options(
+  fn_name: str, record_type: str, insertion_codes: str, provenance: str = "none"
+) -> None:
+  """Reject an unknown option value before anything is read or written (spec D3, D5)."""
   if record_type not in _RECORD_TYPES:
     msg = (
       f"{fn_name}: record_type={record_type!r} is not accepted; "
@@ -398,18 +466,25 @@ def _check_writer_options(fn_name: str, record_type: str, insertion_codes: str) 
       f"accepted values are {', '.join(map(repr, _INSERTION_CODE_OPTIONS))}"
     )
     raise ValueError(msg)
+  if provenance not in _PROVENANCE_OPTIONS:
+    msg = (
+      f"{fn_name}: provenance={provenance!r} is not accepted; "
+      f"accepted values are {', '.join(map(repr, _PROVENANCE_OPTIONS))}"
+    )
+    raise ValueError(msg)
 
 
 def _row_annotations(
   protein: Protein, fn_name: str, n_rows: int, insertion_codes: str
-) -> tuple[np.ndarray | None, list[str]]:
-  """The per-row hetero flags and the insertion code each written row carries.
+) -> tuple[np.ndarray | None, list[str], list[str]]:
+  """The per-row hetero flags and the insertion codes of each row, before and after the option.
 
-  Returns (hetero_rows, codes_rows). ``hetero_rows`` is a bool array per atom for the Full
-  layout and None otherwise. ``codes_rows`` has one entry per row: the Protein's code for that
-  row (Atom37/14 codes are per residue and broadcast to the residue's atom rows), or " " (blank)
-  when the Protein has none or ``insertion_codes="blank"``. The layout is decided by the same
-  dispatch as `_atom_rows` (``atom_names`` present means Full).
+  Returns (hetero_rows, codes_rows, source_codes_rows). ``hetero_rows`` is a bool array per atom
+  for the Full layout and None otherwise. ``codes_rows`` has one entry per row: the Protein's code
+  for that row (Atom37/14 codes are per residue and broadcast to the residue's atom rows), or " "
+  (blank) when the Protein has none or ``insertion_codes="blank"``. ``source_codes_rows`` is the
+  same without the option applied, so a finding can count the codes the option blanked. The layout
+  is decided by the same dispatch as `_atom_rows` (``atom_names`` present means Full).
   """
   from proxide.core.containers import validate_hetero, validate_insertion_codes
 
@@ -431,14 +506,16 @@ def _row_annotations(
     n_entities = int(np.asarray(protein.coordinates).shape[0])
 
   codes = getattr(protein, "insertion_codes", None)
-  if codes is None or insertion_codes == "blank":
-    if codes is not None:
-      validate_insertion_codes(codes, n_entities, f"{fn_name}: insertion_codes")
-    return hetero_rows, [" "] * n_rows
+  if codes is None:
+    return hetero_rows, [" "] * n_rows, [" "] * n_rows
   entity_codes = validate_insertion_codes(codes, n_entities, f"{fn_name}: insertion_codes")
   if row_entity is None:
-    return hetero_rows, list(entity_codes)
-  return hetero_rows, [entity_codes[int(r)] for r in row_entity]
+    source_rows = list(entity_codes)
+  else:
+    source_rows = [entity_codes[int(r)] for r in row_entity]
+  if insertion_codes == "blank":
+    return hetero_rows, [" "] * n_rows, source_rows
+  return hetero_rows, source_rows, source_rows
 
 
 def _is_hetatm(res_name: str, hetero_flag: bool, record_type: str) -> bool:
@@ -485,50 +562,170 @@ def _cif_occupancy_or_b_factor(value, what: str, i: int) -> str:
   return f"{float(value):.2f}"
 
 
-def write_pdb(
+def _record_plan(
+  res_names: list[str], hetero_rows: np.ndarray | None, record_type: str
+) -> tuple[list[str], int, int]:
+  """The record type of each row, the HETATM count, and the rows HETATM only because of hetero."""
+  records: list[str] = []
+  n_hetatm = 0
+  n_from_hetero = 0
+  for i, res_name in enumerate(res_names):
+    hetero_flag = bool(hetero_rows[i]) if hetero_rows is not None else False
+    is_hetatm = _is_hetatm(res_name, hetero_flag, record_type)
+    records.append("HETATM" if is_hetatm else "ATOM")
+    if is_hetatm:
+      n_hetatm += 1
+      if record_type == "source" and hetero_flag and res_name not in _HETATM_RESIDUES:
+        n_from_hetero += 1
+  return records, n_hetatm, n_from_hetero
+
+
+def _annotation_findings(
+  protein: Protein,
+  res_names: list[str],
+  hetero_rows: np.ndarray | None,
+  source_codes: list[str],
+  record_type: str,
+  insertion_codes: str,
+) -> list[WriteFinding]:
+  """Findings about hetero flags and insertion codes (spec 261123 D4). Warns nothing itself."""
+  findings: list[WriteFinding] = []
+  n_rows = len(res_names)
+  is_full = getattr(protein, "atom_names", None) is not None
+  if is_full and hetero_rows is None:
+    findings.append(
+      _finding(
+        _codes.HETERO_UNKNOWN,
+        n_rows,
+        "Full Protein has no per-atom hetero flag (hetero is None): HETATM follows the residue "
+        "table only",
+      )
+    )
+  if record_type == "residue_table" and hetero_rows is not None:
+    ignored = sum(
+      1 for i, flag in enumerate(hetero_rows) if flag and res_names[i] not in _HETATM_RESIDUES
+    )
+    if ignored:
+      findings.append(
+        _finding(
+          _codes.HETERO_IGNORED,
+          ignored,
+          f"record_type='residue_table' ignores hetero=True on {ignored} row(s) whose residue is "
+          "not in the residue table; they are written ATOM",
+        )
+      )
+  if getattr(protein, "insertion_codes", None) is None:
+    findings.append(
+      _finding(
+        _codes.ICODE_UNKNOWN,
+        n_rows,
+        "Protein.insertion_codes is None: no row carries an insertion code",
+      )
+    )
+  if insertion_codes == "blank":
+    blanked = sum(1 for code in source_codes if code != " ")
+    if blanked:
+      findings.append(
+        _finding(
+          _codes.ICODE_BLANKED,
+          blanked,
+          f"insertion_codes='blank' writes the insertion-code column blank on {blanked} row(s) "
+          "that carry a non-blank insertion code",
+        )
+      )
+  return findings
+
+
+def _proxide_version() -> str:
+  try:
+    return importlib.metadata.version("proxide")
+  except importlib.metadata.PackageNotFoundError:
+    return "unknown"
+
+
+def _finish(
+  path: Path,
+  data: bytes,
+  *,
+  fmt: Literal["pdb", "mmcif"],
+  protein: Protein,
+  n_atoms: int,
+  n_hetatm: int,
+  n_hetatm_from_hetero: int,
+  n_insertion_codes: int,
+  record_type: str,
+  insertion_codes: str,
+  provenance: str,
+  findings: list[WriteFinding],
+) -> WriteReport:
+  """Write the already-built bytes, then build the report, log it, and write the sidecar."""
+  with open(path, "wb") as f:
+    f.write(data)
+  report = WriteReport(
+    path=path,
+    format=fmt,
+    sha256=hashlib.sha256(data).hexdigest(),
+    n_atoms=n_atoms,
+    n_hetatm=n_hetatm,
+    n_hetatm_from_hetero=n_hetatm_from_hetero,
+    n_insertion_codes=n_insertion_codes,
+    options=tuple(sorted({"record_type": record_type, "insertion_codes": insertion_codes}.items())),
+    source=protein.source,
+    proxide_version=_proxide_version(),
+    findings=tuple(findings),
+    provenance_path=None,
+  )
+  logger.info(
+    "wrote %s %s: atoms=%d hetatm=%d hetatm_from_hetero=%d insertion_codes=%d options=%s codes=%s",
+    fmt,
+    path,
+    n_atoms,
+    n_hetatm,
+    n_hetatm_from_hetero,
+    n_insertion_codes,
+    report.options,
+    [f.code for f in findings],
+  )
+  if provenance == "sidecar":
+    report = dataclasses.replace(report, provenance_path=_write_sidecar(report))
+  return report
+
+
+def _write_pdb(
   protein: Protein,
   path: str | Path,
   *,
-  record_type: str = "source",
-  insertion_codes: str = "write",
-) -> Path:
-  """Write a Protein structure to a PDB file.
-
-  MSE is restored as HETATM MSE/SE only when the Protein carries residue_names
-  (set by the parser); proteins without them are written with model residue
-  names (MET/SD).
-
-  Args:
-      protein: The Protein instance to write.
-      path: Target file path.
-      record_type: ``"source"`` (default) takes a Full Protein's per-atom ``hetero``
-          flag as HETATM where it is True; ``"residue_table"`` uses only the residue
-          table (MSE). Atom37/14 output is the same under both.
-      insertion_codes: ``"write"`` (default) writes the Protein's insertion codes in
-          column 27; ``"blank"`` leaves column 27 blank.
-
-  Returns:
-      Path to the written file.
-
-  Raises:
-      ValueError: If a field would have to be invented (see `_atom_rows`), an option
-          value is not accepted, ``hetero`` is set on an Atom37/Atom14 Protein, an
-          insertion code is not one printable ASCII character, or a value does not fit its
-          fixed-width PDB column (more than
-          99999 atoms, a residue number outside -999..9999, an over-long name,
-          or a coordinate outside -999.999..9999.999) -- the old writer
-          silently shifted every later column (debt #1927). Use
-          `write_mmcif` for such structures.
-  """
+  record_type: str,
+  insertion_codes: str,
+  provenance: str,
+) -> WriteReport:
+  """The one PDB emitter. `write_pdb` and `write_pdb_reported` are one-line wrappers over it."""
   path = Path(path)
   _reject_if_batched(protein, "write_pdb")
-  _check_writer_options("write_pdb", record_type, insertion_codes)
+  _check_writer_options("write_pdb", record_type, insertion_codes, provenance)
 
-  coords, atom_names, res_names, res_seqs, chain_letters, elements, b_factors, occupancies = (
-    _atom_rows(protein, "write_pdb")
-  )
+  (
+    coords,
+    atom_names,
+    res_names,
+    res_seqs,
+    chain_letters,
+    elements,
+    b_factors,
+    occupancies,
+    findings,
+  ) = _atom_rows(protein, "write_pdb")
   _reject_nonfinite(coords, "write_pdb")
-  hetero_rows, codes_rows = _row_annotations(protein, "write_pdb", len(coords), insertion_codes)
+  hetero_rows, codes_rows, source_codes = _row_annotations(
+    protein, "write_pdb", len(coords), insertion_codes
+  )
+  records, n_hetatm, n_from_hetero = _record_plan(res_names, hetero_rows, record_type)
+  findings = [
+    *findings,
+    *_annotation_findings(
+      protein, res_names, hetero_rows, source_codes, record_type, insertion_codes
+    ),
+  ]
 
   def _overflow(what: str) -> ValueError:
     return ValueError(f"write_pdb: {what} does not fit the fixed-width PDB format; use write_mmcif")
@@ -554,8 +751,7 @@ def write_pdb(
     # 61-66 Temperature factor
     # 77-78 Element symbol
     atom_name, res_name, element = atom_names[i], res_names[i], elements[i]
-    hetero_flag = bool(hetero_rows[i]) if hetero_rows is not None else False
-    record = "HETATM" if _is_hetatm(res_name, hetero_flag, record_type) else "ATOM"
+    record = records[i]
     res_seq = int(res_seqs[i])
     chain_id = chain_letters[i]
     if len(atom_name) > 4:
@@ -593,14 +789,197 @@ def write_pdb(
       f"{''.join(xyz)}"
       f"{occ_field}{b_field}          {element.upper():>2}\n"
     )
+  data = ("".join(lines) + "END\n").encode("utf-8")
 
-  # Validate everything before touching the file, so a rejected structure
+  # Everything is validated and built before the file is opened, so a rejected structure
   # never leaves a truncated PDB behind.
-  with open(path, "w") as f:
-    f.writelines(lines)
-    f.write("END\n")
+  _emit_warnings(findings)
+  return _finish(
+    path,
+    data,
+    fmt="pdb",
+    protein=protein,
+    n_atoms=len(coords),
+    n_hetatm=n_hetatm,
+    n_hetatm_from_hetero=n_from_hetero,
+    n_insertion_codes=sum(1 for code in codes_rows if code != " "),
+    record_type=record_type,
+    insertion_codes=insertion_codes,
+    provenance=provenance,
+    findings=findings,
+  )
 
-  return path
+
+def write_pdb(
+  protein: Protein,
+  path: str | Path,
+  *,
+  record_type: str = "source",
+  insertion_codes: str = "write",
+  provenance: str = "none",
+) -> Path:
+  """Write a Protein structure to a PDB file.
+
+  MSE is restored as HETATM MSE/SE only when the Protein carries residue_names
+  (set by the parser); proteins without them are written with model residue
+  names (MET/SD).
+
+  Args:
+      protein: The Protein instance to write.
+      path: Target file path.
+      record_type: ``"source"`` (default) takes a Full Protein's per-atom ``hetero``
+          flag as HETATM where it is True; ``"residue_table"`` uses only the residue
+          table (MSE). Atom37/14 output is the same under both.
+      insertion_codes: ``"write"`` (default) writes the Protein's insertion codes in
+          column 27; ``"blank"`` leaves column 27 blank.
+      provenance: ``"none"`` (default) writes only the output. ``"sidecar"`` also writes
+          ``<path>.prov.toml`` after it (experimental; see `write_pdb_reported`).
+
+  Returns:
+      Path to the written file.
+
+  Raises:
+      ValueError: If a field would have to be invented (see `_atom_rows`), an option
+          value is not accepted, ``hetero`` is set on an Atom37/Atom14 Protein, an
+          insertion code is not one printable ASCII character, or a value does not fit its
+          fixed-width PDB column (more than
+          99999 atoms, a residue number outside -999..9999, an over-long name,
+          or a coordinate outside -999.999..9999.999) -- the old writer
+          silently shifted every later column (debt #1927). Use
+          `write_mmcif` for such structures.
+  """
+  return _write_pdb(
+    protein,
+    path,
+    record_type=record_type,
+    insertion_codes=insertion_codes,
+    provenance=provenance,
+  ).path
+
+
+def write_pdb_reported(
+  protein: Protein,
+  path: str | Path,
+  *,
+  record_type: str = "source",
+  insertion_codes: str = "write",
+  provenance: str = "none",
+) -> WriteReport:
+  """Experimental: `write_pdb`, returning a `WriteReport` (path, sha256, counts, findings).
+
+  Same arguments, validation and bytes as `write_pdb`. Warnings are attributed to the caller
+  of this function, as for `write_pdb`. The report and the sidecar format are experimental.
+  """
+  return _write_pdb(
+    protein,
+    path,
+    record_type=record_type,
+    insertion_codes=insertion_codes,
+    provenance=provenance,
+  )
+
+
+def _write_mmcif(
+  protein: Protein,
+  path: str | Path,
+  *,
+  record_type: str,
+  insertion_codes: str,
+  provenance: str,
+) -> WriteReport:
+  """The one mmCIF emitter. `write_mmcif` and `write_mmcif_reported` wrap it."""
+  path = Path(path)
+  _reject_if_batched(protein, "write_mmcif")
+  _check_writer_options("write_mmcif", record_type, insertion_codes, provenance)
+
+  (
+    coords,
+    atom_names,
+    res_names,
+    res_seqs,
+    chain_letters,
+    elements,
+    b_factors,
+    occupancies,
+    findings,
+  ) = _atom_rows(protein, "write_mmcif")
+  _reject_nonfinite(coords, "write_mmcif")
+  hetero_rows, codes_rows, source_codes = _row_annotations(
+    protein, "write_mmcif", len(coords), insertion_codes
+  )
+  records, n_hetatm, n_from_hetero = _record_plan(res_names, hetero_rows, record_type)
+  findings = [
+    *findings,
+    *_annotation_findings(
+      protein, res_names, hetero_rows, source_codes, record_type, insertion_codes
+    ),
+  ]
+  # The column is emitted only when a written code is non-blank (owner decision 2026-11-23).
+  write_codes = any(code != " " for code in codes_rows)
+  if not all(chain_letters):
+    # label_asym_id is mandatory in mmCIF, and proxide's own reader rejects
+    # "?" there -- so an unknown chain cannot be written honestly. (PDB has a
+    # legitimate blank chain column; use write_pdb.)
+    msg = "write_mmcif: chain ids are unknown (no chain_ids); mmCIF requires them -- use write_pdb"
+    raise ValueError(msg)
+
+  rows = []
+  for i in range(len(coords)):
+    # Unknown element -> "?", CIF's own unknown marker (left unquoted on purpose).
+    element = _cif_token(elements[i].upper(), "element", i) if elements[i] else "?"
+    code_field = f" {_cif_insertion_code(codes_rows[i], i)}" if write_codes else ""
+
+    x, y, z = coords[i]
+    occ_text = _cif_occupancy_or_b_factor(
+      None if occupancies is None else occupancies[i], "occupancy", i
+    )
+    b_text = _cif_occupancy_or_b_factor(None if b_factors is None else b_factors[i], "B-factor", i)
+    rows.append(
+      f"{records[i]} {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
+      f"{_cif_token(res_names[i], 'residue name', i)} "
+      f"{_cif_token(chain_letters[i], 'chain id', i)} "
+      f"{int(res_seqs[i])}{code_field} {x:.3f} {y:.3f} {z:.3f} {occ_text} {b_text}\n"
+    )
+
+  head = [
+    f"data_{path.stem}\n",
+    "#\n",
+    "loop_\n",
+    "_atom_site.group_PDB\n",
+    "_atom_site.id\n",
+    "_atom_site.type_symbol\n",
+    "_atom_site.label_atom_id\n",
+    "_atom_site.label_comp_id\n",
+    "_atom_site.label_asym_id\n",
+    "_atom_site.label_seq_id\n",
+  ]
+  if write_codes:
+    head.append("_atom_site.pdbx_PDB_ins_code\n")
+  head += [
+    "_atom_site.Cartn_x\n",
+    "_atom_site.Cartn_y\n",
+    "_atom_site.Cartn_z\n",
+    "_atom_site.occupancy\n",
+    "_atom_site.B_iso_or_equiv\n",
+  ]
+  data = ("".join(head) + "".join(rows)).encode("utf-8")
+
+  # Every row is validated before the file is opened.
+  _emit_warnings(findings)
+  return _finish(
+    path,
+    data,
+    fmt="mmcif",
+    protein=protein,
+    n_atoms=len(coords),
+    n_hetatm=n_hetatm,
+    n_hetatm_from_hetero=n_from_hetero,
+    n_insertion_codes=sum(1 for code in codes_rows if code != " "),
+    record_type=record_type,
+    insertion_codes=insertion_codes,
+    provenance=provenance,
+    findings=findings,
+  )
 
 
 def write_mmcif(
@@ -609,6 +988,7 @@ def write_mmcif(
   *,
   record_type: str = "source",
   insertion_codes: str = "write",
+  provenance: str = "none",
 ) -> Path:
   """Write a Protein structure to an mmCIF file.
 
@@ -623,6 +1003,7 @@ def write_mmcif(
       insertion_codes: ``"write"`` (default) emits ``_atom_site.pdbx_PDB_ins_code`` when at
           least one written code is non-blank (blank rows get ``?``); ``"blank"`` never emits
           it. A Protein without insertion codes is written exactly as before.
+      provenance: As in `write_pdb`.
 
   Returns:
       Path to the written file.
@@ -634,66 +1015,152 @@ def write_mmcif(
           (mmCIF requires label_asym_id), or a name/chain value is empty or
           contains whitespace (see `_cif_token`).
   """
-  path = Path(path)
-  _reject_if_batched(protein, "write_mmcif")
-  _check_writer_options("write_mmcif", record_type, insertion_codes)
+  return _write_mmcif(
+    protein,
+    path,
+    record_type=record_type,
+    insertion_codes=insertion_codes,
+    provenance=provenance,
+  ).path
 
-  coords, atom_names, res_names, res_seqs, chain_letters, elements, b_factors, occupancies = (
-    _atom_rows(protein, "write_mmcif")
+
+def write_mmcif_reported(
+  protein: Protein,
+  path: str | Path,
+  *,
+  record_type: str = "source",
+  insertion_codes: str = "write",
+  provenance: str = "none",
+) -> WriteReport:
+  """Experimental: `write_mmcif`, returning a `WriteReport`. See `write_pdb_reported`."""
+  return _write_mmcif(
+    protein,
+    path,
+    record_type=record_type,
+    insertion_codes=insertion_codes,
+    provenance=provenance,
   )
-  _reject_nonfinite(coords, "write_mmcif")
-  hetero_rows, codes_rows = _row_annotations(protein, "write_mmcif", len(coords), insertion_codes)
-  # The column is emitted only when a written code is non-blank (owner decision 2026-11-23).
-  write_codes = any(code != " " for code in codes_rows)
-  if not all(chain_letters):
-    # label_asym_id is mandatory in mmCIF, and proxide's own reader rejects
-    # "?" there -- so an unknown chain cannot be written honestly. (PDB has a
-    # legitimate blank chain column; use write_pdb.)
-    msg = "write_mmcif: chain ids are unknown (no chain_ids); mmCIF requires them -- use write_pdb"
-    raise ValueError(msg)
 
-  rows = []
-  for i in range(len(coords)):
-    # Unknown element -> "?", CIF's own unknown marker (left unquoted on purpose).
-    element = _cif_token(elements[i].upper(), "element", i) if elements[i] else "?"
-    hetero_flag = bool(hetero_rows[i]) if hetero_rows is not None else False
-    record = "HETATM" if _is_hetatm(res_names[i], hetero_flag, record_type) else "ATOM"
-    code_field = f" {_cif_insertion_code(codes_rows[i], i)}" if write_codes else ""
 
-    x, y, z = coords[i]
-    occ_text = _cif_occupancy_or_b_factor(
-      None if occupancies is None else occupancies[i], "occupancy", i
+# --- Provenance sidecar (spec 261123 D5, experimental) -----------------------------------------
+
+PROVENANCE_SCHEMA = "proxide-write-prov/0"
+_TOML_BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def _toml_str(text: str) -> str:
+  """A TOML basic string: quote and backslash escaped, newline as \\n, other controls as \\uXXXX."""
+  out = ['"']
+  for ch in text:
+    code = ord(ch)
+    if ch == '"':
+      out.append('\\"')
+    elif ch == "\\":
+      out.append("\\\\")
+    elif ch == "\n":
+      out.append("\\n")
+    elif code < 0x20 or code == 0x7F:
+      out.append(f"\\u{code:04x}")
+    else:
+      out.append(ch)
+  out.append('"')
+  return "".join(out)
+
+
+def _toml_value(value: object) -> str:
+  """The sidecar's value shapes only: str, int, a list of those, and a flat inline table."""
+  if isinstance(value, bool):
+    raise TypeError("the sidecar has no boolean values")
+  if isinstance(value, int):
+    return str(value)
+  if isinstance(value, str):
+    return _toml_str(value)
+  if isinstance(value, (list, tuple)):
+    return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+  if isinstance(value, dict):
+    if not value:
+      return "{}"
+    return (
+      "{ " + ", ".join(f"{_toml_key(str(k))} = {_toml_value(v)}" for k, v in value.items()) + " }"
     )
-    b_text = _cif_occupancy_or_b_factor(None if b_factors is None else b_factors[i], "B-factor", i)
-    rows.append(
-      f"{record} {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
-      f"{_cif_token(res_names[i], 'residue name', i)} "
-      f"{_cif_token(chain_letters[i], 'chain id', i)} "
-      f"{int(res_seqs[i])}{code_field} {x:.3f} {y:.3f} {z:.3f} {occ_text} {b_text}\n"
-    )
+  raise TypeError(f"the sidecar cannot encode {type(value).__name__}")
 
-  # Validate every row before touching the file.
-  with open(path, "w") as f:
-    f.write(f"data_{path.stem}\n")
-    f.write("#\n")
-    f.write("loop_\n")
-    f.write("_atom_site.group_PDB\n")
-    f.write("_atom_site.id\n")
-    f.write("_atom_site.type_symbol\n")
-    f.write("_atom_site.label_atom_id\n")
-    f.write("_atom_site.label_comp_id\n")
-    f.write("_atom_site.label_asym_id\n")
-    f.write("_atom_site.label_seq_id\n")
-    if write_codes:
-      f.write("_atom_site.pdbx_PDB_ins_code\n")
-    f.write("_atom_site.Cartn_x\n")
-    f.write("_atom_site.Cartn_y\n")
-    f.write("_atom_site.Cartn_z\n")
-    f.write("_atom_site.occupancy\n")
-    f.write("_atom_site.B_iso_or_equiv\n")
 
-    f.writelines(rows)
-  return path
+def _toml_key(key: str) -> str:
+  if not _TOML_BARE_KEY.fullmatch(key):
+    raise ValueError(f"sidecar key {key!r} is not a bare TOML key")
+  return key
+
+
+def _proxide_install() -> tuple[str, str, str | None]:
+  """How this proxide was installed: (install kind, source commit, editable path or None).
+
+  From PEP 610 `direct_url.json`. A distribution with no record is a wheel install. The commit is
+  the record's vcs_info commit, else "unknown" (editable and wheel installs carry none).
+  """
+  try:
+    dist = importlib.metadata.distribution("proxide")
+    raw = dist.read_text("direct_url.json")
+  except (importlib.metadata.PackageNotFoundError, OSError):
+    return "unknown", "unknown", None
+  if raw is None:
+    return "wheel", "unknown", None
+  try:
+    record = json.loads(raw)
+  except json.JSONDecodeError:
+    return "unknown", "unknown", None
+  if not isinstance(record, dict):
+    return "unknown", "unknown", None
+  vcs = record.get("vcs_info")
+  commit = vcs.get("commit_id") if isinstance(vcs, dict) else None
+  commit = commit if isinstance(commit, str) and commit else "unknown"
+  dir_info = record.get("dir_info")
+  if isinstance(dir_info, dict) and dir_info.get("editable") is True:
+    parsed = urllib.parse.urlparse(str(record.get("url", "")))
+    editable_path = urllib.parse.unquote(parsed.path) if parsed.scheme == "file" else None
+    return "editable", commit, editable_path
+  if isinstance(vcs, dict):
+    return "vcs", commit, None
+  return "wheel", commit, None
+
+
+def _provenance_toml(report: WriteReport) -> str:
+  install, commit, editable_path = _proxide_install()
+  provenance: list[tuple[str, object]] = [
+    ("proxide_version", report.proxide_version),
+    ("proxide_install", install),
+    ("proxide_source_commit", commit),
+  ]
+  if install == "editable":
+    provenance.append(("proxide_editable_path", editable_path or "unknown"))
+  provenance += [
+    ("output_path", str(report.path.resolve())),
+    ("output_sha256", report.sha256),
+    ("input_source", report.source or "unknown"),
+    ("input_sha256", "unavailable"),
+    ("options", dict(report.options)),
+    (
+      "counts",
+      {
+        "n_atoms": report.n_atoms,
+        "n_hetatm": report.n_hetatm,
+        "n_hetatm_from_hetero": report.n_hetatm_from_hetero,
+        "n_insertion_codes": report.n_insertion_codes,
+      },
+    ),
+    ("finding_codes", [f.code for f in report.findings]),
+  ]
+  lines = [f"schema = {_toml_str(PROVENANCE_SCHEMA)}", "", "[provenance]"]
+  lines += [f"{_toml_key(key)} = {_toml_value(value)}" for key, value in provenance]
+  return "\n".join(lines) + "\n"
+
+
+def _write_sidecar(report: WriteReport) -> Path:
+  """Write `<path>.prov.toml` after the output. An OSError propagates; the output stays."""
+  prov_path = report.path.with_name(report.path.name + ".prov.toml")
+  with open(prov_path, "wb") as f:
+    f.write(_provenance_toml(report).encode("utf-8"))
+  return prov_path
 
 
 def _cif_insertion_code(code: str, i: int) -> str:
