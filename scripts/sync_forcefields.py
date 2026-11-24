@@ -25,6 +25,11 @@ REPO_URL = "https://github.com/openmm/openmmforcefields.git"
 # Asset directory relative to project root
 ASSETS_DIR = Path("src/priox/assets")
 
+# OpenMM data files not vendored, relative to openmm/app/data. ff19ipq was removed
+# upstream as an incomplete, abandoned force field (openmm/openmm#5143); an older
+# OpenMM install still has it, so a sync must not bring it back (debt #3598).
+EXCLUDED_OPENMM_FILES = frozenset({"amber19/protein.ff19ipq.xml"})
+
 # Source paths relative to cloned repo, with organization
 FILE_MAPPINGS = {
   # GAFF force field files
@@ -230,6 +235,10 @@ def copy_openmm_bundled_files(
       if not dry_run:
         dest_subdir.mkdir(parents=True, exist_ok=True)
       for src_file in subdir.glob("*.xml"):
+        if f"{subdir.name}/{src_file.name}" in EXCLUDED_OPENMM_FILES:
+          print(f"  Skipped (excluded): {subdir.name}/{src_file.name}")
+          results["skipped"].append(str(src_file))
+          continue
         dest_file = dest_subdir / src_file.name
         if dry_run:
           print(f"  Would copy: {src_file.name} -> openmm_bundled/{subdir.name}/")
