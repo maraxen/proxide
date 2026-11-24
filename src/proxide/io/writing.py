@@ -380,6 +380,74 @@ def _per_row_values(values, shape: tuple, what: str, fn_name: str) -> np.ndarray
   return arr
 
 
+_RECORD_TYPES = ("source", "residue_table")
+_INSERTION_CODE_OPTIONS = ("write", "blank")
+
+
+def _check_writer_options(fn_name: str, record_type: str, insertion_codes: str) -> None:
+  """Reject an unknown option value before anything is read or written (spec D3)."""
+  if record_type not in _RECORD_TYPES:
+    msg = (
+      f"{fn_name}: record_type={record_type!r} is not accepted; "
+      f"accepted values are {', '.join(map(repr, _RECORD_TYPES))}"
+    )
+    raise ValueError(msg)
+  if insertion_codes not in _INSERTION_CODE_OPTIONS:
+    msg = (
+      f"{fn_name}: insertion_codes={insertion_codes!r} is not accepted; "
+      f"accepted values are {', '.join(map(repr, _INSERTION_CODE_OPTIONS))}"
+    )
+    raise ValueError(msg)
+
+
+def _row_annotations(
+  protein: Protein, fn_name: str, n_rows: int, insertion_codes: str
+) -> tuple[np.ndarray | None, list[str]]:
+  """The per-row hetero flags and the insertion code each written row carries.
+
+  Returns (hetero_rows, codes_rows). ``hetero_rows`` is a bool array per atom for the Full
+  layout and None otherwise. ``codes_rows`` has one entry per row: the Protein's code for that
+  row (Atom37/14 codes are per residue and broadcast to the residue's atom rows), or " " (blank)
+  when the Protein has none or ``insertion_codes="blank"``. The layout is decided by the same
+  dispatch as `_atom_rows` (``atom_names`` present means Full).
+  """
+  from proxide.core.containers import validate_hetero, validate_insertion_codes
+
+  is_full = getattr(protein, "atom_names", None) is not None
+  hetero = getattr(protein, "hetero", None)
+  if is_full:
+    hetero_rows = None if hetero is None else validate_hetero(hetero, n_rows)
+    row_entity = None  # rows are atoms; codes are per atom
+    n_entities = n_rows
+  else:
+    if hetero is not None:
+      msg = (
+        f"{fn_name}: protein.hetero is set on an Atom37/Atom14 Protein; the per-atom hetero "
+        "flag exists only for the Full layout, and these layouts hold protein residues only"
+      )
+      raise ValueError(msg)
+    hetero_rows = None
+    row_entity = np.nonzero(np.asarray(protein.atom_mask).astype(bool))[0]
+    n_entities = int(np.asarray(protein.coordinates).shape[0])
+
+  codes = getattr(protein, "insertion_codes", None)
+  if codes is None or insertion_codes == "blank":
+    if codes is not None:
+      validate_insertion_codes(codes, n_entities, f"{fn_name}: insertion_codes")
+    return hetero_rows, [" "] * n_rows
+  entity_codes = validate_insertion_codes(codes, n_entities, f"{fn_name}: insertion_codes")
+  if row_entity is None:
+    return hetero_rows, list(entity_codes)
+  return hetero_rows, [entity_codes[int(r)] for r in row_entity]
+
+
+def _is_hetatm(res_name: str, hetero_flag: bool, record_type: str) -> bool:
+  """The record rule of spec D3 for one row: a source hetero flag wins, never downgrades."""
+  if record_type == "source" and hetero_flag:
+    return True
+  return res_name in _HETATM_RESIDUES
+
+
 def _pdb_occupancy_and_b_factor(occupancy, b_factor, i: int) -> tuple[str, str]:
   """The PDB occupancy (columns 55-60) and B-factor (61-66) fields of atom `i`.
 
@@ -417,7 +485,13 @@ def _cif_occupancy_or_b_factor(value, what: str, i: int) -> str:
   return f"{float(value):.2f}"
 
 
-def write_pdb(protein: Protein, path: str | Path) -> Path:
+def write_pdb(
+  protein: Protein,
+  path: str | Path,
+  *,
+  record_type: str = "source",
+  insertion_codes: str = "write",
+) -> Path:
   """Write a Protein structure to a PDB file.
 
   MSE is restored as HETATM MSE/SE only when the Protein carries residue_names
@@ -427,13 +501,20 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
   Args:
       protein: The Protein instance to write.
       path: Target file path.
+      record_type: ``"source"`` (default) takes a Full Protein's per-atom ``hetero``
+          flag as HETATM where it is True; ``"residue_table"`` uses only the residue
+          table (MSE). Atom37/14 output is the same under both.
+      insertion_codes: ``"write"`` (default) writes the Protein's insertion codes in
+          column 27; ``"blank"`` leaves column 27 blank.
 
   Returns:
       Path to the written file.
 
   Raises:
-      ValueError: If a field would have to be invented (see `_atom_rows`),
-          or if a value does not fit its fixed-width PDB column (more than
+      ValueError: If a field would have to be invented (see `_atom_rows`), an option
+          value is not accepted, ``hetero`` is set on an Atom37/Atom14 Protein, an
+          insertion code is not one printable ASCII character, or a value does not fit its
+          fixed-width PDB column (more than
           99999 atoms, a residue number outside -999..9999, an over-long name,
           or a coordinate outside -999.999..9999.999) -- the old writer
           silently shifted every later column (debt #1927). Use
@@ -441,11 +522,13 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
   """
   path = Path(path)
   _reject_if_batched(protein, "write_pdb")
+  _check_writer_options("write_pdb", record_type, insertion_codes)
 
   coords, atom_names, res_names, res_seqs, chain_letters, elements, b_factors, occupancies = (
     _atom_rows(protein, "write_pdb")
   )
   _reject_nonfinite(coords, "write_pdb")
+  hetero_rows, codes_rows = _row_annotations(protein, "write_pdb", len(coords), insertion_codes)
 
   def _overflow(what: str) -> ValueError:
     return ValueError(f"write_pdb: {what} does not fit the fixed-width PDB format; use write_mmcif")
@@ -471,7 +554,8 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
     # 61-66 Temperature factor
     # 77-78 Element symbol
     atom_name, res_name, element = atom_names[i], res_names[i], elements[i]
-    record = "HETATM" if res_name in _HETATM_RESIDUES else "ATOM"
+    hetero_flag = bool(hetero_rows[i]) if hetero_rows is not None else False
+    record = "HETATM" if _is_hetatm(res_name, hetero_flag, record_type) else "ATOM"
     res_seq = int(res_seqs[i])
     chain_id = chain_letters[i]
     if len(atom_name) > 4:
@@ -505,7 +589,7 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
       f" {atom_name:<3}" if len(element) == 1 and len(atom_name) < 4 else f"{atom_name:<4}"
     )
     lines.append(
-      f"{record:<6}{i + 1:>5} {name_field} {res_name:>3} {chain_id}{res_seq:>4}    "
+      f"{record:<6}{i + 1:>5} {name_field} {res_name:>3} {chain_id}{res_seq:>4}{codes_rows[i]}   "
       f"{''.join(xyz)}"
       f"{occ_field}{b_field}          {element.upper():>2}\n"
     )
@@ -519,7 +603,13 @@ def write_pdb(protein: Protein, path: str | Path) -> Path:
   return path
 
 
-def write_mmcif(protein: Protein, path: str | Path) -> Path:
+def write_mmcif(
+  protein: Protein,
+  path: str | Path,
+  *,
+  record_type: str = "source",
+  insertion_codes: str = "write",
+) -> Path:
   """Write a Protein structure to an mmCIF file.
 
   MSE is restored as HETATM MSE/SE only when the Protein carries residue_names
@@ -529,23 +619,32 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
   Args:
       protein: The Protein instance to write.
       path: Target file path.
+      record_type: As in `write_pdb`; sets ``group_PDB``.
+      insertion_codes: ``"write"`` (default) emits ``_atom_site.pdbx_PDB_ins_code`` when at
+          least one written code is non-blank (blank rows get ``?``); ``"blank"`` never emits
+          it. A Protein without insertion codes is written exactly as before.
 
   Returns:
       Path to the written file.
 
   Raises:
-      ValueError: If a field would have to be invented (see `_atom_rows`),
-          a coordinate is non-finite, chain ids are unknown (mmCIF requires
-          label_asym_id), or a name/chain value is empty or
+      ValueError: If a field would have to be invented (see `_atom_rows`), an option
+          value is not accepted, ``hetero`` is set on an Atom37/Atom14 Protein, an
+          insertion code is invalid, a coordinate is non-finite, chain ids are unknown
+          (mmCIF requires label_asym_id), or a name/chain value is empty or
           contains whitespace (see `_cif_token`).
   """
   path = Path(path)
   _reject_if_batched(protein, "write_mmcif")
+  _check_writer_options("write_mmcif", record_type, insertion_codes)
 
   coords, atom_names, res_names, res_seqs, chain_letters, elements, b_factors, occupancies = (
     _atom_rows(protein, "write_mmcif")
   )
   _reject_nonfinite(coords, "write_mmcif")
+  hetero_rows, codes_rows = _row_annotations(protein, "write_mmcif", len(coords), insertion_codes)
+  # The column is emitted only when a written code is non-blank (owner decision 2026-11-23).
+  write_codes = any(code != " " for code in codes_rows)
   if not all(chain_letters):
     # label_asym_id is mandatory in mmCIF, and proxide's own reader rejects
     # "?" there -- so an unknown chain cannot be written honestly. (PDB has a
@@ -557,7 +656,9 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
   for i in range(len(coords)):
     # Unknown element -> "?", CIF's own unknown marker (left unquoted on purpose).
     element = _cif_token(elements[i].upper(), "element", i) if elements[i] else "?"
-    record = "HETATM" if res_names[i] in _HETATM_RESIDUES else "ATOM"
+    hetero_flag = bool(hetero_rows[i]) if hetero_rows is not None else False
+    record = "HETATM" if _is_hetatm(res_names[i], hetero_flag, record_type) else "ATOM"
+    code_field = f" {_cif_insertion_code(codes_rows[i], i)}" if write_codes else ""
 
     x, y, z = coords[i]
     occ_text = _cif_occupancy_or_b_factor(
@@ -568,7 +669,7 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
       f"{record} {i + 1} {element} {_cif_token(atom_names[i], 'atom name', i)} "
       f"{_cif_token(res_names[i], 'residue name', i)} "
       f"{_cif_token(chain_letters[i], 'chain id', i)} "
-      f"{int(res_seqs[i])} {x:.3f} {y:.3f} {z:.3f} {occ_text} {b_text}\n"
+      f"{int(res_seqs[i])}{code_field} {x:.3f} {y:.3f} {z:.3f} {occ_text} {b_text}\n"
     )
 
   # Validate every row before touching the file.
@@ -583,6 +684,8 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
     f.write("_atom_site.label_comp_id\n")
     f.write("_atom_site.label_asym_id\n")
     f.write("_atom_site.label_seq_id\n")
+    if write_codes:
+      f.write("_atom_site.pdbx_PDB_ins_code\n")
     f.write("_atom_site.Cartn_x\n")
     f.write("_atom_site.Cartn_y\n")
     f.write("_atom_site.Cartn_z\n")
@@ -591,6 +694,13 @@ def write_mmcif(protein: Protein, path: str | Path) -> Path:
 
     f.writelines(rows)
   return path
+
+
+def _cif_insertion_code(code: str, i: int) -> str:
+  """One mmCIF pdbx_PDB_ins_code value: "?" for a blank code, else the code as a CIF token."""
+  if code == " ":
+    return "?"
+  return _cif_token(code, "insertion code", i)
 
 
 def _cif_token(value: str, what: str, i: int) -> str:
