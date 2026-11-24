@@ -177,6 +177,8 @@ Only core IO is stable:
 
 Everything else exported from `proxide` is experimental and may change in a minor release. That covers GAFF2 typing (`assign_gaff_atom_types`), force field loading (`load_forcefield`, `parameterize_molecule`), atomic masses, GB radii and OBC2 scaling, water models, CMAP parameters, geometry helpers, the Jaccard and TM-align modules, the `iterload` function (top level only; the `io` submodule does not export it), and `proxide.AtomicSystem`. `proxide.__experimental__` lists them.
 
+The writer keyword options `record_type`, `insertion_codes` and `provenance` of `write_pdb` and `write_mmcif` are stable, and so are the `Protein` fields `insertion_codes` and `hetero`. The `provenance="sidecar"` output (`<path>.prov.toml`, schema `proxide-write-prov/0`) is experimental. So are `proxide.io.writing.write_pdb_reported`, `write_mmcif_reported`, `WriteReport`, `WriteFinding`, the finding codes in `proxide.io.write_codes`, and `proxide.io.fixtures.load_npz_icode_fields`.
+
 The tensor-bundle helpers in `proxide.io` (`save_tensor_bundle`, `load_tensor_bundle`, `flatten_tensor_dict`, `unflatten_tensor_dict`, `assert_bundle_keys`) are experimental.
 
 confind, rotlib and CCD/fixer are experimental too; they have no top-level Python exports at this version.
